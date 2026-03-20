@@ -12,7 +12,8 @@ Implementation runtime is Go (`cmd/umbraco`).
 - Schema is introspectable at runtime (`umbraco schema ...`).
 - Response size should be constrained (`--fields`) to protect context window budget.
 - Mutations must be rehearsed first (`--dry-run`).
-- Config resolves from env, project config, `.env`, user config, and local `.NET` URL discovery in that order.
+- Config resolves from env, project config, `.umbraco-cli.env`, `.env`, user config, and local `.NET` URL discovery in that order.
+- Auth/connectivity errors include the resolved base URL to make misconfiguration obvious.
 
 ## Quick Command Reference
 

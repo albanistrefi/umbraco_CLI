@@ -49,21 +49,30 @@ export UMBRACO_CLIENT_SECRET="your-secret"
 
 Notes:
 - Environment variables still work and have the highest precedence.
+- Project-local `.umbraco-cli.env` files are auto-loaded for `UMBRACO_*` keys and are intended for CLI-specific project setup.
 - Project-local `.env` files are auto-loaded for `UMBRACO_*` keys.
 - Project-local `.umbracorc.json` or `.umbracorc` can override project defaults.
 - User config is read from `~/.umbraco/config.json`.
 - If `UMBRACO_BASE_URL` is still unset, the CLI tries local `.NET` config files such as `Properties/launchSettings.json`, `appsettings.Development.json`, and `appsettings.json`.
 - `UMBRACO_BASE_URL` should be the site root, for example `https://localhost:44391`, not `https://localhost:44391/umbraco`. The CLI normalizes a trailing `/umbraco` if present.
 - Shell profiles such as `.zshrc` are not read.
+- Auth/connectivity errors now include the resolved base URL so it is obvious what the CLI is trying to reach.
 
 Config precedence, highest to lowest:
 
 1. Process env (`UMBRACO_*`)
 2. Project `.umbracorc.json` or `.umbracorc`
-3. Project `.env`
-4. User config `~/.umbraco/config.json`
-5. Auto-discovered base URL from local `.NET` config
-6. Final fallback `https://localhost:44391`
+3. Project `.umbraco-cli.env`
+4. Project `.env`
+5. User config `~/.umbraco/config.json`
+6. Auto-discovered base URL from local `.NET` config
+7. Final fallback `https://localhost:44391`
+
+Example project-local CLI env:
+
+```bash
+cp .env.example .umbraco-cli.env
+```
 
 Example user config:
 
