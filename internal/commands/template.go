@@ -35,7 +35,12 @@ func templateGet(deps Dependencies) *cobra.Command {
 
 func templateRoot(deps Dependencies) *cobra.Command {
 	return &cobra.Command{Use: "root", Short: "Get root templates", RunE: func(cmd *cobra.Command, args []string) error {
-		result, err := deps.Client.Get(context.Background(), "/template/root", api.RequestOptions{})
+		result, err := getWithFallback(
+			context.Background(),
+			deps.Client,
+			getRequestCandidate{path: "/tree/template/root", opts: api.RequestOptions{}},
+			getRequestCandidate{path: "/template/root", opts: api.RequestOptions{}},
+		)
 		if err != nil {
 			return err
 		}
@@ -57,7 +62,12 @@ func templateSearch(deps Dependencies) *cobra.Command {
 			}
 			params = map[string]any{"query": query}
 		}
-		result, err := deps.Client.Get(context.Background(), "/template/search", api.RequestOptions{Params: params})
+		result, err := getWithFallback(
+			context.Background(),
+			deps.Client,
+			getRequestCandidate{path: "/item/template/search", opts: api.RequestOptions{Params: params}},
+			getRequestCandidate{path: "/template/search", opts: api.RequestOptions{Params: params}},
+		)
 		if err != nil {
 			return err
 		}

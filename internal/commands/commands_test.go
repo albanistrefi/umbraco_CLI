@@ -169,3 +169,34 @@ func TestDatatypeSchemaMatchesCompatibilityPrimaryEndpoints(t *testing.T) {
 		t.Fatalf("unexpected datatype.search path: %+v", searchPayload)
 	}
 }
+
+func TestSchemaMatchesTemplateDoctypeAndServerPrimaryEndpoints(t *testing.T) {
+	deps := makeDeps()
+	root := buildRootWithCollections(t, deps)
+
+	cases := map[string]string{
+		"template.root":       "/tree/template/root",
+		"template.search":     "/item/template/search",
+		"doctype.root":        "/tree/document-type/root",
+		"doctype.children":    "/tree/document-type/children",
+		"doctype.search":      "/item/document-type/search",
+		"server.info":         "/server/information",
+		"server.config":       "/server/configuration",
+		"server.troubleshoot": "/server/troubleshooting",
+	}
+
+	for endpoint, expectedPath := range cases {
+		output, err := execute(root, "schema", endpoint)
+		if err != nil {
+			t.Fatalf("schema %s failed: %v", endpoint, err)
+		}
+
+		var payload map[string]any
+		if err := json.Unmarshal([]byte(output), &payload); err != nil {
+			t.Fatalf("failed to decode %s schema payload: %v", endpoint, err)
+		}
+		if payload["path"] != expectedPath {
+			t.Fatalf("unexpected %s path: %+v", endpoint, payload)
+		}
+	}
+}

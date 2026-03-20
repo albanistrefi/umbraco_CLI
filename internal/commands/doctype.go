@@ -52,7 +52,12 @@ func doctypeList(deps Dependencies) *cobra.Command {
 
 func doctypeRoot(deps Dependencies) *cobra.Command {
 	return &cobra.Command{Use: "root", Short: "Get root document types", RunE: func(cmd *cobra.Command, args []string) error {
-		result, err := deps.Client.Get(context.Background(), "/document-type/root", api.RequestOptions{})
+		result, err := getWithFallback(
+			context.Background(),
+			deps.Client,
+			getRequestCandidate{path: "/tree/document-type/root", opts: api.RequestOptions{}},
+			getRequestCandidate{path: "/document-type/root", opts: api.RequestOptions{}},
+		)
 		if err != nil {
 			return err
 		}
@@ -62,7 +67,18 @@ func doctypeRoot(deps Dependencies) *cobra.Command {
 
 func doctypeChildren(deps Dependencies) *cobra.Command {
 	return &cobra.Command{Use: "children <id>", Short: "Get child document types", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		result, err := deps.Client.Get(context.Background(), fmt.Sprintf("/document-type/%s/children", args[0]), api.RequestOptions{})
+		result, err := getWithFallback(
+			context.Background(),
+			deps.Client,
+			getRequestCandidate{
+				path: "/tree/document-type/children",
+				opts: api.RequestOptions{Params: map[string]any{"parentId": args[0]}},
+			},
+			getRequestCandidate{
+				path: fmt.Sprintf("/document-type/%s/children", args[0]),
+				opts: api.RequestOptions{},
+			},
+		)
 		if err != nil {
 			return err
 		}
@@ -84,7 +100,12 @@ func doctypeSearch(deps Dependencies) *cobra.Command {
 			}
 			params = map[string]any{"query": query}
 		}
-		result, err := deps.Client.Get(context.Background(), "/document-type/search", api.RequestOptions{Params: params})
+		result, err := getWithFallback(
+			context.Background(),
+			deps.Client,
+			getRequestCandidate{path: "/item/document-type/search", opts: api.RequestOptions{Params: params}},
+			getRequestCandidate{path: "/document-type/search", opts: api.RequestOptions{Params: params}},
+		)
 		if err != nil {
 			return err
 		}

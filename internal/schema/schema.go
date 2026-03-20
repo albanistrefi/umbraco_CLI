@@ -87,9 +87,9 @@ var rawSchemas = map[string]rawSchema{
 	// doctype (10)
 	"doctype.get":      {Method: "GET", Path: "/document-type/{id}", PathParams: map[string]ParamSchema{"id": idParam}, QueryParams: map[string]ParamSchema{"fields": fieldsQuery}},
 	"doctype.list":     {Method: "GET", Path: "/document-type", QueryParams: map[string]ParamSchema{"fields": fieldsQuery}},
-	"doctype.root":     {Method: "GET", Path: "/document-type/root"},
-	"doctype.children": {Method: "GET", Path: "/document-type/{id}/children", PathParams: map[string]ParamSchema{"id": idParam}},
-	"doctype.search":   {Method: "GET", Path: "/document-type/search", QueryParams: map[string]ParamSchema{"query": {Type: "string"}}},
+	"doctype.root":     {Method: "GET", Path: "/tree/document-type/root"},
+	"doctype.children": {Method: "GET", Path: "/tree/document-type/children", QueryParams: map[string]ParamSchema{"parentId": {Type: "string", Format: "uuid", Required: true}}},
+	"doctype.search":   {Method: "GET", Path: "/item/document-type/search", QueryParams: map[string]ParamSchema{"query": {Type: "string"}}},
 	"doctype.create":   {Method: "POST", Path: "/document-type", RequestBody: genericRequestBody},
 	"doctype.update":   {Method: "PUT", Path: "/document-type/{id}", PathParams: map[string]ParamSchema{"id": idParam}, RequestBody: genericRequestBody},
 	"doctype.copy":     {Method: "POST", Path: "/document-type/{id}/copy", PathParams: map[string]ParamSchema{"id": idParam}, RequestBody: genericRequestBody},
@@ -108,8 +108,8 @@ var rawSchemas = map[string]rawSchema{
 
 	// template (6)
 	"template.get":    {Method: "GET", Path: "/template/{id}", PathParams: map[string]ParamSchema{"id": idParam}, QueryParams: map[string]ParamSchema{"fields": fieldsQuery}},
-	"template.root":   {Method: "GET", Path: "/template/root"},
-	"template.search": {Method: "GET", Path: "/template/search", QueryParams: map[string]ParamSchema{"query": {Type: "string"}}},
+	"template.root":   {Method: "GET", Path: "/tree/template/root"},
+	"template.search": {Method: "GET", Path: "/item/template/search", QueryParams: map[string]ParamSchema{"query": {Type: "string"}}},
 	"template.create": {Method: "POST", Path: "/template", RequestBody: genericRequestBody},
 	"template.update": {Method: "PUT", Path: "/template/{id}", PathParams: map[string]ParamSchema{"id": idParam}, RequestBody: genericRequestBody},
 	"template.delete": {Method: "DELETE", Path: "/template/{id}", PathParams: map[string]ParamSchema{"id": idParam}},
@@ -123,9 +123,9 @@ var rawSchemas = map[string]rawSchema{
 
 	// server (5)
 	"server.status":        {Method: "GET", Path: "/server/status"},
-	"server.info":          {Method: "GET", Path: "/server/info"},
-	"server.config":        {Method: "GET", Path: "/server/config"},
-	"server.troubleshoot":  {Method: "GET", Path: "/server/troubleshoot"},
+	"server.info":          {Method: "GET", Path: "/server/information"},
+	"server.config":        {Method: "GET", Path: "/server/configuration"},
+	"server.troubleshoot":  {Method: "GET", Path: "/server/troubleshooting"},
 	"server.upgrade-check": {Method: "GET", Path: "/server/upgrade-check"},
 
 	// health (4)
