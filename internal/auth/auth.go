@@ -65,13 +65,13 @@ func (p *Provider) AccessToken(ctx context.Context) (string, error) {
 
 	resp, err := p.httpClient.Do(req)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("auth request to %s failed (resolved base URL %s): %w", endpoint, p.cfg.BaseURL, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("auth failed: %d %s", resp.StatusCode, string(body))
+		return "", fmt.Errorf("auth failed for %s (resolved base URL %s): %d %s", endpoint, p.cfg.BaseURL, resp.StatusCode, string(body))
 	}
 
 	var payload tokenResponse

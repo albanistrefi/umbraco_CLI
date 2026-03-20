@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -57,6 +58,39 @@ IGNORED_VALUE=should-not-load
 	}
 	if cfg.OutputFormat != OutputJSON {
 		t.Fatalf("expected env output format to win, got %q", cfg.OutputFormat)
+	}
+}
+
+func TestLoadResolvedConfigPrefersUmbracoCliDotEnvOverGenericDotEnv(t *testing.T) {
+	workingDir := t.TempDir()
+
+	if err := os.WriteFile(filepath.Join(workingDir, ".env"), []byte(`
+UMBRACO_BASE_URL=https://localhost:44391
+UMBRACO_CLIENT_ID=dotenv-client
+`), 0o644); err != nil {
+		t.Fatalf("failed to write .env: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(workingDir, ".umbraco-cli.env"), []byte(`
+UMBRACO_BASE_URL=https://localhost:44314/umbraco
+UMBRACO_CLIENT_SECRET=cli-env-secret
+`), 0o644); err != nil {
+		t.Fatalf("failed to write .umbraco-cli.env: %v", err)
+	}
+
+	cfg, err := loadResolvedConfig(workingDir, "", map[string]string{})
+	if err != nil {
+		t.Fatalf("loadResolvedConfig failed: %v", err)
+	}
+
+	if cfg.BaseURL != "https://localhost:44314" {
+		t.Fatalf("expected .umbraco-cli.env base URL to win, got %q", cfg.BaseURL)
+	}
+	if cfg.ClientID != "dotenv-client" {
+		t.Fatalf("expected generic .env to still provide client ID, got %q", cfg.ClientID)
+	}
+	if cfg.ClientSecret != "cli-env-secret" {
+		t.Fatalf("expected .umbraco-cli.env client secret to win, got %q", cfg.ClientSecret)
 	}
 }
 
@@ -179,4 +213,23 @@ func TestLoadResolvedConfigRejectsInvalidOutputFormat(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected invalid output format to fail")
 	}
+}
+
+func TestConfigValidateAuthMentionsProjectLocalOptions(t *testing.T) {
+	err := (Config{}).ValidateAuth()
+	if err == nil {
+		t.Fatalf("expected ValidateAuth to fail")
+	}
+	if !containsAll(err.Error(), ".umbraco-cli.env", ".env", ".umbracorc") {
+		t.Fatalf("expected auth validation guidance in error, got %q", err.Error())
+	}
+}
+
+func containsAll(value string, substrings ...string) bool {
+	for _, substring := range substrings {
+		if !strings.Contains(value, substring) {
+			return false
+		}
+	}
+	return true
 }

@@ -83,6 +83,14 @@ func loadResolvedConfig(workingDir string, homeDir string, env map[string]string
 		mergeRawConfig(&resolved, dotEnvConfig)
 	}
 
+	if cliDotEnvPath, ok := findNearestFile(workingDir, ".umbraco-cli.env"); ok {
+		cliDotEnvConfig, err := loadDotEnvConfig(cliDotEnvPath)
+		if err != nil {
+			return Config{}, err
+		}
+		mergeRawConfig(&resolved, cliDotEnvConfig)
+	}
+
 	if projectConfigPath, ok := findNearestFileFromCandidates(workingDir, ".umbracorc.json", ".umbracorc"); ok {
 		projectConfig, _, err := loadJSONConfig(projectConfigPath)
 		if err != nil {
@@ -393,7 +401,7 @@ func ParseOutputFormat(raw string) (OutputFormat, error) {
 
 func (c Config) ValidateAuth() error {
 	if c.ClientID == "" || c.ClientSecret == "" {
-		return fmt.Errorf("missing UMBRACO_CLIENT_ID or UMBRACO_CLIENT_SECRET")
+		return fmt.Errorf("missing UMBRACO_CLIENT_ID or UMBRACO_CLIENT_SECRET; set process env or use project .umbraco-cli.env, .env, or .umbracorc(.json)")
 	}
 	return nil
 }
