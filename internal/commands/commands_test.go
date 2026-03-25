@@ -68,8 +68,8 @@ func TestCommandCountsMatchMVP(t *testing.T) {
 		total += len(found.Commands())
 	}
 
-	if total != 74 {
-		t.Fatalf("expected 74 collection commands, got %d", total)
+	if total != 75 {
+		t.Fatalf("expected 75 collection commands, got %d", total)
 	}
 }
 
@@ -175,6 +175,7 @@ func TestSchemaMatchesTemplateDoctypeAndServerPrimaryEndpoints(t *testing.T) {
 	root := buildRootWithCollections(t, deps)
 
 	cases := map[string]string{
+		"document.search":     "/item/document/search",
 		"template.root":       "/tree/template/root",
 		"template.search":     "/item/template/search",
 		"doctype.root":        "/tree/document-type/root",

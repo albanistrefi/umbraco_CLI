@@ -46,7 +46,7 @@ var rawSchemas = map[string]rawSchema{
 	"document.root":              {Method: "GET", Path: "/document/root", QueryParams: map[string]ParamSchema{"fields": fieldsQuery}},
 	"document.children":          {Method: "GET", Path: "/document/{id}/children", PathParams: map[string]ParamSchema{"id": idParam}, QueryParams: map[string]ParamSchema{"fields": fieldsQuery}},
 	"document.ancestors":         {Method: "GET", Path: "/document/{id}/ancestors", PathParams: map[string]ParamSchema{"id": idParam}},
-	"document.search":            {Method: "GET", Path: "/document/search", QueryParams: map[string]ParamSchema{"query": {Type: "string"}, "skip": {Type: "number"}, "take": {Type: "number"}}},
+	"document.search":            {Method: "GET", Path: "/item/document/search", QueryParams: map[string]ParamSchema{"query": {Type: "string"}, "skip": {Type: "number"}, "take": {Type: "number"}, "parentId": {Type: "string", Format: "uuid"}, "culture": {Type: "string"}, "dataTypeId": {Type: "string", Format: "uuid"}, "trashed": {Type: "boolean"}, "allowedDocumentTypes": {Type: "array", Format: "uuid"}}},
 	"document.create":            {Method: "POST", Path: "/document", RequestBody: genericRequestBody},
 	"document.update":            {Method: "PUT", Path: "/document/{id}", PathParams: map[string]ParamSchema{"id": idParam}, RequestBody: genericRequestBody},
 	"document.update-properties": {Method: "PUT", Path: "/document/{id}/properties", PathParams: map[string]ParamSchema{"id": idParam}, RequestBody: genericRequestBody},

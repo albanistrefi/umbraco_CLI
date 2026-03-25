@@ -3,6 +3,7 @@ package commands
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -23,6 +24,7 @@ func RegisterDocument(root *cobra.Command, deps Dependencies) {
 	document.AddCommand(documentSearch(deps))
 	document.AddCommand(documentCreate(deps))
 	document.AddCommand(documentUpdate(deps))
+	document.AddCommand(documentBulkUpdate(deps))
 	document.AddCommand(documentUpdateProperties(deps))
 	document.AddCommand(documentPublish(deps))
 	document.AddCommand(documentUnpublish(deps))
@@ -140,7 +142,12 @@ func documentSearch(deps Dependencies) *cobra.Command {
 				return fmt.Errorf("document search requires either --params or --query")
 			}
 
-			result, err := deps.Client.Get(context.Background(), "/document/search", api.RequestOptions{Params: params})
+			result, err := getWithFallback(
+				context.Background(),
+				deps.Client,
+				getRequestCandidate{path: "/item/document/search", opts: api.RequestOptions{Params: params}},
+				getRequestCandidate{path: "/document/search", opts: api.RequestOptions{Params: params}},
+			)
 			if err != nil {
 				return err
 			}
@@ -183,19 +190,39 @@ func documentCreate(deps Dependencies) *cobra.Command {
 
 func documentUpdate(deps Dependencies) *cobra.Command {
 	var jsonPayload string
+	var mergeJSON string
 	var dryRun bool
 	cmd := &cobra.Command{
 		Use:   "update <id>",
 		Short: "Update a document",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := requireValue("--json", jsonPayload); err != nil {
-				return err
+			hasJSON := strings.TrimSpace(jsonPayload) != ""
+			hasMergeJSON := strings.TrimSpace(mergeJSON) != ""
+			if hasJSON == hasMergeJSON {
+				return fmt.Errorf("document update requires exactly one of --json or --merge-json")
 			}
-			body, err := parsePayload(jsonPayload)
-			if err != nil {
-				return err
+
+			var body map[string]any
+			var err error
+			if hasMergeJSON {
+				patch, err := parsePayload(mergeJSON)
+				if err != nil {
+					return err
+				}
+
+				current, err := fetchDocumentObject(context.Background(), deps.Client, args[0])
+				if err != nil {
+					return err
+				}
+				body = mergeDatatypePayload(current, patch)
+			} else {
+				body, err = parsePayload(jsonPayload)
+				if err != nil {
+					return err
+				}
 			}
+
 			result, err := deps.Client.Put(context.Background(), fmt.Sprintf("/document/%s", args[0]), body, api.RequestOptions{DryRun: dryRun})
 			if err != nil {
 				return err
@@ -204,7 +231,66 @@ func documentUpdate(deps Dependencies) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Update payload as JSON")
+	cmd.Flags().StringVar(&mergeJSON, "merge-json", "", "Partial JSON payload merged into the current document before update")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
+	return cmd
+}
+
+func documentBulkUpdate(deps Dependencies) *cobra.Command {
+	var ids []string
+	var idFile string
+	var jsonPayload string
+	var mergeJSON string
+	var dryRun bool
+	var force bool
+
+	cmd := &cobra.Command{
+		Use:   "bulk-update",
+		Short: "Update multiple documents from an explicit ID list",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !dryRun && !force {
+				return fmt.Errorf("document bulk-update requires --dry-run or --force")
+			}
+
+			hasJSON := strings.TrimSpace(jsonPayload) != ""
+			hasMergeJSON := strings.TrimSpace(mergeJSON) != ""
+			if hasJSON == hasMergeJSON {
+				return fmt.Errorf("document bulk-update requires exactly one of --json or --merge-json")
+			}
+
+			resolvedIDs, err := loadDocumentIDs(ids, idFile)
+			if err != nil {
+				return err
+			}
+			if len(resolvedIDs) == 0 {
+				return fmt.Errorf("document bulk-update requires at least one --id or --id-file entry")
+			}
+
+			var fullBody map[string]any
+			var mergePatch map[string]any
+			if hasMergeJSON {
+				mergePatch, err = parsePayload(mergeJSON)
+				if err != nil {
+					return err
+				}
+			} else {
+				fullBody, err = parsePayload(jsonPayload)
+				if err != nil {
+					return err
+				}
+			}
+
+			result := executeDocumentBulkUpdate(context.Background(), deps.Client, resolvedIDs, fullBody, mergePatch, dryRun)
+			return printResult(cmd, deps, result)
+		},
+	}
+
+	cmd.Flags().StringArrayVar(&ids, "id", nil, "Document ID to update; repeat for multiple documents")
+	cmd.Flags().StringVar(&idFile, "id-file", "", "Path to a file containing document IDs, one per line")
+	cmd.Flags().StringVar(&jsonPayload, "json", "", "Full JSON payload applied to every document")
+	cmd.Flags().StringVar(&mergeJSON, "merge-json", "", "Partial JSON payload merged into each current document before update")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate requests without executing")
+	cmd.Flags().BoolVar(&force, "force", false, "Confirm the bulk update when not using --dry-run")
 	return cmd
 }
 

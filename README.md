@@ -148,12 +148,15 @@ Safe read:
 
 ```bash
 go run ./cmd/umbraco document get <id> --fields "id,name,updateDate"
+go run ./cmd/umbraco document search --query "Toxic" --skip 0 --take 25 --output json
 ```
 
 Safe write pattern (always dry-run first):
 
 ```bash
 go run ./cmd/umbraco document publish <id> --json '{"cultures":["en-US"]}' --dry-run --output json
+go run ./cmd/umbraco document update <id> --merge-json '{"values":[{"alias":"title","value":"New title"}]}' --dry-run --output json
+go run ./cmd/umbraco document bulk-update --id <id> --id <id> --merge-json '{"values":[{"alias":"title","value":"New title"}]}' --dry-run --output json
 # then run without --dry-run
 ```
 
@@ -188,7 +191,7 @@ npm run verify:skills
 
 ## Collections in MVP
 
-- `document` (15)
+- `document` (16)
 - `dictionary` (6)
 - `media` (10)
 - `doctype` (10)
@@ -198,7 +201,7 @@ npm run verify:skills
 - `server` (5)
 - `health` (4)
 
-Total: **74 commands**
+Total: **75 commands**
 
 ## Agent Safety Rules
 
