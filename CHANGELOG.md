@@ -1,11 +1,16 @@
 # Changelog
 
-## v0.2.2 - 2026-03-24
+## v0.2.2 - 2026-03-26
 
 - fixed `template`, `doctype`, and `server` route mappings to prefer the Management API routes used by current Umbraco versions while keeping compatibility fallbacks
 - updated `umbraco schema ...` output so the advertised primary routes match the corrected endpoint mappings
 - improved auth and connectivity errors to show the resolved base URL and token endpoint
 - added support for project-local `.umbraco-cli.env` files for CLI-specific base URL and credential setup
+- improved bounded base URL auto-discovery for adjacent/local Umbraco web-host projects while still rejecting ambiguous candidates
+- fixed `document search` to prefer the v17-compatible `/item/document/search` route with fallback support
+- added `document search --under <parent-id>` for first-class subtree-scoped content discovery
+- added `document update --merge-json` and `document bulk-update` for safer repeated content updates
+- fixed the bundled skill metadata so `npm run verify:skills` now passes with the current 67-skill bundle
 - updated docs for the local CLI config workflow
 
 ## v0.2.1 - 2026-03-13

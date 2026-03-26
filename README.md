@@ -128,8 +128,8 @@ Tagging a release publishes GitHub release archives and updates the Homebrew
 cask in the dedicated tap repository `albanist/homebrew-tap`:
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.2.2
+git push origin v0.2.2
 ```
 
 The release workflow uses GoReleaser and expects to run in GitHub Actions.
