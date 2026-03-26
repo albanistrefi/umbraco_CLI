@@ -31,8 +31,8 @@ async function collectSkillDirs(baseDir) {
 async function verify() {
   const skillDirs = await collectSkillDirs(root);
 
-  if (skillDirs.length !== 66) {
-    throw new Error(`Expected 66 bundled skills but found ${skillDirs.length}`);
+  if (skillDirs.length !== 67) {
+    throw new Error(`Expected 67 bundled skills but found ${skillDirs.length}`);
   }
 
   for (const skillDir of skillDirs) {

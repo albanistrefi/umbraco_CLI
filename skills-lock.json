@@ -31,6 +31,11 @@
       "sourceType": "github",
       "computedHash": "d89d7e888739ef0d67e8abdb58f17596e79cacff6782333925ce3f676c0b019a"
     },
+    "umbraco-cli": {
+      "source": "albanist/umbraco_CLI",
+      "sourceType": "github",
+      "computedHash": "69d8fecd14bc77565c619fc4001b539613bba265cfed48819f14c7de4d709d26"
+    },
     "umbraco-collection": {
       "source": "umbraco/Umbraco-CMS-Backoffice-Skills",
       "sourceType": "github",

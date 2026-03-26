@@ -175,7 +175,7 @@ go run ./cmd/umbraco datatype add-value <id> --alias extensions --value Custom.E
 
 ## Skills Bundle
 
-This repo includes 66 bundled Umbraco skills under `skills/`.
+This repo includes 67 bundled Umbraco skills under `skills/`.
 
 Verify bundle integrity:
 

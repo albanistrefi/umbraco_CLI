@@ -16,8 +16,8 @@ async function listSourceSkills() {
     .map((entry) => entry.name)
     .sort();
 
-  if (skills.length !== 66) {
-    throw new Error(`Expected to bundle 66 skills, found ${skills.length}.`);
+  if (skills.length !== 67) {
+    throw new Error(`Expected to bundle 67 skills, found ${skills.length}.`);
   }
 
   return skills;

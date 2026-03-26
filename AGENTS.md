@@ -34,7 +34,7 @@ umbraco schema media
 
 ## Skills Bundle
 
-This CLI bundles 66 Umbraco skills under `skills/` across categories:
+This CLI bundles 67 Umbraco skills under `skills/` across categories:
 - `foundation`
 - `extensions`
 - `property-editors`
