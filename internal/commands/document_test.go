@@ -51,6 +51,38 @@ func TestDocumentSearchUsesItemSearchEndpointAndFallsBack(t *testing.T) {
 	}
 }
 
+func TestDocumentSearchSupportsUnderShortcut(t *testing.T) {
+	var observedPath string
+
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/item/document/search":
+			observedPath = req.URL.String()
+			return endpointJSONResponse(http.StatusOK, `{"items":[{"id":"doc-1","name":"Toxic"}]}`), nil
+		default:
+			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	_, err := execute(
+		buildRootWithCollections(t, deps),
+		"document", "search",
+		"--query", "Toxic",
+		"--under", "partners-root",
+		"--skip", "0",
+		"--take", "25",
+	)
+	if err != nil {
+		t.Fatalf("document search --under failed: %v", err)
+	}
+
+	if !strings.Contains(observedPath, "parentId=partners-root") {
+		t.Fatalf("expected --under to map to parentId, got %q", observedPath)
+	}
+}
+
 func TestDocumentUpdateMergeJSONFetchesAndMergesCurrentDocument(t *testing.T) {
 	var observedPutBody map[string]any
 

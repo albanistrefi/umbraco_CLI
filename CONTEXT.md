@@ -22,6 +22,7 @@ Implementation runtime is Go (`cmd/umbraco`).
 - `umbraco document root`
 - `umbraco document children <id>`
 - `umbraco document search --params '{"query":"home"}'`
+- `umbraco document search --query "home" --under <parent-id>`
 - `umbraco document update <id> --merge-json '{"values":[{"alias":"title","value":"New title"}]}' --dry-run`
 - `umbraco document bulk-update --id <id> --merge-json '{"values":[{"alias":"title","value":"New title"}]}' --dry-run`
 

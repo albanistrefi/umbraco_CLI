@@ -149,6 +149,7 @@ Safe read:
 ```bash
 go run ./cmd/umbraco document get <id> --fields "id,name,updateDate"
 go run ./cmd/umbraco document search --query "Toxic" --skip 0 --take 25 --output json
+go run ./cmd/umbraco document search --query "Toxic" --under <parent-id> --skip 0 --take 25 --output json
 ```
 
 Safe write pattern (always dry-run first):

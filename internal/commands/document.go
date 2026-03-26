@@ -115,6 +115,7 @@ func documentAncestors(deps Dependencies) *cobra.Command {
 func documentSearch(deps Dependencies) *cobra.Command {
 	var paramsRaw string
 	var query string
+	var under string
 	var skip int
 	var take int
 
@@ -131,12 +132,21 @@ func documentSearch(deps Dependencies) *cobra.Command {
 				if query != "" {
 					params["query"] = query
 				}
+				if under != "" {
+					params["parentId"] = under
+				}
 				if skip >= 0 {
 					params["skip"] = skip
 				}
 				if take >= 0 {
 					params["take"] = take
 				}
+			} else if under != "" {
+				if _, exists := params["parentId"]; exists {
+					return fmt.Errorf("--under cannot be combined with --params containing parentId")
+				}
+				params = cloneParams(params)
+				params["parentId"] = under
 			}
 			if len(params) == 0 {
 				return fmt.Errorf("document search requires either --params or --query")
@@ -157,6 +167,7 @@ func documentSearch(deps Dependencies) *cobra.Command {
 
 	cmd.Flags().StringVar(&paramsRaw, "params", "", "Search parameters as JSON")
 	cmd.Flags().StringVar(&query, "query", "", "Search query (convenience)")
+	cmd.Flags().StringVar(&under, "under", "", "Limit search to documents under the given parent ID")
 	cmd.Flags().IntVar(&skip, "skip", -1, "Skip count")
 	cmd.Flags().IntVar(&take, "take", -1, "Take count")
 	return cmd
