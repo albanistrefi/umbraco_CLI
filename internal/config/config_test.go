@@ -177,6 +177,114 @@ func TestLoadResolvedConfigEnvOverridesDiscoveredBaseURL(t *testing.T) {
 	}
 }
 
+func TestLoadResolvedConfigDiscoversBaseURLFromSingleSiblingUmbracoHostProject(t *testing.T) {
+	parentDir := t.TempDir()
+	workingDir := filepath.Join(parentDir, "umbraco-cli")
+	if err := os.MkdirAll(workingDir, 0o755); err != nil {
+		t.Fatalf("failed to create working dir: %v", err)
+	}
+
+	hostRoot := filepath.Join(parentDir, "site", "Website")
+	if err := os.MkdirAll(filepath.Join(hostRoot, "Properties"), 0o755); err != nil {
+		t.Fatalf("failed to create host Properties dir: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(hostRoot, "Website.csproj"), []byte(`
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <ItemGroup>
+    <PackageReference Include="Umbraco.Cms.Web.Common" Version="17.0.0" />
+  </ItemGroup>
+</Project>
+`), 0o644); err != nil {
+		t.Fatalf("failed to write host csproj: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(hostRoot, "Properties", "launchSettings.json"), []byte(`{
+  "profiles": {
+    "https": {
+      "applicationUrl": "https://localhost:44314;http://localhost:5000"
+    }
+  }
+}`), 0o644); err != nil {
+		t.Fatalf("failed to write sibling launchSettings.json: %v", err)
+	}
+
+	cfg, err := loadResolvedConfig(workingDir, "", map[string]string{})
+	if err != nil {
+		t.Fatalf("loadResolvedConfig failed: %v", err)
+	}
+
+	if cfg.BaseURL != "https://localhost:44314" {
+		t.Fatalf("expected sibling host discovery to pick 44314, got %q", cfg.BaseURL)
+	}
+}
+
+func TestLoadResolvedConfigDoesNotGuessWhenSiblingHostsAreAmbiguous(t *testing.T) {
+	parentDir := t.TempDir()
+	workingDir := filepath.Join(parentDir, "umbraco-cli")
+	if err := os.MkdirAll(workingDir, 0o755); err != nil {
+		t.Fatalf("failed to create working dir: %v", err)
+	}
+
+	writeHost := func(root string, url string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Join(root, "Properties"), 0o755); err != nil {
+			t.Fatalf("failed to create host dir: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(root, "Website.csproj"), []byte(`
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <ItemGroup>
+    <PackageReference Include="Umbraco.Cms.Web.Common" Version="17.0.0" />
+  </ItemGroup>
+</Project>
+`), 0o644); err != nil {
+			t.Fatalf("failed to write host csproj: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(root, "Properties", "launchSettings.json"), []byte(`{
+  "profiles": {
+    "https": {
+      "applicationUrl": "`+url+`"
+    }
+  }
+}`), 0o644); err != nil {
+			t.Fatalf("failed to write launchSettings.json: %v", err)
+		}
+	}
+
+	writeHost(filepath.Join(parentDir, "site-a", "Website"), "https://localhost:44314")
+	writeHost(filepath.Join(parentDir, "site-b", "Website"), "https://localhost:44315")
+
+	cfg, err := loadResolvedConfig(workingDir, "", map[string]string{})
+	if err != nil {
+		t.Fatalf("loadResolvedConfig failed: %v", err)
+	}
+
+	if cfg.BaseURL != defaultBaseURL {
+		t.Fatalf("expected ambiguous sibling hosts to fall back, got %q", cfg.BaseURL)
+	}
+}
+
+func TestLoadResolvedConfigIgnoresNonAuthoritativeURLKeysInAppSettings(t *testing.T) {
+	workingDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workingDir, "appsettings.json"), []byte(`{
+  "ServiceUrl": "https://localhost:44314",
+  "Nested": {
+    "AnotherUrl": "https://localhost:44315"
+  }
+}`), 0o644); err != nil {
+		t.Fatalf("failed to write appsettings.json: %v", err)
+	}
+
+	cfg, err := loadResolvedConfig(workingDir, "", map[string]string{})
+	if err != nil {
+		t.Fatalf("loadResolvedConfig failed: %v", err)
+	}
+
+	if cfg.BaseURL != defaultBaseURL {
+		t.Fatalf("expected non-authoritative URL keys to be ignored, got %q", cfg.BaseURL)
+	}
+}
+
 func TestLoadDotEnvConfigIgnoresNonUmbracoVariables(t *testing.T) {
 	workingDir := t.TempDir()
 	path := filepath.Join(workingDir, ".env")

@@ -261,68 +261,233 @@ func findNearestFileFromCandidates(workingDir string, candidates ...string) (str
 }
 
 func discoverBaseURL(workingDir string) (string, bool, error) {
-	if launchSettingsPath, ok := findNearestFile(workingDir, filepath.Join("Properties", "launchSettings.json")); ok {
-		urls, err := collectJSONConfigURLs(launchSettingsPath)
-		if err != nil {
-			return "", false, err
-		}
-		if chosen, ok := choosePreferredURL(urls); ok {
-			return chosen, true, nil
-		}
+	if chosen, ok, err := discoverBaseURLFromSearchRoots(searchRootsForCurrentTree(workingDir)); err != nil {
+		return "", false, err
+	} else if ok {
+		return chosen, true, nil
 	}
 
-	for _, filename := range []string{"appsettings.Development.json", "appsettings.json"} {
-		if appSettingsPath, ok := findNearestFile(workingDir, filename); ok {
-			urls, err := collectJSONConfigURLs(appSettingsPath)
-			if err != nil {
-				return "", false, err
-			}
-			if chosen, ok := choosePreferredURL(urls); ok {
-				return chosen, true, nil
-			}
-		}
+	if chosen, ok, err := discoverBaseURLFromSearchRoots(searchRootsForSiblingProjects(workingDir)); err != nil {
+		return "", false, err
+	} else if ok {
+		return chosen, true, nil
 	}
 
 	return "", false, nil
 }
 
-func collectJSONConfigURLs(path string) ([]string, error) {
-	payload, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
+func searchRootsForCurrentTree(workingDir string) []string {
+	roots := make([]string, 0)
+	if strings.TrimSpace(workingDir) == "" {
+		return roots
 	}
 
-	var decoded any
-	if err := json.Unmarshal(payload, &decoded); err != nil {
-		return nil, fmt.Errorf("invalid config file %s: %w", path, err)
+	dir := workingDir
+	for {
+		roots = append(roots, dir)
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
 	}
 
-	results := make([]string, 0)
-	collectURLsFromValue(decoded, "", &results)
-	return results, nil
+	return roots
 }
 
-func collectURLsFromValue(value any, keyHint string, results *[]string) {
-	switch typed := value.(type) {
-	case map[string]any:
-		for key, nested := range typed {
-			collectURLsFromValue(nested, key, results)
-		}
-	case []any:
-		for _, nested := range typed {
-			collectURLsFromValue(nested, keyHint, results)
-		}
-	case string:
-		lowerHint := strings.ToLower(strings.TrimSpace(keyHint))
-		if !strings.Contains(lowerHint, "url") {
+func searchRootsForSiblingProjects(workingDir string) []string {
+	if strings.TrimSpace(workingDir) == "" {
+		return nil
+	}
+
+	parent := filepath.Dir(workingDir)
+	if parent == workingDir || strings.TrimSpace(parent) == "" {
+		return nil
+	}
+
+	entries, err := os.ReadDir(parent)
+	if err != nil {
+		return nil
+	}
+
+	currentBase := filepath.Clean(workingDir)
+	roots := make([]string, 0)
+	seen := map[string]struct{}{}
+
+	appendRoot := func(path string) {
+		cleaned := filepath.Clean(path)
+		if cleaned == currentBase {
 			return
 		}
-		for _, candidate := range splitURLCandidates(typed) {
-			if normalized := normalizeBaseURL(candidate); normalized != "" {
-				*results = append(*results, normalized)
+		if !isLikelyUmbracoHostProject(cleaned) {
+			return
+		}
+		if _, exists := seen[cleaned]; exists {
+			return
+		}
+		seen[cleaned] = struct{}{}
+		roots = append(roots, cleaned)
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		siblingRoot := filepath.Join(parent, entry.Name())
+		appendRoot(siblingRoot)
+
+		nestedEntries, err := os.ReadDir(siblingRoot)
+		if err != nil {
+			continue
+		}
+		for _, nested := range nestedEntries {
+			if nested.IsDir() {
+				appendRoot(filepath.Join(siblingRoot, nested.Name()))
 			}
 		}
 	}
+
+	return roots
+}
+
+func isLikelyUmbracoHostProject(root string) bool {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return false
+	}
+
+	hostProjects := 0
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".csproj" {
+			continue
+		}
+
+		payload, err := os.ReadFile(filepath.Join(root, entry.Name()))
+		if err != nil {
+			continue
+		}
+
+		contents := string(payload)
+		if strings.Contains(contents, "Microsoft.NET.Sdk.Web") && strings.Contains(contents, "Umbraco.Cms") {
+			hostProjects++
+		}
+	}
+
+	return hostProjects == 1
+}
+
+func discoverBaseURLFromSearchRoots(roots []string) (string, bool, error) {
+	urls := make([]string, 0)
+
+	for _, root := range roots {
+		rootURLs, err := collectBaseURLsFromRoot(root)
+		if err != nil {
+			return "", false, err
+		}
+		urls = append(urls, rootURLs...)
+	}
+
+	if chosen, ok := choosePreferredURL(urls); ok {
+		return chosen, true, nil
+	}
+
+	return "", false, nil
+}
+
+func collectBaseURLsFromRoot(root string) ([]string, error) {
+	if strings.TrimSpace(root) == "" {
+		return nil, nil
+	}
+
+	urls := make([]string, 0)
+	for _, candidate := range []string{
+		filepath.Join(root, "Properties", "launchSettings.json"),
+		filepath.Join(root, "appsettings.Development.json"),
+		filepath.Join(root, "appsettings.json"),
+	} {
+		collected, ok, err := collectJSONConfigURLs(candidate)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			urls = append(urls, collected...)
+		}
+	}
+
+	return urls, nil
+}
+
+func collectJSONConfigURLs(path string) ([]string, bool, error) {
+	payload, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+
+	switch filepath.Base(path) {
+	case "launchSettings.json":
+		urls, err := collectLaunchSettingsURLs(payload)
+		if err != nil {
+			return nil, false, fmt.Errorf("invalid config file %s: %w", path, err)
+		}
+		return urls, true, nil
+	case "appsettings.Development.json", "appsettings.json":
+		urls, err := collectAppSettingsURLs(payload)
+		if err != nil {
+			return nil, false, fmt.Errorf("invalid config file %s: %w", path, err)
+		}
+		return urls, true, nil
+	default:
+		return nil, true, nil
+	}
+}
+
+func collectLaunchSettingsURLs(payload []byte) ([]string, error) {
+	var decoded struct {
+		Profiles map[string]struct {
+			ApplicationURL string `json:"applicationUrl"`
+		} `json:"profiles"`
+	}
+	if err := json.Unmarshal(payload, &decoded); err != nil {
+		return nil, err
+	}
+
+	results := make([]string, 0)
+	for _, profile := range decoded.Profiles {
+		for _, candidate := range splitURLCandidates(profile.ApplicationURL) {
+			if normalized := normalizeBaseURL(candidate); normalized != "" {
+				results = append(results, normalized)
+			}
+		}
+	}
+	return results, nil
+}
+
+func collectAppSettingsURLs(payload []byte) ([]string, error) {
+	var decoded struct {
+		Kestrel struct {
+			Endpoints map[string]struct {
+				URL string `json:"Url"`
+			} `json:"Endpoints"`
+		} `json:"Kestrel"`
+	}
+	if err := json.Unmarshal(payload, &decoded); err != nil {
+		return nil, err
+	}
+
+	results := make([]string, 0)
+	for _, endpoint := range decoded.Kestrel.Endpoints {
+		for _, candidate := range splitURLCandidates(endpoint.URL) {
+			if normalized := normalizeBaseURL(candidate); normalized != "" {
+				results = append(results, normalized)
+			}
+		}
+	}
+	return results, nil
 }
 
 func splitURLCandidates(raw string) []string {
