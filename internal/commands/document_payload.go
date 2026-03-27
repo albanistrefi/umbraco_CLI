@@ -2,6 +2,7 @@ package commands
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"reflect"
@@ -34,6 +35,42 @@ func fetchDocumentObject(ctx context.Context, client *api.Client, id string) (ma
 	}
 
 	return decodeResult[map[string]any](result)
+}
+
+func documentPropertyPatch(alias string, rawValue string, rawValueJSON string) (map[string]any, error) {
+	if err := requireValue("--property", alias); err != nil {
+		return nil, err
+	}
+	if err := validate.String(alias); err != nil {
+		return nil, err
+	}
+
+	hasValue := strings.TrimSpace(rawValue) != ""
+	hasValueJSON := strings.TrimSpace(rawValueJSON) != ""
+	if hasValue == hasValueJSON {
+		return nil, fmt.Errorf("property updates require exactly one of --value or --value-json")
+	}
+
+	var value any
+	if hasValueJSON {
+		if err := json.Unmarshal([]byte(rawValueJSON), &value); err != nil {
+			return nil, fmt.Errorf("invalid --value-json JSON: %w", err)
+		}
+	} else {
+		if err := validate.String(rawValue); err != nil {
+			return nil, err
+		}
+		value = rawValue
+	}
+
+	return map[string]any{
+		"values": []any{
+			map[string]any{
+				"alias": alias,
+				"value": value,
+			},
+		},
+	}, nil
 }
 
 func loadDocumentIDs(ids []string, idFile string) ([]string, error) {

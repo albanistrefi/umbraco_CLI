@@ -187,6 +187,105 @@ func TestDocumentUpdateMergeJSONFetchesAndMergesCurrentDocument(t *testing.T) {
 	}
 }
 
+func TestDocumentUpdatePropertyTargetsPropertiesEndpoint(t *testing.T) {
+	var observedPath string
+	var observedPutBody map[string]any
+
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/document/doc-1/properties":
+			observedPath = req.URL.Path
+			if err := json.NewDecoder(req.Body).Decode(&observedPutBody); err != nil {
+				t.Fatalf("failed to decode properties payload: %v", err)
+			}
+			return endpointJSONResponse(http.StatusOK, `{"ok":true}`), nil
+		default:
+			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	output, err := execute(
+		buildRootWithCollections(t, deps),
+		"document", "update", "doc-1",
+		"--property", "skills",
+		"--value", "C#;Go",
+	)
+	if err != nil {
+		t.Fatalf("document property update failed: %v", err)
+	}
+
+	if observedPath != "/umbraco/management/api/v1/document/doc-1/properties" {
+		t.Fatalf("unexpected properties update path: %q", observedPath)
+	}
+
+	values, ok := observedPutBody["values"].([]any)
+	if !ok || len(values) != 1 {
+		t.Fatalf("unexpected properties payload: %+v", observedPutBody)
+	}
+	valueEntry, _ := values[0].(map[string]any)
+	if valueEntry["alias"] != "skills" || valueEntry["value"] != "C#;Go" {
+		t.Fatalf("unexpected property value entry: %+v", valueEntry)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("failed to decode property update output: %v", err)
+	}
+	if payload["ok"] != true {
+		t.Fatalf("unexpected property update result: %+v", payload)
+	}
+}
+
+func TestDocumentUpdateSaveAndPublishDryRunReturnsBothSteps(t *testing.T) {
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		return endpointJSONResponse(http.StatusNotFound, `null`), nil
+	})
+
+	output, err := execute(
+		buildRootWithCollections(t, deps),
+		"document", "update", "doc-1",
+		"--property", "skills",
+		"--value", "C#;Go",
+		"--save-and-publish",
+		"--culture", "en-US",
+		"--dry-run",
+	)
+	if err != nil {
+		t.Fatalf("document save-and-publish dry-run failed: %v", err)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("failed to decode save-and-publish output: %v", err)
+	}
+	if payload["saveAndPublish"] != true {
+		t.Fatalf("expected saveAndPublish marker, got %+v", payload)
+	}
+
+	updated, ok := payload["updated"].(map[string]any)
+	if !ok {
+		t.Fatalf("missing updated dry-run payload: %+v", payload)
+	}
+	published, ok := payload["published"].(map[string]any)
+	if !ok {
+		t.Fatalf("missing published dry-run payload: %+v", payload)
+	}
+
+	if updated["path"] != "/umbraco/management/api/v1/document/doc-1/properties" {
+		t.Fatalf("unexpected update dry-run path: %+v", updated)
+	}
+	if published["path"] != "/umbraco/management/api/v1/document/doc-1/publish" {
+		t.Fatalf("unexpected publish dry-run path: %+v", published)
+	}
+	body, _ := published["body"].(map[string]any)
+	cultures, _ := body["cultures"].([]any)
+	if len(cultures) != 1 || cultures[0] != "en-US" {
+		t.Fatalf("expected publish culture in dry-run body, got %+v", body)
+	}
+}
+
 func TestDocumentBulkUpdateDryRunUsesExplicitIDsAndSkipsNoOps(t *testing.T) {
 	var putRequests int
 

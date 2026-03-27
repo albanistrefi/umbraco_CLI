@@ -229,6 +229,11 @@ func documentCreate(deps Dependencies) *cobra.Command {
 func documentUpdate(deps Dependencies) *cobra.Command {
 	var jsonPayload string
 	var mergeJSON string
+	var property string
+	var value string
+	var valueJSON string
+	var saveAndPublish bool
+	var culture string
 	var dryRun bool
 	cmd := &cobra.Command{
 		Use:   "update <id>",
@@ -237,13 +242,31 @@ func documentUpdate(deps Dependencies) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			hasJSON := strings.TrimSpace(jsonPayload) != ""
 			hasMergeJSON := strings.TrimSpace(mergeJSON) != ""
-			if hasJSON == hasMergeJSON {
-				return fmt.Errorf("document update requires exactly one of --json or --merge-json")
+			hasProperty := strings.TrimSpace(property) != ""
+			modeCount := 0
+			if hasJSON {
+				modeCount++
+			}
+			if hasMergeJSON {
+				modeCount++
+			}
+			if hasProperty {
+				modeCount++
+			}
+			if modeCount != 1 {
+				return fmt.Errorf("document update requires exactly one of --json, --merge-json, or --property")
 			}
 
 			var body map[string]any
 			var err error
-			if hasMergeJSON {
+			path := fmt.Sprintf("/document/%s", args[0])
+			if hasProperty {
+				body, err = documentPropertyPatch(property, value, valueJSON)
+				if err != nil {
+					return err
+				}
+				path = fmt.Sprintf("/document/%s/properties", args[0])
+			} else if hasMergeJSON {
 				patch, err := parsePayload(mergeJSON)
 				if err != nil {
 					return err
@@ -261,15 +284,38 @@ func documentUpdate(deps Dependencies) *cobra.Command {
 				}
 			}
 
-			result, err := deps.Client.Put(context.Background(), fmt.Sprintf("/document/%s", args[0]), body, api.RequestOptions{DryRun: dryRun})
+			result, err := deps.Client.Put(context.Background(), path, body, api.RequestOptions{DryRun: dryRun})
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, deps, result)
+
+			if !saveAndPublish {
+				return printResult(cmd, deps, result)
+			}
+
+			publishBody := map[string]any{}
+			if strings.TrimSpace(culture) != "" {
+				publishBody["cultures"] = []any{culture}
+			}
+			publishResult, err := deps.Client.Post(context.Background(), fmt.Sprintf("/document/%s/publish", args[0]), publishBody, api.RequestOptions{DryRun: dryRun})
+			if err != nil {
+				return err
+			}
+
+			return printResult(cmd, deps, map[string]any{
+				"saveAndPublish": true,
+				"updated":        result,
+				"published":      publishResult,
+			})
 		},
 	}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Update payload as JSON")
 	cmd.Flags().StringVar(&mergeJSON, "merge-json", "", "Partial JSON payload merged into the current document before update")
+	cmd.Flags().StringVar(&property, "property", "", "Update a single property alias without constructing the full payload")
+	cmd.Flags().StringVar(&value, "value", "", "String value used with --property")
+	cmd.Flags().StringVar(&valueJSON, "value-json", "", "JSON value used with --property")
+	cmd.Flags().BoolVar(&saveAndPublish, "save-and-publish", false, "Publish the document after a successful update")
+	cmd.Flags().StringVar(&culture, "culture", "", "Culture shortcut for --save-and-publish")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
 	return cmd
 }

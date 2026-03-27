@@ -157,6 +157,8 @@ Safe write pattern (always dry-run first):
 ```bash
 go run ./cmd/umbraco document publish <id> --json '{"cultures":["en-US"]}' --dry-run --output json
 go run ./cmd/umbraco document update <id> --merge-json '{"values":[{"alias":"title","value":"New title"}]}' --dry-run --output json
+go run ./cmd/umbraco document update <id> --property skills --value 'C#;Go' --dry-run --output json
+go run ./cmd/umbraco document update <id> --property skills --value 'C#;Go' --save-and-publish --culture en-US --dry-run --output json
 go run ./cmd/umbraco document bulk-update --id <id> --id <id> --merge-json '{"values":[{"alias":"title","value":"New title"}]}' --dry-run --output json
 # then run without --dry-run
 ```
