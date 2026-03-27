@@ -188,19 +188,31 @@ func TestDocumentUpdateMergeJSONFetchesAndMergesCurrentDocument(t *testing.T) {
 }
 
 func TestDocumentUpdatePropertyTargetsPropertiesEndpoint(t *testing.T) {
-	var observedPath string
+	var observedGetCount int
+	var observedPutPath string
 	var observedPutBody map[string]any
 
 	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
 			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
-		case "/umbraco/management/api/v1/document/doc-1/properties":
-			observedPath = req.URL.Path
-			if err := json.NewDecoder(req.Body).Decode(&observedPutBody); err != nil {
-				t.Fatalf("failed to decode properties payload: %v", err)
+		case "/umbraco/management/api/v1/document/doc-1":
+			if req.Method == http.MethodGet {
+				observedGetCount++
+				return endpointJSONResponse(http.StatusOK, `{
+  "id":"doc-1",
+  "name":"Partner A",
+  "values":[{"alias":"title","value":"Old title"}]
+}`), nil
 			}
-			return endpointJSONResponse(http.StatusOK, `{"ok":true}`), nil
+			if req.Method == http.MethodPut {
+				observedPutPath = req.URL.Path
+				if err := json.NewDecoder(req.Body).Decode(&observedPutBody); err != nil {
+					t.Fatalf("failed to decode merged document payload: %v", err)
+				}
+				return endpointJSONResponse(http.StatusOK, `{"ok":true}`), nil
+			}
+			return endpointJSONResponse(http.StatusMethodNotAllowed, `null`), nil
 		default:
 			return endpointJSONResponse(http.StatusNotFound, `null`), nil
 		}
@@ -216,17 +228,26 @@ func TestDocumentUpdatePropertyTargetsPropertiesEndpoint(t *testing.T) {
 		t.Fatalf("document property update failed: %v", err)
 	}
 
-	if observedPath != "/umbraco/management/api/v1/document/doc-1/properties" {
-		t.Fatalf("unexpected properties update path: %q", observedPath)
+	if observedGetCount != 1 {
+		t.Fatalf("expected one GET before property merge update, got %d", observedGetCount)
+	}
+	if observedPutPath != "/umbraco/management/api/v1/document/doc-1" {
+		t.Fatalf("unexpected merged document update path: %q", observedPutPath)
 	}
 
 	values, ok := observedPutBody["values"].([]any)
-	if !ok || len(values) != 1 {
+	if !ok || len(values) != 2 {
 		t.Fatalf("unexpected properties payload: %+v", observedPutBody)
 	}
-	valueEntry, _ := values[0].(map[string]any)
-	if valueEntry["alias"] != "skills" || valueEntry["value"] != "C#;Go" {
-		t.Fatalf("unexpected property value entry: %+v", valueEntry)
+	var foundSkills bool
+	for _, item := range values {
+		valueEntry, _ := item.(map[string]any)
+		if valueEntry["alias"] == "skills" && valueEntry["value"] == "C#;Go" {
+			foundSkills = true
+		}
+	}
+	if !foundSkills {
+		t.Fatalf("expected merged property value entry, got %+v", observedPutBody)
 	}
 
 	var payload map[string]any
@@ -240,7 +261,21 @@ func TestDocumentUpdatePropertyTargetsPropertiesEndpoint(t *testing.T) {
 
 func TestDocumentUpdateSaveAndPublishDryRunReturnsBothSteps(t *testing.T) {
 	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
-		return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/document/doc-1":
+			if req.Method == http.MethodGet {
+				return endpointJSONResponse(http.StatusOK, `{
+  "id":"doc-1",
+  "name":"Partner A",
+  "values":[{"alias":"title","value":"Old title"}]
+}`), nil
+			}
+			return endpointJSONResponse(http.StatusMethodNotAllowed, `null`), nil
+		default:
+			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		}
 	})
 
 	output, err := execute(
@@ -273,7 +308,7 @@ func TestDocumentUpdateSaveAndPublishDryRunReturnsBothSteps(t *testing.T) {
 		t.Fatalf("missing published dry-run payload: %+v", payload)
 	}
 
-	if updated["path"] != "/umbraco/management/api/v1/document/doc-1/properties" {
+	if updated["path"] != "/umbraco/management/api/v1/document/doc-1" {
 		t.Fatalf("unexpected update dry-run path: %+v", updated)
 	}
 	if published["path"] != "/umbraco/management/api/v1/document/doc-1/publish" {

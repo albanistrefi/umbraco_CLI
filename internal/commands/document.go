@@ -259,13 +259,17 @@ func documentUpdate(deps Dependencies) *cobra.Command {
 
 			var body map[string]any
 			var err error
-			path := fmt.Sprintf("/document/%s", args[0])
 			if hasProperty {
-				body, err = documentPropertyPatch(property, value, valueJSON)
+				patch, err := documentPropertyPatch(property, value, valueJSON)
 				if err != nil {
 					return err
 				}
-				path = fmt.Sprintf("/document/%s/properties", args[0])
+
+				current, err := fetchDocumentObject(context.Background(), deps.Client, args[0])
+				if err != nil {
+					return err
+				}
+				body = mergeDatatypePayload(current, patch)
 			} else if hasMergeJSON {
 				patch, err := parsePayload(mergeJSON)
 				if err != nil {
@@ -284,7 +288,7 @@ func documentUpdate(deps Dependencies) *cobra.Command {
 				}
 			}
 
-			result, err := deps.Client.Put(context.Background(), path, body, api.RequestOptions{DryRun: dryRun})
+			result, err := deps.Client.Put(context.Background(), fmt.Sprintf("/document/%s", args[0]), body, api.RequestOptions{DryRun: dryRun})
 			if err != nil {
 				return err
 			}
@@ -297,7 +301,7 @@ func documentUpdate(deps Dependencies) *cobra.Command {
 			if strings.TrimSpace(culture) != "" {
 				publishBody["cultures"] = []any{culture}
 			}
-			publishResult, err := deps.Client.Post(context.Background(), fmt.Sprintf("/document/%s/publish", args[0]), publishBody, api.RequestOptions{DryRun: dryRun})
+			publishResult, err := deps.Client.Put(context.Background(), fmt.Sprintf("/document/%s/publish", args[0]), publishBody, api.RequestOptions{DryRun: dryRun})
 			if err != nil {
 				return err
 			}
@@ -393,7 +397,12 @@ func documentUpdateProperties(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			result, err := deps.Client.Put(context.Background(), fmt.Sprintf("/document/%s/properties", args[0]), body, api.RequestOptions{DryRun: dryRun})
+			current, err := fetchDocumentObject(context.Background(), deps.Client, args[0])
+			if err != nil {
+				return err
+			}
+			merged := mergeDatatypePayload(current, body)
+			result, err := deps.Client.Put(context.Background(), fmt.Sprintf("/document/%s", args[0]), merged, api.RequestOptions{DryRun: dryRun})
 			if err != nil {
 				return err
 			}
@@ -426,7 +435,7 @@ func documentPublish(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			result, err := deps.Client.Post(context.Background(), fmt.Sprintf("/document/%s/publish", args[0]), body, api.RequestOptions{DryRun: dryRun})
+			result, err := deps.Client.Put(context.Background(), fmt.Sprintf("/document/%s/publish", args[0]), body, api.RequestOptions{DryRun: dryRun})
 			if err != nil {
 				return err
 			}
@@ -460,7 +469,7 @@ func documentUnpublish(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			result, err := deps.Client.Post(context.Background(), fmt.Sprintf("/document/%s/unpublish", args[0]), body, api.RequestOptions{DryRun: dryRun})
+			result, err := deps.Client.Put(context.Background(), fmt.Sprintf("/document/%s/unpublish", args[0]), body, api.RequestOptions{DryRun: dryRun})
 			if err != nil {
 				return err
 			}
