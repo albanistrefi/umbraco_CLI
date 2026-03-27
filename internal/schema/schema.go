@@ -43,9 +43,9 @@ var (
 var rawSchemas = map[string]rawSchema{
 	// document (15)
 	"document.get":               {Method: "GET", Path: "/document/{id}", PathParams: map[string]ParamSchema{"id": idParam}, QueryParams: map[string]ParamSchema{"fields": fieldsQuery}},
-	"document.root":              {Method: "GET", Path: "/document/root", QueryParams: map[string]ParamSchema{"fields": fieldsQuery}},
-	"document.children":          {Method: "GET", Path: "/document/{id}/children", PathParams: map[string]ParamSchema{"id": idParam}, QueryParams: map[string]ParamSchema{"fields": fieldsQuery}},
-	"document.ancestors":         {Method: "GET", Path: "/document/{id}/ancestors", PathParams: map[string]ParamSchema{"id": idParam}},
+	"document.root":              {Method: "GET", Path: "/tree/document/root", QueryParams: map[string]ParamSchema{"fields": fieldsQuery}},
+	"document.children":          {Method: "GET", Path: "/tree/document/children", QueryParams: map[string]ParamSchema{"parentId": {Type: "string", Format: "uuid", Required: true}, "fields": fieldsQuery}},
+	"document.ancestors":         {Method: "GET", Path: "/tree/document/ancestors", QueryParams: map[string]ParamSchema{"descendantId": {Type: "string", Format: "uuid", Required: true}}},
 	"document.search":            {Method: "GET", Path: "/item/document/search", QueryParams: map[string]ParamSchema{"query": {Type: "string"}, "skip": {Type: "number"}, "take": {Type: "number"}, "parentId": {Type: "string", Format: "uuid"}, "culture": {Type: "string"}, "dataTypeId": {Type: "string", Format: "uuid"}, "trashed": {Type: "boolean"}, "allowedDocumentTypes": {Type: "array", Format: "uuid"}}},
 	"document.create":            {Method: "POST", Path: "/document", RequestBody: genericRequestBody},
 	"document.update":            {Method: "PUT", Path: "/document/{id}", PathParams: map[string]ParamSchema{"id": idParam}, RequestBody: genericRequestBody},

@@ -83,6 +83,50 @@ func TestDocumentSearchSupportsUnderShortcut(t *testing.T) {
 	}
 }
 
+func TestDocumentTreeCommandsPreferTreeEndpoints(t *testing.T) {
+	var rootPath string
+	var childrenPath string
+	var ancestorsPath string
+
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/tree/document/root":
+			rootPath = req.URL.String()
+			return endpointJSONResponse(http.StatusOK, `{"items":[{"id":"root-1"}]}`), nil
+		case "/umbraco/management/api/v1/tree/document/children":
+			childrenPath = req.URL.String()
+			return endpointJSONResponse(http.StatusOK, `{"items":[{"id":"child-1"}]}`), nil
+		case "/umbraco/management/api/v1/tree/document/ancestors":
+			ancestorsPath = req.URL.String()
+			return endpointJSONResponse(http.StatusOK, `{"items":[{"id":"ancestor-1"}]}`), nil
+		default:
+			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	if _, err := execute(buildRootWithCollections(t, deps), "document", "root", "--fields", "id,name"); err != nil {
+		t.Fatalf("document root failed: %v", err)
+	}
+	if _, err := execute(buildRootWithCollections(t, deps), "document", "children", "parent-1", "--fields", "id,name"); err != nil {
+		t.Fatalf("document children failed: %v", err)
+	}
+	if _, err := execute(buildRootWithCollections(t, deps), "document", "ancestors", "doc-1"); err != nil {
+		t.Fatalf("document ancestors failed: %v", err)
+	}
+
+	if !strings.Contains(rootPath, "/tree/document/root") || !strings.Contains(rootPath, "fields=id%2Cname") {
+		t.Fatalf("unexpected document root path: %q", rootPath)
+	}
+	if !strings.Contains(childrenPath, "/tree/document/children") || !strings.Contains(childrenPath, "parentId=parent-1") {
+		t.Fatalf("unexpected document children path: %q", childrenPath)
+	}
+	if !strings.Contains(ancestorsPath, "/tree/document/ancestors") || !strings.Contains(ancestorsPath, "descendantId=doc-1") {
+		t.Fatalf("unexpected document ancestors path: %q", ancestorsPath)
+	}
+}
+
 func TestDocumentUpdateMergeJSONFetchesAndMergesCurrentDocument(t *testing.T) {
 	var observedPutBody map[string]any
 

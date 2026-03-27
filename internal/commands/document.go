@@ -66,7 +66,12 @@ func documentRoot(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			result, err := deps.Client.Get(context.Background(), "/document/root", api.RequestOptions{Fields: fields, Params: params})
+			result, err := getWithFallback(
+				context.Background(),
+				deps.Client,
+				getRequestCandidate{path: "/tree/document/root", opts: api.RequestOptions{Fields: fields, Params: params}},
+				getRequestCandidate{path: "/document/root", opts: api.RequestOptions{Fields: fields, Params: params}},
+			)
 			if err != nil {
 				return err
 			}
@@ -85,7 +90,18 @@ func documentChildren(deps Dependencies) *cobra.Command {
 		Short: "Get child documents",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			result, err := deps.Client.Get(context.Background(), fmt.Sprintf("/document/%s/children", args[0]), api.RequestOptions{Fields: fields})
+			result, err := getWithFallback(
+				context.Background(),
+				deps.Client,
+				getRequestCandidate{
+					path: "/tree/document/children",
+					opts: api.RequestOptions{Fields: fields, Params: map[string]any{"parentId": args[0]}},
+				},
+				getRequestCandidate{
+					path: fmt.Sprintf("/document/%s/children", args[0]),
+					opts: api.RequestOptions{Fields: fields},
+				},
+			)
 			if err != nil {
 				return err
 			}
@@ -102,7 +118,18 @@ func documentAncestors(deps Dependencies) *cobra.Command {
 		Short: "Get ancestor documents",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			result, err := deps.Client.Get(context.Background(), fmt.Sprintf("/document/%s/ancestors", args[0]), api.RequestOptions{})
+			result, err := getWithFallback(
+				context.Background(),
+				deps.Client,
+				getRequestCandidate{
+					path: "/tree/document/ancestors",
+					opts: api.RequestOptions{Params: map[string]any{"descendantId": args[0]}},
+				},
+				getRequestCandidate{
+					path: fmt.Sprintf("/document/%s/ancestors", args[0]),
+					opts: api.RequestOptions{},
+				},
+			)
 			if err != nil {
 				return err
 			}

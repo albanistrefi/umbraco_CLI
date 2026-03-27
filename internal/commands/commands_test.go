@@ -175,6 +175,9 @@ func TestSchemaMatchesTemplateDoctypeAndServerPrimaryEndpoints(t *testing.T) {
 	root := buildRootWithCollections(t, deps)
 
 	cases := map[string]string{
+		"document.root":       "/tree/document/root",
+		"document.children":   "/tree/document/children",
+		"document.ancestors":  "/tree/document/ancestors",
 		"document.search":     "/item/document/search",
 		"template.root":       "/tree/template/root",
 		"template.search":     "/item/template/search",
