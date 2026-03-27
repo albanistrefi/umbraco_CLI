@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.2.3 - 2026-03-27
+
+- fixed the document tree commands to prefer the Umbraco v17 tree endpoints for `root`, `children`, and `ancestors`
+- added property-level document updates and a `--save-and-publish` workflow
+- added `media search` with compatibility-aware routing
+- added `tree walk` to resolve content paths like `Home/Partners/Partner List` to node IDs
+- added `document csv-update` for row-driven batch content updates from CSV files
+- added persistent `auth login`, `auth status`, and `auth logout` commands backed by `~/.umbraco/config.json`
+
 ## v0.2.2 - 2026-03-26
 
 - fixed `template`, `doctype`, and `server` route mappings to prefer the Management API routes used by current Umbraco versions while keeping compatibility fallbacks
