@@ -302,9 +302,9 @@ func documentUpdate(deps Dependencies) *cobra.Command {
 				return printResult(cmd, deps, result)
 			}
 
-			publishBody := map[string]any{}
-			if strings.TrimSpace(culture) != "" {
-				publishBody["cultures"] = []any{culture}
+			publishBody, err := documentPublishBody("", culture)
+			if err != nil {
+				return err
 			}
 			publishResult, err := deps.Client.Put(context.Background(), fmt.Sprintf("/document/%s/publish", args[0]), publishBody, api.RequestOptions{DryRun: dryRun})
 			if err != nil {
@@ -477,15 +477,7 @@ func documentPublish(deps Dependencies) *cobra.Command {
 		Short: "Publish a document",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			var body map[string]any
-			var err error
-			if jsonPayload != "" {
-				body, err = parsePayload(jsonPayload)
-			} else if culture != "" {
-				body = map[string]any{"cultures": []any{culture}}
-			} else {
-				body = map[string]any{}
-			}
+			body, err := documentPublishBody(jsonPayload, culture)
 			if err != nil {
 				return err
 			}
@@ -500,6 +492,20 @@ func documentPublish(deps Dependencies) *cobra.Command {
 	cmd.Flags().StringVar(&culture, "culture", "", "Culture shortcut")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
 	return cmd
+}
+
+func documentPublishBody(jsonPayload string, culture string) (map[string]any, error) {
+	if strings.TrimSpace(jsonPayload) != "" {
+		return parsePayload(jsonPayload)
+	}
+	if strings.TrimSpace(culture) != "" {
+		return map[string]any{"cultures": []any{culture}}, nil
+	}
+	return map[string]any{
+		"publishSchedules": []any{
+			map[string]any{"culture": nil},
+		},
+	}, nil
 }
 
 func documentUnpublish(deps Dependencies) *cobra.Command {

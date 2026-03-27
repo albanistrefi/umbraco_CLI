@@ -364,6 +364,91 @@ func TestDocumentUpdateSaveAndPublishDryRunReturnsBothSteps(t *testing.T) {
 	}
 }
 
+func TestDocumentPublishDryRunDefaultsToInvariantPublishSchedule(t *testing.T) {
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		return endpointJSONResponse(http.StatusNotFound, `null`), nil
+	})
+
+	output, err := execute(
+		buildRootWithCollections(t, deps),
+		"document", "publish", "doc-1",
+		"--dry-run",
+	)
+	if err != nil {
+		t.Fatalf("document publish dry-run failed: %v", err)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("failed to decode publish dry-run payload: %v", err)
+	}
+	body, ok := payload["body"].(map[string]any)
+	if !ok {
+		t.Fatalf("missing publish body in dry-run payload: %+v", payload)
+	}
+	publishSchedules, ok := body["publishSchedules"].([]any)
+	if !ok || len(publishSchedules) != 1 {
+		t.Fatalf("expected invariant publishSchedules payload, got %+v", body)
+	}
+	entry, ok := publishSchedules[0].(map[string]any)
+	if !ok || entry["culture"] != nil {
+		t.Fatalf("expected publishSchedules culture=null, got %+v", publishSchedules[0])
+	}
+}
+
+func TestDocumentUpdateSaveAndPublishDryRunDefaultsToInvariantPublishSchedule(t *testing.T) {
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/document/doc-1":
+			if req.Method == http.MethodGet {
+				return endpointJSONResponse(http.StatusOK, `{
+  "id":"doc-1",
+  "name":"Partner A",
+  "values":[{"alias":"title","value":"Old title"}]
+}`), nil
+			}
+			return endpointJSONResponse(http.StatusMethodNotAllowed, `null`), nil
+		default:
+			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	output, err := execute(
+		buildRootWithCollections(t, deps),
+		"document", "update", "doc-1",
+		"--property", "skills",
+		"--value", "C#;Go",
+		"--save-and-publish",
+		"--dry-run",
+	)
+	if err != nil {
+		t.Fatalf("document save-and-publish invariant dry-run failed: %v", err)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("failed to decode invariant save-and-publish output: %v", err)
+	}
+	published, ok := payload["published"].(map[string]any)
+	if !ok {
+		t.Fatalf("missing published dry-run payload: %+v", payload)
+	}
+	body, ok := published["body"].(map[string]any)
+	if !ok {
+		t.Fatalf("missing publish body: %+v", published)
+	}
+	publishSchedules, ok := body["publishSchedules"].([]any)
+	if !ok || len(publishSchedules) != 1 {
+		t.Fatalf("expected invariant publishSchedules payload, got %+v", body)
+	}
+	entry, ok := publishSchedules[0].(map[string]any)
+	if !ok || entry["culture"] != nil {
+		t.Fatalf("expected publishSchedules culture=null, got %+v", publishSchedules[0])
+	}
+}
+
 func TestDocumentBulkUpdateDryRunUsesExplicitIDsAndSkipsNoOps(t *testing.T) {
 	var putRequests int
 
