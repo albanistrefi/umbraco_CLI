@@ -40,6 +40,7 @@ func NewRootCommand() *cobra.Command {
 	commands.RegisterLogs(root, deps)
 	commands.RegisterServer(root, deps)
 	commands.RegisterHealth(root, deps)
+	commands.RegisterTree(root, deps)
 	commands.RegisterSchema(root, deps)
 
 	return root

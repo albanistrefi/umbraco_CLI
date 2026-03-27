@@ -34,6 +34,9 @@ Implementation runtime is Go (`cmd/umbraco`).
 - `umbraco media children <id>`
 - `umbraco media search --query "hero"`
 
+### Tree
+- `umbraco tree walk "Home/Partners/Partner List"`
+
 ### Schema
 - `umbraco doctype get <id>`
 - `umbraco datatype list --skip 0 --take 50`

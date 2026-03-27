@@ -151,6 +151,7 @@ go run ./cmd/umbraco document get <id> --fields "id,name,updateDate"
 go run ./cmd/umbraco document search --query "Toxic" --skip 0 --take 25 --output json
 go run ./cmd/umbraco document search --query "Toxic" --under <parent-id> --skip 0 --take 25 --output json
 go run ./cmd/umbraco media search --query "Hero" --skip 0 --take 25 --output json
+go run ./cmd/umbraco tree walk "Home/Partners/Partner List" --output json
 ```
 
 Safe write pattern (always dry-run first):
@@ -197,15 +198,16 @@ npm run verify:skills
 
 - `document` (16)
 - `dictionary` (6)
-- `media` (10)
+- `media` (11)
 - `doctype` (10)
 - `datatype` (13)
 - `template` (6)
 - `logs` (5)
 - `server` (5)
 - `health` (4)
+- `tree` (1)
 
-Total: **75 commands**
+Total: **77 commands**
 
 ## Agent Safety Rules
 

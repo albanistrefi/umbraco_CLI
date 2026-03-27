@@ -33,6 +33,7 @@ func buildRootWithCollections(t *testing.T, deps Dependencies) *cobra.Command {
 	RegisterLogs(root, deps)
 	RegisterServer(root, deps)
 	RegisterHealth(root, deps)
+	RegisterTree(root, deps)
 	RegisterSchema(root, deps)
 	return root
 }
@@ -68,8 +69,8 @@ func TestCommandCountsMatchMVP(t *testing.T) {
 		total += len(found.Commands())
 	}
 
-	if total != 76 {
-		t.Fatalf("expected 76 collection commands, got %d", total)
+	if total != 77 {
+		t.Fatalf("expected 77 collection commands, got %d", total)
 	}
 }
 
