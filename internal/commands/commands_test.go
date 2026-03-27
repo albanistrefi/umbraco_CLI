@@ -17,7 +17,7 @@ func makeDeps() Dependencies {
 	cfg := config.Config{BaseURL: "https://example.test"}
 	client := api.NewClient(cfg, http.DefaultClient, nil)
 	output := "json"
-	return Dependencies{Client: client, EnvOutput: config.OutputJSON, OutputFlag: &output}
+	return Dependencies{Client: client, Config: cfg, HTTPClient: http.DefaultClient, EnvOutput: config.OutputJSON, OutputFlag: &output}
 }
 
 func buildRootWithCollections(t *testing.T, deps Dependencies) *cobra.Command {
@@ -34,6 +34,7 @@ func buildRootWithCollections(t *testing.T, deps Dependencies) *cobra.Command {
 	RegisterServer(root, deps)
 	RegisterHealth(root, deps)
 	RegisterTree(root, deps)
+	RegisterAuth(root, deps)
 	RegisterSchema(root, deps)
 	return root
 }
@@ -69,8 +70,8 @@ func TestCommandCountsMatchMVP(t *testing.T) {
 		total += len(found.Commands())
 	}
 
-	if total != 78 {
-		t.Fatalf("expected 78 collection commands, got %d", total)
+	if total != 81 {
+		t.Fatalf("expected 81 collection commands, got %d", total)
 	}
 }
 

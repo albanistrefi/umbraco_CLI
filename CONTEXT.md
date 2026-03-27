@@ -17,6 +17,11 @@ Implementation runtime is Go (`cmd/umbraco`).
 
 ## Quick Command Reference
 
+### Auth
+- `umbraco auth login --base-url "https://localhost:44314" --client-id "..." --client-secret "..."`
+- `umbraco auth status`
+- `umbraco auth logout --dry-run`
+
 ### Content
 - `umbraco document get <id>`
 - `umbraco document root`

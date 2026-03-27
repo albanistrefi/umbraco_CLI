@@ -27,6 +27,8 @@ func NewRootCommand() *cobra.Command {
 
 	deps := commands.Dependencies{
 		Client:     runtime.Client,
+		Config:     runtime.Config,
+		HTTPClient: runtime.HTTPClient,
 		EnvOutput:  runtime.Config.OutputFormat,
 		OutputFlag: &outputFormat,
 	}
@@ -41,6 +43,7 @@ func NewRootCommand() *cobra.Command {
 	commands.RegisterServer(root, deps)
 	commands.RegisterHealth(root, deps)
 	commands.RegisterTree(root, deps)
+	commands.RegisterAuth(root, deps)
 	commands.RegisterSchema(root, deps)
 
 	return root

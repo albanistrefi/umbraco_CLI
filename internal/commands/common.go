@@ -3,6 +3,7 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 
@@ -15,6 +16,8 @@ import (
 
 type Dependencies struct {
 	Client     *api.Client
+	Config     config.Config
+	HTTPClient *http.Client
 	EnvOutput  config.OutputFormat
 	OutputFlag *string
 }

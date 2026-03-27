@@ -11,4 +11,5 @@ var ExpectedCollectionCommandCounts = map[string]int{
 	"server":     5,
 	"health":     4,
 	"tree":       1,
+	"auth":       3,
 }

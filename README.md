@@ -47,6 +47,13 @@ export UMBRACO_CLIENT_ID="umbraco-back-office-api-user"
 export UMBRACO_CLIENT_SECRET="your-secret"
 ```
 
+Or store credentials persistently once:
+
+```bash
+go run ./cmd/umbraco auth login --base-url "https://localhost:44314" --client-id "umbraco-back-office-api-user" --client-secret "your-secret"
+go run ./cmd/umbraco auth status
+```
+
 Notes:
 - Environment variables still work and have the highest precedence.
 - Project-local `.umbraco-cli.env` files are auto-loaded for `UMBRACO_*` keys and are intended for CLI-specific project setup.
@@ -144,6 +151,14 @@ go run ./cmd/umbraco schema document.create
 go run ./cmd/umbraco schema document
 ```
 
+Auth helpers:
+
+```bash
+go run ./cmd/umbraco auth login --base-url "https://localhost:44314" --client-id "umbraco-back-office-api-user" --client-secret "your-secret"
+go run ./cmd/umbraco auth status
+go run ./cmd/umbraco auth logout --dry-run
+```
+
 Safe read:
 
 ```bash
@@ -207,8 +222,9 @@ npm run verify:skills
 - `server` (5)
 - `health` (4)
 - `tree` (1)
+- `auth` (3)
 
-Total: **78 commands**
+Total: **81 commands**
 
 ## Agent Safety Rules
 

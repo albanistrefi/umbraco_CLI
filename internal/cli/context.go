@@ -10,8 +10,9 @@ import (
 )
 
 type Runtime struct {
-	Config config.Config
-	Client *api.Client
+	Config     config.Config
+	Client     *api.Client
+	HTTPClient *http.Client
 }
 
 func NewRuntime() (*Runtime, error) {
@@ -24,5 +25,5 @@ func NewRuntime() (*Runtime, error) {
 	tokenProvider := auth.New(cfg, httpClient)
 	client := api.NewClient(cfg, httpClient, tokenProvider)
 
-	return &Runtime{Config: cfg, Client: client}, nil
+	return &Runtime{Config: cfg, Client: client, HTTPClient: httpClient}, nil
 }
