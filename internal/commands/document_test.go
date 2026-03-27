@@ -187,6 +187,49 @@ func TestDocumentUpdateMergeJSONFetchesAndMergesCurrentDocument(t *testing.T) {
 	}
 }
 
+func TestDocumentUpdateMergeJSONAllowsExistingControlCharactersInFetchedDocument(t *testing.T) {
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/document/doc-1":
+			if req.Method == http.MethodGet {
+				return endpointJSONResponse(http.StatusOK, `{
+  "id":"doc-1",
+  "name":"Partner A",
+  "values":[
+    {"alias":"bodyText","value":"line1\nline2"},
+    {"alias":"title","value":"Old title"}
+  ]
+}`), nil
+			}
+			if req.Method == http.MethodPut {
+				return endpointJSONResponse(http.StatusOK, `{"ok":true}`), nil
+			}
+			return endpointJSONResponse(http.StatusMethodNotAllowed, `null`), nil
+		default:
+			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	output, err := execute(
+		buildRootWithCollections(t, deps),
+		"document", "update", "doc-1",
+		"--merge-json", `{"values":[{"alias":"skills","value":[{"type":"document","unique":"62689bb1-3a4d-478f-a7b1-1c0e560d4748"}]}]}`,
+	)
+	if err != nil {
+		t.Fatalf("document update --merge-json with existing control characters failed: %v", err)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("failed to decode merge-json regression payload: %v", err)
+	}
+	if payload["ok"] != true {
+		t.Fatalf("unexpected merge-json regression payload: %+v", payload)
+	}
+}
+
 func TestDocumentUpdatePropertyTargetsPropertiesEndpoint(t *testing.T) {
 	var observedGetCount int
 	var observedPutPath string

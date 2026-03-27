@@ -251,3 +251,31 @@ func TestRequestRefreshesTokenAfter401(t *testing.T) {
 		t.Fatalf("expected refreshed token on second request, got %s", observedAuth)
 	}
 }
+
+func TestRequestSkipValidationAllowsMergedBodiesWithControlCharacters(t *testing.T) {
+	httpClient := newTestHTTPClient(func(r *http.Request) (*http.Response, error) {
+		switch r.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return jsonResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`, nil), nil
+		case "/umbraco/management/api/v1/document/doc-1":
+			return jsonResponse(http.StatusOK, `{"ok":true}`, nil), nil
+		default:
+			return jsonResponse(http.StatusNotFound, `{"error":"not found"}`, nil), nil
+		}
+	})
+
+	cfg := config.Config{BaseURL: "https://example.test", ClientID: "client-id", ClientSecret: "client-secret"}
+	client := NewClient(cfg, httpClient, auth.New(cfg, httpClient))
+
+	body := map[string]any{
+		"name": "Partner A",
+		"values": []any{
+			map[string]any{"alias": "bodyText", "value": "line1\nline2"},
+			map[string]any{"alias": "skills", "value": []any{map[string]any{"type": "document", "unique": "62689bb1-3a4d-478f-a7b1-1c0e560d4748"}}},
+		},
+	}
+
+	if _, err := client.Put(context.Background(), "/document/doc-1", body, RequestOptions{SkipValidation: true}); err != nil {
+		t.Fatalf("expected skip validation request to succeed, got %v", err)
+	}
+}

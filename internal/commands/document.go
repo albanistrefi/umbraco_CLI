@@ -289,7 +289,11 @@ func documentUpdate(deps Dependencies) *cobra.Command {
 				}
 			}
 
-			result, err := deps.Client.Put(context.Background(), fmt.Sprintf("/document/%s", args[0]), body, api.RequestOptions{DryRun: dryRun})
+			requestOptions := api.RequestOptions{DryRun: dryRun}
+			if hasProperty || hasMergeJSON {
+				requestOptions.SkipValidation = true
+			}
+			result, err := deps.Client.Put(context.Background(), fmt.Sprintf("/document/%s", args[0]), body, requestOptions)
 			if err != nil {
 				return err
 			}
@@ -452,7 +456,7 @@ func documentUpdateProperties(deps Dependencies) *cobra.Command {
 				return err
 			}
 			merged := mergeDatatypePayload(current, body)
-			result, err := deps.Client.Put(context.Background(), fmt.Sprintf("/document/%s", args[0]), merged, api.RequestOptions{DryRun: dryRun})
+			result, err := deps.Client.Put(context.Background(), fmt.Sprintf("/document/%s", args[0]), merged, api.RequestOptions{DryRun: dryRun, SkipValidation: true})
 			if err != nil {
 				return err
 			}

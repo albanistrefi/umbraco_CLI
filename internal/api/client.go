@@ -18,9 +18,10 @@ import (
 )
 
 type RequestOptions struct {
-	Fields string
-	Params map[string]any
-	DryRun bool
+	Fields         string
+	Params         map[string]any
+	DryRun         bool
+	SkipValidation bool
 }
 
 type DryRunResult struct {
@@ -131,7 +132,7 @@ func parseResponse(resp *http.Response) (any, error) {
 }
 
 func (c *Client) Request(ctx context.Context, method string, path string, body any, opts RequestOptions) (any, error) {
-	if raw, ok := body.(map[string]any); ok {
+	if raw, ok := body.(map[string]any); ok && !opts.SkipValidation {
 		if err := validate.Input(raw); err != nil {
 			return nil, err
 		}
