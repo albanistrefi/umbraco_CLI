@@ -32,6 +32,7 @@ Implementation runtime is Go (`cmd/umbraco`).
 - `umbraco media get <id>`
 - `umbraco media root`
 - `umbraco media children <id>`
+- `umbraco media search --query "hero"`
 
 ### Schema
 - `umbraco doctype get <id>`

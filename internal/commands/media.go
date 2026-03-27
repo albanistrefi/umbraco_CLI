@@ -15,6 +15,7 @@ func RegisterMedia(root *cobra.Command, deps Dependencies) {
 	media.AddCommand(mediaGet(deps))
 	media.AddCommand(mediaRoot(deps))
 	media.AddCommand(mediaChildren(deps))
+	media.AddCommand(mediaSearch(deps))
 	media.AddCommand(mediaURLs(deps))
 	media.AddCommand(mediaCreate(deps))
 	media.AddCommand(mediaCreateFolder(deps))
@@ -62,6 +63,49 @@ func mediaChildren(deps Dependencies) *cobra.Command {
 		return printResult(cmd, deps, result)
 	}}
 	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
+	return cmd
+}
+
+func mediaSearch(deps Dependencies) *cobra.Command {
+	var paramsRaw string
+	var query string
+	var skip int
+	var take int
+
+	cmd := &cobra.Command{Use: "search", Short: "Search media items", RunE: func(cmd *cobra.Command, args []string) error {
+		params, err := parseParams(paramsRaw)
+		if err != nil {
+			return err
+		}
+		if params == nil {
+			if query == "" {
+				return fmt.Errorf("media search requires either --params or --query")
+			}
+			params = map[string]any{"query": query}
+			if skip >= 0 {
+				params["skip"] = skip
+			}
+			if take >= 0 {
+				params["take"] = take
+			}
+		}
+
+		result, err := getWithFallback(
+			context.Background(),
+			deps.Client,
+			getRequestCandidate{path: "/item/media/search", opts: api.RequestOptions{Params: params}},
+			getRequestCandidate{path: "/media/search", opts: api.RequestOptions{Params: params}},
+		)
+		if err != nil {
+			return err
+		}
+		return printResult(cmd, deps, result)
+	}}
+
+	cmd.Flags().StringVar(&paramsRaw, "params", "", "Search parameters as JSON")
+	cmd.Flags().StringVar(&query, "query", "", "Search query")
+	cmd.Flags().IntVar(&skip, "skip", -1, "Skip count")
+	cmd.Flags().IntVar(&take, "take", -1, "Take count")
 	return cmd
 }
 

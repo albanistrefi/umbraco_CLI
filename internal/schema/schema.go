@@ -76,6 +76,7 @@ var rawSchemas = map[string]rawSchema{
 	"media.get":           {Method: "GET", Path: "/media/{id}", PathParams: map[string]ParamSchema{"id": idParam}, QueryParams: map[string]ParamSchema{"fields": fieldsQuery}},
 	"media.root":          {Method: "GET", Path: "/media/root", QueryParams: map[string]ParamSchema{"fields": fieldsQuery}},
 	"media.children":      {Method: "GET", Path: "/media/{id}/children", PathParams: map[string]ParamSchema{"id": idParam}, QueryParams: map[string]ParamSchema{"fields": fieldsQuery}},
+	"media.search":        {Method: "GET", Path: "/item/media/search", QueryParams: map[string]ParamSchema{"query": {Type: "string"}, "skip": {Type: "number"}, "take": {Type: "number"}}},
 	"media.urls":          {Method: "GET", Path: "/media/{id}/urls", PathParams: map[string]ParamSchema{"id": idParam}},
 	"media.create":        {Method: "POST", Path: "/media", RequestBody: genericRequestBody},
 	"media.create-folder": {Method: "POST", Path: "/media/folder", RequestBody: genericRequestBody},
