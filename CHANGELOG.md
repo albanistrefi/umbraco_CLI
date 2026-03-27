@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.5 - 2026-03-27
+
+- changed the default `document publish` and save-and-publish payload to use the invariant publish schedule `{"publishSchedules":[{"culture":null}]}` when no explicit publish flags are provided
+
 ## v0.2.4 - 2026-03-27
 
 - fixed `document update --merge-json` and other merge-based update flows so merged payloads built from fetched server content are not rejected by local input validation when existing content contains control characters
