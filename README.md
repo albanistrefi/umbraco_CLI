@@ -162,6 +162,7 @@ go run ./cmd/umbraco document update <id> --merge-json '{"values":[{"alias":"tit
 go run ./cmd/umbraco document update <id> --property skills --value 'C#;Go' --dry-run --output json
 go run ./cmd/umbraco document update <id> --property skills --value 'C#;Go' --save-and-publish --culture en-US --dry-run --output json
 go run ./cmd/umbraco document bulk-update --id <id> --id <id> --merge-json '{"values":[{"alias":"title","value":"New title"}]}' --dry-run --output json
+go run ./cmd/umbraco document csv-update --file partners.csv --property skills --dry-run --output json
 # then run without --dry-run
 ```
 
@@ -196,7 +197,7 @@ npm run verify:skills
 
 ## Collections in MVP
 
-- `document` (16)
+- `document` (17)
 - `dictionary` (6)
 - `media` (11)
 - `doctype` (10)
@@ -207,7 +208,7 @@ npm run verify:skills
 - `health` (4)
 - `tree` (1)
 
-Total: **77 commands**
+Total: **78 commands**
 
 ## Agent Safety Rules
 

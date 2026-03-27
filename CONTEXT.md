@@ -27,6 +27,7 @@ Implementation runtime is Go (`cmd/umbraco`).
 - `umbraco document update <id> --property skills --value 'C#;Go' --save-and-publish --culture en-US --dry-run`
 - `umbraco document update <id> --merge-json '{"values":[{"alias":"title","value":"New title"}]}' --dry-run`
 - `umbraco document bulk-update --id <id> --merge-json '{"values":[{"alias":"title","value":"New title"}]}' --dry-run`
+- `umbraco document csv-update --file partners.csv --property skills --dry-run`
 
 ### Media
 - `umbraco media get <id>`

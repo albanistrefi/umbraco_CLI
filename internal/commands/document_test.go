@@ -417,3 +417,96 @@ func TestDocumentBulkUpdateLoadsIDsFromFile(t *testing.T) {
 		t.Fatalf("unexpected id-file bulk update summary: %+v", payload)
 	}
 }
+
+func TestDocumentCSVUpdateDryRunUsesMappedProperties(t *testing.T) {
+	csvPath := filepath.Join(t.TempDir(), "partners.csv")
+	if err := os.WriteFile(csvPath, []byte("id,skills\npartner-1,C#;Go\npartner-2,\n"), 0o644); err != nil {
+		t.Fatalf("failed to write CSV fixture: %v", err)
+	}
+
+	var putRequests int
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/document/partner-1":
+			return endpointJSONResponse(http.StatusOK, `{
+  "id":"partner-1",
+  "name":"Partner A",
+  "values":[{"alias":"title","value":"Old title"}]
+}`), nil
+		case "/umbraco/management/api/v1/document/partner-2":
+			return endpointJSONResponse(http.StatusOK, `{
+  "id":"partner-2",
+  "name":"Partner B",
+  "values":[{"alias":"title","value":"Old title"}]
+}`), nil
+		default:
+			if req.Method == http.MethodPut && strings.HasPrefix(req.URL.Path, "/umbraco/management/api/v1/document/") {
+				putRequests++
+				return endpointJSONResponse(http.StatusOK, `{"ok":true}`), nil
+			}
+			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	output, err := execute(
+		buildRootWithCollections(t, deps),
+		"document", "csv-update",
+		"--file", csvPath,
+		"--property", "skills",
+		"--dry-run",
+	)
+	if err != nil {
+		t.Fatalf("document csv-update failed: %v", err)
+	}
+
+	if putRequests != 0 {
+		t.Fatalf("expected dry-run CSV update to avoid real PUT requests, got %d", putRequests)
+	}
+
+	var payload documentCSVUpdateResult
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("failed to decode CSV update result: %v", err)
+	}
+	if payload.TotalRows != 2 || payload.Updated != 1 || payload.Skipped != 1 || payload.Failed != 0 {
+		t.Fatalf("unexpected CSV update summary: %+v", payload)
+	}
+}
+
+func TestDocumentCSVUpdateRejectsDuplicateIDs(t *testing.T) {
+	csvPath := filepath.Join(t.TempDir(), "partners.csv")
+	if err := os.WriteFile(csvPath, []byte("id,skills\npartner-1,C#\npartner-1,Go\n"), 0o644); err != nil {
+		t.Fatalf("failed to write CSV fixture: %v", err)
+	}
+
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/document/partner-1":
+			return endpointJSONResponse(http.StatusOK, `{"id":"partner-1","name":"Partner A","values":[]}`), nil
+		default:
+			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	output, err := execute(
+		buildRootWithCollections(t, deps),
+		"document", "csv-update",
+		"--file", csvPath,
+		"--property", "skills",
+		"--dry-run",
+	)
+	if err != nil {
+		t.Fatalf("document csv-update duplicate case failed: %v", err)
+	}
+
+	var payload documentCSVUpdateResult
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("failed to decode CSV duplicate result: %v", err)
+	}
+	if payload.Failed != 1 {
+		t.Fatalf("expected one failed duplicate row, got %+v", payload)
+	}
+}
