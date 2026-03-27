@@ -333,6 +333,68 @@ func TestConfigValidateAuthMentionsProjectLocalOptions(t *testing.T) {
 	}
 }
 
+func TestWriteLoadAndClearUserConfig(t *testing.T) {
+	homeDir := t.TempDir()
+	originalHome := os.Getenv("HOME")
+	t.Cleanup(func() {
+		_ = os.Setenv("HOME", originalHome)
+	})
+	if err := os.Setenv("HOME", homeDir); err != nil {
+		t.Fatalf("failed to set HOME: %v", err)
+	}
+
+	input := Config{
+		BaseURL:      "https://localhost:44314",
+		ClientID:     "client-id",
+		ClientSecret: "client-secret",
+		OutputFormat: OutputJSON,
+	}
+	if err := WriteUserConfig(input); err != nil {
+		t.Fatalf("WriteUserConfig failed: %v", err)
+	}
+
+	path, err := UserConfigPath()
+	if err != nil {
+		t.Fatalf("UserConfigPath failed: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("expected user config file to exist: %v", err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("expected user config mode 0600, got %o", info.Mode().Perm())
+	}
+
+	cfg, ok, err := LoadUserConfig()
+	if err != nil {
+		t.Fatalf("LoadUserConfig failed: %v", err)
+	}
+	if !ok {
+		t.Fatalf("expected LoadUserConfig to find config")
+	}
+	if cfg.BaseURL != input.BaseURL || cfg.ClientID != input.ClientID || cfg.ClientSecret != input.ClientSecret || cfg.OutputFormat != input.OutputFormat {
+		t.Fatalf("unexpected loaded user config: %+v", cfg)
+	}
+
+	if err := ClearUserAuth(); err != nil {
+		t.Fatalf("ClearUserAuth failed: %v", err)
+	}
+
+	cleared, ok, err := LoadUserConfig()
+	if err != nil {
+		t.Fatalf("LoadUserConfig after clear failed: %v", err)
+	}
+	if !ok {
+		t.Fatalf("expected user config to remain after clearing auth")
+	}
+	if cleared.ClientID != "" || cleared.ClientSecret != "" {
+		t.Fatalf("expected auth fields to be cleared, got %+v", cleared)
+	}
+	if cleared.BaseURL != input.BaseURL {
+		t.Fatalf("expected base URL to be preserved, got %+v", cleared)
+	}
+}
+
 func containsAll(value string, substrings ...string) bool {
 	for _, substring := range substrings {
 		if !strings.Contains(value, substring) {

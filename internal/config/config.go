@@ -41,6 +41,14 @@ func Load() (Config, error) {
 	return loadResolvedConfig(workingDir, homeDir, env)
 }
 
+func UserConfigPath() (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(homeDir, ".umbraco", "config.json"), nil
+}
+
 type rawConfig struct {
 	BaseURL      string
 	ClientID     string
@@ -183,6 +191,65 @@ func loadJSONConfig(path string) (rawConfig, bool, error) {
 		ClientSecret: strings.TrimSpace(file.ClientSecret),
 		OutputFormat: strings.TrimSpace(file.OutputFormat),
 	}, true, nil
+}
+
+func LoadUserConfig() (Config, bool, error) {
+	path, err := UserConfigPath()
+	if err != nil {
+		return Config{}, false, err
+	}
+
+	raw, ok, err := loadJSONConfig(path)
+	if err != nil {
+		return Config{}, false, err
+	}
+	if !ok {
+		return Config{}, false, nil
+	}
+
+	cfg, err := finalizeRawConfig(raw)
+	if err != nil {
+		return Config{}, false, err
+	}
+	return cfg, true, nil
+}
+
+func WriteUserConfig(cfg Config) error {
+	path, err := UserConfigPath()
+	if err != nil {
+		return err
+	}
+
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+
+	payload := jsonConfigFile{
+		BaseURL:      strings.TrimSpace(cfg.BaseURL),
+		ClientID:     strings.TrimSpace(cfg.ClientID),
+		ClientSecret: strings.TrimSpace(cfg.ClientSecret),
+		OutputFormat: strings.TrimSpace(string(cfg.OutputFormat)),
+	}
+	encoded, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		return err
+	}
+	encoded = append(encoded, '\n')
+	return os.WriteFile(path, encoded, 0o600)
+}
+
+func ClearUserAuth() error {
+	cfg, ok, err := LoadUserConfig()
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return nil
+	}
+
+	cfg.ClientID = ""
+	cfg.ClientSecret = ""
+	return WriteUserConfig(cfg)
 }
 
 func loadDotEnvConfig(path string) (rawConfig, error) {
