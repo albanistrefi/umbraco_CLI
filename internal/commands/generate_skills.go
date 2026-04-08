@@ -9,7 +9,7 @@ import (
 	"umbraco-cli/internal/validate"
 )
 
-const cliVersion = "0.2.5"
+const cliVersion = "0.2.6"
 
 func RegisterGenerateSkills(root *cobra.Command, deps Dependencies) {
 	var outputDir string
