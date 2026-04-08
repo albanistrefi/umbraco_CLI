@@ -45,6 +45,7 @@ func NewRootCommand() *cobra.Command {
 	commands.RegisterTree(root, deps)
 	commands.RegisterAuth(root, deps)
 	commands.RegisterSchema(root, deps)
+	commands.RegisterGenerateSkills(root, deps)
 
 	return root
 }
