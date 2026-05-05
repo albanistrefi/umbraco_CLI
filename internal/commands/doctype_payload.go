@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
+	"strings"
 
 	"umbraco-cli/internal/api"
 )
@@ -17,26 +18,32 @@ func fetchDoctypeObject(ctx context.Context, client *api.Client, id string) (map
 	return decodeResult[map[string]any](result)
 }
 
-// findDoctypeContainerID returns the id of the container with the given alias on the
-// supplied doctype payload, or an empty string if no match was found.
-func findDoctypeContainerID(doctype map[string]any, alias string) string {
+// findDoctypeContainerID returns the id of the container with the given name on the supplied
+// doctype payload (case-insensitive). If multiple containers share that name it returns the
+// matching IDs so the caller can disambiguate. Containers in the Umbraco Management API are
+// keyed by name, not alias.
+func findDoctypeContainerID(doctype map[string]any, name string) (id string, ambiguous bool) {
 	containers, ok := doctype["containers"].([]any)
 	if !ok {
-		return ""
+		return "", false
 	}
+	target := strings.ToLower(strings.TrimSpace(name))
+	matches := 0
 	for _, item := range containers {
 		entry, ok := item.(map[string]any)
 		if !ok {
 			continue
 		}
-		if entryAlias, _ := entry["alias"].(string); entryAlias != alias {
+		entryName, _ := entry["name"].(string)
+		if strings.ToLower(strings.TrimSpace(entryName)) != target {
 			continue
 		}
-		if id, _ := entry["id"].(string); id != "" {
-			return id
+		if matchID, _ := entry["id"].(string); matchID != "" {
+			id = matchID
+			matches++
 		}
 	}
-	return ""
+	return id, matches > 1
 }
 
 // hasDoctypeProperty reports whether the doctype already exposes a property with the given alias.

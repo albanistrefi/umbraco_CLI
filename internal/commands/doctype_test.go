@@ -28,7 +28,7 @@ func TestDoctypeUpdateMergeJSONFetchesCurrentAndSendsMergedPayload(t *testing.T)
     {"alias":"body","name":"Body","dataType":{"id":"dt-rte"}}
   ],
   "containers":[
-    {"id":"c-1","alias":"content","name":"Content","type":"Tab"}
+    {"id":"c-1","name":"Content","type":"Tab","sortOrder":0}
   ]
 }`), nil
 			}
@@ -204,7 +204,7 @@ func TestDoctypeAddPropertyAppendsPropertyUnderResolvedContainer(t *testing.T) {
     {"alias":"title","name":"Title","container":{"id":"c-1"},"sortOrder":0,"dataType":{"id":"dt-text"}}
   ],
   "containers":[
-    {"id":"c-1","alias":"content","name":"Content","type":"Tab"}
+    {"id":"c-1","name":"Content","type":"Tab","sortOrder":0}
   ]
 }`), nil
 			}
@@ -290,7 +290,7 @@ func TestDoctypeAddPropertyRejectsUnknownContainer(t *testing.T) {
   "alias":"partnerPage",
   "name":"Partner Page",
   "properties":[],
-  "containers":[{"id":"c-1","alias":"content","name":"Content","type":"Tab"}]
+  "containers":[{"id":"c-1","name":"Content","type":"Tab","sortOrder":0}]
 }`), nil
 			}
 			if req.Method == http.MethodPut {
@@ -311,9 +311,9 @@ func TestDoctypeAddPropertyRejectsUnknownContainer(t *testing.T) {
 		"--container", "missing",
 	)
 	if err == nil {
-		t.Fatalf("expected add-property to fail when the container alias is not found")
+		t.Fatalf("expected add-property to fail when the container name is not found")
 	}
-	if !strings.Contains(err.Error(), "no container with alias") {
+	if !strings.Contains(err.Error(), "no container named") {
 		t.Fatalf("unexpected container resolution error: %v", err)
 	}
 	if putRequests != 0 {
@@ -335,7 +335,7 @@ func TestDoctypeAddPropertyRejectsDuplicateAlias(t *testing.T) {
   "alias":"partnerPage",
   "name":"Partner Page",
   "properties":[{"alias":"title","name":"Title","container":{"id":"c-1"}}],
-  "containers":[{"id":"c-1","alias":"content","name":"Content","type":"Tab"}]
+  "containers":[{"id":"c-1","name":"Content","type":"Tab","sortOrder":0}]
 }`), nil
 			}
 			if req.Method == http.MethodPut {
@@ -366,6 +366,54 @@ func TestDoctypeAddPropertyRejectsDuplicateAlias(t *testing.T) {
 	}
 }
 
+func TestDoctypeAddPropertyRejectsAmbiguousContainerName(t *testing.T) {
+	var putRequests int
+
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/document-type/dt-1":
+			if req.Method == http.MethodGet {
+				return datatypeJSONResponse(http.StatusOK, `{
+  "id":"dt-1",
+  "alias":"partnerPage",
+  "name":"Partner Page",
+  "properties":[],
+  "containers":[
+    {"id":"c-1","name":"Content","type":"Tab","sortOrder":0},
+    {"id":"c-2","name":"Content","type":"Group","parent":{"id":"c-1"},"sortOrder":0}
+  ]
+}`), nil
+			}
+			if req.Method == http.MethodPut {
+				putRequests++
+			}
+			return datatypeJSONResponse(http.StatusMethodNotAllowed, `{"error":"method not allowed"}`), nil
+		default:
+			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	_, err := execute(
+		buildRootWithCollections(t, deps),
+		"doctype", "add-property", "dt-1",
+		"--alias", "subtitle",
+		"--name", "Subtitle",
+		"--data-type", "dt-text",
+		"--container", "Content",
+	)
+	if err == nil {
+		t.Fatalf("expected ambiguous container name to fail")
+	}
+	if !strings.Contains(err.Error(), "multiple containers named") {
+		t.Fatalf("unexpected ambiguity error: %v", err)
+	}
+	if putRequests != 0 {
+		t.Fatalf("expected ambiguous container to short-circuit before PUT, got %d writes", putRequests)
+	}
+}
+
 func TestDoctypeAddPropertySupportsDryRun(t *testing.T) {
 	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
@@ -378,7 +426,7 @@ func TestDoctypeAddPropertySupportsDryRun(t *testing.T) {
   "alias":"partnerPage",
   "name":"Partner Page",
   "properties":[],
-  "containers":[{"id":"c-1","alias":"content","name":"Content","type":"Tab"}]
+  "containers":[{"id":"c-1","name":"Content","type":"Tab","sortOrder":0}]
 }`), nil
 			}
 			return datatypeJSONResponse(http.StatusMethodNotAllowed, `{"error":"unexpected write"}`), nil

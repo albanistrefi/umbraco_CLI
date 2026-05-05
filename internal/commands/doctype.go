@@ -226,9 +226,12 @@ func doctypeAddProperty(deps Dependencies) *cobra.Command {
 				return err
 			}
 
-			containerID := findDoctypeContainerID(current, container)
+			containerID, ambiguous := findDoctypeContainerID(current, container)
 			if containerID == "" {
-				return fmt.Errorf("doctype %s has no container with alias %q", args[0], container)
+				return fmt.Errorf("doctype %s has no container named %q", args[0], container)
+			}
+			if ambiguous {
+				return fmt.Errorf("doctype %s has multiple containers named %q; rename one or pick a unique name", args[0], container)
 			}
 			if hasDoctypeProperty(current, alias) {
 				return fmt.Errorf("doctype %s already has a property with alias %q", args[0], alias)
@@ -260,7 +263,7 @@ func doctypeAddProperty(deps Dependencies) *cobra.Command {
 	cmd.Flags().StringVar(&alias, "alias", "", "Property alias (camelCase identifier)")
 	cmd.Flags().StringVar(&name, "name", "", "Human-readable property name")
 	cmd.Flags().StringVar(&dataType, "data-type", "", "Data type ID (GUID) backing the property")
-	cmd.Flags().StringVar(&container, "container", "", "Alias of the existing tab/group container that should hold the property")
+	cmd.Flags().StringVar(&container, "container", "", "Name of the existing tab/group container that should hold the property (case-insensitive match)")
 	cmd.Flags().StringVar(&description, "description", "", "Optional property description")
 	cmd.Flags().BoolVar(&mandatory, "mandatory", false, "Mark the property as mandatory")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
