@@ -163,6 +163,29 @@ func TestDoctypeUpdateMergeJSONSupportsDryRun(t *testing.T) {
 	}
 }
 
+func TestDocumentTypeAliasRoutesToDoctypeCommand(t *testing.T) {
+	var observedPath string
+
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/document-type":
+			observedPath = req.URL.Path
+			return datatypeJSONResponse(http.StatusOK, `{"total":0,"items":[]}`), nil
+		default:
+			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	if _, err := execute(buildRootWithCollections(t, deps), "document-type", "list"); err != nil {
+		t.Fatalf("document-type alias failed: %v", err)
+	}
+	if observedPath != "/umbraco/management/api/v1/document-type" {
+		t.Fatalf("expected document-type alias to hit /document-type, got %q", observedPath)
+	}
+}
+
 func TestDoctypeUpdateRejectsJSONAndMergeJSONTogether(t *testing.T) {
 	deps := makeDeps()
 	root := buildRootWithCollections(t, deps)

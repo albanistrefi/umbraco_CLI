@@ -11,7 +11,11 @@ import (
 )
 
 func RegisterDoctype(root *cobra.Command, deps Dependencies) {
-	doctype := &cobra.Command{Use: "doctype", Short: "Document type schema operations"}
+	doctype := &cobra.Command{
+		Use:     "doctype",
+		Aliases: []string{"document-type"},
+		Short:   "Document type schema operations",
+	}
 	doctype.AddCommand(doctypeGet(deps))
 	doctype.AddCommand(doctypeList(deps))
 	doctype.AddCommand(doctypeRoot(deps))
