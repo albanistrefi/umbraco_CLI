@@ -186,6 +186,245 @@ func TestDocumentTypeAliasRoutesToDoctypeCommand(t *testing.T) {
 	}
 }
 
+func TestDoctypeAddPropertyAppendsPropertyUnderResolvedContainer(t *testing.T) {
+	var observedPutBody map[string]any
+
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/document-type/dt-1":
+			if req.Method == http.MethodGet {
+				return datatypeJSONResponse(http.StatusOK, `{
+  "id":"dt-1",
+  "alias":"partnerPage",
+  "name":"Partner Page",
+  "icon":"icon-document",
+  "properties":[
+    {"alias":"title","name":"Title","container":{"id":"c-1"},"sortOrder":0,"dataType":{"id":"dt-text"}}
+  ],
+  "containers":[
+    {"id":"c-1","alias":"content","name":"Content","type":"Tab"}
+  ]
+}`), nil
+			}
+			if req.Method == http.MethodPut {
+				if err := json.NewDecoder(req.Body).Decode(&observedPutBody); err != nil {
+					t.Fatalf("failed to decode put payload: %v", err)
+				}
+				return datatypeJSONResponse(http.StatusOK, `{"updated":true}`), nil
+			}
+			return datatypeJSONResponse(http.StatusMethodNotAllowed, `{"error":"method not allowed"}`), nil
+		default:
+			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	output, err := execute(
+		buildRootWithCollections(t, deps),
+		"doctype", "add-property", "dt-1",
+		"--alias", "subtitle",
+		"--name", "Subtitle",
+		"--data-type", "dt-text",
+		"--container", "content",
+	)
+	if err != nil {
+		t.Fatalf("doctype add-property failed: %v", err)
+	}
+
+	if observedPutBody["alias"] != "partnerPage" || observedPutBody["icon"] != "icon-document" {
+		t.Fatalf("expected required doctype fields to be preserved, got %+v", observedPutBody)
+	}
+
+	properties, ok := observedPutBody["properties"].([]any)
+	if !ok || len(properties) != 2 {
+		t.Fatalf("expected appended property to produce two entries, got %+v", observedPutBody["properties"])
+	}
+
+	var subtitle map[string]any
+	for _, item := range properties {
+		entry := item.(map[string]any)
+		if entry["alias"] == "subtitle" {
+			subtitle = entry
+		}
+	}
+	if subtitle == nil {
+		t.Fatalf("expected subtitle property to be appended, got %+v", properties)
+	}
+	if subtitle["name"] != "Subtitle" {
+		t.Fatalf("unexpected appended property name: %+v", subtitle)
+	}
+	if id, _ := subtitle["id"].(string); id == "" {
+		t.Fatalf("expected new property to have a generated id, got %+v", subtitle)
+	}
+	if container, _ := subtitle["container"].(map[string]any); container == nil || container["id"] != "c-1" {
+		t.Fatalf("expected container id to be resolved from alias, got %+v", subtitle["container"])
+	}
+	if dataType, _ := subtitle["dataType"].(map[string]any); dataType == nil || dataType["id"] != "dt-text" {
+		t.Fatalf("unexpected data type reference: %+v", subtitle["dataType"])
+	}
+	if sortOrder, _ := subtitle["sortOrder"].(float64); sortOrder != 1 {
+		t.Fatalf("expected sortOrder to follow existing properties, got %v", subtitle["sortOrder"])
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		t.Fatalf("failed to decode add-property result: %v", err)
+	}
+	if result["updated"] != true {
+		t.Fatalf("unexpected add-property result payload: %+v", result)
+	}
+}
+
+func TestDoctypeAddPropertyRejectsUnknownContainer(t *testing.T) {
+	var putRequests int
+
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/document-type/dt-1":
+			if req.Method == http.MethodGet {
+				return datatypeJSONResponse(http.StatusOK, `{
+  "id":"dt-1",
+  "alias":"partnerPage",
+  "name":"Partner Page",
+  "properties":[],
+  "containers":[{"id":"c-1","alias":"content","name":"Content","type":"Tab"}]
+}`), nil
+			}
+			if req.Method == http.MethodPut {
+				putRequests++
+			}
+			return datatypeJSONResponse(http.StatusMethodNotAllowed, `{"error":"method not allowed"}`), nil
+		default:
+			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	_, err := execute(
+		buildRootWithCollections(t, deps),
+		"doctype", "add-property", "dt-1",
+		"--alias", "subtitle",
+		"--name", "Subtitle",
+		"--data-type", "dt-text",
+		"--container", "missing",
+	)
+	if err == nil {
+		t.Fatalf("expected add-property to fail when the container alias is not found")
+	}
+	if !strings.Contains(err.Error(), "no container with alias") {
+		t.Fatalf("unexpected container resolution error: %v", err)
+	}
+	if putRequests != 0 {
+		t.Fatalf("expected unknown container to short-circuit before PUT, got %d writes", putRequests)
+	}
+}
+
+func TestDoctypeAddPropertyRejectsDuplicateAlias(t *testing.T) {
+	var putRequests int
+
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/document-type/dt-1":
+			if req.Method == http.MethodGet {
+				return datatypeJSONResponse(http.StatusOK, `{
+  "id":"dt-1",
+  "alias":"partnerPage",
+  "name":"Partner Page",
+  "properties":[{"alias":"title","name":"Title","container":{"id":"c-1"}}],
+  "containers":[{"id":"c-1","alias":"content","name":"Content","type":"Tab"}]
+}`), nil
+			}
+			if req.Method == http.MethodPut {
+				putRequests++
+			}
+			return datatypeJSONResponse(http.StatusMethodNotAllowed, `{"error":"method not allowed"}`), nil
+		default:
+			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	_, err := execute(
+		buildRootWithCollections(t, deps),
+		"doctype", "add-property", "dt-1",
+		"--alias", "title",
+		"--name", "Title",
+		"--data-type", "dt-text",
+		"--container", "content",
+	)
+	if err == nil {
+		t.Fatalf("expected add-property to fail when the alias is already in use")
+	}
+	if !strings.Contains(err.Error(), "already has a property") {
+		t.Fatalf("unexpected duplicate alias error: %v", err)
+	}
+	if putRequests != 0 {
+		t.Fatalf("expected duplicate alias to short-circuit before PUT, got %d writes", putRequests)
+	}
+}
+
+func TestDoctypeAddPropertySupportsDryRun(t *testing.T) {
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/document-type/dt-1":
+			if req.Method == http.MethodGet {
+				return datatypeJSONResponse(http.StatusOK, `{
+  "id":"dt-1",
+  "alias":"partnerPage",
+  "name":"Partner Page",
+  "properties":[],
+  "containers":[{"id":"c-1","alias":"content","name":"Content","type":"Tab"}]
+}`), nil
+			}
+			return datatypeJSONResponse(http.StatusMethodNotAllowed, `{"error":"unexpected write"}`), nil
+		default:
+			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	output, err := execute(
+		buildRootWithCollections(t, deps),
+		"doctype", "add-property", "dt-1",
+		"--alias", "subtitle",
+		"--name", "Subtitle",
+		"--data-type", "dt-text",
+		"--container", "content",
+		"--mandatory",
+		"--description", "Shown under the title",
+		"--dry-run",
+	)
+	if err != nil {
+		t.Fatalf("doctype add-property dry-run failed: %v", err)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("failed to decode add-property dry-run payload: %v", err)
+	}
+	if payload["dryRun"] != true {
+		t.Fatalf("expected dryRun=true, got %+v", payload)
+	}
+
+	body := payload["body"].(map[string]any)
+	properties := body["properties"].([]any)
+	if len(properties) != 1 {
+		t.Fatalf("expected dry-run body to include the new property, got %+v", properties)
+	}
+	added := properties[0].(map[string]any)
+	if added["description"] != "Shown under the title" {
+		t.Fatalf("expected description to be carried into payload, got %+v", added)
+	}
+	validation := added["validation"].(map[string]any)
+	if validation["mandatory"] != true {
+		t.Fatalf("expected --mandatory to set validation.mandatory=true, got %+v", validation)
+	}
+}
+
 func TestDoctypeUpdateRejectsJSONAndMergeJSONTogether(t *testing.T) {
 	deps := makeDeps()
 	root := buildRootWithCollections(t, deps)

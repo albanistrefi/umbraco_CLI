@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/validate"
 )
 
 func RegisterDoctype(root *cobra.Command, deps Dependencies) {
@@ -23,6 +24,7 @@ func RegisterDoctype(root *cobra.Command, deps Dependencies) {
 	doctype.AddCommand(doctypeSearch(deps))
 	doctype.AddCommand(doctypeCreate(deps))
 	doctype.AddCommand(doctypeUpdate(deps))
+	doctype.AddCommand(doctypeAddProperty(deps))
 	doctype.AddCommand(doctypeCopy(deps))
 	doctype.AddCommand(doctypeMove(deps))
 	doctype.AddCommand(doctypeDelete(deps))
@@ -185,6 +187,82 @@ func doctypeUpdate(deps Dependencies) *cobra.Command {
 	}}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Update payload as JSON")
 	cmd.Flags().StringVar(&mergeJSON, "merge-json", "", "Partial JSON payload merged into the current document type before update")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
+	return cmd
+}
+
+func doctypeAddProperty(deps Dependencies) *cobra.Command {
+	var alias string
+	var name string
+	var dataType string
+	var container string
+	var description string
+	var mandatory bool
+	var dryRun bool
+
+	cmd := &cobra.Command{
+		Use:   "add-property <id>",
+		Short: "Append a property to a document type under an existing container alias",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			for flag, value := range map[string]string{
+				"--alias":     alias,
+				"--name":      name,
+				"--data-type": dataType,
+				"--container": container,
+			} {
+				if err := requireValue(flag, value); err != nil {
+					return err
+				}
+			}
+			for _, value := range []string{alias, name, dataType, container} {
+				if err := validate.String(value); err != nil {
+					return err
+				}
+			}
+
+			current, err := fetchDoctypeObject(context.Background(), deps.Client, args[0])
+			if err != nil {
+				return err
+			}
+
+			containerID := findDoctypeContainerID(current, container)
+			if containerID == "" {
+				return fmt.Errorf("doctype %s has no container with alias %q", args[0], container)
+			}
+			if hasDoctypeProperty(current, alias) {
+				return fmt.Errorf("doctype %s already has a property with alias %q", args[0], alias)
+			}
+
+			propertyID, err := newUUIDv4()
+			if err != nil {
+				return fmt.Errorf("failed to generate property id: %w", err)
+			}
+			sortOrder := nextDoctypePropertySortOrder(current, containerID)
+			property := buildDoctypeProperty(propertyID, containerID, alias, name, dataType, description, mandatory, sortOrder)
+
+			merged := mergeDatatypePayload(current, map[string]any{
+				"properties": []any{property},
+			})
+			result, err := deps.Client.Put(
+				context.Background(),
+				fmt.Sprintf("/document-type/%s", args[0]),
+				merged,
+				api.RequestOptions{DryRun: dryRun, SkipValidation: true},
+			)
+			if err != nil {
+				return err
+			}
+			return printResult(cmd, deps, result)
+		},
+	}
+
+	cmd.Flags().StringVar(&alias, "alias", "", "Property alias (camelCase identifier)")
+	cmd.Flags().StringVar(&name, "name", "", "Human-readable property name")
+	cmd.Flags().StringVar(&dataType, "data-type", "", "Data type ID (GUID) backing the property")
+	cmd.Flags().StringVar(&container, "container", "", "Alias of the existing tab/group container that should hold the property")
+	cmd.Flags().StringVar(&description, "description", "", "Optional property description")
+	cmd.Flags().BoolVar(&mandatory, "mandatory", false, "Mark the property as mandatory")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
 	return cmd
 }
