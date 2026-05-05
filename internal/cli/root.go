@@ -19,9 +19,11 @@ func NewRootCommand() *cobra.Command {
 	root := &cobra.Command{
 		Use:           "umbraco",
 		Short:         "Umbraco CLI - Agent-first wrapper around the Umbraco Management API",
+		Version:       commands.CLIVersion,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
+	root.SetVersionTemplate("umbraco-cli {{.Version}}\n")
 
 	root.PersistentFlags().StringVarP(&outputFormat, "output", "o", "", "Output format: json, table, plain")
 

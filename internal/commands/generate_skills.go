@@ -9,7 +9,9 @@ import (
 	"umbraco-cli/internal/validate"
 )
 
-const cliVersion = "0.2.7"
+// CLIVersion identifies the published umbraco-cli release. It is embedded into generated SKILL.md
+// frontmatter and surfaced via `umbraco --version`.
+const CLIVersion = "0.2.7"
 
 func RegisterGenerateSkills(root *cobra.Command, deps Dependencies) {
 	var outputDir string
@@ -23,7 +25,7 @@ func RegisterGenerateSkills(root *cobra.Command, deps Dependencies) {
 				return fmt.Errorf("invalid output directory: %w", err)
 			}
 
-			if err := skills.Generate(root.Root(), outputDir, filter, cliVersion); err != nil {
+			if err := skills.Generate(root.Root(), outputDir, filter, CLIVersion); err != nil {
 				return err
 			}
 
