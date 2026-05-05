@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.2.7 - 2026-05-05
+
+- added `doctype update --merge-json` for partial document type updates that fetch the current schema, deep-merge the patch (including alias-keyed `properties` and `containers` arrays), and PUT the merged payload with validation skipped
+- added `doctype add-property <id> --alias --name --data-type --container` convenience command that resolves an existing tab/group container alias to its ID, generates a v4 property ID, and rejects duplicate aliases or unknown containers before writing
+- aliased the `doctype` command group as `document-type` so `umbraco document-type ...` matches the underlying Management API path
+
+## v0.2.6 - 2026-04-08
+
+- added `umbraco generate-skills` for self-documenting CLI skills generated from the cobra command tree, plus the bundled CLI skills under `skills/cli/` and the `verify-skills` script update that backs them
+
 ## v0.2.5 - 2026-03-27
 
 - changed the default `document publish` and save-and-publish payload to use the invariant publish schedule `{"publishSchedules":[{"culture":null}]}` when no explicit publish flags are provided
