@@ -7,11 +7,13 @@ import (
 
 	"umbraco-cli/internal/skills"
 	"umbraco-cli/internal/validate"
+	"umbraco-cli/internal/version"
 )
 
-// CLIVersion identifies the published umbraco-cli release. It is embedded into generated SKILL.md
-// frontmatter and surfaced via `umbraco --version`.
-const CLIVersion = "0.2.7"
+// CLIVersion identifies the published umbraco-cli release. It is sourced from the embedded
+// internal/version/VERSION file so a single edit (plus `npm run sync:version`) propagates
+// everywhere.
+var CLIVersion = version.Current()
 
 func RegisterGenerateSkills(root *cobra.Command, deps Dependencies) {
 	var outputDir string

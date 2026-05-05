@@ -8,6 +8,7 @@
     "run": "go run ./cmd/umbraco",
     "test": "go test ./...",
     "bundle:skills": "node scripts/bundle-skills.mjs",
-    "verify:skills": "node scripts/verify-skills.mjs"
+    "verify:skills": "node scripts/verify-skills.mjs",
+    "sync:version": "node scripts/sync-version.mjs"
   }
 }
