@@ -2,7 +2,7 @@
 name: umbraco-media
 description: "Media asset operations"
 metadata:
-  version: 0.2.7
+  version: 0.2.8
   requires:
     bins:
       - umbraco

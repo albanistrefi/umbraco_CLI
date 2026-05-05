@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.2.8 - 2026-05-05
+
+- fixed `doctype add-property --container` so it looks up containers by name (the canonical Umbraco field) instead of the non-existent alias field; the v0.2.7 lookup never matched against real backoffice payloads
+- added `umbraco --version` to print the installed CLI release identifier
+- added `doctype add-container <id> --name --type Tab|Group [--parent <name>]` convenience command that resolves an optional parent container by name, normalizes type casing, and rejects duplicate names
+- centralized the CLI version on `internal/version/VERSION` (Go embeds it at build, `npm run sync:version` propagates it to `package.json`/`package-lock.json`, and `npm run verify:skills` blocks releases when those files or the CHANGELOG drift)
+- renamed the internal `mergeDatatypePayload` helper to `mergeAliasPayload` since it now serves document, doctype, and datatype merge flows
+
 ## v0.2.7 - 2026-05-05
 
 - added `doctype update --merge-json` for partial document type updates that fetch the current schema, deep-merge the patch (including alias-keyed `properties` and `containers` arrays), and PUT the merged payload with validation skipped

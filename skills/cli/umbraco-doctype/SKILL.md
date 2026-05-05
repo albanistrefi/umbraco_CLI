@@ -2,7 +2,7 @@
 name: umbraco-doctype
 description: "Document type schema operations"
 metadata:
-  version: 0.2.7
+  version: 0.2.8
   requires:
     bins:
       - umbraco
@@ -77,11 +77,35 @@ umbraco doctype search
 
 | Command | Description |
 |---------|-------------|
+| `doctype add-container <id>` | Append a tab or group container to a document type |
 | `doctype add-property <id>` | Append a property to a document type under an existing container alias |
 | `doctype copy <id>` | Copy document type |
 | `doctype create` | Create document type |
 | `doctype move <id>` | Move document type |
 | `doctype update <id>` | Update document type |
+
+### add-container
+
+```bash
+umbraco doctype add-container <id>
+```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--dry-run` | bool | false | Validate request without executing |
+| `--name` | string | — | Display name for the new container |
+| `--parent` | string | — | Optional name of an existing parent container (typically a Tab when adding a Group) |
+| `--type` | string | — | Container type: Tab or Group |
+
+**Safe pattern:**
+
+```bash
+# 1. Dry run first
+umbraco doctype add-container <id> --dry-run
+
+# 2. Execute
+umbraco doctype add-container <id>
+```
 
 ### add-property
 
@@ -92,7 +116,7 @@ umbraco doctype add-property <id>
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--alias` | string | — | Property alias (camelCase identifier) |
-| `--container` | string | — | Alias of the existing tab/group container that should hold the property |
+| `--container` | string | — | Name of the existing tab/group container that should hold the property (case-insensitive match) |
 | `--data-type` | string | — | Data type ID (GUID) backing the property |
 | `--description` | string | — | Optional property description |
 | `--dry-run` | bool | false | Validate request without executing |
