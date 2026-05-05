@@ -473,6 +473,217 @@ func TestDoctypeAddPropertySupportsDryRun(t *testing.T) {
 	}
 }
 
+func TestDoctypeAddContainerAppendsTabAtRoot(t *testing.T) {
+	var observedPutBody map[string]any
+
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/document-type/dt-1":
+			if req.Method == http.MethodGet {
+				return datatypeJSONResponse(http.StatusOK, `{
+  "id":"dt-1",
+  "alias":"partnerPage",
+  "name":"Partner Page",
+  "icon":"icon-document",
+  "properties":[],
+  "containers":[{"id":"c-1","name":"Content","type":"Tab","sortOrder":0}]
+}`), nil
+			}
+			if req.Method == http.MethodPut {
+				if err := json.NewDecoder(req.Body).Decode(&observedPutBody); err != nil {
+					t.Fatalf("failed to decode put payload: %v", err)
+				}
+				return datatypeJSONResponse(http.StatusOK, `{"updated":true}`), nil
+			}
+			return datatypeJSONResponse(http.StatusMethodNotAllowed, `{"error":"method not allowed"}`), nil
+		default:
+			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	output, err := execute(
+		buildRootWithCollections(t, deps),
+		"doctype", "add-container", "dt-1",
+		"--name", "SEO",
+		"--type", "Tab",
+	)
+	if err != nil {
+		t.Fatalf("doctype add-container failed: %v", err)
+	}
+
+	if observedPutBody["alias"] != "partnerPage" || observedPutBody["icon"] != "icon-document" {
+		t.Fatalf("expected required doctype fields to be preserved, got %+v", observedPutBody)
+	}
+
+	containers, ok := observedPutBody["containers"].([]any)
+	if !ok || len(containers) != 2 {
+		t.Fatalf("expected appended container to produce two entries, got %+v", observedPutBody["containers"])
+	}
+
+	var seo map[string]any
+	for _, item := range containers {
+		entry := item.(map[string]any)
+		if entry["name"] == "SEO" {
+			seo = entry
+		}
+	}
+	if seo == nil {
+		t.Fatalf("expected SEO container to be appended, got %+v", containers)
+	}
+	if seo["type"] != "Tab" {
+		t.Fatalf("expected normalized Tab type, got %+v", seo["type"])
+	}
+	if id, _ := seo["id"].(string); id == "" {
+		t.Fatalf("expected new container to have a generated id, got %+v", seo)
+	}
+	if seo["parent"] != nil {
+		t.Fatalf("expected root container to have nil parent, got %+v", seo["parent"])
+	}
+	if sortOrder, _ := seo["sortOrder"].(float64); sortOrder != 1 {
+		t.Fatalf("expected sortOrder to follow the existing tab, got %v", seo["sortOrder"])
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		t.Fatalf("failed to decode add-container result: %v", err)
+	}
+	if result["updated"] != true {
+		t.Fatalf("unexpected add-container result payload: %+v", result)
+	}
+}
+
+func TestDoctypeAddContainerResolvesParentByName(t *testing.T) {
+	var observedPutBody map[string]any
+
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/document-type/dt-1":
+			if req.Method == http.MethodGet {
+				return datatypeJSONResponse(http.StatusOK, `{
+  "id":"dt-1",
+  "alias":"partnerPage",
+  "name":"Partner Page",
+  "properties":[],
+  "containers":[{"id":"c-1","name":"Content","type":"Tab","sortOrder":0}]
+}`), nil
+			}
+			if req.Method == http.MethodPut {
+				if err := json.NewDecoder(req.Body).Decode(&observedPutBody); err != nil {
+					t.Fatalf("failed to decode put payload: %v", err)
+				}
+				return datatypeJSONResponse(http.StatusOK, `{"updated":true}`), nil
+			}
+			return datatypeJSONResponse(http.StatusMethodNotAllowed, `{"error":"method not allowed"}`), nil
+		default:
+			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	_, err := execute(
+		buildRootWithCollections(t, deps),
+		"doctype", "add-container", "dt-1",
+		"--name", "Hero",
+		"--type", "group",
+		"--parent", "content",
+	)
+	if err != nil {
+		t.Fatalf("doctype add-container with parent failed: %v", err)
+	}
+
+	containers := observedPutBody["containers"].([]any)
+	if len(containers) != 2 {
+		t.Fatalf("expected appended container, got %+v", containers)
+	}
+	var hero map[string]any
+	for _, item := range containers {
+		entry := item.(map[string]any)
+		if entry["name"] == "Hero" {
+			hero = entry
+		}
+	}
+	if hero == nil {
+		t.Fatalf("expected Hero container, got %+v", containers)
+	}
+	if hero["type"] != "Group" {
+		t.Fatalf("expected normalized Group type from lowercase input, got %+v", hero["type"])
+	}
+	parent, _ := hero["parent"].(map[string]any)
+	if parent == nil || parent["id"] != "c-1" {
+		t.Fatalf("expected parent id to be resolved from name, got %+v", hero["parent"])
+	}
+}
+
+func TestDoctypeAddContainerRejectsBadType(t *testing.T) {
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		default:
+			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	_, err := execute(
+		buildRootWithCollections(t, deps),
+		"doctype", "add-container", "dt-1",
+		"--name", "Whatever",
+		"--type", "Section",
+	)
+	if err == nil {
+		t.Fatalf("expected unsupported container type to fail")
+	}
+	if !strings.Contains(err.Error(), "must be Tab or Group") {
+		t.Fatalf("unexpected type validation error: %v", err)
+	}
+}
+
+func TestDoctypeAddContainerRejectsDuplicateName(t *testing.T) {
+	var putRequests int
+
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/document-type/dt-1":
+			if req.Method == http.MethodGet {
+				return datatypeJSONResponse(http.StatusOK, `{
+  "id":"dt-1",
+  "alias":"partnerPage",
+  "name":"Partner Page",
+  "properties":[],
+  "containers":[{"id":"c-1","name":"Content","type":"Tab","sortOrder":0}]
+}`), nil
+			}
+			if req.Method == http.MethodPut {
+				putRequests++
+			}
+			return datatypeJSONResponse(http.StatusMethodNotAllowed, `{"error":"method not allowed"}`), nil
+		default:
+			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	_, err := execute(
+		buildRootWithCollections(t, deps),
+		"doctype", "add-container", "dt-1",
+		"--name", "Content",
+		"--type", "Tab",
+	)
+	if err == nil {
+		t.Fatalf("expected duplicate container name to fail")
+	}
+	if !strings.Contains(err.Error(), "already has a container named") {
+		t.Fatalf("unexpected duplicate container error: %v", err)
+	}
+	if putRequests != 0 {
+		t.Fatalf("expected duplicate container to short-circuit before PUT, got %d writes", putRequests)
+	}
+}
+
 func TestDoctypeUpdateRejectsJSONAndMergeJSONTogether(t *testing.T) {
 	deps := makeDeps()
 	root := buildRootWithCollections(t, deps)

@@ -115,6 +115,86 @@ func nextDoctypePropertySortOrder(doctype map[string]any, containerID string) in
 	return highest + 1
 }
 
+// hasDoctypeContainer reports whether the doctype already exposes a container with the given
+// name (case-insensitive). Used to short-circuit add-container before generating an ID.
+func hasDoctypeContainer(doctype map[string]any, name string) bool {
+	containers, ok := doctype["containers"].([]any)
+	if !ok {
+		return false
+	}
+	target := strings.ToLower(strings.TrimSpace(name))
+	for _, item := range containers {
+		entry, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		entryName, _ := entry["name"].(string)
+		if strings.ToLower(strings.TrimSpace(entryName)) == target {
+			return true
+		}
+	}
+	return false
+}
+
+// nextDoctypeContainerSortOrder returns the next sort order to use for a new container at the
+// supplied parent scope (parentID is "" for root-level Tabs).
+func nextDoctypeContainerSortOrder(doctype map[string]any, parentID string) int {
+	containers, ok := doctype["containers"].([]any)
+	if !ok {
+		return 0
+	}
+	highest := -1
+	for _, item := range containers {
+		entry, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		entryParentID := ""
+		if parent, ok := entry["parent"].(map[string]any); ok {
+			entryParentID, _ = parent["id"].(string)
+		}
+		if entryParentID != parentID {
+			continue
+		}
+		if value, ok := entry["sortOrder"].(float64); ok {
+			if int(value) > highest {
+				highest = int(value)
+			}
+		}
+	}
+	return highest + 1
+}
+
+// normalizeDoctypeContainerType maps user-provided type input to the canonical "Tab" or
+// "Group" expected by Umbraco. Returns the empty string when the input is not recognized.
+func normalizeDoctypeContainerType(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "tab":
+		return "Tab"
+	case "group":
+		return "Group"
+	default:
+		return ""
+	}
+}
+
+// buildDoctypeContainer assembles a container entry that mirrors the Umbraco Management API
+// PropertyTypeContainerModelBase shape (id, parent?, name, type, sortOrder).
+func buildDoctypeContainer(id, parentID, name, containerType string, sortOrder int) map[string]any {
+	container := map[string]any{
+		"id":        id,
+		"name":      name,
+		"type":      containerType,
+		"sortOrder": sortOrder,
+	}
+	if parentID != "" {
+		container["parent"] = map[string]any{"id": parentID}
+	} else {
+		container["parent"] = nil
+	}
+	return container
+}
+
 // newUUIDv4 returns a freshly generated random UUID (RFC 4122 v4).
 func newUUIDv4() (string, error) {
 	var b [16]byte

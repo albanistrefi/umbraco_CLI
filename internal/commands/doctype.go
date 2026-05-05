@@ -25,6 +25,7 @@ func RegisterDoctype(root *cobra.Command, deps Dependencies) {
 	doctype.AddCommand(doctypeCreate(deps))
 	doctype.AddCommand(doctypeUpdate(deps))
 	doctype.AddCommand(doctypeAddProperty(deps))
+	doctype.AddCommand(doctypeAddContainer(deps))
 	doctype.AddCommand(doctypeCopy(deps))
 	doctype.AddCommand(doctypeMove(deps))
 	doctype.AddCommand(doctypeDelete(deps))
@@ -266,6 +267,94 @@ func doctypeAddProperty(deps Dependencies) *cobra.Command {
 	cmd.Flags().StringVar(&container, "container", "", "Name of the existing tab/group container that should hold the property (case-insensitive match)")
 	cmd.Flags().StringVar(&description, "description", "", "Optional property description")
 	cmd.Flags().BoolVar(&mandatory, "mandatory", false, "Mark the property as mandatory")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
+	return cmd
+}
+
+func doctypeAddContainer(deps Dependencies) *cobra.Command {
+	var name string
+	var containerType string
+	var parent string
+	var dryRun bool
+
+	cmd := &cobra.Command{
+		Use:   "add-container <id>",
+		Short: "Append a tab or group container to a document type",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			for flag, value := range map[string]string{
+				"--name": name,
+				"--type": containerType,
+			} {
+				if err := requireValue(flag, value); err != nil {
+					return err
+				}
+			}
+			for _, value := range []string{name, containerType, parent} {
+				if value == "" {
+					continue
+				}
+				if err := validate.String(value); err != nil {
+					return err
+				}
+			}
+
+			normalizedType := normalizeDoctypeContainerType(containerType)
+			if normalizedType == "" {
+				return fmt.Errorf("--type must be Tab or Group, got %q", containerType)
+			}
+
+			current, err := fetchDoctypeObject(context.Background(), deps.Client, args[0])
+			if err != nil {
+				return err
+			}
+
+			if hasDoctypeContainer(current, name) {
+				return fmt.Errorf("doctype %s already has a container named %q", args[0], name)
+			}
+
+			parentID := ""
+			if parent != "" {
+				resolved, ambiguous := findDoctypeContainerID(current, parent)
+				if resolved == "" {
+					return fmt.Errorf("doctype %s has no parent container named %q", args[0], parent)
+				}
+				if ambiguous {
+					return fmt.Errorf("doctype %s has multiple containers named %q; rename one or pick a unique name", args[0], parent)
+				}
+				parentID = resolved
+			}
+
+			containerID, err := newUUIDv4()
+			if err != nil {
+				return fmt.Errorf("failed to generate container id: %w", err)
+			}
+			sortOrder := nextDoctypeContainerSortOrder(current, parentID)
+			container := buildDoctypeContainer(containerID, parentID, name, normalizedType, sortOrder)
+
+			// Containers have no alias field, so the alias-keyed merge replaces the whole array.
+			// Build the next containers slice ourselves and let the rest of the doctype stay intact.
+			existing, _ := current["containers"].([]any)
+			nextContainers := make([]any, 0, len(existing)+1)
+			nextContainers = append(nextContainers, existing...)
+			nextContainers = append(nextContainers, container)
+			merged := mergeAliasPayload(current, map[string]any{"containers": nextContainers})
+			result, err := deps.Client.Put(
+				context.Background(),
+				fmt.Sprintf("/document-type/%s", args[0]),
+				merged,
+				api.RequestOptions{DryRun: dryRun, SkipValidation: true},
+			)
+			if err != nil {
+				return err
+			}
+			return printResult(cmd, deps, result)
+		},
+	}
+
+	cmd.Flags().StringVar(&name, "name", "", "Display name for the new container")
+	cmd.Flags().StringVar(&containerType, "type", "", "Container type: Tab or Group")
+	cmd.Flags().StringVar(&parent, "parent", "", "Optional name of an existing parent container (typically a Tab when adding a Group)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
 	return cmd
 }
