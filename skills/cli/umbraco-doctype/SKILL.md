@@ -77,10 +77,37 @@ umbraco doctype search
 
 | Command | Description |
 |---------|-------------|
+| `doctype add-property <id>` | Append a property to a document type under an existing container alias |
 | `doctype copy <id>` | Copy document type |
 | `doctype create` | Create document type |
 | `doctype move <id>` | Move document type |
 | `doctype update <id>` | Update document type |
+
+### add-property
+
+```bash
+umbraco doctype add-property <id>
+```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--alias` | string | — | Property alias (camelCase identifier) |
+| `--container` | string | — | Alias of the existing tab/group container that should hold the property |
+| `--data-type` | string | — | Data type ID (GUID) backing the property |
+| `--description` | string | — | Optional property description |
+| `--dry-run` | bool | false | Validate request without executing |
+| `--mandatory` | bool | false | Mark the property as mandatory |
+| `--name` | string | — | Human-readable property name |
+
+**Safe pattern:**
+
+```bash
+# 1. Dry run first
+umbraco doctype add-property <id> --dry-run
+
+# 2. Execute
+umbraco doctype add-property <id>
+```
 
 ### copy
 
@@ -157,6 +184,7 @@ umbraco doctype update <id>
 |------|------|---------|-------------|
 | `--dry-run` | bool | false | Validate request without executing |
 | `--json` | string | — | Update payload as JSON |
+| `--merge-json` | string | — | Partial JSON payload merged into the current document type before update |
 
 **Safe pattern:**
 
