@@ -218,7 +218,7 @@ func executeDocumentBulkUpdate(ctx context.Context, client *api.Client, ids []st
 				continue
 			}
 
-			merged := mergeDatatypePayload(current, mergePatch)
+			merged := mergeAliasPayload(current, mergePatch)
 			if reflect.DeepEqual(current, merged) {
 				item.Action = "skip"
 				item.Message = "already up to date"
@@ -373,7 +373,7 @@ func executeDocumentCSVUpdate(ctx context.Context, client *api.Client, opts docu
 			continue
 		}
 
-		merged := mergeDatatypePayload(current, map[string]any{"values": values})
+		merged := mergeAliasPayload(current, map[string]any{"values": values})
 		if reflect.DeepEqual(current, merged) {
 			resultItem.Action = "skip"
 			resultItem.Message = "already up to date"

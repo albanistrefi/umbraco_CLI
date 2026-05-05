@@ -167,7 +167,7 @@ func doctypeUpdate(deps Dependencies) *cobra.Command {
 				return err
 			}
 
-			merged := mergeDatatypePayload(current, patch)
+			merged := mergeAliasPayload(current, patch)
 			result, err := deps.Client.Put(context.Background(), fmt.Sprintf("/document-type/%s", args[0]), merged, api.RequestOptions{DryRun: dryRun, SkipValidation: true})
 			if err != nil {
 				return err
@@ -241,7 +241,7 @@ func doctypeAddProperty(deps Dependencies) *cobra.Command {
 			sortOrder := nextDoctypePropertySortOrder(current, containerID)
 			property := buildDoctypeProperty(propertyID, containerID, alias, name, dataType, description, mandatory, sortOrder)
 
-			merged := mergeDatatypePayload(current, map[string]any{
+			merged := mergeAliasPayload(current, map[string]any{
 				"properties": []any{property},
 			})
 			result, err := deps.Client.Put(

@@ -270,7 +270,7 @@ func documentUpdate(deps Dependencies) *cobra.Command {
 				if err != nil {
 					return err
 				}
-				body = mergeDatatypePayload(current, patch)
+				body = mergeAliasPayload(current, patch)
 			} else if hasMergeJSON {
 				patch, err := parsePayload(mergeJSON)
 				if err != nil {
@@ -281,7 +281,7 @@ func documentUpdate(deps Dependencies) *cobra.Command {
 				if err != nil {
 					return err
 				}
-				body = mergeDatatypePayload(current, patch)
+				body = mergeAliasPayload(current, patch)
 			} else {
 				body, err = parsePayload(jsonPayload)
 				if err != nil {
@@ -455,7 +455,7 @@ func documentUpdateProperties(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			merged := mergeDatatypePayload(current, body)
+			merged := mergeAliasPayload(current, body)
 			result, err := deps.Client.Put(context.Background(), fmt.Sprintf("/document/%s", args[0]), merged, api.RequestOptions{DryRun: dryRun, SkipValidation: true})
 			if err != nil {
 				return err

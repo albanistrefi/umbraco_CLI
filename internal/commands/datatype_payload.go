@@ -25,25 +25,28 @@ func fetchDatatypeObject(ctx context.Context, client *api.Client, id string) (ma
 	return decodeResult[map[string]any](result)
 }
 
-func mergeDatatypePayload(current map[string]any, patch map[string]any) map[string]any {
+// mergeAliasPayload deep-merges a partial patch into a current Management API payload, preserving
+// fields the patch does not mention and merging alias-keyed arrays (`properties`, `containers`,
+// `values`, …) entry-wise. Used by the merge-json flows for documents, doctypes, and datatypes.
+func mergeAliasPayload(current map[string]any, patch map[string]any) map[string]any {
 	merged := cloneObject(current)
 	for key, value := range patch {
 		if existing, exists := merged[key]; exists {
-			merged[key] = mergeDatatypeValue(existing, value)
+			merged[key] = mergeAliasValue(existing, value)
 			continue
 		}
 
-		merged[key] = cloneDatatypeValue(value)
+		merged[key] = cloneAliasValue(value)
 	}
 
 	return merged
 }
 
-func mergeDatatypeValue(current any, patch any) any {
+func mergeAliasValue(current any, patch any) any {
 	currentMap, currentIsMap := current.(map[string]any)
 	patchMap, patchIsMap := patch.(map[string]any)
 	if currentIsMap && patchIsMap {
-		return mergeDatatypePayload(currentMap, patchMap)
+		return mergeAliasPayload(currentMap, patchMap)
 	}
 
 	currentArray, currentIsArray := current.([]any)
@@ -52,7 +55,7 @@ func mergeDatatypeValue(current any, patch any) any {
 		return mergeAliasObjectArrays(currentArray, patchArray)
 	}
 
-	return cloneDatatypeValue(patch)
+	return cloneAliasValue(patch)
 }
 
 func mergeAliasObjectArrays(current []any, patch []any) []any {
@@ -70,30 +73,30 @@ func mergeAliasObjectArrays(current []any, patch []any) []any {
 	for _, item := range current {
 		alias, itemMap, ok := aliasObject(item)
 		if !ok {
-			merged = append(merged, cloneDatatypeValue(item))
+			merged = append(merged, cloneAliasValue(item))
 			continue
 		}
 
 		patchItem, hasPatch := patchByAlias[alias]
 		if !hasPatch {
-			merged = append(merged, cloneDatatypeValue(itemMap))
+			merged = append(merged, cloneAliasValue(itemMap))
 			continue
 		}
 
-		merged = append(merged, mergeDatatypePayload(itemMap, patchItem))
+		merged = append(merged, mergeAliasPayload(itemMap, patchItem))
 		seen[alias] = struct{}{}
 	}
 
 	for _, item := range patch {
 		alias, itemMap, ok := aliasObject(item)
 		if !ok {
-			merged = append(merged, cloneDatatypeValue(item))
+			merged = append(merged, cloneAliasValue(item))
 			continue
 		}
 		if _, alreadyMerged := seen[alias]; alreadyMerged {
 			continue
 		}
-		merged = append(merged, cloneDatatypeValue(itemMap))
+		merged = append(merged, cloneAliasValue(itemMap))
 	}
 
 	return merged
@@ -123,19 +126,19 @@ func aliasObject(item any) (string, map[string]any, bool) {
 func cloneObject(input map[string]any) map[string]any {
 	cloned := make(map[string]any, len(input))
 	for key, value := range input {
-		cloned[key] = cloneDatatypeValue(value)
+		cloned[key] = cloneAliasValue(value)
 	}
 	return cloned
 }
 
-func cloneDatatypeValue(value any) any {
+func cloneAliasValue(value any) any {
 	switch typed := value.(type) {
 	case map[string]any:
 		return cloneObject(typed)
 	case []any:
 		cloned := make([]any, len(typed))
 		for index, item := range typed {
-			cloned[index] = cloneDatatypeValue(item)
+			cloned[index] = cloneAliasValue(item)
 		}
 		return cloned
 	default:
@@ -263,7 +266,7 @@ func datatypeSetStringArrayValue(payload map[string]any, alias string, values []
 		for _, item := range rawValues {
 			itemAlias, itemMap, ok := aliasObject(item)
 			if !ok {
-				nextValues = append(nextValues, cloneDatatypeValue(item))
+				nextValues = append(nextValues, cloneAliasValue(item))
 				continue
 			}
 			if itemAlias != alias {

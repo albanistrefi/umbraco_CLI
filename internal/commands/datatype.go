@@ -248,7 +248,7 @@ func datatypeUpdate(deps Dependencies) *cobra.Command {
 				return err
 			}
 
-			merged := mergeDatatypePayload(current, patch)
+			merged := mergeAliasPayload(current, patch)
 			result, err := deps.Client.Put(context.Background(), fmt.Sprintf("%s/%s", dataTypeLegacyCollectionPath, args[0]), merged, api.RequestOptions{DryRun: dryRun, SkipValidation: true})
 			if err != nil {
 				return err
