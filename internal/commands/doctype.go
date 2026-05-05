@@ -3,6 +3,7 @@ package commands
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -140,11 +141,34 @@ func doctypeCreate(deps Dependencies) *cobra.Command {
 
 func doctypeUpdate(deps Dependencies) *cobra.Command {
 	var jsonPayload string
+	var mergeJSON string
 	var dryRun bool
 	cmd := &cobra.Command{Use: "update <id>", Short: "Update document type", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		if err := requireValue("--json", jsonPayload); err != nil {
-			return err
+		hasJSON := strings.TrimSpace(jsonPayload) != ""
+		hasMergeJSON := strings.TrimSpace(mergeJSON) != ""
+		if hasJSON == hasMergeJSON {
+			return fmt.Errorf("doctype update requires exactly one of --json or --merge-json")
 		}
+
+		if hasMergeJSON {
+			patch, err := parsePayload(mergeJSON)
+			if err != nil {
+				return err
+			}
+
+			current, err := fetchDoctypeObject(context.Background(), deps.Client, args[0])
+			if err != nil {
+				return err
+			}
+
+			merged := mergeDatatypePayload(current, patch)
+			result, err := deps.Client.Put(context.Background(), fmt.Sprintf("/document-type/%s", args[0]), merged, api.RequestOptions{DryRun: dryRun, SkipValidation: true})
+			if err != nil {
+				return err
+			}
+			return printResult(cmd, deps, result)
+		}
+
 		body, err := parsePayload(jsonPayload)
 		if err != nil {
 			return err
@@ -156,6 +180,7 @@ func doctypeUpdate(deps Dependencies) *cobra.Command {
 		return printResult(cmd, deps, result)
 	}}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Update payload as JSON")
+	cmd.Flags().StringVar(&mergeJSON, "merge-json", "", "Partial JSON payload merged into the current document type before update")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
 	return cmd
 }
