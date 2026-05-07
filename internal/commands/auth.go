@@ -60,7 +60,7 @@ func authLogin(deps Dependencies) *cobra.Command {
 				ClientID:     clientID,
 				ClientSecret: clientSecret,
 			}
-			cfg.BaseURL = strings.TrimSpace(cfg.BaseURL)
+			cfg.BaseURL = config.NormalizeBaseURL(cfg.BaseURL)
 
 			if err := verifyStoredAuth(cfg, deps.HTTPClient); err != nil {
 				return err

@@ -607,7 +607,7 @@ func choosePreferredURL(candidates []string) (string, bool) {
 	return "", false
 }
 
-func normalizeBaseURL(raw string) string {
+func NormalizeBaseURL(raw string) string {
 	value := strings.TrimSpace(raw)
 	value = strings.TrimRight(value, "/")
 	lowerValue := strings.ToLower(value)
@@ -616,6 +616,10 @@ func normalizeBaseURL(raw string) string {
 		value = strings.TrimRight(value, "/")
 	}
 	return value
+}
+
+func normalizeBaseURL(raw string) string {
+	return NormalizeBaseURL(raw)
 }
 
 func ParseOutputFormat(raw string) (OutputFormat, error) {

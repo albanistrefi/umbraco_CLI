@@ -59,6 +59,56 @@ func TestAuthLoginPersistsVerifiedCredentials(t *testing.T) {
 	}
 }
 
+func TestAuthLoginNormalizesBaseURLBeforeVerificationAndPersistence(t *testing.T) {
+	homeDir := t.TempDir()
+	originalHome := os.Getenv("HOME")
+	t.Cleanup(func() {
+		_ = os.Setenv("HOME", originalHome)
+	})
+	if err := os.Setenv("HOME", homeDir); err != nil {
+		t.Fatalf("failed to set HOME: %v", err)
+	}
+
+	originalVerify := verifyStoredAuth
+	t.Cleanup(func() { verifyStoredAuth = originalVerify })
+	verifyStoredAuth = func(cfg config.Config, httpClient *http.Client) error {
+		if cfg.BaseURL != "https://localhost:44314" {
+			t.Fatalf("expected normalized base URL for verification, got %q", cfg.BaseURL)
+		}
+		return nil
+	}
+
+	output, err := execute(
+		buildRootWithCollections(t, makeDeps()),
+		"auth", "login",
+		"--base-url", "https://localhost:44314/umbraco/",
+		"--client-id", "client-id",
+		"--client-secret", "client-secret",
+	)
+	if err != nil {
+		t.Fatalf("auth login failed: %v", err)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("failed to decode auth login payload: %v", err)
+	}
+	if payload["baseUrl"] != "https://localhost:44314" {
+		t.Fatalf("expected normalized baseUrl in output, got %+v", payload)
+	}
+
+	cfg, ok, err := config.LoadUserConfig()
+	if err != nil {
+		t.Fatalf("LoadUserConfig failed: %v", err)
+	}
+	if !ok {
+		t.Fatalf("expected stored user config after login")
+	}
+	if cfg.BaseURL != "https://localhost:44314" {
+		t.Fatalf("expected normalized persisted base URL, got %+v", cfg)
+	}
+}
+
 func TestAuthStatusReportsStoredConfigAndVerification(t *testing.T) {
 	homeDir := t.TempDir()
 	originalHome := os.Getenv("HOME")
