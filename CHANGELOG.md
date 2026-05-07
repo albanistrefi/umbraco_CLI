@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.2.9 - 2026-05-07
+
+- normalized `auth login --base-url` through the shared config base URL rules so `/umbraco` suffixes do not create duplicated token URLs
+- changed root command initialization to return CLI errors instead of panicking when runtime/config loading fails
+- added schema coverage tests that fail when registered direct API commands are missing `umbraco schema` entries
+
 ## v0.2.8 - 2026-05-05
 
 - fixed `doctype add-property --container` so it looks up containers by name (the canonical Umbraco field) instead of the non-existent alias field; the v0.2.7 lookup never matched against real backoffice payloads
