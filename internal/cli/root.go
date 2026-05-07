@@ -1,17 +1,15 @@
 package cli
 
 import (
-	"fmt"
-
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/commands"
 )
 
-func NewRootCommand() *cobra.Command {
+func NewRootCommand() (*cobra.Command, error) {
 	runtime, err := NewRuntime()
 	if err != nil {
-		panic(fmt.Errorf("failed to initialize runtime: %w", err))
+		return nil, err
 	}
 
 	var outputFormat string
@@ -49,5 +47,5 @@ func NewRootCommand() *cobra.Command {
 	commands.RegisterSchema(root, deps)
 	commands.RegisterGenerateSkills(root, deps)
 
-	return root
+	return root, nil
 }
