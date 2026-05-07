@@ -3,14 +3,17 @@ package commands
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"testing"
 
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
 	"umbraco-cli/internal/config"
+	"umbraco-cli/internal/schema"
 )
 
 func makeDeps() Dependencies {
@@ -103,6 +106,56 @@ func TestSchemaCommandListAndCollectionLookup(t *testing.T) {
 	}
 }
 
+func TestRegisteredAPICommandsHaveSchemas(t *testing.T) {
+	root := buildRootWithCollections(t, makeDeps())
+	schemaBackedCollections := map[string]struct{}{
+		"document":   {},
+		"dictionary": {},
+		"media":      {},
+		"doctype":    {},
+		"datatype":   {},
+		"template":   {},
+		"logs":       {},
+		"server":     {},
+		"health":     {},
+	}
+	convenienceCommands := map[string]string{
+		"document.bulk-update":      "batch convenience command",
+		"document.csv-update":       "CSV-driven batch convenience command",
+		"dictionary.export":         "aggregate export command built from list/get calls",
+		"doctype.add-property":      "payload mutation convenience command",
+		"doctype.add-container":     "payload mutation convenience command",
+		"datatype.extensions":       "payload inspection convenience command",
+		"datatype.add-extension":    "payload mutation convenience command",
+		"datatype.remove-extension": "payload mutation convenience command",
+		"datatype.add-value":        "payload mutation convenience command",
+		"datatype.remove-value":     "payload mutation convenience command",
+	}
+
+	missing := make([]string, 0)
+	for collection := range schemaBackedCollections {
+		command := findChildCommand(root, collection)
+		if command == nil {
+			t.Fatalf("missing registered collection command %s", collection)
+		}
+
+		for _, child := range command.Commands() {
+			endpoint := fmt.Sprintf("%s.%s", collection, child.Name())
+			if _, ok := convenienceCommands[endpoint]; ok {
+				continue
+			}
+			if _, ok := schema.Schemas[endpoint]; !ok {
+				missing = append(missing, endpoint)
+			}
+		}
+	}
+
+	if len(missing) > 0 {
+		sort.Strings(missing)
+		t.Fatalf("registered API commands missing schema entries: %v", missing)
+	}
+}
+
 func TestDocumentPublishPrefersJSONOverCultureInDryRun(t *testing.T) {
 	deps := makeDeps()
 	root := buildRootWithCollections(t, deps)
@@ -129,6 +182,15 @@ func TestDocumentPublishPrefersJSONOverCultureInDryRun(t *testing.T) {
 	if !ok || len(cultures) != 1 || cultures[0] != "da-DK" {
 		t.Fatalf("expected --json cultures to take precedence, got: %+v", body)
 	}
+}
+
+func findChildCommand(root *cobra.Command, name string) *cobra.Command {
+	for _, command := range root.Commands() {
+		if command.Name() == name {
+			return command
+		}
+	}
+	return nil
 }
 
 func TestDatatypeSchemaMatchesCompatibilityPrimaryEndpoints(t *testing.T) {
