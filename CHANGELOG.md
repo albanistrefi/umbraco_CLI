@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.3.1 - 2026-05-08
 
 - fixed `media upload --type <alias>` so it resolves media type aliases/names to IDs before creating media
 - fixed `datatype search --editor-alias` so it performs deterministic CLI-side filtering and works without a separate search query
