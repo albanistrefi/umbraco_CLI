@@ -2,7 +2,7 @@
 name: umbraco-dictionary
 description: "Dictionary item and translation key operations"
 metadata:
-  version: 0.3.4
+  version: 0.3.5
   requires:
     bins:
       - umbraco
@@ -55,7 +55,10 @@ umbraco dictionary list
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--filter` | string | — | Filter dictionary items by key name |
+| `--first-n` | int | 0 | Return only the first N items from item collections |
+| `--ids-only` | bool | false | Return only item IDs for item collections |
 | `--skip` | int | 0 | Pagination offset |
+| `--summarize` | bool | false | Return only id/name/alias fields for item collections |
 | `--take` | int | 100 | Pagination page size |
 
 ## Mutation Commands

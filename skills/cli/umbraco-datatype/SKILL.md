@@ -2,7 +2,7 @@
 name: umbraco-datatype
 description: "Data type operations"
 metadata:
-  version: 0.3.4
+  version: 0.3.5
   requires:
     bins:
       - umbraco
@@ -60,8 +60,11 @@ umbraco datatype list
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--fields` | string | — | Limit response fields |
+| `--first-n` | int | 0 | Return only the first N items from item collections |
+| `--ids-only` | bool | false | Return only item IDs for item collections |
 | `--params` | string | — | Query parameters as JSON |
 | `--skip` | int | 0 | Pagination offset |
+| `--summarize` | bool | false | Return only id/name/alias fields for item collections |
 | `--take` | int | 100 | Pagination page size |
 
 ### root

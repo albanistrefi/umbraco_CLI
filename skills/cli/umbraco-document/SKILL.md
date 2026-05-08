@@ -2,7 +2,7 @@
 name: umbraco-document
 description: "Document and content management operations"
 metadata:
-  version: 0.3.4
+  version: 0.3.5
   requires:
     bins:
       - umbraco
@@ -43,6 +43,9 @@ umbraco document children <id>
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--fields` | string | — | Limit response fields |
+| `--first-n` | int | 0 | Return only the first N items from item collections |
+| `--ids-only` | bool | false | Return only item IDs for item collections |
+| `--summarize` | bool | false | Return only id/name/alias fields for item collections |
 
 ### get
 
@@ -63,7 +66,10 @@ umbraco document root
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--fields` | string | — | Limit response fields |
+| `--first-n` | int | 0 | Return only the first N items from item collections |
+| `--ids-only` | bool | false | Return only item IDs for item collections |
 | `--params` | string | — | Query parameters as JSON |
+| `--summarize` | bool | false | Return only id/name/alias fields for item collections |
 
 ### search
 

@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.3.5 - 2026-05-08
+
+- fixed `media upload --type <alias>` so it resolves canonical Umbraco aliases (e.g., `umbracoMediaVectorGraphics`). The lightweight item/tree endpoints do not include an alias field, so the resolver now collects candidate IDs from search and tree-root and fetches `/media-type/{id}` for each to inspect the alias on the full model
+- fixed `media upload` payload shape: every body now uses the `variants[]` envelope expected by the Management API. `culture` is JSON null for invariant media types and the supplied/default code for culture-varying types. Top-level `name` is never sent. Passing `--culture` against a media type that does not vary now warns and forces null (the API only accepts null in that case)
+- extended `--summarize` / `--ids-only` / `--first-n` to `media root`, `media children`, `document root`, `document children`, `dictionary list`, and `datatype list` so the triage flags work uniformly across collection-returning commands
+
 ## v0.3.4 - 2026-05-08
 
 - maintenance release with no user-visible changes
