@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- fixed `media upload --type <alias>` so it resolves media type aliases/names to IDs before creating media
+- fixed `datatype search --editor-alias` so it performs deterministic CLI-side filtering and works without a separate search query
+
 ## v0.3.0 - 2026-05-08
 
 - added agent-focused create ergonomics: generated IDs, minimal create responses, `--print-template`, and `umbraco schema <endpoint> --template`
