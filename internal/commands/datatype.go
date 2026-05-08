@@ -111,6 +111,7 @@ func datatypeList(deps Dependencies) *cobra.Command {
 }
 
 func datatypeRoot(deps Dependencies) *cobra.Command {
+	var fields string
 	var paramsRaw string
 	var skip int
 	var take int
@@ -131,14 +132,15 @@ func datatypeRoot(deps Dependencies) *cobra.Command {
 		}
 
 		result, err := datatypeGetWithFallback(context.Background(), deps.Client,
-			dataTypeRequestCandidate{path: dataTypeTreeRootPath, opts: api.RequestOptions{Params: params}},
-			dataTypeRequestCandidate{path: dataTypeLegacyRootPath, opts: api.RequestOptions{}},
+			dataTypeRequestCandidate{path: dataTypeTreeRootPath, opts: api.RequestOptions{Fields: fields, Params: params}},
+			dataTypeRequestCandidate{path: dataTypeLegacyRootPath, opts: api.RequestOptions{Fields: fields}},
 		)
 		if err != nil {
 			return err
 		}
 		return printResult(cmd, deps, applyReadTriage(result, triage))
 	}}
+	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
 	cmd.Flags().StringVar(&paramsRaw, "params", "", "Query parameters as JSON")
 	cmd.Flags().IntVar(&skip, "skip", 0, "Pagination offset")
 	cmd.Flags().IntVar(&take, "take", 100, "Pagination page size")

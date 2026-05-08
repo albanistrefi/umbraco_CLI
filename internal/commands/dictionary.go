@@ -78,6 +78,7 @@ func RegisterDictionary(root *cobra.Command, deps Dependencies) {
 }
 
 func dictionaryList(deps Dependencies) *cobra.Command {
+	var fields string
 	var filter string
 	var skip int
 	var take int
@@ -102,7 +103,7 @@ func dictionaryList(deps Dependencies) *cobra.Command {
 				params["filter"] = filter
 			}
 
-			result, err := deps.Client.Get(context.Background(), "/dictionary", api.RequestOptions{Params: params})
+			result, err := deps.Client.Get(context.Background(), "/dictionary", api.RequestOptions{Fields: fields, Params: params})
 			if err != nil {
 				return err
 			}
@@ -111,6 +112,7 @@ func dictionaryList(deps Dependencies) *cobra.Command {
 		},
 	}
 
+	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
 	cmd.Flags().StringVar(&filter, "filter", "", "Filter dictionary items by key name")
 	cmd.Flags().IntVar(&skip, "skip", 0, "Pagination offset")
 	cmd.Flags().IntVar(&take, "take", 100, "Pagination page size")

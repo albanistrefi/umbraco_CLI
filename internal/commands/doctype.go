@@ -60,24 +60,27 @@ func doctypeList(deps Dependencies) *cobra.Command {
 }
 
 func doctypeRoot(deps Dependencies) *cobra.Command {
+	var fields string
 	var triage readTriageOptions
 	cmd := &cobra.Command{Use: "root", Short: "Get root document types", RunE: func(cmd *cobra.Command, args []string) error {
 		result, err := getWithFallback(
 			context.Background(),
 			deps.Client,
-			getRequestCandidate{path: "/tree/document-type/root", opts: api.RequestOptions{}},
-			getRequestCandidate{path: "/document-type/root", opts: api.RequestOptions{}},
+			getRequestCandidate{path: "/tree/document-type/root", opts: api.RequestOptions{Fields: fields}},
+			getRequestCandidate{path: "/document-type/root", opts: api.RequestOptions{Fields: fields}},
 		)
 		if err != nil {
 			return err
 		}
 		return printResult(cmd, deps, applyReadTriage(result, triage))
 	}}
+	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
 	addReadTriageFlags(cmd, &triage)
 	return cmd
 }
 
 func doctypeChildren(deps Dependencies) *cobra.Command {
+	var fields string
 	var triage readTriageOptions
 	cmd := &cobra.Command{Use: "children <id>", Short: "Get child document types", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		result, err := getWithFallback(
@@ -85,11 +88,11 @@ func doctypeChildren(deps Dependencies) *cobra.Command {
 			deps.Client,
 			getRequestCandidate{
 				path: "/tree/document-type/children",
-				opts: api.RequestOptions{Params: map[string]any{"parentId": args[0]}},
+				opts: api.RequestOptions{Fields: fields, Params: map[string]any{"parentId": args[0]}},
 			},
 			getRequestCandidate{
 				path: fmt.Sprintf("/document-type/%s/children", args[0]),
-				opts: api.RequestOptions{},
+				opts: api.RequestOptions{Fields: fields},
 			},
 		)
 		if err != nil {
@@ -97,6 +100,7 @@ func doctypeChildren(deps Dependencies) *cobra.Command {
 		}
 		return printResult(cmd, deps, applyReadTriage(result, triage))
 	}}
+	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
 	addReadTriageFlags(cmd, &triage)
 	return cmd
 }
