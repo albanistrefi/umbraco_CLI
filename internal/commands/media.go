@@ -185,16 +185,25 @@ func mediaUpload(deps Dependencies) *cobra.Command {
 		if err != nil {
 			return err
 		}
+
+		// The Management API contract: every media create body uses a variants[] envelope.
+		// For invariant media types the variant's culture is JSON null; for culture-varying
+		// types it carries the culture code. There is never a top-level "name" field.
 		cultureExplicit := strings.TrimSpace(culture) != ""
-		shouldVariate := mediaTypeInfo.VariesByCulture || cultureExplicit
-		if shouldVariate && !cultureExplicit {
-			culture, err = resolveDefaultCulture(context.Background(), deps.Client)
+		var resolvedCulture string
+		switch {
+		case !mediaTypeInfo.VariesByCulture:
+			if cultureExplicit {
+				fmt.Fprintf(cmd.ErrOrStderr(), "warning: --culture %q ignored; media type %q (alias=%s) does not vary by culture\n", culture, mediaType, mediaTypeInfo.Alias)
+			}
+			resolvedCulture = ""
+		case cultureExplicit:
+			resolvedCulture = strings.TrimSpace(culture)
+		default:
+			resolvedCulture, err = resolveDefaultCulture(context.Background(), deps.Client)
 			if err != nil {
 				return fmt.Errorf("media type %q varies by culture; pass --culture <code>", mediaType)
 			}
-		}
-		if cultureExplicit && !mediaTypeInfo.VariesByCulture {
-			fmt.Fprintf(cmd.ErrOrStderr(), "warning: --culture %q passed but media type %q (alias=%s) does not vary by culture; emitting variant payload as requested\n", culture, mediaType, mediaTypeInfo.Alias)
 		}
 
 		uploadResult, err := deps.Client.MultipartPost(
@@ -209,21 +218,22 @@ func mediaUpload(deps Dependencies) *cobra.Command {
 			return err
 		}
 
+		var variantCulture any
+		if resolvedCulture != "" {
+			variantCulture = resolvedCulture
+		}
 		body := map[string]any{
 			"id":        mediaID,
-			"name":      name,
 			"mediaType": map[string]any{"id": mediaTypeInfo.ID},
-			"values": []any{map[string]any{
-				"alias": propertyAlias,
-				"value": map[string]any{"temporaryFileId": tempID},
+			"variants": []any{map[string]any{
+				"name":    name,
+				"culture": variantCulture,
 			}},
-		}
-		if shouldVariate {
-			delete(body, "name")
-			body["variants"] = []any{map[string]any{"name": name, "culture": culture}}
-			values := body["values"].([]any)
-			value := values[0].(map[string]any)
-			value["culture"] = culture
+			"values": []any{map[string]any{
+				"alias":   propertyAlias,
+				"culture": variantCulture,
+				"value":   map[string]any{"temporaryFileId": tempID},
+			}},
 		}
 		if parent != "" {
 			body["parent"] = map[string]any{"id": parent}

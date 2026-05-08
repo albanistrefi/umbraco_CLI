@@ -116,8 +116,19 @@ func TestMediaUploadCreatesTemporaryFileThenMedia(t *testing.T) {
 	if !sawUpload {
 		t.Fatalf("expected temporary-file upload request")
 	}
-	if createPayload["id"] == "" || createPayload["name"] != "Hero" {
+	if createPayload["id"] == "" {
 		t.Fatalf("unexpected media create payload: %+v", createPayload)
+	}
+	if _, hasTopName := createPayload["name"]; hasTopName {
+		t.Fatalf("expected variants envelope; top-level name should be absent: %+v", createPayload)
+	}
+	variants := createPayload["variants"].([]any)
+	variant := variants[0].(map[string]any)
+	if variant["name"] != "Hero" {
+		t.Fatalf("expected variant name=Hero, got %+v", variant)
+	}
+	if variant["culture"] != nil {
+		t.Fatalf("expected variant culture to be null for non-varying media type, got %+v", variant)
 	}
 	mediaType := createPayload["mediaType"].(map[string]any)
 	if mediaType["id"] != "mt-svg" {
@@ -287,20 +298,25 @@ func TestMediaUploadExplicitCultureForcesVariantPayloadOnNonVaryingType(t *testi
 	}
 
 	if _, exists := createPayload["name"]; exists {
-		t.Fatalf("expected explicit --culture to omit top-level name on non-varying type, got %+v", createPayload)
+		t.Fatalf("expected variants envelope to omit top-level name, got %+v", createPayload)
 	}
 	variants, ok := createPayload["variants"].([]any)
 	if !ok || len(variants) == 0 {
-		t.Fatalf("expected explicit --culture to emit variants[], got %+v", createPayload)
+		t.Fatalf("expected variants[] payload, got %+v", createPayload)
 	}
 	variant := variants[0].(map[string]any)
-	if variant["name"] != "Hero" || variant["culture"] != "en-US" {
-		t.Fatalf("unexpected variant payload: %+v", variant)
+	if variant["name"] != "Hero" {
+		t.Fatalf("expected variant name=Hero, got %+v", variant)
+	}
+	// --culture on a non-varying media type is ignored (the API only accepts
+	// culture: null for invariant types). The CLI warns, but emits null.
+	if variant["culture"] != nil {
+		t.Fatalf("expected variant culture to be null when media type does not vary, got %+v", variant)
 	}
 	values := createPayload["values"].([]any)
 	value := values[0].(map[string]any)
-	if value["culture"] != "en-US" {
-		t.Fatalf("expected value culture to be tagged, got %+v", value)
+	if value["culture"] != nil {
+		t.Fatalf("expected value culture to be null on non-varying media type, got %+v", value)
 	}
 }
 
