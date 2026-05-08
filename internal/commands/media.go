@@ -298,26 +298,71 @@ func resolveMediaTypeInfo(ctx context.Context, client *api.Client, value string)
 		return fetchMediaTypeDetail(ctx, client, normalized, value)
 	}
 
-	listed, err := client.Get(ctx, "/media-type", api.RequestOptions{Params: map[string]any{"skip": 0, "take": 500}})
-	if err == nil {
-		if info := findMediaTypeInfo(listed, normalized); info.ID != "" {
-			return fetchMediaTypeDetail(ctx, client, info.ID, value)
+	// Lightweight endpoints (search, tree, item) return models without an alias field; only
+	// /media-type/{id} carries it. Collect candidate IDs from the cheap endpoints and verify
+	// each against its full detail until we find a case-insensitive alias or name match.
+	candidateIDs := collectMediaTypeCandidateIDs(ctx, client, normalized)
+	var nameMatch mediaTypeInfo
+	visited := make(map[string]struct{}, len(candidateIDs))
+	for _, id := range candidateIDs {
+		if _, seen := visited[id]; seen {
+			continue
+		}
+		visited[id] = struct{}{}
+
+		info, err := fetchMediaTypeDetail(ctx, client, id, value)
+		if err != nil {
+			continue
+		}
+		if strings.EqualFold(info.Alias, normalized) {
+			return info, nil
+		}
+		if nameMatch.ID == "" && strings.EqualFold(info.Name, normalized) {
+			nameMatch = info
 		}
 	}
-
-	searchResult, searchErr := getWithFallback(
-		ctx,
-		client,
-		getRequestCandidate{path: "/item/media-type/search", opts: api.RequestOptions{Params: map[string]any{"query": normalized, "skip": 0, "take": 500}}},
-		getRequestCandidate{path: "/media-type/search", opts: api.RequestOptions{Params: map[string]any{"query": normalized, "skip": 0, "take": 500}}},
-	)
-	if searchErr == nil {
-		if info := findMediaTypeInfo(searchResult, normalized); info.ID != "" {
-			return fetchMediaTypeDetail(ctx, client, info.ID, value)
-		}
+	if nameMatch.ID != "" {
+		return nameMatch, nil
 	}
 
 	return mediaTypeInfo{}, fmt.Errorf("media type %q was not found; pass a media type ID with --type or ensure the alias/name exists", value)
+}
+
+// collectMediaTypeCandidateIDs gathers media type IDs to inspect for alias/name matching.
+// Search results come first (Examine matches both name and alias index, so the SVG type can
+// surface from a query like "umbracoMediaVectorGraphics"), followed by the full tree-root
+// listing as a fallback for installs where search misses or returns nothing.
+func collectMediaTypeCandidateIDs(ctx context.Context, client *api.Client, query string) []string {
+	var ids []string
+
+	if searchResult, err := getWithFallback(
+		ctx,
+		client,
+		getRequestCandidate{path: "/item/media-type/search", opts: api.RequestOptions{Params: map[string]any{"query": query, "skip": 0, "take": 50}}},
+		getRequestCandidate{path: "/media-type/search", opts: api.RequestOptions{Params: map[string]any{"query": query, "skip": 0, "take": 50}}},
+	); err == nil {
+		ids = append(ids, mediaTypeIDsFromResult(searchResult)...)
+	}
+
+	if treeResult, err := client.Get(ctx, "/tree/media-type/root", api.RequestOptions{Params: map[string]any{"skip": 0, "take": 500}}); err == nil {
+		ids = append(ids, mediaTypeIDsFromResult(treeResult)...)
+	}
+
+	return ids
+}
+
+func mediaTypeIDsFromResult(result any) []string {
+	var ids []string
+	for _, item := range resultItems(result) {
+		entry, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		if id, ok := entry["id"].(string); ok && id != "" {
+			ids = append(ids, id)
+		}
+	}
+	return ids
 }
 
 func fetchMediaTypeDetail(ctx context.Context, client *api.Client, id string, originalValue string) (mediaTypeInfo, error) {
