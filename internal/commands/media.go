@@ -185,11 +185,16 @@ func mediaUpload(deps Dependencies) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		if mediaTypeInfo.VariesByCulture && strings.TrimSpace(culture) == "" {
+		cultureExplicit := strings.TrimSpace(culture) != ""
+		shouldVariate := mediaTypeInfo.VariesByCulture || cultureExplicit
+		if shouldVariate && !cultureExplicit {
 			culture, err = resolveDefaultCulture(context.Background(), deps.Client)
 			if err != nil {
 				return fmt.Errorf("media type %q varies by culture; pass --culture <code>", mediaType)
 			}
+		}
+		if cultureExplicit && !mediaTypeInfo.VariesByCulture {
+			fmt.Fprintf(cmd.ErrOrStderr(), "warning: --culture %q passed but media type %q (alias=%s) does not vary by culture; emitting variant payload as requested\n", culture, mediaType, mediaTypeInfo.Alias)
 		}
 
 		uploadResult, err := deps.Client.MultipartPost(
@@ -213,7 +218,7 @@ func mediaUpload(deps Dependencies) *cobra.Command {
 				"value": map[string]any{"temporaryFileId": tempID},
 			}},
 		}
-		if mediaTypeInfo.VariesByCulture {
+		if shouldVariate {
 			delete(body, "name")
 			body["variants"] = []any{map[string]any{"name": name, "culture": culture}}
 			values := body["values"].([]any)
@@ -259,37 +264,61 @@ type mediaTypeInfo struct {
 	VariesByCulture bool
 }
 
+// mediaTypeFriendlyAliases maps short, human-friendly names to the canonical Umbraco aliases for
+// the built-in media types. Lookup is case-insensitive on the key. Listed names that already match
+// their canonical alias (Image, File, Folder) are included so future renames stay backwards
+// compatible.
+var mediaTypeFriendlyAliases = map[string]string{
+	"image":   "Image",
+	"file":    "File",
+	"folder":  "Folder",
+	"svg":     "umbracoMediaVectorGraphics",
+	"audio":   "umbracoMediaAudio",
+	"video":   "umbracoMediaVideo",
+	"article": "umbracoMediaArticle",
+}
+
 func resolveMediaTypeInfo(ctx context.Context, client *api.Client, value string) (mediaTypeInfo, error) {
 	normalized := strings.TrimSpace(value)
-	var resolved mediaTypeInfo
+	if canonical, ok := mediaTypeFriendlyAliases[strings.ToLower(normalized)]; ok {
+		normalized = canonical
+	}
+
 	if isUUIDLike(normalized) {
-		resolved.ID = normalized
-	} else {
-		result, err := getWithFallback(
-			ctx,
-			client,
-			getRequestCandidate{path: "/media-type", opts: api.RequestOptions{}},
-			getRequestCandidate{path: "/item/media-type/search", opts: api.RequestOptions{Params: map[string]any{"query": normalized, "skip": 0, "take": 500}}},
-			getRequestCandidate{path: "/media-type/search", opts: api.RequestOptions{Params: map[string]any{"query": normalized, "skip": 0, "take": 500}}},
-		)
-		if err != nil {
-			return mediaTypeInfo{}, fmt.Errorf("failed to resolve media type %q: %w", value, err)
-		}
+		return fetchMediaTypeDetail(ctx, client, normalized, value)
+	}
 
-		resolved = findMediaTypeInfo(result, normalized)
-		if resolved.ID == "" {
-			return mediaTypeInfo{}, fmt.Errorf("media type %q was not found; pass a media type ID with --type or ensure the alias/name exists", value)
+	listed, err := client.Get(ctx, "/media-type", api.RequestOptions{Params: map[string]any{"skip": 0, "take": 500}})
+	if err == nil {
+		if info := findMediaTypeInfo(listed, normalized); info.ID != "" {
+			return fetchMediaTypeDetail(ctx, client, info.ID, value)
 		}
 	}
 
-	detail, err := client.Get(ctx, fmt.Sprintf("/media-type/%s", resolved.ID), api.RequestOptions{})
+	searchResult, searchErr := getWithFallback(
+		ctx,
+		client,
+		getRequestCandidate{path: "/item/media-type/search", opts: api.RequestOptions{Params: map[string]any{"query": normalized, "skip": 0, "take": 500}}},
+		getRequestCandidate{path: "/media-type/search", opts: api.RequestOptions{Params: map[string]any{"query": normalized, "skip": 0, "take": 500}}},
+	)
+	if searchErr == nil {
+		if info := findMediaTypeInfo(searchResult, normalized); info.ID != "" {
+			return fetchMediaTypeDetail(ctx, client, info.ID, value)
+		}
+	}
+
+	return mediaTypeInfo{}, fmt.Errorf("media type %q was not found; pass a media type ID with --type or ensure the alias/name exists", value)
+}
+
+func fetchMediaTypeDetail(ctx context.Context, client *api.Client, id string, originalValue string) (mediaTypeInfo, error) {
+	detail, err := client.Get(ctx, fmt.Sprintf("/media-type/%s", id), api.RequestOptions{})
 	if err != nil {
-		return mediaTypeInfo{}, fmt.Errorf("failed to inspect media type %q (%s): %w", value, resolved.ID, err)
+		return mediaTypeInfo{}, fmt.Errorf("failed to inspect media type %q (%s): %w", originalValue, id, err)
 	}
-	if detailInfo := mediaTypeInfoFromAny(detail); detailInfo.ID != "" {
-		return detailInfo, nil
+	if info := mediaTypeInfoFromAny(detail); info.ID != "" {
+		return info, nil
 	}
-	return resolved, nil
+	return mediaTypeInfo{ID: id}, nil
 }
 
 func findMediaTypeInfo(result any, query string) mediaTypeInfo {

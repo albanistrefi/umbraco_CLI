@@ -180,6 +180,130 @@ func TestMediaUploadCultureVaryingMediaTypeUsesVariantPayload(t *testing.T) {
 	}
 }
 
+func TestMediaUploadResolvesFriendlySVGToCanonicalAlias(t *testing.T) {
+	var detailFetched string
+
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/media-type":
+			// Real Umbraco names the SVG type "Vector Graphics (SVG)"; alias is umbracoMediaVectorGraphics.
+			return endpointJSONResponse(http.StatusOK, `{"total":2,"items":[
+				{"id":"mt-image","alias":"Image","name":"Image"},
+				{"id":"mt-svg","alias":"umbracoMediaVectorGraphics","name":"Vector Graphics (SVG)"}
+			]}`), nil
+		case "/umbraco/management/api/v1/media-type/mt-svg":
+			detailFetched = "mt-svg"
+			return endpointJSONResponse(http.StatusOK, `{"id":"mt-svg","alias":"umbracoMediaVectorGraphics","name":"Vector Graphics (SVG)","variesByCulture":false}`), nil
+		case "/umbraco/management/api/v1/temporary-file":
+			return endpointJSONResponse(http.StatusCreated, `{"success":true}`), nil
+		case "/umbraco/management/api/v1/media":
+			return endpointJSONResponse(http.StatusOK, `{"success":true}`), nil
+		default:
+			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	filePath := filepath.Join(t.TempDir(), "hero.svg")
+	if err := os.WriteFile(filePath, []byte("asset"), 0o644); err != nil {
+		t.Fatalf("failed to write upload fixture: %v", err)
+	}
+
+	if _, err := execute(buildRootWithCollections(t, deps), "media", "upload", filePath, "--type", "SVG", "--name", "Hero"); err != nil {
+		t.Fatalf("media upload --type SVG failed: %v", err)
+	}
+	if detailFetched != "mt-svg" {
+		t.Fatalf("expected friendly SVG to resolve via alias map, got detailFetched=%q", detailFetched)
+	}
+}
+
+func TestMediaUploadResolvesCanonicalAliasDirectly(t *testing.T) {
+	var detailFetched string
+
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/media-type":
+			return endpointJSONResponse(http.StatusOK, `{"total":1,"items":[
+				{"id":"mt-svg","alias":"umbracoMediaVectorGraphics","name":"Vector Graphics (SVG)"}
+			]}`), nil
+		case "/umbraco/management/api/v1/media-type/mt-svg":
+			detailFetched = "mt-svg"
+			return endpointJSONResponse(http.StatusOK, `{"id":"mt-svg","alias":"umbracoMediaVectorGraphics","name":"Vector Graphics (SVG)","variesByCulture":false}`), nil
+		case "/umbraco/management/api/v1/temporary-file":
+			return endpointJSONResponse(http.StatusCreated, `{"success":true}`), nil
+		case "/umbraco/management/api/v1/media":
+			return endpointJSONResponse(http.StatusOK, `{"success":true}`), nil
+		default:
+			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	filePath := filepath.Join(t.TempDir(), "logo.svg")
+	if err := os.WriteFile(filePath, []byte("asset"), 0o644); err != nil {
+		t.Fatalf("failed to write upload fixture: %v", err)
+	}
+
+	if _, err := execute(buildRootWithCollections(t, deps), "media", "upload", filePath, "--type", "umbracoMediaVectorGraphics", "--name", "Logo"); err != nil {
+		t.Fatalf("media upload --type <canonical alias> failed: %v", err)
+	}
+	if detailFetched != "mt-svg" {
+		t.Fatalf("expected canonical alias to resolve via alias match, got detailFetched=%q", detailFetched)
+	}
+}
+
+func TestMediaUploadExplicitCultureForcesVariantPayloadOnNonVaryingType(t *testing.T) {
+	var createPayload map[string]any
+
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/media-type":
+			return endpointJSONResponse(http.StatusOK, `{"total":1,"items":[{"id":"mt-image","alias":"Image","name":"Image"}]}`), nil
+		case "/umbraco/management/api/v1/media-type/mt-image":
+			return endpointJSONResponse(http.StatusOK, `{"id":"mt-image","alias":"Image","name":"Image","variesByCulture":false}`), nil
+		case "/umbraco/management/api/v1/temporary-file":
+			return endpointJSONResponse(http.StatusCreated, `{"success":true}`), nil
+		case "/umbraco/management/api/v1/media":
+			if err := json.NewDecoder(req.Body).Decode(&createPayload); err != nil {
+				t.Fatalf("failed to decode media create payload: %v", err)
+			}
+			return endpointJSONResponse(http.StatusOK, `{"success":true}`), nil
+		default:
+			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	filePath := filepath.Join(t.TempDir(), "hero.png")
+	if err := os.WriteFile(filePath, []byte("asset"), 0o644); err != nil {
+		t.Fatalf("failed to write upload fixture: %v", err)
+	}
+
+	if _, err := execute(buildRootWithCollections(t, deps), "media", "upload", filePath, "--type", "Image", "--name", "Hero", "--culture", "en-US"); err != nil {
+		t.Fatalf("media upload with explicit culture failed: %v", err)
+	}
+
+	if _, exists := createPayload["name"]; exists {
+		t.Fatalf("expected explicit --culture to omit top-level name on non-varying type, got %+v", createPayload)
+	}
+	variants, ok := createPayload["variants"].([]any)
+	if !ok || len(variants) == 0 {
+		t.Fatalf("expected explicit --culture to emit variants[], got %+v", createPayload)
+	}
+	variant := variants[0].(map[string]any)
+	if variant["name"] != "Hero" || variant["culture"] != "en-US" {
+		t.Fatalf("unexpected variant payload: %+v", variant)
+	}
+	values := createPayload["values"].([]any)
+	value := values[0].(map[string]any)
+	if value["culture"] != "en-US" {
+		t.Fatalf("expected value culture to be tagged, got %+v", value)
+	}
+}
+
 func TestMediaUploadCultureVaryingMediaTypeRequiresCultureWhenDefaultCannotResolve(t *testing.T) {
 	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
