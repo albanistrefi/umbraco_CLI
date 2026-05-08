@@ -149,7 +149,7 @@ func TestDocumentTreeCommandsPreferTreeEndpoints(t *testing.T) {
 		t.Fatalf("document ancestors failed: %v", err)
 	}
 
-	if !strings.Contains(rootPath, "/tree/document/root") || !strings.Contains(rootPath, "fields=id%2Cname") {
+	if !strings.Contains(rootPath, "/tree/document/root") || strings.Contains(rootPath, "fields=") {
 		t.Fatalf("unexpected document root path: %q", rootPath)
 	}
 	if !strings.Contains(childrenPath, "/tree/document/children") || !strings.Contains(childrenPath, "parentId=parent-1") {

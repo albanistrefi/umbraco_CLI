@@ -85,7 +85,7 @@ func TestRequestBuildsURLAndUsesToken(t *testing.T) {
 		t.Fatalf("request failed: %v", err)
 	}
 
-	if !strings.Contains(observedRequestPath, "fields=id%2Cname") || !strings.Contains(observedRequestPath, "skip=0") || !strings.Contains(observedRequestPath, "take=10") {
+	if strings.Contains(observedRequestPath, "fields=") || !strings.Contains(observedRequestPath, "skip=0") || !strings.Contains(observedRequestPath, "take=10") {
 		t.Fatalf("unexpected query string: %s", observedRequestPath)
 	}
 	if observedAuth != "Bearer token-123" {

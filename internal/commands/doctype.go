@@ -48,14 +48,16 @@ func doctypeGet(deps Dependencies) *cobra.Command {
 
 func doctypeList(deps Dependencies) *cobra.Command {
 	var fields string
+	var triage readTriageOptions
 	cmd := &cobra.Command{Use: "list", Short: "List document types", RunE: func(cmd *cobra.Command, args []string) error {
 		result, err := deps.Client.Get(context.Background(), "/document-type", api.RequestOptions{Fields: fields})
 		if err != nil {
 			return err
 		}
-		return printResult(cmd, deps, applyFieldsProjection(result, fields))
+		return printResult(cmd, deps, applyReadTriage(applyFieldsProjection(result, fields), triage))
 	}}
 	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
+	addReadTriageFlags(cmd, &triage)
 	return cmd
 }
 

@@ -7,6 +7,49 @@ import (
 	"testing"
 )
 
+func TestDoctypeListSupportsFieldsAndReadTriage(t *testing.T) {
+	var observedPath string
+
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/document-type":
+			observedPath = req.URL.String()
+			return datatypeJSONResponse(http.StatusOK, `{"total":2,"items":[
+				{"id":"dt-1","name":"Article","alias":"article","icon":"icon-document"},
+				{"id":"dt-2","name":"Product","alias":"product","icon":"icon-box"}
+			]}`), nil
+		default:
+			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	output, err := execute(buildRootWithCollections(t, deps), "doctype", "list", "--first-n", "1", "--fields", "id,name")
+	if err != nil {
+		t.Fatalf("doctype list --first-n --fields failed: %v", err)
+	}
+	if strings.Contains(observedPath, "fields=") {
+		t.Fatalf("expected --fields to stay client-side, got %q", observedPath)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("failed to decode doctype list payload: %v", err)
+	}
+	items := payload["items"].([]any)
+	if len(items) != 1 {
+		t.Fatalf("expected one returned item, got %+v", payload)
+	}
+	item := items[0].(map[string]any)
+	if len(item) != 2 || item["id"] != "dt-1" || item["name"] != "Article" {
+		t.Fatalf("expected projected doctype item, got %+v", item)
+	}
+	if payload["returned"] != float64(1) {
+		t.Fatalf("expected returned=1, got %+v", payload)
+	}
+}
+
 func TestDoctypeUpdateMergeJSONFetchesCurrentAndSendsMergedPayload(t *testing.T) {
 	var putPayload map[string]any
 	var getRequests int

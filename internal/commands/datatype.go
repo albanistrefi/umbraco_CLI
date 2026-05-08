@@ -66,18 +66,6 @@ func datatypeList(deps Dependencies) *cobra.Command {
 	var triage readTriageOptions
 
 	cmd := &cobra.Command{Use: "list", Short: "List data types", RunE: func(cmd *cobra.Command, args []string) error {
-		if strings.TrimSpace(fields) != "" {
-			if cmd.Flags().Changed("params") || cmd.Flags().Changed("skip") || cmd.Flags().Changed("take") {
-				return fmt.Errorf("--fields cannot be combined with --params, --skip, or --take on datatype list")
-			}
-
-			result, err := deps.Client.Get(context.Background(), dataTypeLegacyCollectionPath, api.RequestOptions{Fields: fields})
-			if err != nil {
-				return err
-			}
-			return printResult(cmd, deps, applyReadTriage(applyFieldsProjection(result, fields), triage))
-		}
-
 		params, err := parseParams(paramsRaw)
 		if err != nil {
 			return err

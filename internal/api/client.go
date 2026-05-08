@@ -21,6 +21,10 @@ import (
 )
 
 type RequestOptions struct {
+	// Fields is kept on request options for command-level projection metadata.
+	// It is intentionally not sent as a query parameter because some
+	// Management API endpoints reject otherwise valid requests when fields is
+	// present.
 	Fields         string
 	Params         map[string]any
 	DryRun         bool
@@ -80,12 +84,6 @@ func (c *Client) buildURL(path string, opts RequestOptions) (string, error) {
 	base.Path = strings.TrimRight(base.Path, "/") + "/umbraco/management/api/v1" + normalizedPath
 
 	query := base.Query()
-	if opts.Fields != "" {
-		if err := validate.String(opts.Fields); err != nil {
-			return "", err
-		}
-		query.Set("fields", opts.Fields)
-	}
 	if opts.Params != nil {
 		if err := validate.Input(opts.Params); err != nil {
 			return "", err

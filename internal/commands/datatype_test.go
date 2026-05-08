@@ -75,6 +75,49 @@ func TestDatatypeListUsesFilterEndpointWithPagination(t *testing.T) {
 	}
 }
 
+func TestDatatypeListFieldsProjectClientSideWithoutQueryParam(t *testing.T) {
+	var observedPath string
+
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/filter/data-type":
+			observedPath = req.URL.String()
+			if req.URL.Query().Get("fields") != "" {
+				return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+			}
+			return datatypeJSONResponse(http.StatusOK, `{"total":2,"items":[
+				{"id":"dt-1","name":"Textstring","alias":"textstring","editorAlias":"Umbraco.TextBox"},
+				{"id":"dt-2","name":"Rich Text","alias":"richText","editorAlias":"Umbraco.RichText"}
+			]}`), nil
+		default:
+			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	output, err := execute(buildRootWithCollections(t, deps), "datatype", "list", "--first-n", "1", "--fields", "id,name")
+	if err != nil {
+		t.Fatalf("datatype list --fields failed: %v", err)
+	}
+	if strings.Contains(observedPath, "fields=") {
+		t.Fatalf("expected --fields to stay client-side, got %q", observedPath)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("failed to decode datatype list payload: %v", err)
+	}
+	items := payload["items"].([]any)
+	if len(items) != 1 {
+		t.Fatalf("expected --first-n to keep one item, got %+v", payload)
+	}
+	item := items[0].(map[string]any)
+	if len(item) != 2 || item["id"] != "dt-1" || item["name"] != "Textstring" {
+		t.Fatalf("expected projected datatype item, got %+v", item)
+	}
+}
+
 func TestDatatypeSearchFallsBackToFilterEndpointWhenItemSearchIsMissing(t *testing.T) {
 	var itemSearchRequests int
 	var observedFilterPath string
