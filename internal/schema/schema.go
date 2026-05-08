@@ -74,8 +74,8 @@ var rawSchemas = map[string]rawSchema{
 
 	// media (12)
 	"media.get":           {Method: "GET", Path: "/media/{id}", PathParams: map[string]ParamSchema{"id": idParam}, QueryParams: map[string]ParamSchema{"fields": fieldsQuery}},
-	"media.root":          {Method: "GET", Path: "/media/root", QueryParams: map[string]ParamSchema{"fields": fieldsQuery}},
-	"media.children":      {Method: "GET", Path: "/media/{id}/children", PathParams: map[string]ParamSchema{"id": idParam}, QueryParams: map[string]ParamSchema{"fields": fieldsQuery}},
+	"media.root":          {Method: "GET", Path: "/tree/media/root", QueryParams: map[string]ParamSchema{"fields": fieldsQuery}},
+	"media.children":      {Method: "GET", Path: "/tree/media/children", QueryParams: map[string]ParamSchema{"parentId": {Type: "string", Format: "uuid", Required: true}, "fields": fieldsQuery}},
 	"media.search":        {Method: "GET", Path: "/item/media/search", QueryParams: map[string]ParamSchema{"query": {Type: "string"}, "skip": {Type: "number"}, "take": {Type: "number"}}},
 	"media.urls":          {Method: "GET", Path: "/media/{id}/urls", PathParams: map[string]ParamSchema{"id": idParam}},
 	"media.create":        {Method: "POST", Path: "/media", RequestBody: genericRequestBody},

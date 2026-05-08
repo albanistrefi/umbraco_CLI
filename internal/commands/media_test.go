@@ -53,16 +53,21 @@ func TestMediaSearchUsesItemSearchEndpointAndFallsBack(t *testing.T) {
 }
 
 func TestMediaRootSupportsTriageFlags(t *testing.T) {
+	var hits []string
 	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
 			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
-		case "/umbraco/management/api/v1/media/root":
+		case "/umbraco/management/api/v1/tree/media/root":
+			hits = append(hits, req.URL.Path)
 			return endpointJSONResponse(http.StatusOK, `{"total":3,"items":[
 				{"id":"m-1","name":"Hero","alias":"hero","extra":"a"},
 				{"id":"m-2","name":"Banner","alias":"banner","extra":"b"},
 				{"id":"m-3","name":"Footer","alias":"footer","extra":"c"}
 			]}`), nil
+		case "/umbraco/management/api/v1/media/root":
+			t.Fatalf("expected /tree/media/root to handle the request; legacy /media/root should not be hit")
+			return endpointJSONResponse(http.StatusInternalServerError, `null`), nil
 		default:
 			return endpointJSONResponse(http.StatusNotFound, `null`), nil
 		}
@@ -92,6 +97,34 @@ func TestMediaRootSupportsTriageFlags(t *testing.T) {
 	}
 	if payload["returned"] != float64(2) {
 		t.Fatalf("expected returned=2 after slicing, got %v", payload["returned"])
+	}
+	if len(hits) == 0 {
+		t.Fatalf("expected /tree/media/root to be queried, got %v", hits)
+	}
+}
+
+func TestMediaChildrenUsesTreeEndpointWithParentId(t *testing.T) {
+	var observed string
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/tree/media/children":
+			observed = req.URL.String()
+			return endpointJSONResponse(http.StatusOK, `{"total":1,"items":[{"id":"m-c","name":"Child"}]}`), nil
+		case "/umbraco/management/api/v1/media/parent-1/children":
+			t.Fatalf("expected /tree/media/children to handle the request; legacy path should not be hit")
+			return endpointJSONResponse(http.StatusInternalServerError, `null`), nil
+		default:
+			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	if _, err := execute(buildRootWithCollections(t, deps), "media", "children", "parent-1"); err != nil {
+		t.Fatalf("media children failed: %v", err)
+	}
+	if !strings.Contains(observed, "parentId=parent-1") {
+		t.Fatalf("expected parentId query parameter, got %q", observed)
 	}
 }
 
