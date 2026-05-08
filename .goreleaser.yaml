@@ -58,7 +58,7 @@ homebrew_casks:
       - umbraco
     commit_msg_template: "chore: update Homebrew cask for {{ .Tag }}"
     directory: Casks
-    homepage: "https://github.com/albanist/umbraco_CLI"
+    homepage: "https://github.com/albanistrefi/umbraco_CLI"
     description: "Command-line client for the Umbraco Management API"
     skip_upload: auto
     caveats: |-
@@ -76,7 +76,7 @@ homebrew_casks:
             system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/umbraco"]
           end
     repository:
-      owner: albanist
+      owner: albanistrefi
       name: homebrew-tap
       branch: main
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"

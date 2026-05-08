@@ -28,7 +28,7 @@ umbraco --help
 ```
 
 Important:
-- The Homebrew tap lives at `https://github.com/albanist/homebrew-tap`.
+- The Homebrew tap lives at `https://github.com/albanistrefi/homebrew-tap`.
 - GitHub release assets are downloaded anonymously by Homebrew. The source
   release repository must therefore be public, or the cask must be configured
   with authenticated download headers.
