@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.3.8 - 2026-05-08
+
+- fixed `--fields` so it is now pure client-side projection and is no longer sent as `?fields=...`, avoiding endpoints such as `datatype list` that reject the query parameter
+- added `--summarize`, `--ids-only`, and `--first-n` to `doctype list`
+
 ## v0.3.7 - 2026-05-08
 
 - fixed `--fields` so it actually trims the response. The Management API ignores the `?fields=` query parameter, so `--fields` was wired through to the URL but had no observable effect. The CLI now performs the projection client-side: each item (or lone object) is trimmed to the comma-separated keys named by `--fields` before `--summarize` / `--ids-only` / `--first-n` run
