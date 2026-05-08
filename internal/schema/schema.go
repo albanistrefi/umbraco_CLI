@@ -72,7 +72,7 @@ var rawSchemas = map[string]rawSchema{
 	"dictionary.children":  {Method: "GET", Path: "/tree/dictionary/children", QueryParams: map[string]ParamSchema{"parentId": {Type: "string", Format: "uuid", Required: true}, "skip": {Type: "number"}, "take": {Type: "number"}}},
 	"dictionary.ancestors": {Method: "GET", Path: "/tree/dictionary/ancestors", QueryParams: map[string]ParamSchema{"descendantId": {Type: "string", Format: "uuid", Required: true}}},
 
-	// media (10)
+	// media (12)
 	"media.get":           {Method: "GET", Path: "/media/{id}", PathParams: map[string]ParamSchema{"id": idParam}, QueryParams: map[string]ParamSchema{"fields": fieldsQuery}},
 	"media.root":          {Method: "GET", Path: "/media/root", QueryParams: map[string]ParamSchema{"fields": fieldsQuery}},
 	"media.children":      {Method: "GET", Path: "/media/{id}/children", PathParams: map[string]ParamSchema{"id": idParam}, QueryParams: map[string]ParamSchema{"fields": fieldsQuery}},

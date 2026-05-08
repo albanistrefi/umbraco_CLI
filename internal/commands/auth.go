@@ -106,7 +106,8 @@ func authLogin(deps Dependencies) *cobra.Command {
 }
 
 func authStatus(deps Dependencies) *cobra.Command {
-	return &cobra.Command{
+	var check bool
+	cmd := &cobra.Command{
 		Use:   "status",
 		Short: "Show the current auth/config status without exposing secrets",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -138,7 +139,7 @@ func authStatus(deps Dependencies) *cobra.Command {
 				}
 			}
 
-			return printResult(cmd, deps, map[string]any{
+			result := map[string]any{
 				"authenticated": resolved.ClientID != "" && resolved.ClientSecret != "",
 				"verified":      verified,
 				"baseUrl":       resolved.BaseURL,
@@ -155,9 +156,15 @@ func authStatus(deps Dependencies) *cobra.Command {
 					"hasClientID":     env["UMBRACO_CLIENT_ID"] != "",
 					"hasClientSecret": env["UMBRACO_CLIENT_SECRET"] != "",
 				},
-			})
+			}
+			if check {
+				result["permissionCheck"] = authPermissionCheck()
+			}
+			return printResult(cmd, deps, result)
 		},
 	}
+	cmd.Flags().BoolVar(&check, "check", false, "List command permission requirements for the resolved user context")
+	return cmd
 }
 
 func authLogout(deps Dependencies) *cobra.Command {
@@ -212,5 +219,19 @@ func currentAuthEnv() map[string]string {
 		"UMBRACO_BASE_URL":      strings.TrimSpace(os.Getenv("UMBRACO_BASE_URL")),
 		"UMBRACO_CLIENT_ID":     strings.TrimSpace(os.Getenv("UMBRACO_CLIENT_ID")),
 		"UMBRACO_CLIENT_SECRET": strings.TrimSpace(os.Getenv("UMBRACO_CLIENT_SECRET")),
+	}
+}
+
+func authPermissionCheck() map[string]any {
+	return map[string]any{
+		"note": "The Management API returns final authorization per request; this table lists the expected backoffice access needed before running commands.",
+		"commands": []any{
+			map[string]any{"pattern": "document get|root|children|search|ancestors", "requires": []any{"Content section access", "read access to the target node"}},
+			map[string]any{"pattern": "document create|update|copy|move|publish|unpublish|delete|trash|restore", "requires": []any{"Content section access", "write permission on the target node", "publish permission for publish operations"}},
+			map[string]any{"pattern": "media get|root|children|search|urls", "requires": []any{"Media section access", "read access to the target media node"}},
+			map[string]any{"pattern": "media create|upload|update|move|delete|trash", "requires": []any{"Media section access", "write permission on the target media node", "file-system permission for uploads"}},
+			map[string]any{"pattern": "doctype|datatype|template write commands", "requires": []any{"Settings section access", "permission to edit document types, data types, or templates"}},
+			map[string]any{"pattern": "dictionary write commands", "requires": []any{"Translation section access", "permission to edit dictionary items"}},
+		},
 	}
 }

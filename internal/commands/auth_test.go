@@ -152,6 +152,33 @@ func TestAuthStatusReportsStoredConfigAndVerification(t *testing.T) {
 	}
 }
 
+func TestAuthStatusCheckReportsCommandRequirements(t *testing.T) {
+	homeDir := t.TempDir()
+	originalHome := os.Getenv("HOME")
+	t.Cleanup(func() {
+		_ = os.Setenv("HOME", originalHome)
+	})
+	_ = os.Setenv("HOME", homeDir)
+
+	output, err := execute(buildRootWithCollections(t, makeDeps()), "auth", "status", "--check")
+	if err != nil {
+		t.Fatalf("auth status --check failed: %v", err)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("failed to decode auth status payload: %v", err)
+	}
+	check, ok := payload["permissionCheck"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected permissionCheck output, got %+v", payload)
+	}
+	commands, ok := check["commands"].([]any)
+	if !ok || len(commands) == 0 {
+		t.Fatalf("expected command requirement entries, got %+v", check)
+	}
+}
+
 func TestAuthLogoutClearsStoredCredentials(t *testing.T) {
 	homeDir := t.TempDir()
 	originalHome := os.Getenv("HOME")

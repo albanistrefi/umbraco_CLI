@@ -51,6 +51,39 @@ func TestDocumentSearchUsesItemSearchEndpointAndFallsBack(t *testing.T) {
 	}
 }
 
+func TestDocumentCopyPublishPublishesCopiedDocument(t *testing.T) {
+	var publishPath string
+
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/document/source-1/copy":
+			return endpointJSONResponse(http.StatusOK, `{"id":"copy-1","name":"Copied"}`), nil
+		case "/umbraco/management/api/v1/document/copy-1/publish":
+			publishPath = req.URL.Path
+			return endpointJSONResponse(http.StatusOK, `{"published":true}`), nil
+		default:
+			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	output, err := execute(buildRootWithCollections(t, deps), "document", "copy", "source-1", "--to", "parent-1", "--publish")
+	if err != nil {
+		t.Fatalf("document copy --publish failed: %v", err)
+	}
+	if publishPath != "/umbraco/management/api/v1/document/copy-1/publish" {
+		t.Fatalf("expected copied document to be published, got %q", publishPath)
+	}
+	var result map[string]any
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		t.Fatalf("failed to decode copy publish result: %v", err)
+	}
+	if result["copied"] == nil || result["published"] == nil {
+		t.Fatalf("unexpected copy publish result: %+v", result)
+	}
+}
+
 func TestDocumentSearchSupportsUnderShortcut(t *testing.T) {
 	var observedPath string
 

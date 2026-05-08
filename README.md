@@ -148,6 +148,7 @@ Schema introspection:
 ```bash
 go run ./cmd/umbraco schema --list
 go run ./cmd/umbraco schema document.create
+go run ./cmd/umbraco schema doctype.create --template
 go run ./cmd/umbraco schema document
 ```
 
@@ -156,6 +157,7 @@ Auth helpers:
 ```bash
 go run ./cmd/umbraco auth login --base-url "https://localhost:44314" --client-id "umbraco-back-office-api-user" --client-secret "your-secret"
 go run ./cmd/umbraco auth status
+go run ./cmd/umbraco auth status --check
 go run ./cmd/umbraco auth logout --dry-run
 ```
 
@@ -166,6 +168,7 @@ go run ./cmd/umbraco document get <id> --fields "id,name,updateDate"
 go run ./cmd/umbraco document search --query "Toxic" --skip 0 --take 25 --output json
 go run ./cmd/umbraco document search --query "Toxic" --under <parent-id> --skip 0 --take 25 --output json
 go run ./cmd/umbraco media search --query "Hero" --skip 0 --take 25 --output json
+go run ./cmd/umbraco doctype root --summarize --first-n 10 --output json
 go run ./cmd/umbraco tree walk "Home/Partners/Partner List" --output json
 ```
 
@@ -176,9 +179,18 @@ go run ./cmd/umbraco document publish <id> --json '{"cultures":["en-US"]}' --dry
 go run ./cmd/umbraco document update <id> --merge-json '{"values":[{"alias":"title","value":"New title"}]}' --dry-run --output json
 go run ./cmd/umbraco document update <id> --property skills --value 'C#;Go' --dry-run --output json
 go run ./cmd/umbraco document update <id> --property skills --value 'C#;Go' --save-and-publish --culture en-US --dry-run --output json
+go run ./cmd/umbraco document copy <id> --to <parent-id> --publish --dry-run --output json
 go run ./cmd/umbraco document bulk-update --id <id> --id <id> --merge-json '{"values":[{"alias":"title","value":"New title"}]}' --dry-run --output json
 go run ./cmd/umbraco document csv-update --file partners.csv --property skills --dry-run --output json
 # then run without --dry-run
+```
+
+Create payload discovery:
+
+```bash
+go run ./cmd/umbraco doctype create --print-template
+go run ./cmd/umbraco datatype create --print-template
+go run ./cmd/umbraco media upload ./hero.svg --name "Hero" --type SVG --parent <media-parent-id> --dry-run --output json
 ```
 
 Datatype discovery and ergonomic updates:
@@ -186,6 +198,7 @@ Datatype discovery and ergonomic updates:
 ```bash
 go run ./cmd/umbraco datatype list --skip 0 --take 50
 go run ./cmd/umbraco datatype search --query "rich text" --skip 0 --take 25
+go run ./cmd/umbraco datatype search --editor-alias Umbraco.TextBox --skip 0 --take 25
 go run ./cmd/umbraco datatype extensions <id>
 go run ./cmd/umbraco datatype update <id> --merge-json '{"configuration":{"toolbar":{"italic":false}}}' --dry-run
 go run ./cmd/umbraco datatype add-extension <id> UmbracoDotCom.Tiptap.GoogleDocsPasteCleanup --dry-run
@@ -214,8 +227,8 @@ npm run verify:skills
 
 - `document` (17)
 - `dictionary` (6)
-- `media` (11)
-- `doctype` (10)
+- `media` (12)
+- `doctype` (12)
 - `datatype` (13)
 - `template` (6)
 - `logs` (5)
@@ -224,7 +237,7 @@ npm run verify:skills
 - `tree` (1)
 - `auth` (3)
 
-Total: **81 commands**
+Total: **84 commands**
 
 ## Agent Safety Rules
 

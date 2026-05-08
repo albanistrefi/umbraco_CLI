@@ -554,6 +554,8 @@ func documentUnpublish(deps Dependencies) *cobra.Command {
 func documentCopy(deps Dependencies) *cobra.Command {
 	var jsonPayload string
 	var to string
+	var publish bool
+	var culture string
 	var dryRun bool
 	cmd := &cobra.Command{
 		Use:   "copy <id>",
@@ -577,13 +579,45 @@ func documentCopy(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, deps, result)
+			if !publish {
+				return printResult(cmd, deps, result)
+			}
+
+			copiedID := extractResultID(result)
+			if copiedID == "" {
+				return fmt.Errorf("document copy --publish requires the copy response to include the new document id")
+			}
+			publishBody, err := documentPublishBody("", culture)
+			if err != nil {
+				return err
+			}
+			publishResult, err := deps.Client.Put(context.Background(), fmt.Sprintf("/document/%s/publish", copiedID), publishBody, api.RequestOptions{DryRun: dryRun})
+			if err != nil {
+				return err
+			}
+			return printResult(cmd, deps, map[string]any{
+				"copied":    result,
+				"published": publishResult,
+			})
 		},
 	}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Copy payload as JSON")
 	cmd.Flags().StringVar(&to, "to", "", "Target parent ID shortcut")
+	cmd.Flags().BoolVar(&publish, "publish", false, "Publish the copied document after a successful copy")
+	cmd.Flags().StringVar(&culture, "culture", "", "Culture shortcut for --publish")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
 	return cmd
+}
+
+func extractResultID(result any) string {
+	payload, ok := result.(map[string]any)
+	if !ok {
+		return ""
+	}
+	if id, ok := payload["id"].(string); ok {
+		return id
+	}
+	return ""
 }
 
 func documentMove(deps Dependencies) *cobra.Command {
