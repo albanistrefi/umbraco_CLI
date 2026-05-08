@@ -180,6 +180,10 @@ func mediaUpload(deps Dependencies) *cobra.Command {
 		if err != nil {
 			return fmt.Errorf("failed to generate media id: %w", err)
 		}
+		mediaTypeRef, err := resolveMediaTypeReference(context.Background(), deps.Client, mediaType)
+		if err != nil {
+			return err
+		}
 
 		uploadResult, err := deps.Client.MultipartPost(
 			context.Background(),
@@ -196,7 +200,7 @@ func mediaUpload(deps Dependencies) *cobra.Command {
 		body := map[string]any{
 			"id":        mediaID,
 			"name":      name,
-			"mediaType": mediaTypeReference(mediaType),
+			"mediaType": mediaTypeRef,
 			"values": []any{map[string]any{
 				"alias": propertyAlias,
 				"value": map[string]any{"temporaryFileId": tempID},
@@ -233,19 +237,99 @@ func mediaNameFromPath(path string) string {
 	return base[:len(base)-len(ext)]
 }
 
-func mediaTypeReference(value string) any {
+func resolveMediaTypeReference(ctx context.Context, client *api.Client, value string) (map[string]any, error) {
+	normalized := normalizeMediaTypeAlias(value)
+	if isUUIDLike(normalized) {
+		return map[string]any{"id": normalized}, nil
+	}
+
+	result, err := getWithFallback(
+		ctx,
+		client,
+		getRequestCandidate{path: "/item/media-type/search", opts: api.RequestOptions{Params: map[string]any{"query": normalized, "skip": 0, "take": 100}}},
+		getRequestCandidate{path: "/media-type/search", opts: api.RequestOptions{Params: map[string]any{"query": normalized, "skip": 0, "take": 100}}},
+		getRequestCandidate{path: "/media-type", opts: api.RequestOptions{}},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve media type %q: %w", value, err)
+	}
+
+	id := findMediaTypeID(result, normalized)
+	if id == "" {
+		return nil, fmt.Errorf("media type %q was not found; pass a media type ID with --type or ensure the alias/name exists", value)
+	}
+	return map[string]any{"id": id}, nil
+}
+
+func normalizeMediaTypeAlias(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "image":
-		return map[string]any{"alias": "Image"}
+		return "Image"
 	case "svg":
-		return map[string]any{"alias": "SVG"}
+		return "SVG"
 	case "file":
-		return map[string]any{"alias": "File"}
+		return "File"
 	case "folder":
-		return map[string]any{"alias": "Folder"}
+		return "Folder"
 	default:
-		return map[string]any{"id": value}
+		return strings.TrimSpace(value)
 	}
+}
+
+func findMediaTypeID(result any, query string) string {
+	for _, item := range resultItems(result) {
+		entry, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		if matchesMediaType(entry, query) {
+			if id, ok := entry["id"].(string); ok && strings.TrimSpace(id) != "" {
+				return id
+			}
+		}
+	}
+	return ""
+}
+
+func matchesMediaType(entry map[string]any, query string) bool {
+	for _, key := range []string{"alias", "name"} {
+		if value, ok := entry[key].(string); ok && strings.EqualFold(value, query) {
+			return true
+		}
+	}
+	return false
+}
+
+func resultItems(result any) []any {
+	if payload, ok := result.(map[string]any); ok {
+		if items, ok := payload["items"].([]any); ok {
+			return items
+		}
+	}
+	if items, ok := result.([]any); ok {
+		return items
+	}
+	return nil
+}
+
+func isUUIDLike(value string) bool {
+	value = strings.TrimSpace(value)
+	if len(value) != 36 {
+		return false
+	}
+	for i, r := range value {
+		switch i {
+		case 8, 13, 18, 23:
+			if r != '-' {
+				return false
+			}
+		default:
+			if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func mediaCreateFolder(deps Dependencies) *cobra.Command {

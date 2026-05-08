@@ -60,6 +60,11 @@ func TestMediaUploadCreatesTemporaryFileThenMedia(t *testing.T) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
 			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/item/media-type/search":
+			if req.URL.Query().Get("query") != "SVG" {
+				t.Fatalf("expected media type lookup by normalized alias, got %q", req.URL.RawQuery)
+			}
+			return endpointJSONResponse(http.StatusOK, `{"total":1,"items":[{"id":"mt-svg","alias":"SVG","name":"SVG"}]}`), nil
 		case "/umbraco/management/api/v1/temporary-file":
 			if req.Method != http.MethodPost {
 				return endpointJSONResponse(http.StatusMethodNotAllowed, `{"error":"method not allowed"}`), nil
@@ -113,8 +118,8 @@ func TestMediaUploadCreatesTemporaryFileThenMedia(t *testing.T) {
 		t.Fatalf("unexpected media create payload: %+v", createPayload)
 	}
 	mediaType := createPayload["mediaType"].(map[string]any)
-	if mediaType["alias"] != "SVG" {
-		t.Fatalf("expected built-in media type alias, got %+v", mediaType)
+	if mediaType["id"] != "mt-svg" {
+		t.Fatalf("expected resolved media type id, got %+v", mediaType)
 	}
 
 	var result map[string]any

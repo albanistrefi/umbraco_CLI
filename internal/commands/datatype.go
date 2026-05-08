@@ -162,9 +162,8 @@ func datatypeSearch(deps Dependencies) *cobra.Command {
 			params = map[string]any{}
 			if strings.TrimSpace(query) != "" {
 				params["query"] = query
-			}
-			if strings.TrimSpace(editorAlias) != "" {
-				params["editorAlias"] = editorAlias
+			} else if strings.TrimSpace(editorAlias) != "" {
+				params["filter"] = editorAlias
 			}
 			if skip >= 0 {
 				params["skip"] = skip
@@ -177,7 +176,6 @@ func datatypeSearch(deps Dependencies) *cobra.Command {
 				return fmt.Errorf("--editor-alias cannot be combined with --params containing editorAlias")
 			}
 			params = cloneParams(params)
-			params["editorAlias"] = editorAlias
 		}
 
 		searchParams := cloneParams(params)
@@ -187,19 +185,29 @@ func datatypeSearch(deps Dependencies) *cobra.Command {
 				filterParams["filter"] = queryValue
 			}
 		}
-		if filterValue, ok := filterParams["filter"]; ok {
+		if filterValue, ok := filterParams["filter"]; ok && strings.TrimSpace(editorAlias) == "" {
 			if _, exists := searchParams["query"]; !exists {
 				searchParams["query"] = filterValue
 			}
 		}
 
-		result, err := datatypeGetWithFallback(context.Background(), deps.Client,
-			dataTypeRequestCandidate{path: dataTypeItemSearchPath, opts: api.RequestOptions{Params: searchParams}},
-			dataTypeRequestCandidate{path: dataTypeFilterPath, opts: api.RequestOptions{Params: filterParams}},
-			dataTypeRequestCandidate{path: dataTypeLegacySearchPath, opts: api.RequestOptions{Params: searchParams}},
-		)
+		candidates := []dataTypeRequestCandidate{
+			{path: dataTypeFilterPath, opts: api.RequestOptions{Params: filterParams}},
+		}
+		if _, hasQuery := searchParams["query"]; hasQuery {
+			candidates = []dataTypeRequestCandidate{
+				{path: dataTypeItemSearchPath, opts: api.RequestOptions{Params: searchParams}},
+				{path: dataTypeFilterPath, opts: api.RequestOptions{Params: filterParams}},
+				{path: dataTypeLegacySearchPath, opts: api.RequestOptions{Params: searchParams}},
+			}
+		}
+
+		result, err := datatypeGetWithFallback(context.Background(), deps.Client, candidates...)
 		if err != nil {
 			return err
+		}
+		if strings.TrimSpace(editorAlias) != "" {
+			result = filterDataTypesByEditorAlias(result, editorAlias)
 		}
 		return printResult(cmd, deps, result)
 	}}
@@ -209,6 +217,42 @@ func datatypeSearch(deps Dependencies) *cobra.Command {
 	cmd.Flags().IntVar(&skip, "skip", 0, "Pagination offset")
 	cmd.Flags().IntVar(&take, "take", 100, "Pagination page size")
 	return cmd
+}
+
+func filterDataTypesByEditorAlias(result any, editorAlias string) any {
+	normalized := strings.EqualFold
+	payload, ok := result.(map[string]any)
+	if ok {
+		items, ok := payload["items"].([]any)
+		if !ok {
+			return result
+		}
+		filtered := filterDataTypeItems(items, editorAlias, normalized)
+		next := cloneAnyMap(payload)
+		next["items"] = filtered
+		next["filteredTotal"] = len(filtered)
+		next["editorAlias"] = editorAlias
+		return next
+	}
+	items, ok := result.([]any)
+	if !ok {
+		return result
+	}
+	return filterDataTypeItems(items, editorAlias, normalized)
+}
+
+func filterDataTypeItems(items []any, editorAlias string, equal func(string, string) bool) []any {
+	filtered := make([]any, 0, len(items))
+	for _, item := range items {
+		entry, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		if value, ok := entry["editorAlias"].(string); ok && equal(value, editorAlias) {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
 }
 
 func datatypeIsUsed(deps Dependencies) *cobra.Command {

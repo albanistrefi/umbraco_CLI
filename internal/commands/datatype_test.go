@@ -115,6 +115,98 @@ func TestDatatypeSearchFallsBackToFilterEndpointWhenItemSearchIsMissing(t *testi
 	}
 }
 
+func TestDatatypeSearchEditorAliasOnlyUsesFilterEndpointAndClientFilters(t *testing.T) {
+	var observedPath string
+	var itemSearchRequests int
+
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/item/data-type/search":
+			itemSearchRequests++
+			return datatypeJSONResponse(http.StatusBadRequest, `{"errors":{"query":["The query field is required"]}}`), nil
+		case "/umbraco/management/api/v1/filter/data-type":
+			observedPath = req.URL.String()
+			return datatypeJSONResponse(http.StatusOK, `{
+  "total":3,
+  "items":[
+    {"id":"dt-text","name":"Textstring","editorAlias":"Umbraco.TextBox"},
+    {"id":"dt-color","name":"Color","editorAlias":"Umbraco.ColorPicker"},
+    {"id":"dt-textarea","name":"Textarea","editorAlias":"Umbraco.TextArea"}
+  ]
+}`), nil
+		default:
+			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	output, err := execute(buildRootWithCollections(t, deps), "datatype", "search", "--editor-alias", "Umbraco.TextBox")
+	if err != nil {
+		t.Fatalf("datatype search --editor-alias failed: %v", err)
+	}
+	if itemSearchRequests != 0 {
+		t.Fatalf("expected editor-alias-only search to avoid query-required item search endpoint, got %d requests", itemSearchRequests)
+	}
+	if !strings.Contains(observedPath, "/filter/data-type") || !strings.Contains(observedPath, "filter=Umbraco.TextBox") {
+		t.Fatalf("expected filter endpoint with editor alias fallback query, got %q", observedPath)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("failed to decode datatype search payload: %v", err)
+	}
+	items := payload["items"].([]any)
+	if len(items) != 1 {
+		t.Fatalf("expected one client-filtered item, got %+v", payload)
+	}
+	item := items[0].(map[string]any)
+	if item["id"] != "dt-text" || item["editorAlias"] != "Umbraco.TextBox" {
+		t.Fatalf("unexpected filtered item: %+v", item)
+	}
+	if payload["filteredTotal"] != float64(1) {
+		t.Fatalf("expected filteredTotal=1, got %+v", payload)
+	}
+}
+
+func TestDatatypeSearchQueryAndEditorAliasClientFiltersServerResults(t *testing.T) {
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/item/data-type/search":
+			return datatypeJSONResponse(http.StatusOK, `{
+  "total":3,
+  "items":[
+    {"id":"dt-dropdown","name":"Dropdown","editorAlias":"Umbraco.DropDown.Flexible"},
+    {"id":"dt-text","name":"Textstring","editorAlias":"Umbraco.TextBox"},
+    {"id":"dt-picker","name":"Picker","editorAlias":"Umbraco.MultiNodeTreePicker"}
+  ]
+}`), nil
+		default:
+			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	output, err := execute(buildRootWithCollections(t, deps), "datatype", "search", "--query", "Umbraco", "--editor-alias", "umbraco.textbox")
+	if err != nil {
+		t.Fatalf("datatype search query + editor alias failed: %v", err)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("failed to decode datatype search payload: %v", err)
+	}
+	items := payload["items"].([]any)
+	if len(items) != 1 {
+		t.Fatalf("expected one client-filtered item, got %+v", payload)
+	}
+	item := items[0].(map[string]any)
+	if item["id"] != "dt-text" {
+		t.Fatalf("unexpected filtered item: %+v", item)
+	}
+}
+
 func TestDatatypeRootUsesTreeRootEndpoint(t *testing.T) {
 	var observedPath string
 
