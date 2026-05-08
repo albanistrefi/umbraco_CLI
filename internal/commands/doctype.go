@@ -50,7 +50,13 @@ func doctypeList(deps Dependencies) *cobra.Command {
 	var fields string
 	var triage readTriageOptions
 	cmd := &cobra.Command{Use: "list", Short: "List document types", RunE: func(cmd *cobra.Command, args []string) error {
-		result, err := deps.Client.Get(context.Background(), "/document-type", api.RequestOptions{Fields: fields})
+		result, err := getWithFallback(
+			context.Background(),
+			deps.Client,
+			getRequestCandidate{path: "/tree/document-type/root", opts: api.RequestOptions{Fields: fields}},
+			getRequestCandidate{path: "/document-type/root", opts: api.RequestOptions{Fields: fields}},
+			getRequestCandidate{path: "/document-type", opts: api.RequestOptions{Fields: fields}},
+		)
 		if err != nil {
 			return err
 		}

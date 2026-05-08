@@ -14,12 +14,15 @@ func TestDoctypeListSupportsFieldsAndReadTriage(t *testing.T) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
 			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
-		case "/umbraco/management/api/v1/document-type":
+		case "/umbraco/management/api/v1/tree/document-type/root":
 			observedPath = req.URL.String()
 			return datatypeJSONResponse(http.StatusOK, `{"total":2,"items":[
 				{"id":"dt-1","name":"Article","alias":"article","icon":"icon-document"},
 				{"id":"dt-2","name":"Product","alias":"product","icon":"icon-box"}
 			]}`), nil
+		case "/umbraco/management/api/v1/document-type":
+			t.Fatalf("doctype list should prefer the v17 tree root endpoint over /document-type")
+			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
 		default:
 			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
 		}
@@ -31,6 +34,9 @@ func TestDoctypeListSupportsFieldsAndReadTriage(t *testing.T) {
 	}
 	if strings.Contains(observedPath, "fields=") {
 		t.Fatalf("expected --fields to stay client-side, got %q", observedPath)
+	}
+	if !strings.Contains(observedPath, "/tree/document-type/root") {
+		t.Fatalf("expected doctype list to use tree root endpoint, got %q", observedPath)
 	}
 
 	var payload map[string]any
