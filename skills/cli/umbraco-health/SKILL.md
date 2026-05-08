@@ -2,7 +2,7 @@
 name: umbraco-health
 description: "Health check operations"
 metadata:
-  version: 0.3.5
+  version: 0.3.6
   requires:
     bins:
       - umbraco

@@ -2,7 +2,7 @@
 name: umbraco-doctype
 description: "Document type schema operations"
 metadata:
-  version: 0.3.5
+  version: 0.3.6
   requires:
     bins:
       - umbraco
@@ -36,6 +36,7 @@ umbraco doctype children <id>
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--fields` | string | — | Limit response fields |
 | `--first-n` | int | 0 | Return only the first N items from item collections |
 | `--ids-only` | bool | false | Return only item IDs for item collections |
 | `--summarize` | bool | false | Return only id/name/alias fields for item collections |
@@ -68,6 +69,7 @@ umbraco doctype root
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--fields` | string | — | Limit response fields |
 | `--first-n` | int | 0 | Return only the first N items from item collections |
 | `--ids-only` | bool | false | Return only item IDs for item collections |
 | `--summarize` | bool | false | Return only id/name/alias fields for item collections |

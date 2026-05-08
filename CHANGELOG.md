@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.3.6 - 2026-05-08
+
+- fixed `media root` and `media children` so they hit `/tree/media/root` and `/tree/media/children?parentId=...` (the v17 Management API tree paths) before falling back to the legacy `/media/root` / `/media/{id}/children` routes that 404 on current Umbraco versions
+- added `--fields` to `doctype root`, `doctype children`, `datatype root`, and `dictionary list` so the response-trimming flag is uniform across every collection-returning command, matching what `media` and `document` already accepted
+- updated the `media.root` and `media.children` schema entries to advertise the tree paths as primary
+
 ## v0.3.5 - 2026-05-08
 
 - fixed `media upload --type <alias>` so it resolves canonical Umbraco aliases (e.g., `umbracoMediaVectorGraphics`). The lightweight item/tree endpoints do not include an alias field, so the resolver now collects candidate IDs from search and tree-root and fetches `/media-type/{id}` for each to inspect the alias on the full model
