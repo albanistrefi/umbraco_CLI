@@ -128,6 +128,56 @@ func TestRequestReturnsAPIErrorBody(t *testing.T) {
 	}
 }
 
+func TestRequestReturnsIDFromLocationHeaderWhenBodyIsEmpty(t *testing.T) {
+	httpClient := newTestHTTPClient(func(r *http.Request) (*http.Response, error) {
+		switch r.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return jsonResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`, nil), nil
+		case "/umbraco/management/api/v1/document/source-1/copy":
+			return jsonResponse(http.StatusCreated, ``, map[string]string{"Location": "https://example.test/umbraco/management/api/v1/document/copy-1"}), nil
+		default:
+			return jsonResponse(http.StatusNotFound, `{"error":"not found"}`, nil), nil
+		}
+	})
+
+	cfg := config.Config{BaseURL: "https://example.test", ClientID: "client-id", ClientSecret: "client-secret"}
+	client := NewClient(cfg, httpClient, auth.New(cfg, httpClient))
+
+	result, err := client.Post(context.Background(), "/document/source-1/copy", map[string]any{"target": map[string]any{"id": "parent-1"}}, RequestOptions{})
+	if err != nil {
+		t.Fatalf("copy request failed: %v", err)
+	}
+	payload, ok := result.(map[string]any)
+	if !ok || payload["id"] != "copy-1" {
+		t.Fatalf("expected id from Location header, got %+v", result)
+	}
+}
+
+func TestRequestMergesIDFromLocationHeaderIntoSuccessBody(t *testing.T) {
+	httpClient := newTestHTTPClient(func(r *http.Request) (*http.Response, error) {
+		switch r.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return jsonResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`, nil), nil
+		case "/umbraco/management/api/v1/data-type":
+			return jsonResponse(http.StatusCreated, `{"success":true}`, map[string]string{"Location": "/umbraco/management/api/v1/data-type/dt-1"}), nil
+		default:
+			return jsonResponse(http.StatusNotFound, `{"error":"not found"}`, nil), nil
+		}
+	})
+
+	cfg := config.Config{BaseURL: "https://example.test", ClientID: "client-id", ClientSecret: "client-secret"}
+	client := NewClient(cfg, httpClient, auth.New(cfg, httpClient))
+
+	result, err := client.Post(context.Background(), "/data-type", map[string]any{"name": "Text"}, RequestOptions{})
+	if err != nil {
+		t.Fatalf("create request failed: %v", err)
+	}
+	payload, ok := result.(map[string]any)
+	if !ok || payload["id"] != "dt-1" || payload["success"] != true {
+		t.Fatalf("expected merged id from Location header, got %+v", result)
+	}
+}
+
 func TestRequestAddsNotFoundHintWithResolvedPath(t *testing.T) {
 	httpClient := newTestHTTPClient(func(r *http.Request) (*http.Response, error) {
 		switch r.URL.Path {

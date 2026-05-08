@@ -225,6 +225,7 @@ func (c *Client) Request(ctx context.Context, method string, path string, body a
 			}
 		}
 
+		result = mergeLocationID(result, resp.Header.Get("Location"))
 		return result, nil
 	}
 
@@ -248,6 +249,45 @@ func buildAPIErrorHint(statusCode int, method string, path string) string {
 
 func (c *Client) Get(ctx context.Context, path string, opts RequestOptions) (any, error) {
 	return c.Request(ctx, http.MethodGet, path, nil, opts)
+}
+
+func mergeLocationID(result any, location string) any {
+	id := idFromLocation(location)
+	if id == "" {
+		return result
+	}
+	if result == nil {
+		return map[string]any{"id": id}
+	}
+	payload, ok := result.(map[string]any)
+	if !ok {
+		return result
+	}
+	if existing, ok := payload["id"].(string); ok && strings.TrimSpace(existing) != "" {
+		return result
+	}
+	next := make(map[string]any, len(payload)+1)
+	for key, value := range payload {
+		next[key] = value
+	}
+	next["id"] = id
+	return next
+}
+
+func idFromLocation(location string) string {
+	location = strings.TrimSpace(location)
+	if location == "" {
+		return ""
+	}
+	if parsed, err := url.Parse(location); err == nil {
+		location = parsed.Path
+	}
+	location = strings.TrimRight(location, "/")
+	if location == "" {
+		return ""
+	}
+	segments := strings.Split(location, "/")
+	return segments[len(segments)-1]
 }
 
 func (c *Client) Post(ctx context.Context, path string, body any, opts RequestOptions) (any, error) {

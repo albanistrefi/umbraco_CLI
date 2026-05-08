@@ -247,7 +247,7 @@ func datatypeCreate(deps Dependencies) *cobra.Command {
 	}}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Create payload as JSON")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
-	cmd.Flags().BoolVar(&printTemplate, "print-template", false, "Print a JSON payload template")
+	cmd.Flags().BoolVar(&printTemplate, "print-template", false, "Print an annotated JSON skeleton; substitute placeholders before passing to --json")
 	return cmd
 }
 

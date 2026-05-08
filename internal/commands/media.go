@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -148,7 +149,7 @@ func mediaCreate(deps Dependencies) *cobra.Command {
 	}}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Create payload as JSON")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
-	cmd.Flags().BoolVar(&printTemplate, "print-template", false, "Print a JSON payload template")
+	cmd.Flags().BoolVar(&printTemplate, "print-template", false, "Print an annotated JSON skeleton; substitute placeholders before passing to --json")
 	return cmd
 }
 
@@ -219,7 +220,7 @@ func mediaUpload(deps Dependencies) *cobra.Command {
 	}}
 
 	cmd.Flags().StringVar(&name, "name", "", "Media item name (defaults to file name without extension)")
-	cmd.Flags().StringVar(&mediaType, "type", "", "Media type id, alias, or built-in name such as Image, SVG, or File")
+	cmd.Flags().StringVar(&mediaType, "type", "", "Media type id, alias, or built-in name: Image, SVG, File, or Folder")
 	cmd.Flags().StringVar(&parent, "parent", "", "Target parent media ID")
 	cmd.Flags().StringVar(&propertyAlias, "property", "umbracoFile", "File property alias")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
@@ -233,9 +234,15 @@ func mediaNameFromPath(path string) string {
 }
 
 func mediaTypeReference(value string) any {
-	switch value {
-	case "Image", "SVG", "File", "Folder":
-		return map[string]any{"alias": value}
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "image":
+		return map[string]any{"alias": "Image"}
+	case "svg":
+		return map[string]any{"alias": "SVG"}
+	case "file":
+		return map[string]any{"alias": "File"}
+	case "folder":
+		return map[string]any{"alias": "Folder"}
 	default:
 		return map[string]any{"id": value}
 	}

@@ -102,7 +102,7 @@ func TestMediaUploadCreatesTemporaryFileThenMedia(t *testing.T) {
 		t.Fatalf("failed to write upload fixture: %v", err)
 	}
 
-	output, err := execute(buildRootWithCollections(t, deps), "media", "upload", filePath, "--type", "SVG", "--name", "Hero")
+	output, err := execute(buildRootWithCollections(t, deps), "media", "upload", filePath, "--type", "svg", "--name", "Hero")
 	if err != nil {
 		t.Fatalf("media upload failed: %v", err)
 	}
