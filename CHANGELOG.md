@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.3.9 - 2026-05-08
+
+- fixed `doctype list` on current Umbraco versions by routing it through `/tree/document-type/root` before falling back to legacy document type endpoints
+
 ## v0.3.8 - 2026-05-08
 
 - fixed `--fields` so it is now pure client-side projection and is no longer sent as `?fields=...`, avoiding endpoints such as `datatype list` that reject the query parameter
