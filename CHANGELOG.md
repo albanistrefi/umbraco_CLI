@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.3.4 - 2026-05-08
+
+- maintenance release with no user-visible changes
+
 ## v0.3.3 - 2026-05-08
 
 - fixed `media upload --type SVG` and other friendly short names by translating them to canonical Umbraco aliases (`umbracoMediaVectorGraphics`, `Image`, `File`, `Folder`, `umbracoMediaAudio`, `umbracoMediaVideo`, `umbracoMediaArticle`) before lookup
