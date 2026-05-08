@@ -5,6 +5,10 @@
 - normalized `auth login --base-url` through the shared config base URL rules so `/umbraco` suffixes do not create duplicated token URLs
 - changed root command initialization to return CLI errors instead of panicking when runtime/config loading fails
 - added schema coverage tests that fail when registered direct API commands are missing `umbraco schema` entries
+- added agent-focused create ergonomics: generated IDs, minimal create responses, `--print-template`, and `umbraco schema <endpoint> --template`
+- added `media upload`, `document copy --publish`, `auth status --check`, datatype `--editor-alias`, and compact collection output flags
+- taught successful empty-body create/copy responses to surface IDs from `Location` headers
+- regenerated CLI skills so the generated command references include the new flags and commands
 
 ## v0.2.8 - 2026-05-05
 

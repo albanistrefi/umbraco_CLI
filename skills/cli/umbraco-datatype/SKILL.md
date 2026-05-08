@@ -2,7 +2,7 @@
 name: umbraco-datatype
 description: "Data type operations"
 metadata:
-  version: 0.2.8
+  version: 0.2.9
   requires:
     bins:
       - umbraco
@@ -72,8 +72,11 @@ umbraco datatype root
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--first-n` | int | 0 | Return only the first N items from item collections |
+| `--ids-only` | bool | false | Return only item IDs for item collections |
 | `--params` | string | — | Query parameters as JSON |
 | `--skip` | int | 0 | Pagination offset |
+| `--summarize` | bool | false | Return only id/name/alias fields for item collections |
 | `--take` | int | 100 | Pagination page size |
 
 ### search
@@ -84,6 +87,7 @@ umbraco datatype search
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--editor-alias` | string | — | Filter by property editor alias, e.g. Umbraco.TextBox |
 | `--params` | string | — | Query parameters as JSON |
 | `--query` | string | — | Search query |
 | `--skip` | int | 0 | Pagination offset |
@@ -154,6 +158,7 @@ umbraco datatype create
 |------|------|---------|-------------|
 | `--dry-run` | bool | false | Validate request without executing |
 | `--json` | string | — | Create payload as JSON |
+| `--print-template` | bool | false | Print an annotated JSON skeleton; substitute placeholders before passing to --json |
 
 **Safe pattern:**
 

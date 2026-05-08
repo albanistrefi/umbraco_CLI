@@ -2,7 +2,7 @@
 name: umbraco-auth
 description: "Persistent authentication helpers"
 metadata:
-  version: 0.2.8
+  version: 0.2.9
   requires:
     bins:
       - umbraco
@@ -29,6 +29,10 @@ umbraco auth <command> [flags]
 ```bash
 umbraco auth status
 ```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--check` | bool | false | List command permission requirements for the resolved user context |
 
 ## Mutation Commands
 

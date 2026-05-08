@@ -2,7 +2,7 @@
 name: umbraco-media
 description: "Media asset operations"
 metadata:
-  version: 0.2.8
+  version: 0.2.9
   requires:
     bins:
       - umbraco
@@ -88,6 +88,7 @@ umbraco media urls <id>
 | `media move <id>` | Move media item |
 | `media trash <id>` | Move media item to recycle bin |
 | `media update <id>` | Update media item |
+| `media upload <file>` | Upload a file and create a media item |
 
 ### create
 
@@ -99,6 +100,7 @@ umbraco media create
 |------|------|---------|-------------|
 | `--dry-run` | bool | false | Validate request without executing |
 | `--json` | string | — | Create payload as JSON |
+| `--print-template` | bool | false | Print an annotated JSON skeleton; substitute placeholders before passing to --json |
 
 **Safe pattern:**
 
@@ -193,6 +195,30 @@ umbraco media update <id> --dry-run
 
 # 2. Execute
 umbraco media update <id>
+```
+
+### upload
+
+```bash
+umbraco media upload <file>
+```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--dry-run` | bool | false | Validate request without executing |
+| `--name` | string | — | Media item name (defaults to file name without extension) |
+| `--parent` | string | — | Target parent media ID |
+| `--property` | string | umbracoFile | File property alias |
+| `--type` | string | — | Media type id, alias, or built-in name: Image, SVG, File, or Folder |
+
+**Safe pattern:**
+
+```bash
+# 1. Dry run first
+umbraco media upload <file> --dry-run
+
+# 2. Execute
+umbraco media upload <file>
 ```
 
 ## Discovering Commands

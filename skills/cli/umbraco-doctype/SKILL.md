@@ -2,7 +2,7 @@
 name: umbraco-doctype
 description: "Document type schema operations"
 metadata:
-  version: 0.2.8
+  version: 0.2.9
   requires:
     bins:
       - umbraco
@@ -34,6 +34,12 @@ umbraco doctype <command> [flags]
 umbraco doctype children <id>
 ```
 
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--first-n` | int | 0 | Return only the first N items from item collections |
+| `--ids-only` | bool | false | Return only item IDs for item collections |
+| `--summarize` | bool | false | Return only id/name/alias fields for item collections |
+
 ### get
 
 ```bash
@@ -59,6 +65,12 @@ umbraco doctype list
 ```bash
 umbraco doctype root
 ```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--first-n` | int | 0 | Return only the first N items from item collections |
+| `--ids-only` | bool | false | Return only item IDs for item collections |
+| `--summarize` | bool | false | Return only id/name/alias fields for item collections |
 
 ### search
 
@@ -165,6 +177,7 @@ umbraco doctype create
 |------|------|---------|-------------|
 | `--dry-run` | bool | false | Validate request without executing |
 | `--json` | string | — | Create payload as JSON |
+| `--print-template` | bool | false | Print an annotated JSON skeleton; substitute placeholders before passing to --json |
 
 **Safe pattern:**
 

@@ -2,7 +2,7 @@
 name: umbraco-document
 description: "Document and content management operations"
 metadata:
-  version: 0.2.8
+  version: 0.2.9
   requires:
     bins:
       - umbraco
@@ -130,8 +130,10 @@ umbraco document copy <id>
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--culture` | string | — | Culture shortcut for --publish |
 | `--dry-run` | bool | false | Validate request without executing |
 | `--json` | string | — | Copy payload as JSON |
+| `--publish` | bool | false | Publish the copied document after a successful copy |
 | `--to` | string | — | Target parent ID shortcut |
 
 **Safe pattern:**
@@ -154,6 +156,7 @@ umbraco document create
 |------|------|---------|-------------|
 | `--dry-run` | bool | false | Validate request without executing |
 | `--json` | string | — | Full JSON payload |
+| `--print-template` | bool | false | Print an annotated JSON skeleton; substitute placeholders before passing to --json |
 
 **Safe pattern:**
 

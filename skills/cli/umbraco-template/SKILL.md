@@ -2,7 +2,7 @@
 name: umbraco-template
 description: "Template operations"
 metadata:
-  version: 0.2.8
+  version: 0.2.9
   requires:
     bins:
       - umbraco
@@ -72,6 +72,7 @@ umbraco template create
 |------|------|---------|-------------|
 | `--dry-run` | bool | false | Validate request without executing |
 | `--json` | string | — | Create payload as JSON |
+| `--print-template` | bool | false | Print an annotated JSON skeleton; substitute placeholders before passing to --json |
 
 **Safe pattern:**
 
