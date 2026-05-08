@@ -81,6 +81,7 @@ func dictionaryList(deps Dependencies) *cobra.Command {
 	var filter string
 	var skip int
 	var take int
+	var triage readTriageOptions
 
 	cmd := &cobra.Command{
 		Use:   "list",
@@ -106,13 +107,14 @@ func dictionaryList(deps Dependencies) *cobra.Command {
 				return err
 			}
 
-			return printResult(cmd, deps, result)
+			return printResult(cmd, deps, applyReadTriage(result, triage))
 		},
 	}
 
 	cmd.Flags().StringVar(&filter, "filter", "", "Filter dictionary items by key name")
 	cmd.Flags().IntVar(&skip, "skip", 0, "Pagination offset")
 	cmd.Flags().IntVar(&take, "take", 100, "Pagination page size")
+	addReadTriageFlags(cmd, &triage)
 	return cmd
 }
 

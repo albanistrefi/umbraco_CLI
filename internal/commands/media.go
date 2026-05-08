@@ -46,27 +46,31 @@ func mediaGet(deps Dependencies) *cobra.Command {
 
 func mediaRoot(deps Dependencies) *cobra.Command {
 	var fields string
+	var triage readTriageOptions
 	cmd := &cobra.Command{Use: "root", Short: "Get root media items", RunE: func(cmd *cobra.Command, args []string) error {
 		result, err := deps.Client.Get(context.Background(), "/media/root", api.RequestOptions{Fields: fields})
 		if err != nil {
 			return err
 		}
-		return printResult(cmd, deps, result)
+		return printResult(cmd, deps, applyReadTriage(result, triage))
 	}}
 	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
+	addReadTriageFlags(cmd, &triage)
 	return cmd
 }
 
 func mediaChildren(deps Dependencies) *cobra.Command {
 	var fields string
+	var triage readTriageOptions
 	cmd := &cobra.Command{Use: "children <id>", Short: "Get child media items", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		result, err := deps.Client.Get(context.Background(), fmt.Sprintf("/media/%s/children", args[0]), api.RequestOptions{Fields: fields})
 		if err != nil {
 			return err
 		}
-		return printResult(cmd, deps, result)
+		return printResult(cmd, deps, applyReadTriage(result, triage))
 	}}
 	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
+	addReadTriageFlags(cmd, &triage)
 	return cmd
 }
 

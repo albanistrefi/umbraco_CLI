@@ -60,6 +60,7 @@ func documentGet(deps Dependencies) *cobra.Command {
 func documentRoot(deps Dependencies) *cobra.Command {
 	var fields string
 	var paramsRaw string
+	var triage readTriageOptions
 	cmd := &cobra.Command{
 		Use:   "root",
 		Short: "Get root documents",
@@ -77,16 +78,18 @@ func documentRoot(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, deps, result)
+			return printResult(cmd, deps, applyReadTriage(result, triage))
 		},
 	}
 	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
 	cmd.Flags().StringVar(&paramsRaw, "params", "", "Query parameters as JSON")
+	addReadTriageFlags(cmd, &triage)
 	return cmd
 }
 
 func documentChildren(deps Dependencies) *cobra.Command {
 	var fields string
+	var triage readTriageOptions
 	cmd := &cobra.Command{
 		Use:   "children <id>",
 		Short: "Get child documents",
@@ -107,10 +110,11 @@ func documentChildren(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, deps, result)
+			return printResult(cmd, deps, applyReadTriage(result, triage))
 		},
 	}
 	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
+	addReadTriageFlags(cmd, &triage)
 	return cmd
 }
 

@@ -52,6 +52,49 @@ func TestMediaSearchUsesItemSearchEndpointAndFallsBack(t *testing.T) {
 	}
 }
 
+func TestMediaRootSupportsTriageFlags(t *testing.T) {
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/media/root":
+			return endpointJSONResponse(http.StatusOK, `{"total":3,"items":[
+				{"id":"m-1","name":"Hero","alias":"hero","extra":"a"},
+				{"id":"m-2","name":"Banner","alias":"banner","extra":"b"},
+				{"id":"m-3","name":"Footer","alias":"footer","extra":"c"}
+			]}`), nil
+		default:
+			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	output, err := execute(buildRootWithCollections(t, deps), "media", "root", "--first-n", "2", "--summarize")
+	if err != nil {
+		t.Fatalf("media root with triage flags failed: %v", err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("failed to decode payload: %v", err)
+	}
+	if payload["total"] != float64(3) {
+		t.Fatalf("expected total to be preserved at 3, got %v", payload["total"])
+	}
+	items := payload["items"].([]any)
+	if len(items) != 2 {
+		t.Fatalf("expected --first-n 2 to slice items to 2, got %d", len(items))
+	}
+	first := items[0].(map[string]any)
+	if first["id"] != "m-1" || first["name"] != "Hero" {
+		t.Fatalf("expected summarized item to keep id/name, got %+v", first)
+	}
+	if _, present := first["extra"]; present {
+		t.Fatalf("expected --summarize to drop unknown fields, got %+v", first)
+	}
+	if payload["returned"] != float64(2) {
+		t.Fatalf("expected returned=2 after slicing, got %v", payload["returned"])
+	}
+}
+
 func TestMediaUploadCreatesTemporaryFileThenMedia(t *testing.T) {
 	var sawUpload bool
 	var createPayload map[string]any

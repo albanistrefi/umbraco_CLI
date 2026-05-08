@@ -63,6 +63,7 @@ func datatypeList(deps Dependencies) *cobra.Command {
 	var paramsRaw string
 	var skip int
 	var take int
+	var triage readTriageOptions
 
 	cmd := &cobra.Command{Use: "list", Short: "List data types", RunE: func(cmd *cobra.Command, args []string) error {
 		if strings.TrimSpace(fields) != "" {
@@ -74,7 +75,7 @@ func datatypeList(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, deps, result)
+			return printResult(cmd, deps, applyReadTriage(result, triage))
 		}
 
 		params, err := parseParams(paramsRaw)
@@ -99,12 +100,13 @@ func datatypeList(deps Dependencies) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		return printResult(cmd, deps, result)
+		return printResult(cmd, deps, applyReadTriage(result, triage))
 	}}
 	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
 	cmd.Flags().StringVar(&paramsRaw, "params", "", "Query parameters as JSON")
 	cmd.Flags().IntVar(&skip, "skip", 0, "Pagination offset")
 	cmd.Flags().IntVar(&take, "take", 100, "Pagination page size")
+	addReadTriageFlags(cmd, &triage)
 	return cmd
 }
 
