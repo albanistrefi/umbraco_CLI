@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.3.3 - 2026-05-08
+
+- fixed `media upload --type SVG` and other friendly short names by translating them to canonical Umbraco aliases (`umbracoMediaVectorGraphics`, `Image`, `File`, `Folder`, `umbracoMediaAudio`, `umbracoMediaVideo`, `umbracoMediaArticle`) before lookup
+- fixed `media upload --type <alias>` resolution by paginating `/media-type` with a 500-item window and falling through to the search endpoints, so canonical aliases like `umbracoMediaVectorGraphics` reliably match against the full media type catalog
+- fixed `media upload --culture <code>` so it forces the variant payload shape (variants[] + culture-tagged values) even when the resolved media type is not detected as varying by culture; emits a warning so an `ContentTypeCultureVarianceMismatch` from the server can be traced back to the override
+
 ## v0.3.2 - 2026-05-08
 
 - fixed `media upload --type SVG` and custom media type names by resolving media types from the live media type list by alias/name before create
