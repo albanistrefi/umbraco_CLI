@@ -38,7 +38,7 @@ func mediaGet(deps Dependencies) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		return printResult(cmd, deps, result)
+		return printResult(cmd, deps, applyFieldsProjection(result, fields))
 	}}
 	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
 	return cmd
@@ -57,7 +57,7 @@ func mediaRoot(deps Dependencies) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		return printResult(cmd, deps, applyReadTriage(result, triage))
+		return printResult(cmd, deps, applyReadTriage(applyFieldsProjection(result, fields), triage))
 	}}
 	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
 	addReadTriageFlags(cmd, &triage)
@@ -83,7 +83,7 @@ func mediaChildren(deps Dependencies) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		return printResult(cmd, deps, applyReadTriage(result, triage))
+		return printResult(cmd, deps, applyReadTriage(applyFieldsProjection(result, fields), triage))
 	}}
 	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
 	addReadTriageFlags(cmd, &triage)

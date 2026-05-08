@@ -50,7 +50,7 @@ func documentGet(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, deps, result)
+			return printResult(cmd, deps, applyFieldsProjection(result, fields))
 		},
 	}
 	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
@@ -78,7 +78,7 @@ func documentRoot(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, deps, applyReadTriage(result, triage))
+			return printResult(cmd, deps, applyReadTriage(applyFieldsProjection(result, fields), triage))
 		},
 	}
 	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
@@ -110,7 +110,7 @@ func documentChildren(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, deps, applyReadTriage(result, triage))
+			return printResult(cmd, deps, applyReadTriage(applyFieldsProjection(result, fields), triage))
 		},
 	}
 	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")

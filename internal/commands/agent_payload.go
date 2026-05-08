@@ -73,6 +73,61 @@ func normalizeDoctypeProperties(raw any) {
 	}
 }
 
+// applyFieldsProjection trims each item in a collection (or the lone object) down to the
+// comma-separated keys named in fields. Used to give --fields a guaranteed effect even on
+// Management API endpoints that ignore the ?fields= query parameter.
+func applyFieldsProjection(data any, fields string) any {
+	fields = strings.TrimSpace(fields)
+	if fields == "" {
+		return data
+	}
+	keep := map[string]struct{}{}
+	for _, raw := range strings.Split(fields, ",") {
+		key := strings.TrimSpace(raw)
+		if key != "" {
+			keep[key] = struct{}{}
+		}
+	}
+	if len(keep) == 0 {
+		return data
+	}
+
+	if payload, ok := data.(map[string]any); ok {
+		if items, ok := payload["items"].([]any); ok {
+			next := cloneAnyMap(payload)
+			projected := make([]any, 0, len(items))
+			for _, item := range items {
+				projected = append(projected, projectFieldsFromAny(item, keep))
+			}
+			next["items"] = projected
+			return next
+		}
+		return projectFieldsFromAny(payload, keep)
+	}
+	if items, ok := data.([]any); ok {
+		projected := make([]any, 0, len(items))
+		for _, item := range items {
+			projected = append(projected, projectFieldsFromAny(item, keep))
+		}
+		return projected
+	}
+	return data
+}
+
+func projectFieldsFromAny(value any, keep map[string]struct{}) any {
+	entry, ok := value.(map[string]any)
+	if !ok {
+		return value
+	}
+	out := make(map[string]any, len(keep))
+	for key := range keep {
+		if v, ok := entry[key]; ok {
+			out[key] = v
+		}
+	}
+	return out
+}
+
 func applyReadTriage(data any, opts readTriageOptions) any {
 	if !opts.Summarize && !opts.IDsOnly && opts.FirstN <= 0 {
 		return data

@@ -52,7 +52,7 @@ func datatypeGet(deps Dependencies) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		return printResult(cmd, deps, result)
+		return printResult(cmd, deps, applyFieldsProjection(result, fields))
 	}}
 	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
 	return cmd
@@ -75,7 +75,7 @@ func datatypeList(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, deps, applyReadTriage(result, triage))
+			return printResult(cmd, deps, applyReadTriage(applyFieldsProjection(result, fields), triage))
 		}
 
 		params, err := parseParams(paramsRaw)
@@ -100,7 +100,7 @@ func datatypeList(deps Dependencies) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		return printResult(cmd, deps, applyReadTriage(result, triage))
+		return printResult(cmd, deps, applyReadTriage(applyFieldsProjection(result, fields), triage))
 	}}
 	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
 	cmd.Flags().StringVar(&paramsRaw, "params", "", "Query parameters as JSON")
@@ -138,7 +138,7 @@ func datatypeRoot(deps Dependencies) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		return printResult(cmd, deps, applyReadTriage(result, triage))
+		return printResult(cmd, deps, applyReadTriage(applyFieldsProjection(result, fields), triage))
 	}}
 	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
 	cmd.Flags().StringVar(&paramsRaw, "params", "", "Query parameters as JSON")

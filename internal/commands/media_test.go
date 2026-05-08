@@ -103,6 +103,52 @@ func TestMediaRootSupportsTriageFlags(t *testing.T) {
 	}
 }
 
+func TestMediaRootFieldsProjectsToRequestedKeysOnly(t *testing.T) {
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/tree/media/root":
+			return endpointJSONResponse(http.StatusOK, `{"total":2,"items":[
+				{"id":"m-1","name":"Hero","alias":"hero","icon":"icon-image","hasChildren":false,"isFolder":false},
+				{"id":"m-2","name":"Banner","alias":"banner","icon":"icon-image","hasChildren":false,"isFolder":false}
+			]}`), nil
+		default:
+			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	output, err := execute(buildRootWithCollections(t, deps), "media", "root", "--fields", "id,name")
+	if err != nil {
+		t.Fatalf("media root --fields failed: %v", err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("failed to decode payload: %v", err)
+	}
+	items := payload["items"].([]any)
+	if len(items) != 2 {
+		t.Fatalf("expected 2 items, got %d", len(items))
+	}
+	for _, raw := range items {
+		entry := raw.(map[string]any)
+		if len(entry) != 2 {
+			t.Fatalf("expected projection to keep 2 keys, got %d (%+v)", len(entry), entry)
+		}
+		if _, ok := entry["id"]; !ok {
+			t.Fatalf("expected id key in projection, got %+v", entry)
+		}
+		if _, ok := entry["name"]; !ok {
+			t.Fatalf("expected name key in projection, got %+v", entry)
+		}
+		for _, dropped := range []string{"alias", "icon", "hasChildren", "isFolder"} {
+			if _, present := entry[dropped]; present {
+				t.Fatalf("expected projection to drop %q, got %+v", dropped, entry)
+			}
+		}
+	}
+}
+
 func TestMediaChildrenUsesTreeEndpointWithParentId(t *testing.T) {
 	var observed string
 	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {

@@ -108,7 +108,7 @@ func dictionaryList(deps Dependencies) *cobra.Command {
 				return err
 			}
 
-			return printResult(cmd, deps, applyReadTriage(result, triage))
+			return printResult(cmd, deps, applyReadTriage(applyFieldsProjection(result, fields), triage))
 		},
 	}
 

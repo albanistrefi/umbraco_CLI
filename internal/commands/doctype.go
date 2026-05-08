@@ -40,7 +40,7 @@ func doctypeGet(deps Dependencies) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		return printResult(cmd, deps, result)
+		return printResult(cmd, deps, applyFieldsProjection(result, fields))
 	}}
 	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
 	return cmd
@@ -53,7 +53,7 @@ func doctypeList(deps Dependencies) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		return printResult(cmd, deps, result)
+		return printResult(cmd, deps, applyFieldsProjection(result, fields))
 	}}
 	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
 	return cmd
@@ -72,7 +72,7 @@ func doctypeRoot(deps Dependencies) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		return printResult(cmd, deps, applyReadTriage(result, triage))
+		return printResult(cmd, deps, applyReadTriage(applyFieldsProjection(result, fields), triage))
 	}}
 	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
 	addReadTriageFlags(cmd, &triage)
@@ -98,7 +98,7 @@ func doctypeChildren(deps Dependencies) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		return printResult(cmd, deps, applyReadTriage(result, triage))
+		return printResult(cmd, deps, applyReadTriage(applyFieldsProjection(result, fields), triage))
 	}}
 	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
 	addReadTriageFlags(cmd, &triage)
