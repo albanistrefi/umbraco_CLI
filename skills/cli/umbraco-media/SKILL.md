@@ -2,7 +2,7 @@
 name: umbraco-media
 description: "Media asset operations"
 metadata:
-  version: 0.3.0
+  version: 0.3.2
   requires:
     bins:
       - umbraco
@@ -205,11 +205,12 @@ umbraco media upload <file>
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--culture` | string | — | Culture code for culture-varying media types |
 | `--dry-run` | bool | false | Validate request without executing |
 | `--name` | string | — | Media item name (defaults to file name without extension) |
 | `--parent` | string | — | Target parent media ID |
 | `--property` | string | umbracoFile | File property alias |
-| `--type` | string | — | Media type id, alias, or built-in name: Image, SVG, File, or Folder |
+| `--type` | string | — | Media type id, alias, or name |
 
 **Safe pattern:**
 

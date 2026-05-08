@@ -191,16 +191,17 @@ Create payload discovery:
 go run ./cmd/umbraco doctype create --print-template
 go run ./cmd/umbraco datatype create --print-template
 go run ./cmd/umbraco media upload ./hero.svg --name "Hero" --type SVG --parent <media-parent-id> --dry-run --output json
+go run ./cmd/umbraco media upload ./hero.png --name "Hero" --type Image --culture en-US --dry-run --output json
 ```
 
-`media upload --type` accepts a media type ID or an existing media type alias/name; aliases are resolved to IDs before media creation.
+`media upload --type` accepts a media type ID or an existing media type alias/name; names and aliases are resolved from the live media type list before media creation. Use `--culture` when the media type varies by culture.
 
 Datatype discovery and ergonomic updates:
 
 ```bash
 go run ./cmd/umbraco datatype list --skip 0 --take 50
 go run ./cmd/umbraco datatype search --query "rich text" --skip 0 --take 25
-go run ./cmd/umbraco datatype search --editor-alias Umbraco.TextBox --skip 0 --take 100
+go run ./cmd/umbraco datatype search --editor-alias Umbraco.TextBox --skip 0 --take 25
 go run ./cmd/umbraco datatype extensions <id>
 go run ./cmd/umbraco datatype update <id> --merge-json '{"configuration":{"toolbar":{"italic":false}}}' --dry-run
 go run ./cmd/umbraco datatype add-extension <id> UmbracoDotCom.Tiptap.GoogleDocsPasteCleanup --dry-run

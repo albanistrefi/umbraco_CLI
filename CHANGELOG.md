@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.3.2 - 2026-05-08
+
+- fixed `media upload --type SVG` and custom media type names by resolving media types from the live media type list by alias/name before create
+- fixed `media upload` for culture-varying media types by emitting `variants` and culture-scoped values; added `--culture`
+- fixed `datatype search --editor-alias` so filtering happens across internally paginated results before applying user `--skip`/`--take`
+
 ## v0.3.1 - 2026-05-08
 
 - fixed `media upload --type <alias>` so it resolves media type aliases/names to IDs before creating media

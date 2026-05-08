@@ -2,7 +2,7 @@
 name: recipe-discover-and-modify-datatype
 description: "Search for a data type, inspect it, and update its configuration."
 metadata:
-  version: 0.3.0
+  version: 0.3.2
   requires:
     bins:
       - umbraco
