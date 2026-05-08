@@ -33,6 +33,12 @@ func printResult(cmd *cobra.Command, deps Dependencies, data any) error {
 	return output.Print(data, deps.requestedOutput(), deps.EnvOutput, cmd.OutOrStdout())
 }
 
+func addReadTriageFlags(cmd *cobra.Command, opts *readTriageOptions) {
+	cmd.Flags().BoolVar(&opts.Summarize, "summarize", false, "Return only id/name/alias fields for item collections")
+	cmd.Flags().BoolVar(&opts.IDsOnly, "ids-only", false, "Return only item IDs for item collections")
+	cmd.Flags().IntVar(&opts.FirstN, "first-n", 0, "Return only the first N items from item collections")
+}
+
 func resolveOutputFormat(deps Dependencies) (config.OutputFormat, error) {
 	if requested := strings.TrimSpace(deps.requestedOutput()); requested != "" {
 		return config.ParseOutputFormat(requested)

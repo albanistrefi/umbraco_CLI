@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/schema"
 )
 
 func RegisterTemplate(root *cobra.Command, deps Dependencies) {
@@ -81,7 +82,11 @@ func templateSearch(deps Dependencies) *cobra.Command {
 func templateCreate(deps Dependencies) *cobra.Command {
 	var jsonPayload string
 	var dryRun bool
+	var printTemplate bool
 	cmd := &cobra.Command{Use: "create", Short: "Create template", RunE: func(cmd *cobra.Command, args []string) error {
+		if printTemplate {
+			return printResult(cmd, deps, schema.Templates["template.create"])
+		}
 		if err := requireValue("--json", jsonPayload); err != nil {
 			return err
 		}
@@ -89,14 +94,18 @@ func templateCreate(deps Dependencies) *cobra.Command {
 		if err != nil {
 			return err
 		}
+		if _, err := ensurePayloadID(body); err != nil {
+			return err
+		}
 		result, err := deps.Client.Post(context.Background(), "/template", body, api.RequestOptions{DryRun: dryRun})
 		if err != nil {
 			return err
 		}
-		return printResult(cmd, deps, result)
+		return printResult(cmd, deps, createResult(result, body))
 	}}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Create payload as JSON")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
+	cmd.Flags().BoolVar(&printTemplate, "print-template", false, "Print a JSON payload template")
 	return cmd
 }
 

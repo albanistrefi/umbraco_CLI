@@ -3,10 +3,12 @@ package commands
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/schema"
 )
 
 func RegisterMedia(root *cobra.Command, deps Dependencies) {
@@ -19,6 +21,7 @@ func RegisterMedia(root *cobra.Command, deps Dependencies) {
 	media.AddCommand(mediaURLs(deps))
 	media.AddCommand(mediaCreate(deps))
 	media.AddCommand(mediaCreateFolder(deps))
+	media.AddCommand(mediaUpload(deps))
 	media.AddCommand(mediaUpdate(deps))
 	media.AddCommand(mediaMove(deps))
 	media.AddCommand(mediaDelete(deps))
@@ -122,7 +125,11 @@ func mediaURLs(deps Dependencies) *cobra.Command {
 func mediaCreate(deps Dependencies) *cobra.Command {
 	var jsonPayload string
 	var dryRun bool
+	var printTemplate bool
 	cmd := &cobra.Command{Use: "create", Short: "Create media from JSON payload", RunE: func(cmd *cobra.Command, args []string) error {
+		if printTemplate {
+			return printResult(cmd, deps, schema.Templates["media.create"])
+		}
 		if err := requireValue("--json", jsonPayload); err != nil {
 			return err
 		}
@@ -130,15 +137,108 @@ func mediaCreate(deps Dependencies) *cobra.Command {
 		if err != nil {
 			return err
 		}
+		if _, err := ensurePayloadID(body); err != nil {
+			return err
+		}
 		result, err := deps.Client.Post(context.Background(), "/media", body, api.RequestOptions{DryRun: dryRun})
 		if err != nil {
 			return err
 		}
-		return printResult(cmd, deps, result)
+		return printResult(cmd, deps, createResult(result, body))
 	}}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Create payload as JSON")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
+	cmd.Flags().BoolVar(&printTemplate, "print-template", false, "Print a JSON payload template")
 	return cmd
+}
+
+func mediaUpload(deps Dependencies) *cobra.Command {
+	var name string
+	var mediaType string
+	var parent string
+	var propertyAlias string
+	var dryRun bool
+
+	cmd := &cobra.Command{Use: "upload <file>", Short: "Upload a file and create a media item", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		filePath := args[0]
+		if err := requireValue("--type", mediaType); err != nil {
+			return err
+		}
+		if name == "" {
+			name = mediaNameFromPath(filePath)
+		}
+		if err := requireValue("--name", name); err != nil {
+			return err
+		}
+
+		tempID, err := newUUIDv4()
+		if err != nil {
+			return fmt.Errorf("failed to generate temporary file id: %w", err)
+		}
+		mediaID, err := newUUIDv4()
+		if err != nil {
+			return fmt.Errorf("failed to generate media id: %w", err)
+		}
+
+		uploadResult, err := deps.Client.MultipartPost(
+			context.Background(),
+			"/temporary-file",
+			map[string]string{"id": tempID},
+			"file",
+			filePath,
+			api.RequestOptions{DryRun: dryRun},
+		)
+		if err != nil {
+			return err
+		}
+
+		body := map[string]any{
+			"id":        mediaID,
+			"name":      name,
+			"mediaType": mediaTypeReference(mediaType),
+			"values": []any{map[string]any{
+				"alias": propertyAlias,
+				"value": map[string]any{"temporaryFileId": tempID},
+			}},
+		}
+		if parent != "" {
+			body["parent"] = map[string]any{"id": parent}
+		}
+
+		createResultRaw, err := deps.Client.Post(context.Background(), "/media", body, api.RequestOptions{DryRun: dryRun})
+		if err != nil {
+			return err
+		}
+		return printResult(cmd, deps, map[string]any{
+			"id":            mediaID,
+			"name":          name,
+			"mediaType":     body["mediaType"],
+			"temporaryFile": map[string]any{"id": tempID, "upload": uploadResult},
+			"created":       createResult(createResultRaw, body),
+		})
+	}}
+
+	cmd.Flags().StringVar(&name, "name", "", "Media item name (defaults to file name without extension)")
+	cmd.Flags().StringVar(&mediaType, "type", "", "Media type id, alias, or built-in name such as Image, SVG, or File")
+	cmd.Flags().StringVar(&parent, "parent", "", "Target parent media ID")
+	cmd.Flags().StringVar(&propertyAlias, "property", "umbracoFile", "File property alias")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
+	return cmd
+}
+
+func mediaNameFromPath(path string) string {
+	base := filepath.Base(path)
+	ext := filepath.Ext(base)
+	return base[:len(base)-len(ext)]
+}
+
+func mediaTypeReference(value string) any {
+	switch value {
+	case "Image", "SVG", "File", "Folder":
+		return map[string]any{"alias": value}
+	default:
+		return map[string]any{"id": value}
+	}
 }
 
 func mediaCreateFolder(deps Dependencies) *cobra.Command {

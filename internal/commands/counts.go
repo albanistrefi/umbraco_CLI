@@ -3,7 +3,7 @@ package commands
 var ExpectedCollectionCommandCounts = map[string]int{
 	"document":   17,
 	"dictionary": 6,
-	"media":      11,
+	"media":      12,
 	"doctype":    12,
 	"datatype":   13,
 	"template":   6,

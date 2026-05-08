@@ -73,8 +73,8 @@ func TestCommandCountsMatchMVP(t *testing.T) {
 		total += len(found.Commands())
 	}
 
-	if total != 83 {
-		t.Fatalf("expected 83 collection commands, got %d", total)
+	if total != 84 {
+		t.Fatalf("expected 84 collection commands, got %d", total)
 	}
 }
 
@@ -103,6 +103,21 @@ func TestSchemaCommandListAndCollectionLookup(t *testing.T) {
 	}
 	if collectionPayload["collection"] != "document" {
 		t.Fatalf("unexpected collection payload: %+v", collectionPayload)
+	}
+}
+
+func TestSchemaTemplatePrintsPayloadSkeleton(t *testing.T) {
+	deps := makeDeps()
+	output, err := execute(buildRootWithCollections(t, deps), "schema", "doctype.create", "--template")
+	if err != nil {
+		t.Fatalf("schema template failed: %v", err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("failed to parse template payload: %v", err)
+	}
+	if payload["name"] == "" || payload["properties"] == nil {
+		t.Fatalf("expected doctype create template fields, got %+v", payload)
 	}
 }
 

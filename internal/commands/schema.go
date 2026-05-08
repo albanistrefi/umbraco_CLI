@@ -11,6 +11,7 @@ import (
 
 func RegisterSchema(root *cobra.Command, deps Dependencies) {
 	var list bool
+	var printTemplate bool
 	schemaCommand := &cobra.Command{
 		Use:   "schema [endpoint]",
 		Short: "Introspect API endpoint schemas",
@@ -21,6 +22,14 @@ func RegisterSchema(root *cobra.Command, deps Dependencies) {
 			}
 
 			key := args[0]
+			if printTemplate {
+				template, ok := schema.Templates[key]
+				if !ok {
+					return fmt.Errorf("no JSON template for endpoint: %s", key)
+				}
+				return printResult(cmd, deps, template)
+			}
+
 			if endpointSchema, ok := schema.Schemas[key]; ok {
 				return printResult(cmd, deps, endpointSchema)
 			}
@@ -40,6 +49,7 @@ func RegisterSchema(root *cobra.Command, deps Dependencies) {
 		},
 	}
 	schemaCommand.Flags().BoolVar(&list, "list", false, "List available endpoints")
+	schemaCommand.Flags().BoolVar(&printTemplate, "template", false, "Print a JSON payload template for the endpoint")
 	schemaCommand.AddCommand(&cobra.Command{
 		Use:   "list",
 		Short: "List schema endpoints",

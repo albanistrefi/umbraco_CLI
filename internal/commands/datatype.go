@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/schema"
 	"umbraco-cli/internal/validate"
 )
 
@@ -111,6 +112,7 @@ func datatypeRoot(deps Dependencies) *cobra.Command {
 	var paramsRaw string
 	var skip int
 	var take int
+	var triage readTriageOptions
 	cmd := &cobra.Command{Use: "root", Short: "Get root data types", RunE: func(cmd *cobra.Command, args []string) error {
 		params, err := parseParams(paramsRaw)
 		if err != nil {
@@ -133,17 +135,19 @@ func datatypeRoot(deps Dependencies) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		return printResult(cmd, deps, result)
+		return printResult(cmd, deps, applyReadTriage(result, triage))
 	}}
 	cmd.Flags().StringVar(&paramsRaw, "params", "", "Query parameters as JSON")
 	cmd.Flags().IntVar(&skip, "skip", 0, "Pagination offset")
 	cmd.Flags().IntVar(&take, "take", 100, "Pagination page size")
+	addReadTriageFlags(cmd, &triage)
 	return cmd
 }
 
 func datatypeSearch(deps Dependencies) *cobra.Command {
 	var paramsRaw string
 	var query string
+	var editorAlias string
 	var skip int
 	var take int
 	cmd := &cobra.Command{Use: "search", Short: "Search data types", RunE: func(cmd *cobra.Command, args []string) error {
@@ -152,16 +156,28 @@ func datatypeSearch(deps Dependencies) *cobra.Command {
 			return err
 		}
 		if params == nil {
-			if strings.TrimSpace(query) == "" {
-				return fmt.Errorf("datatype search requires either --params or --query")
+			if strings.TrimSpace(query) == "" && strings.TrimSpace(editorAlias) == "" {
+				return fmt.Errorf("datatype search requires --params, --query, or --editor-alias")
 			}
-			params = map[string]any{"query": query}
+			params = map[string]any{}
+			if strings.TrimSpace(query) != "" {
+				params["query"] = query
+			}
+			if strings.TrimSpace(editorAlias) != "" {
+				params["editorAlias"] = editorAlias
+			}
 			if skip >= 0 {
 				params["skip"] = skip
 			}
 			if take > 0 {
 				params["take"] = take
 			}
+		} else if strings.TrimSpace(editorAlias) != "" {
+			if _, exists := params["editorAlias"]; exists {
+				return fmt.Errorf("--editor-alias cannot be combined with --params containing editorAlias")
+			}
+			params = cloneParams(params)
+			params["editorAlias"] = editorAlias
 		}
 
 		searchParams := cloneParams(params)
@@ -189,6 +205,7 @@ func datatypeSearch(deps Dependencies) *cobra.Command {
 	}}
 	cmd.Flags().StringVar(&paramsRaw, "params", "", "Query parameters as JSON")
 	cmd.Flags().StringVar(&query, "query", "", "Search query")
+	cmd.Flags().StringVar(&editorAlias, "editor-alias", "", "Filter by property editor alias, e.g. Umbraco.TextBox")
 	cmd.Flags().IntVar(&skip, "skip", 0, "Pagination offset")
 	cmd.Flags().IntVar(&take, "take", 100, "Pagination page size")
 	return cmd
@@ -207,7 +224,11 @@ func datatypeIsUsed(deps Dependencies) *cobra.Command {
 func datatypeCreate(deps Dependencies) *cobra.Command {
 	var jsonPayload string
 	var dryRun bool
+	var printTemplate bool
 	cmd := &cobra.Command{Use: "create", Short: "Create data type", RunE: func(cmd *cobra.Command, args []string) error {
+		if printTemplate {
+			return printResult(cmd, deps, schema.Templates["datatype.create"])
+		}
 		if err := requireValue("--json", jsonPayload); err != nil {
 			return err
 		}
@@ -215,14 +236,18 @@ func datatypeCreate(deps Dependencies) *cobra.Command {
 		if err != nil {
 			return err
 		}
+		if _, err := ensurePayloadID(body); err != nil {
+			return err
+		}
 		result, err := deps.Client.Post(context.Background(), dataTypeLegacyCollectionPath, body, api.RequestOptions{DryRun: dryRun})
 		if err != nil {
 			return err
 		}
-		return printResult(cmd, deps, result)
+		return printResult(cmd, deps, createResult(result, body, "editorAlias"))
 	}}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Create payload as JSON")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
+	cmd.Flags().BoolVar(&printTemplate, "print-template", false, "Print a JSON payload template")
 	return cmd
 }
 

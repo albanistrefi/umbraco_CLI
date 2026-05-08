@@ -6,8 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -249,6 +252,82 @@ func (c *Client) Get(ctx context.Context, path string, opts RequestOptions) (any
 
 func (c *Client) Post(ctx context.Context, path string, body any, opts RequestOptions) (any, error) {
 	return c.Request(ctx, http.MethodPost, path, body, opts)
+}
+
+func (c *Client) MultipartPost(ctx context.Context, path string, fields map[string]string, fileField string, filePath string, opts RequestOptions) (any, error) {
+	fullURL, err := c.buildURL(path, opts)
+	if err != nil {
+		return nil, err
+	}
+	relativePath := c.relativeAPIPath(fullURL)
+
+	if opts.DryRun {
+		return DryRunResult{
+			DryRun: true,
+			Valid:  true,
+			Method: http.MethodPost,
+			Path:   relativePath,
+			Body: map[string]any{
+				"fields": fields,
+				"file":   filePath,
+			},
+		}, nil
+	}
+
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	for key, value := range fields {
+		if err := writer.WriteField(key, value); err != nil {
+			return nil, err
+		}
+	}
+	part, err := writer.CreateFormFile(fileField, filepath.Base(filePath))
+	if err != nil {
+		return nil, err
+	}
+	if _, err := io.Copy(part, file); err != nil {
+		return nil, err
+	}
+	if err := writer.Close(); err != nil {
+		return nil, err
+	}
+
+	token, err := c.tokenProvider.AccessToken(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, fullURL, &body)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	result, err := parseResponse(resp)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, &APIError{
+			StatusCode: resp.StatusCode,
+			Method:     http.MethodPost,
+			Path:       relativePath,
+			Payload:    result,
+			Hint:       buildAPIErrorHint(resp.StatusCode, http.MethodPost, relativePath),
+		}
+	}
+	return result, nil
 }
 
 func (c *Client) Put(ctx context.Context, path string, body any, opts RequestOptions) (any, error) {

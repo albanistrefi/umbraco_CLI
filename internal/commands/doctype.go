@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/schema"
 	"umbraco-cli/internal/validate"
 )
 
@@ -59,7 +60,8 @@ func doctypeList(deps Dependencies) *cobra.Command {
 }
 
 func doctypeRoot(deps Dependencies) *cobra.Command {
-	return &cobra.Command{Use: "root", Short: "Get root document types", RunE: func(cmd *cobra.Command, args []string) error {
+	var triage readTriageOptions
+	cmd := &cobra.Command{Use: "root", Short: "Get root document types", RunE: func(cmd *cobra.Command, args []string) error {
 		result, err := getWithFallback(
 			context.Background(),
 			deps.Client,
@@ -69,12 +71,15 @@ func doctypeRoot(deps Dependencies) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		return printResult(cmd, deps, result)
+		return printResult(cmd, deps, applyReadTriage(result, triage))
 	}}
+	addReadTriageFlags(cmd, &triage)
+	return cmd
 }
 
 func doctypeChildren(deps Dependencies) *cobra.Command {
-	return &cobra.Command{Use: "children <id>", Short: "Get child document types", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	var triage readTriageOptions
+	cmd := &cobra.Command{Use: "children <id>", Short: "Get child document types", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		result, err := getWithFallback(
 			context.Background(),
 			deps.Client,
@@ -90,8 +95,10 @@ func doctypeChildren(deps Dependencies) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		return printResult(cmd, deps, result)
+		return printResult(cmd, deps, applyReadTriage(result, triage))
 	}}
+	addReadTriageFlags(cmd, &triage)
+	return cmd
 }
 
 func doctypeSearch(deps Dependencies) *cobra.Command {
@@ -127,7 +134,11 @@ func doctypeSearch(deps Dependencies) *cobra.Command {
 func doctypeCreate(deps Dependencies) *cobra.Command {
 	var jsonPayload string
 	var dryRun bool
+	var printTemplate bool
 	cmd := &cobra.Command{Use: "create", Short: "Create document type", RunE: func(cmd *cobra.Command, args []string) error {
+		if printTemplate {
+			return printResult(cmd, deps, schema.Templates["doctype.create"])
+		}
 		if err := requireValue("--json", jsonPayload); err != nil {
 			return err
 		}
@@ -135,14 +146,19 @@ func doctypeCreate(deps Dependencies) *cobra.Command {
 		if err != nil {
 			return err
 		}
+		if _, err := ensurePayloadID(body); err != nil {
+			return err
+		}
+		normalizeDoctypePayload(body)
 		result, err := deps.Client.Post(context.Background(), "/document-type", body, api.RequestOptions{DryRun: dryRun})
 		if err != nil {
 			return err
 		}
-		return printResult(cmd, deps, result)
+		return printResult(cmd, deps, createResult(result, body, "icon"))
 	}}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Create payload as JSON")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
+	cmd.Flags().BoolVar(&printTemplate, "print-template", false, "Print a JSON payload template")
 	return cmd
 }
 
@@ -162,6 +178,7 @@ func doctypeUpdate(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			normalizeDoctypePayload(patch)
 
 			current, err := fetchDoctypeObject(context.Background(), deps.Client, args[0])
 			if err != nil {
@@ -180,6 +197,7 @@ func doctypeUpdate(deps Dependencies) *cobra.Command {
 		if err != nil {
 			return err
 		}
+		normalizeDoctypePayload(body)
 		result, err := deps.Client.Put(context.Background(), fmt.Sprintf("/document-type/%s", args[0]), body, api.RequestOptions{DryRun: dryRun})
 		if err != nil {
 			return err

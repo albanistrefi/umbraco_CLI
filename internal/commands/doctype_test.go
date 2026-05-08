@@ -104,6 +104,57 @@ func TestDoctypeUpdateMergeJSONFetchesCurrentAndSendsMergedPayload(t *testing.T)
 	}
 }
 
+func TestDoctypeCreateNormalizesDataTypeIDAndReturnsCreatedIdentity(t *testing.T) {
+	var postPayload map[string]any
+
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/document-type":
+			if req.Method != http.MethodPost {
+				return datatypeJSONResponse(http.StatusMethodNotAllowed, `{"error":"method not allowed"}`), nil
+			}
+			if err := json.NewDecoder(req.Body).Decode(&postPayload); err != nil {
+				t.Fatalf("failed to decode create payload: %v", err)
+			}
+			return datatypeJSONResponse(http.StatusOK, `{"success":true}`), nil
+		default:
+			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	output, err := execute(
+		buildRootWithCollections(t, deps),
+		"doctype", "create",
+		"--json", `{"name":"Article","alias":"article","properties":[{"name":"Title","alias":"title","dataTypeId":"dt-text"}]}`,
+	)
+	if err != nil {
+		t.Fatalf("doctype create failed: %v", err)
+	}
+
+	if postPayload["id"] == "" {
+		t.Fatalf("expected CLI to generate an id, got %+v", postPayload)
+	}
+	properties := postPayload["properties"].([]any)
+	property := properties[0].(map[string]any)
+	if _, exists := property["dataTypeId"]; exists {
+		t.Fatalf("expected dataTypeId shortcut to be removed, got %+v", property)
+	}
+	dataType := property["dataType"].(map[string]any)
+	if dataType["id"] != "dt-text" {
+		t.Fatalf("expected nested dataType id, got %+v", property)
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		t.Fatalf("failed to decode create result: %v", err)
+	}
+	if result["id"] != postPayload["id"] || result["name"] != "Article" || result["alias"] != "article" {
+		t.Fatalf("expected minimal created identity, got %+v", result)
+	}
+}
+
 func TestDoctypeUpdateMergeJSONSupportsDryRun(t *testing.T) {
 	var getRequests int
 
