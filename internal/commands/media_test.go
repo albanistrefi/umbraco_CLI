@@ -60,11 +60,13 @@ func TestMediaUploadCreatesTemporaryFileThenMedia(t *testing.T) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
 			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
-		case "/umbraco/management/api/v1/item/media-type/search":
-			if req.URL.Query().Get("query") != "SVG" {
-				t.Fatalf("expected media type lookup by normalized alias, got %q", req.URL.RawQuery)
-			}
-			return endpointJSONResponse(http.StatusOK, `{"total":1,"items":[{"id":"mt-svg","alias":"SVG","name":"SVG"}]}`), nil
+		case "/umbraco/management/api/v1/media-type":
+			return endpointJSONResponse(http.StatusOK, `{"total":2,"items":[
+				{"id":"mt-image","alias":"umbracoMediaImage","name":"Image"},
+				{"id":"mt-svg","alias":"umbracoMediaVectorGraphics","name":"SVG"}
+			]}`), nil
+		case "/umbraco/management/api/v1/media-type/mt-svg":
+			return endpointJSONResponse(http.StatusOK, `{"id":"mt-svg","alias":"umbracoMediaVectorGraphics","name":"SVG","variesByCulture":false}`), nil
 		case "/umbraco/management/api/v1/temporary-file":
 			if req.Method != http.MethodPost {
 				return endpointJSONResponse(http.StatusMethodNotAllowed, `{"error":"method not allowed"}`), nil
@@ -128,5 +130,79 @@ func TestMediaUploadCreatesTemporaryFileThenMedia(t *testing.T) {
 	}
 	if result["id"] != createPayload["id"] || result["name"] != "Hero" {
 		t.Fatalf("expected upload result to expose created media id, got %+v", result)
+	}
+}
+
+func TestMediaUploadCultureVaryingMediaTypeUsesVariantPayload(t *testing.T) {
+	var createPayload map[string]any
+
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/media-type":
+			return endpointJSONResponse(http.StatusOK, `{"total":1,"items":[{"id":"mt-image","alias":"umbracoMediaImage","name":"Image"}]}`), nil
+		case "/umbraco/management/api/v1/media-type/mt-image":
+			return endpointJSONResponse(http.StatusOK, `{"id":"mt-image","alias":"umbracoMediaImage","name":"Image","variesByCulture":true}`), nil
+		case "/umbraco/management/api/v1/temporary-file":
+			return endpointJSONResponse(http.StatusCreated, `{"success":true}`), nil
+		case "/umbraco/management/api/v1/media":
+			if err := json.NewDecoder(req.Body).Decode(&createPayload); err != nil {
+				t.Fatalf("failed to decode media create payload: %v", err)
+			}
+			return endpointJSONResponse(http.StatusOK, `{"success":true}`), nil
+		default:
+			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	filePath := filepath.Join(t.TempDir(), "hero.png")
+	if err := os.WriteFile(filePath, []byte("asset"), 0o644); err != nil {
+		t.Fatalf("failed to write upload fixture: %v", err)
+	}
+
+	if _, err := execute(buildRootWithCollections(t, deps), "media", "upload", filePath, "--type", "Image", "--name", "Hero", "--culture", "en-US"); err != nil {
+		t.Fatalf("media upload failed: %v", err)
+	}
+
+	if _, exists := createPayload["name"]; exists {
+		t.Fatalf("expected culture-varying payload to omit top-level name, got %+v", createPayload)
+	}
+	variants := createPayload["variants"].([]any)
+	variant := variants[0].(map[string]any)
+	if variant["name"] != "Hero" || variant["culture"] != "en-US" {
+		t.Fatalf("unexpected variants payload: %+v", createPayload)
+	}
+	values := createPayload["values"].([]any)
+	value := values[0].(map[string]any)
+	if value["culture"] != "en-US" {
+		t.Fatalf("expected value culture for culture-varying media, got %+v", value)
+	}
+}
+
+func TestMediaUploadCultureVaryingMediaTypeRequiresCultureWhenDefaultCannotResolve(t *testing.T) {
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/media-type":
+			return endpointJSONResponse(http.StatusOK, `{"total":1,"items":[{"id":"mt-image","alias":"umbracoMediaImage","name":"Image"}]}`), nil
+		case "/umbraco/management/api/v1/media-type/mt-image":
+			return endpointJSONResponse(http.StatusOK, `{"id":"mt-image","alias":"umbracoMediaImage","name":"Image","variesByCulture":true}`), nil
+		case "/umbraco/management/api/v1/server/configuration":
+			return endpointJSONResponse(http.StatusOK, `{}`), nil
+		default:
+			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	filePath := filepath.Join(t.TempDir(), "hero.png")
+	if err := os.WriteFile(filePath, []byte("asset"), 0o644); err != nil {
+		t.Fatalf("failed to write upload fixture: %v", err)
+	}
+
+	_, err := execute(buildRootWithCollections(t, deps), "media", "upload", filePath, "--type", "Image", "--name", "Hero")
+	if err == nil || !strings.Contains(err.Error(), "varies by culture") {
+		t.Fatalf("expected culture requirement error, got %v", err)
 	}
 }

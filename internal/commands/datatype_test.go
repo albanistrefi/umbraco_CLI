@@ -207,6 +207,54 @@ func TestDatatypeSearchQueryAndEditorAliasClientFiltersServerResults(t *testing.
 	}
 }
 
+func TestDatatypeSearchEditorAliasPaginatesBeforeApplyingUserTake(t *testing.T) {
+	var requests []string
+
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/filter/data-type":
+			requests = append(requests, req.URL.RawQuery)
+			switch req.URL.Query().Get("skip") {
+			case "0":
+				return datatypeJSONResponse(http.StatusOK, `{"total":401,"items":[{"id":"dt-color","editorAlias":"Umbraco.ColorPicker"}]}`), nil
+			case "200":
+				return datatypeJSONResponse(http.StatusOK, `{"total":401,"items":[
+					{"id":"dt-text-1","editorAlias":"Umbraco.TextBox"},
+					{"id":"dt-text-2","editorAlias":"Umbraco.TextBox"}
+				]}`), nil
+			case "400":
+				return datatypeJSONResponse(http.StatusOK, `{"total":401,"items":[{"id":"dt-text-3","editorAlias":"Umbraco.TextBox"}]}`), nil
+			default:
+				return datatypeJSONResponse(http.StatusOK, `{"total":401,"items":[]}`), nil
+			}
+		default:
+			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	output, err := execute(buildRootWithCollections(t, deps), "datatype", "search", "--editor-alias", "Umbraco.TextBox", "--take", "3")
+	if err != nil {
+		t.Fatalf("datatype search --editor-alias failed: %v", err)
+	}
+	if len(requests) != 3 {
+		t.Fatalf("expected scan to continue until three matches were found, got %d requests: %+v", len(requests), requests)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("failed to decode datatype search payload: %v", err)
+	}
+	items := payload["items"].([]any)
+	if len(items) != 3 {
+		t.Fatalf("expected three filtered matches, got %+v", payload)
+	}
+	if payload["filteredTotal"] != float64(3) {
+		t.Fatalf("expected filteredTotal=3, got %+v", payload)
+	}
+}
+
 func TestDatatypeRootUsesTreeRootEndpoint(t *testing.T) {
 	var observedPath string
 

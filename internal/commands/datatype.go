@@ -151,6 +151,7 @@ func datatypeSearch(deps Dependencies) *cobra.Command {
 	var skip int
 	var take int
 	cmd := &cobra.Command{Use: "search", Short: "Search data types", RunE: func(cmd *cobra.Command, args []string) error {
+		userTakeSet := cmd.Flags().Changed("take")
 		params, err := parseParams(paramsRaw)
 		if err != nil {
 			return err
@@ -176,6 +177,23 @@ func datatypeSearch(deps Dependencies) *cobra.Command {
 				return fmt.Errorf("--editor-alias cannot be combined with --params containing editorAlias")
 			}
 			params = cloneParams(params)
+		}
+
+		if strings.TrimSpace(editorAlias) != "" {
+			userSkip := skip
+			userTake := 0
+			if userTakeSet {
+				userTake = take
+			}
+			if paramsRaw != "" {
+				userSkip = intParam(params, "skip", userSkip)
+				userTake = intParam(params, "take", userTake)
+			}
+			result, err := searchDataTypesByEditorAlias(context.Background(), deps.Client, params, editorAlias, userSkip, userTake)
+			if err != nil {
+				return err
+			}
+			return printResult(cmd, deps, result)
 		}
 
 		searchParams := cloneParams(params)
@@ -206,9 +224,6 @@ func datatypeSearch(deps Dependencies) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		if strings.TrimSpace(editorAlias) != "" {
-			result = filterDataTypesByEditorAlias(result, editorAlias)
-		}
 		return printResult(cmd, deps, result)
 	}}
 	cmd.Flags().StringVar(&paramsRaw, "params", "", "Query parameters as JSON")
@@ -219,26 +234,100 @@ func datatypeSearch(deps Dependencies) *cobra.Command {
 	return cmd
 }
 
-func filterDataTypesByEditorAlias(result any, editorAlias string) any {
-	normalized := strings.EqualFold
-	payload, ok := result.(map[string]any)
-	if ok {
-		items, ok := payload["items"].([]any)
-		if !ok {
-			return result
+func searchDataTypesByEditorAlias(ctx context.Context, client *api.Client, params map[string]any, editorAlias string, userSkip int, userTake int) (map[string]any, error) {
+	const pageSize = 200
+	const scanCap = 5000
+
+	baseParams := cloneParams(params)
+	delete(baseParams, "skip")
+	delete(baseParams, "take")
+	delete(baseParams, "editorAlias")
+	if _, hasQuery := baseParams["query"]; !hasQuery {
+		if _, hasFilter := baseParams["filter"]; !hasFilter {
+			baseParams["filter"] = editorAlias
 		}
-		filtered := filterDataTypeItems(items, editorAlias, normalized)
-		next := cloneAnyMap(payload)
-		next["items"] = filtered
-		next["filteredTotal"] = len(filtered)
-		next["editorAlias"] = editorAlias
-		return next
 	}
-	items, ok := result.([]any)
-	if !ok {
-		return result
+
+	matches := make([]any, 0)
+	total := -1
+	scanned := 0
+	scanCapReached := false
+	var lastPayload map[string]any
+
+	for scanned < scanCap {
+		pageParams := cloneParams(baseParams)
+		pageParams["skip"] = scanned
+		pageParams["take"] = pageSize
+
+		page, err := datatypeSearchPage(ctx, client, pageParams)
+		if err != nil {
+			return nil, err
+		}
+		if payload, ok := page.(map[string]any); ok {
+			lastPayload = payload
+			if pageTotal, ok := intValue(payload["total"]); ok {
+				total = pageTotal
+			}
+		}
+
+		items := resultItems(page)
+		matches = append(matches, filterDataTypeItems(items, editorAlias, strings.EqualFold)...)
+
+		scanned += pageSize
+		if userTake > 0 && len(matches) >= userSkip+userTake {
+			break
+		}
+		if len(items) == 0 {
+			break
+		}
+		if total >= 0 && scanned >= total {
+			break
+		}
 	}
-	return filterDataTypeItems(items, editorAlias, normalized)
+	if scanned >= scanCap && (total < 0 || scanned < total) {
+		scanCapReached = true
+	}
+
+	window := applyItemWindow(matches, userSkip, userTake)
+	result := map[string]any{
+		"items":         window,
+		"total":         total,
+		"filteredTotal": len(matches),
+		"editorAlias":   editorAlias,
+		"scanned":       minInt(scanned, scanCap),
+	}
+	if lastPayload != nil {
+		for _, key := range []string{"links", "_links"} {
+			if value, ok := lastPayload[key]; ok {
+				result[key] = value
+			}
+		}
+	}
+	if scanCapReached {
+		result["scanCapReached"] = true
+		result["warning"] = fmt.Sprintf("stopped after scanning %d data types; narrow --query or increase the CLI scan cap in code if needed", scanCap)
+	}
+	return result, nil
+}
+
+func datatypeSearchPage(ctx context.Context, client *api.Client, params map[string]any) (any, error) {
+	searchParams := cloneParams(params)
+	filterParams := cloneParams(params)
+	if queryValue, ok := searchParams["query"]; ok {
+		if _, exists := filterParams["filter"]; !exists {
+			filterParams["filter"] = queryValue
+		}
+	}
+	if _, hasQuery := searchParams["query"]; hasQuery {
+		return datatypeGetWithFallback(ctx, client,
+			dataTypeRequestCandidate{path: dataTypeItemSearchPath, opts: api.RequestOptions{Params: searchParams}},
+			dataTypeRequestCandidate{path: dataTypeFilterPath, opts: api.RequestOptions{Params: filterParams}},
+			dataTypeRequestCandidate{path: dataTypeLegacySearchPath, opts: api.RequestOptions{Params: searchParams}},
+		)
+	}
+	return datatypeGetWithFallback(ctx, client,
+		dataTypeRequestCandidate{path: dataTypeFilterPath, opts: api.RequestOptions{Params: filterParams}},
+	)
 }
 
 func filterDataTypeItems(items []any, editorAlias string, equal func(string, string) bool) []any {
@@ -253,6 +342,51 @@ func filterDataTypeItems(items []any, editorAlias string, equal func(string, str
 		}
 	}
 	return filtered
+}
+
+func applyItemWindow(items []any, skip int, take int) []any {
+	if skip < 0 {
+		skip = 0
+	}
+	if skip >= len(items) {
+		return []any{}
+	}
+	end := len(items)
+	if take > 0 && skip+take < end {
+		end = skip + take
+	}
+	return items[skip:end]
+}
+
+func intParam(params map[string]any, key string, fallback int) int {
+	if value, ok := intValue(params[key]); ok {
+		return value
+	}
+	return fallback
+}
+
+func intValue(value any) (int, bool) {
+	switch typed := value.(type) {
+	case int:
+		return typed, true
+	case int64:
+		return int(typed), true
+	case float64:
+		return int(typed), true
+	case string:
+		var parsed int
+		if _, err := fmt.Sscanf(strings.TrimSpace(typed), "%d", &parsed); err == nil {
+			return parsed, true
+		}
+	}
+	return 0, false
+}
+
+func minInt(left int, right int) int {
+	if left < right {
+		return left
+	}
+	return right
 }
 
 func datatypeIsUsed(deps Dependencies) *cobra.Command {

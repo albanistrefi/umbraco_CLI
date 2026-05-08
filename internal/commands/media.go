@@ -156,6 +156,7 @@ func mediaCreate(deps Dependencies) *cobra.Command {
 func mediaUpload(deps Dependencies) *cobra.Command {
 	var name string
 	var mediaType string
+	var culture string
 	var parent string
 	var propertyAlias string
 	var dryRun bool
@@ -180,9 +181,15 @@ func mediaUpload(deps Dependencies) *cobra.Command {
 		if err != nil {
 			return fmt.Errorf("failed to generate media id: %w", err)
 		}
-		mediaTypeRef, err := resolveMediaTypeReference(context.Background(), deps.Client, mediaType)
+		mediaTypeInfo, err := resolveMediaTypeInfo(context.Background(), deps.Client, mediaType)
 		if err != nil {
 			return err
+		}
+		if mediaTypeInfo.VariesByCulture && strings.TrimSpace(culture) == "" {
+			culture, err = resolveDefaultCulture(context.Background(), deps.Client)
+			if err != nil {
+				return fmt.Errorf("media type %q varies by culture; pass --culture <code>", mediaType)
+			}
 		}
 
 		uploadResult, err := deps.Client.MultipartPost(
@@ -200,11 +207,18 @@ func mediaUpload(deps Dependencies) *cobra.Command {
 		body := map[string]any{
 			"id":        mediaID,
 			"name":      name,
-			"mediaType": mediaTypeRef,
+			"mediaType": map[string]any{"id": mediaTypeInfo.ID},
 			"values": []any{map[string]any{
 				"alias": propertyAlias,
 				"value": map[string]any{"temporaryFileId": tempID},
 			}},
+		}
+		if mediaTypeInfo.VariesByCulture {
+			delete(body, "name")
+			body["variants"] = []any{map[string]any{"name": name, "culture": culture}}
+			values := body["values"].([]any)
+			value := values[0].(map[string]any)
+			value["culture"] = culture
 		}
 		if parent != "" {
 			body["parent"] = map[string]any{"id": parent}
@@ -224,7 +238,8 @@ func mediaUpload(deps Dependencies) *cobra.Command {
 	}}
 
 	cmd.Flags().StringVar(&name, "name", "", "Media item name (defaults to file name without extension)")
-	cmd.Flags().StringVar(&mediaType, "type", "", "Media type id, alias, or built-in name: Image, SVG, File, or Folder")
+	cmd.Flags().StringVar(&mediaType, "type", "", "Media type id, alias, or name")
+	cmd.Flags().StringVar(&culture, "culture", "", "Culture code for culture-varying media types")
 	cmd.Flags().StringVar(&parent, "parent", "", "Target parent media ID")
 	cmd.Flags().StringVar(&propertyAlias, "property", "umbracoFile", "File property alias")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
@@ -237,67 +252,90 @@ func mediaNameFromPath(path string) string {
 	return base[:len(base)-len(ext)]
 }
 
-func resolveMediaTypeReference(ctx context.Context, client *api.Client, value string) (map[string]any, error) {
-	normalized := normalizeMediaTypeAlias(value)
+type mediaTypeInfo struct {
+	ID              string
+	Alias           string
+	Name            string
+	VariesByCulture bool
+}
+
+func resolveMediaTypeInfo(ctx context.Context, client *api.Client, value string) (mediaTypeInfo, error) {
+	normalized := strings.TrimSpace(value)
+	var resolved mediaTypeInfo
 	if isUUIDLike(normalized) {
-		return map[string]any{"id": normalized}, nil
+		resolved.ID = normalized
+	} else {
+		result, err := getWithFallback(
+			ctx,
+			client,
+			getRequestCandidate{path: "/media-type", opts: api.RequestOptions{}},
+			getRequestCandidate{path: "/item/media-type/search", opts: api.RequestOptions{Params: map[string]any{"query": normalized, "skip": 0, "take": 500}}},
+			getRequestCandidate{path: "/media-type/search", opts: api.RequestOptions{Params: map[string]any{"query": normalized, "skip": 0, "take": 500}}},
+		)
+		if err != nil {
+			return mediaTypeInfo{}, fmt.Errorf("failed to resolve media type %q: %w", value, err)
+		}
+
+		resolved = findMediaTypeInfo(result, normalized)
+		if resolved.ID == "" {
+			return mediaTypeInfo{}, fmt.Errorf("media type %q was not found; pass a media type ID with --type or ensure the alias/name exists", value)
+		}
 	}
 
-	result, err := getWithFallback(
-		ctx,
-		client,
-		getRequestCandidate{path: "/item/media-type/search", opts: api.RequestOptions{Params: map[string]any{"query": normalized, "skip": 0, "take": 100}}},
-		getRequestCandidate{path: "/media-type/search", opts: api.RequestOptions{Params: map[string]any{"query": normalized, "skip": 0, "take": 100}}},
-		getRequestCandidate{path: "/media-type", opts: api.RequestOptions{}},
-	)
+	detail, err := client.Get(ctx, fmt.Sprintf("/media-type/%s", resolved.ID), api.RequestOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve media type %q: %w", value, err)
+		return mediaTypeInfo{}, fmt.Errorf("failed to inspect media type %q (%s): %w", value, resolved.ID, err)
 	}
-
-	id := findMediaTypeID(result, normalized)
-	if id == "" {
-		return nil, fmt.Errorf("media type %q was not found; pass a media type ID with --type or ensure the alias/name exists", value)
+	if detailInfo := mediaTypeInfoFromAny(detail); detailInfo.ID != "" {
+		return detailInfo, nil
 	}
-	return map[string]any{"id": id}, nil
+	return resolved, nil
 }
 
-func normalizeMediaTypeAlias(value string) string {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "image":
-		return "Image"
-	case "svg":
-		return "SVG"
-	case "file":
-		return "File"
-	case "folder":
-		return "Folder"
-	default:
-		return strings.TrimSpace(value)
-	}
-}
-
-func findMediaTypeID(result any, query string) string {
+func findMediaTypeInfo(result any, query string) mediaTypeInfo {
+	var nameMatch mediaTypeInfo
 	for _, item := range resultItems(result) {
 		entry, ok := item.(map[string]any)
 		if !ok {
 			continue
 		}
-		if matchesMediaType(entry, query) {
-			if id, ok := entry["id"].(string); ok && strings.TrimSpace(id) != "" {
-				return id
-			}
+		info := mediaTypeInfoFromMap(entry)
+		if info.ID == "" {
+			continue
+		}
+		if strings.EqualFold(info.Alias, query) {
+			return info
+		}
+		if nameMatch.ID == "" && strings.EqualFold(info.Name, query) {
+			nameMatch = info
 		}
 	}
-	return ""
+	return nameMatch
 }
 
-func matchesMediaType(entry map[string]any, query string) bool {
-	for _, key := range []string{"alias", "name"} {
-		if value, ok := entry[key].(string); ok && strings.EqualFold(value, query) {
-			return true
-		}
+func mediaTypeInfoFromAny(value any) mediaTypeInfo {
+	entry, ok := value.(map[string]any)
+	if !ok {
+		return mediaTypeInfo{}
 	}
-	return false
+	return mediaTypeInfoFromMap(entry)
+}
+
+func mediaTypeInfoFromMap(entry map[string]any) mediaTypeInfo {
+	info := mediaTypeInfo{}
+	if id, ok := entry["id"].(string); ok {
+		info.ID = strings.TrimSpace(id)
+	}
+	if alias, ok := entry["alias"].(string); ok {
+		info.Alias = strings.TrimSpace(alias)
+	}
+	if name, ok := entry["name"].(string); ok {
+		info.Name = strings.TrimSpace(name)
+	}
+	if varies, ok := entry["variesByCulture"].(bool); ok {
+		info.VariesByCulture = varies
+	}
+	return info
 }
 
 func resultItems(result any) []any {
@@ -330,6 +368,50 @@ func isUUIDLike(value string) bool {
 		}
 	}
 	return true
+}
+
+func resolveDefaultCulture(ctx context.Context, client *api.Client) (string, error) {
+	result, err := getWithFallback(
+		ctx,
+		client,
+		getRequestCandidate{path: "/server/configuration", opts: api.RequestOptions{}},
+		getRequestCandidate{path: "/server/config", opts: api.RequestOptions{}},
+	)
+	if err != nil {
+		return "", err
+	}
+	if culture := findStringByKeys(result, "defaultCulture", "defaultIsoCode", "defaultLanguageIsoCode"); culture != "" {
+		return culture, nil
+	}
+	return "", fmt.Errorf("default culture not found")
+}
+
+func findStringByKeys(value any, keys ...string) string {
+	switch typed := value.(type) {
+	case map[string]any:
+		for _, key := range keys {
+			if raw, ok := typed[key].(string); ok && strings.TrimSpace(raw) != "" {
+				return strings.TrimSpace(raw)
+			}
+			if nested, ok := typed[key].(map[string]any); ok {
+				if raw, ok := nested["isoCode"].(string); ok && strings.TrimSpace(raw) != "" {
+					return strings.TrimSpace(raw)
+				}
+			}
+		}
+		for _, child := range typed {
+			if result := findStringByKeys(child, keys...); result != "" {
+				return result
+			}
+		}
+	case []any:
+		for _, child := range typed {
+			if result := findStringByKeys(child, keys...); result != "" {
+				return result
+			}
+		}
+	}
+	return ""
 }
 
 func mediaCreateFolder(deps Dependencies) *cobra.Command {
