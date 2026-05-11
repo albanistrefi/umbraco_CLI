@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.3.10 - 2026-05-11
+
+- fixed `logs list` and `logs search` for Umbraco v17 by routing them through `/log-viewer/log`, with 404-only fallback to legacy log viewer routes
+- fixed log level filtering to send repeated `logLevel` query parameters, matching the v17 Management API controller binding
+- hid the removed `logs levels` endpoint from generated CLI docs and return a clear unsupported-v17 message for old scripts
+- improved `logs level-count` errors for `CancelledByLogsSizeValidation` with a narrower-window hint
+
 ## v0.3.9 - 2026-05-08
 
 - fixed `doctype list` on current Umbraco versions by routing it through `/tree/document-type/root` before falling back to legacy document type endpoints
