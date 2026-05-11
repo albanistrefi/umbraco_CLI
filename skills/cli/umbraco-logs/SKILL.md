@@ -23,7 +23,6 @@ umbraco logs <command> [flags]
 | Command | Description |
 |---------|-------------|
 | `logs level-count` | Get count per level |
-| `logs levels` | List log levels |
 | `logs list` | List log entries |
 | `logs search` | Search logs |
 | `logs templates` | List log templates |
@@ -40,12 +39,6 @@ umbraco logs level-count
 | `--params` | string | — | Filter params as JSON |
 | `--to` | string | — | End date (ISO) |
 
-### levels
-
-```bash
-umbraco logs levels
-```
-
 ### list
 
 ```bash
@@ -54,9 +47,10 @@ umbraco logs list
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--filter-expression` | string | — | Serilog filter expression |
 | `--from` | string | — | Start date (ISO) |
 | `--level` | string | — | Log level |
-| `--params` | string | — | Filter params as JSON |
+| `--params` | string | — | Filter params as JSON (accepted keys: startDate,endDate,skip,take,filterExpression,logLevels) |
 | `--skip` | int | -1 | Skip count |
 | `--take` | int | -1 | Take count |
 | `--to` | string | — | End date (ISO) |
@@ -69,10 +63,13 @@ umbraco logs search
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--filter-expression` | string | — | Filter expression |
-| `--params` | string | — | Search params as JSON |
+| `--filter-expression` | string | — | Serilog filter expression |
+| `--from` | string | — | Start date (ISO) |
+| `--level` | string | — | Log level |
+| `--params` | string | — | Search params as JSON (accepted keys: startDate,endDate,skip,take,filterExpression,logLevels) |
 | `--skip` | int | -1 | Skip count |
 | `--take` | int | -1 | Take count |
+| `--to` | string | — | End date (ISO) |
 
 ### templates
 
