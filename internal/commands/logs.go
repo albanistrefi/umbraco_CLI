@@ -60,7 +60,7 @@ func logsList(deps Dependencies) *cobra.Command {
 		return printResult(cmd, deps, result)
 	}}
 
-	cmd.Flags().StringVar(&paramsRaw, "params", "", "Filter params as JSON (accepted keys: startDate,endDate,skip,take,filterExpression,logLevels)")
+	cmd.Flags().StringVar(&paramsRaw, "params", "", "Filter params as JSON (accepted keys: startDate,endDate,skip,take,filterExpression,logLevel)")
 	cmd.Flags().StringVar(&level, "level", "", "Log level")
 	cmd.Flags().StringVar(&filterExpression, "filter-expression", "", "Serilog filter expression")
 	cmd.Flags().StringVar(&from, "from", "", "Start date (ISO)")
@@ -147,7 +147,7 @@ func logsSearch(deps Dependencies) *cobra.Command {
 		}
 		return printResult(cmd, deps, result)
 	}}
-	cmd.Flags().StringVar(&paramsRaw, "params", "", "Search params as JSON (accepted keys: startDate,endDate,skip,take,filterExpression,logLevels)")
+	cmd.Flags().StringVar(&paramsRaw, "params", "", "Search params as JSON (accepted keys: startDate,endDate,skip,take,filterExpression,logLevel)")
 	cmd.Flags().StringVar(&filterExpression, "filter-expression", "", "Serilog filter expression")
 	cmd.Flags().StringVar(&level, "level", "", "Log level")
 	cmd.Flags().StringVar(&from, "from", "", "Start date (ISO)")
@@ -174,7 +174,7 @@ func logParamsFromFlags(raw string, flags logQueryFlags) (map[string]any, error)
 	if params == nil {
 		params = map[string]any{}
 		if flags.level != "" {
-			params["logLevels[]"] = []any{flags.level}
+			params["logLevel"] = []any{flags.level}
 		}
 		if flags.filterExpression != "" {
 			params["filterExpression"] = flags.filterExpression
@@ -205,10 +205,10 @@ func normalizeLogParams(params map[string]any) map[string]any {
 			normalized["startDate"] = value
 		case "to":
 			normalized["endDate"] = value
-		case "level", "logLevel":
-			normalized["logLevels[]"] = []any{value}
+		case "level":
+			normalized["logLevel"] = []any{value}
 		case "logLevels":
-			normalized["logLevels[]"] = value
+			normalized["logLevel"] = value
 		case "filter":
 			normalized["filterExpression"] = value
 		default:

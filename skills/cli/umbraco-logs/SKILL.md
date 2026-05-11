@@ -50,7 +50,7 @@ umbraco logs list
 | `--filter-expression` | string | — | Serilog filter expression |
 | `--from` | string | — | Start date (ISO) |
 | `--level` | string | — | Log level |
-| `--params` | string | — | Filter params as JSON (accepted keys: startDate,endDate,skip,take,filterExpression,logLevels) |
+| `--params` | string | — | Filter params as JSON (accepted keys: startDate,endDate,skip,take,filterExpression,logLevel) |
 | `--skip` | int | -1 | Skip count |
 | `--take` | int | -1 | Take count |
 | `--to` | string | — | End date (ISO) |
@@ -66,7 +66,7 @@ umbraco logs search
 | `--filter-expression` | string | — | Serilog filter expression |
 | `--from` | string | — | Start date (ISO) |
 | `--level` | string | — | Log level |
-| `--params` | string | — | Search params as JSON (accepted keys: startDate,endDate,skip,take,filterExpression,logLevels) |
+| `--params` | string | — | Search params as JSON (accepted keys: startDate,endDate,skip,take,filterExpression,logLevel) |
 | `--skip` | int | -1 | Skip count |
 | `--take` | int | -1 | Take count |
 | `--to` | string | — | End date (ISO) |

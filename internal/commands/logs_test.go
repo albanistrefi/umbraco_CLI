@@ -43,7 +43,7 @@ func TestLogsListUsesV17LogEndpointWithQueryFlags(t *testing.T) {
 	assertQueryValue(t, observedQuery, "startDate", "2026-05-11T10:00:00Z")
 	assertQueryValue(t, observedQuery, "endDate", "2026-05-11T10:30:00Z")
 	assertQueryValue(t, observedQuery, "filterExpression", "@Message like '%panic%'")
-	assertQueryValue(t, observedQuery, "logLevels[]", "Error")
+	assertQueryValue(t, observedQuery, "logLevel", "Error")
 	assertQueryValue(t, observedQuery, "skip", "5")
 	assertQueryValue(t, observedQuery, "take", "25")
 
@@ -85,7 +85,7 @@ func TestLogsListFallsBackToLegacyEndpointOnNotFound(t *testing.T) {
 	if strings.Join(requests, ",") != strings.Join(expected, ",") {
 		t.Fatalf("unexpected fallback request order: %+v", requests)
 	}
-	assertQueryValue(t, legacyQuery, "logLevels[]", "Warning")
+	assertQueryValue(t, legacyQuery, "logLevel", "Warning")
 	assertQueryValue(t, legacyQuery, "startDate", "2026-05-11T09:00:00Z")
 	assertQueryValue(t, legacyQuery, "take", "10")
 }
