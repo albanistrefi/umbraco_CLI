@@ -117,11 +117,10 @@ var rawSchemas = map[string]rawSchema{
 	"template.delete": {Method: "DELETE", Path: "/template/{id}", PathParams: map[string]ParamSchema{"id": idParam}},
 
 	// logs (5)
-	"logs.list":        {Method: "GET", Path: "/log-viewer"},
-	"logs.levels":      {Method: "GET", Path: "/log-viewer/levels"},
-	"logs.level-count": {Method: "GET", Path: "/log-viewer/level-count"},
+	"logs.list":        {Method: "GET", Path: "/log-viewer/log", QueryParams: map[string]ParamSchema{"startDate": {Type: "string", Format: "date-time"}, "endDate": {Type: "string", Format: "date-time"}, "skip": {Type: "number"}, "take": {Type: "number"}, "filterExpression": {Type: "string"}, "logLevels[]": {Type: "array", Description: "Repeat the logLevels[] query parameter for each level"}}},
+	"logs.level-count": {Method: "GET", Path: "/log-viewer/level-count", QueryParams: map[string]ParamSchema{"startDate": {Type: "string", Format: "date-time"}, "endDate": {Type: "string", Format: "date-time"}}},
 	"logs.templates":   {Method: "GET", Path: "/log-viewer/templates"},
-	"logs.search":      {Method: "GET", Path: "/log-viewer/search"},
+	"logs.search":      {Method: "GET", Path: "/log-viewer/log", QueryParams: map[string]ParamSchema{"startDate": {Type: "string", Format: "date-time"}, "endDate": {Type: "string", Format: "date-time"}, "skip": {Type: "number"}, "take": {Type: "number"}, "filterExpression": {Type: "string"}, "logLevels[]": {Type: "array", Description: "Repeat the logLevels[] query parameter for each level"}}},
 
 	// server (5)
 	"server.status":        {Method: "GET", Path: "/server/status"},

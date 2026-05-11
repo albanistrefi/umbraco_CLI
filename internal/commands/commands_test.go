@@ -145,6 +145,7 @@ func TestRegisteredAPICommandsHaveSchemas(t *testing.T) {
 		"datatype.remove-extension": "payload mutation convenience command",
 		"datatype.add-value":        "payload mutation convenience command",
 		"datatype.remove-value":     "payload mutation convenience command",
+		"logs.levels":               "hidden compatibility stub for removed v17 endpoint",
 	}
 
 	missing := make([]string, 0)
@@ -264,6 +265,8 @@ func TestSchemaMatchesTemplateDoctypeAndServerPrimaryEndpoints(t *testing.T) {
 		"doctype.root":        "/tree/document-type/root",
 		"doctype.children":    "/tree/document-type/children",
 		"doctype.search":      "/item/document-type/search",
+		"logs.list":           "/log-viewer/log",
+		"logs.search":         "/log-viewer/log",
 		"server.info":         "/server/information",
 		"server.config":       "/server/configuration",
 		"server.troubleshoot": "/server/troubleshooting",
