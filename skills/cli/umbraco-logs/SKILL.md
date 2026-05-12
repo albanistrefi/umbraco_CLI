@@ -2,7 +2,7 @@
 name: umbraco-logs
 description: "Log and diagnostics operations"
 metadata:
-  version: 0.3.9
+  version: 0.3.10
   requires:
     bins:
       - umbraco
@@ -25,7 +25,7 @@ umbraco logs <command> [flags]
 | `logs level-count` | Get count per level |
 | `logs list` | List log entries |
 | `logs search` | Search logs |
-| `logs templates` | List log templates |
+| `logs templates` | List paginated log message templates |
 
 ### level-count
 
@@ -76,6 +76,13 @@ umbraco logs search
 ```bash
 umbraco logs templates
 ```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--from` | string | — | Start date (ISO) |
+| `--skip` | int | -1 | Skip count |
+| `--take` | int | -1 | Take count |
+| `--to` | string | — | End date (ISO) |
 
 ## Discovering Commands
 
