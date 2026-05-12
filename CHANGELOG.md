@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.3.11 - 2026-05-12
+
+- fixed `logs templates` on Umbraco v17 by routing it through `/log-viewer/message-template`, with 404-only fallback to the legacy templates route
+- added `--skip`, `--take`, `--from`, and `--to` to `logs templates` for the endpoint's paging and date-range query parameters
+
 ## v0.3.10 - 2026-05-11
 
 - fixed `logs list` and `logs search` for Umbraco v17 by routing them through `/log-viewer/log`, with 404-only fallback to legacy log viewer routes
