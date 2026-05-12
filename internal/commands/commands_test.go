@@ -267,6 +267,7 @@ func TestSchemaMatchesTemplateDoctypeAndServerPrimaryEndpoints(t *testing.T) {
 		"doctype.search":      "/item/document-type/search",
 		"logs.list":           "/log-viewer/log",
 		"logs.search":         "/log-viewer/log",
+		"logs.templates":      "/log-viewer/message-template",
 		"server.info":         "/server/information",
 		"server.config":       "/server/configuration",
 		"server.troubleshoot": "/server/troubleshooting",

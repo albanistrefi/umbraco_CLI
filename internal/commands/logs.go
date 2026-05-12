@@ -12,9 +12,11 @@ import (
 )
 
 const (
-	logViewerLogPath          = "/log-viewer/log"
-	logViewerLegacyListPath   = "/log-viewer"
-	logViewerLegacySearchPath = "/log-viewer/search"
+	logViewerLogPath                    = "/log-viewer/log"
+	logViewerMessageTemplatePath        = "/log-viewer/message-template"
+	logViewerLegacyListPath             = "/log-viewer"
+	logViewerLegacySearchPath           = "/log-viewer/search"
+	logViewerLegacyMessageTemplatesPath = "/log-viewer/templates"
 )
 
 func RegisterLogs(root *cobra.Command, deps Dependencies) {
@@ -107,13 +109,28 @@ func logsLevelCount(deps Dependencies) *cobra.Command {
 }
 
 func logsTemplates(deps Dependencies) *cobra.Command {
-	return &cobra.Command{Use: "templates", Short: "List log templates", RunE: func(cmd *cobra.Command, args []string) error {
-		result, err := deps.Client.Get(context.Background(), "/log-viewer/templates", api.RequestOptions{})
+	var from string
+	var to string
+	var skip int
+	var take int
+	cmd := &cobra.Command{Use: "templates", Short: "List paginated log message templates", RunE: func(cmd *cobra.Command, args []string) error {
+		params := logDateRangePagingParams(from, to, skip, take)
+		result, err := getWithFallback(
+			context.Background(),
+			deps.Client,
+			getRequestCandidate{path: logViewerMessageTemplatePath, opts: api.RequestOptions{Params: params}},
+			getRequestCandidate{path: logViewerLegacyMessageTemplatesPath, opts: api.RequestOptions{Params: params}},
+		)
 		if err != nil {
-			return err
+			return friendlyLogViewerError(err)
 		}
 		return printResult(cmd, deps, result)
 	}}
+	cmd.Flags().StringVar(&from, "from", "", "Start date (ISO)")
+	cmd.Flags().StringVar(&to, "to", "", "End date (ISO)")
+	cmd.Flags().IntVar(&skip, "skip", -1, "Skip count")
+	cmd.Flags().IntVar(&take, "take", -1, "Take count")
+	return cmd
 }
 
 func logsSearch(deps Dependencies) *cobra.Command {
@@ -216,6 +233,23 @@ func normalizeLogParams(params map[string]any) map[string]any {
 		}
 	}
 	return normalized
+}
+
+func logDateRangePagingParams(from string, to string, skip int, take int) map[string]any {
+	params := map[string]any{}
+	if from != "" {
+		params["startDate"] = from
+	}
+	if to != "" {
+		params["endDate"] = to
+	}
+	if skip >= 0 {
+		params["skip"] = skip
+	}
+	if take >= 0 {
+		params["take"] = take
+	}
+	return params
 }
 
 func friendlyLogViewerError(err error) error {

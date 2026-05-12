@@ -123,6 +123,144 @@ func TestLogsSearchUsesV17LogEndpointAndFallsBackToLegacySearch(t *testing.T) {
 	assertQueryValue(t, searchQuery, "skip", "2")
 }
 
+func TestLogsTemplatesUsesV17MessageTemplateEndpointWithQueryFlags(t *testing.T) {
+	var observedPath string
+	var observedQuery = make(map[string][]string)
+
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/log-viewer/message-template":
+			observedPath = req.URL.Path
+			observedQuery = req.URL.Query()
+			return endpointJSONResponse(http.StatusOK, `{"items":[{"messageTemplate":"Template 6"},{"messageTemplate":"Template 7"}],"total":10}`), nil
+		default:
+			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	output, err := execute(buildRootWithCollections(t, deps),
+		"logs", "templates",
+		"--from", "2026-05-01",
+		"--to", "2026-05-12",
+		"--skip", "5",
+		"--take", "5",
+	)
+	if err != nil {
+		t.Fatalf("logs templates failed: %v", err)
+	}
+
+	if observedPath != "/umbraco/management/api/v1/log-viewer/message-template" {
+		t.Fatalf("expected v17 message-template endpoint, got %q", observedPath)
+	}
+	assertQueryValue(t, observedQuery, "startDate", "2026-05-01")
+	assertQueryValue(t, observedQuery, "endDate", "2026-05-12")
+	assertQueryValue(t, observedQuery, "skip", "5")
+	assertQueryValue(t, observedQuery, "take", "5")
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("failed to decode logs templates payload: %v", err)
+	}
+	items, ok := payload["items"].([]any)
+	if !ok || len(items) != 2 {
+		t.Fatalf("expected paged message template items, got %+v", payload)
+	}
+}
+
+func TestLogsTemplatesFallsBackToLegacyEndpointOnNotFound(t *testing.T) {
+	var requests []string
+	var legacyQuery = make(map[string][]string)
+
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/log-viewer/message-template":
+			requests = append(requests, req.URL.Path)
+			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		case "/umbraco/management/api/v1/log-viewer/templates":
+			requests = append(requests, req.URL.Path)
+			legacyQuery = req.URL.Query()
+			return endpointJSONResponse(http.StatusOK, `{"items":[{"messageTemplate":"Legacy"}]}`), nil
+		default:
+			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	_, err := execute(buildRootWithCollections(t, deps), "logs", "templates", "--take", "5")
+	if err != nil {
+		t.Fatalf("logs templates fallback failed: %v", err)
+	}
+
+	expected := []string{"/umbraco/management/api/v1/log-viewer/message-template", "/umbraco/management/api/v1/log-viewer/templates"}
+	if strings.Join(requests, ",") != strings.Join(expected, ",") {
+		t.Fatalf("unexpected fallback request order: %+v", requests)
+	}
+	assertQueryValue(t, legacyQuery, "take", "5")
+}
+
+func TestLogsTemplatesFallbackStopsOnNonNotFoundAPIError(t *testing.T) {
+	var legacyCalled bool
+
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/log-viewer/message-template":
+			return endpointJSONResponse(http.StatusInternalServerError, `{"title":"boom"}`), nil
+		case "/umbraco/management/api/v1/log-viewer/templates":
+			legacyCalled = true
+			return endpointJSONResponse(http.StatusOK, `{"items":[]}`), nil
+		default:
+			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	_, err := execute(buildRootWithCollections(t, deps), "logs", "templates")
+	if err == nil {
+		t.Fatalf("expected logs templates to fail on non-404 primary error")
+	}
+	if legacyCalled {
+		t.Fatalf("fallback should not run after non-404 API error")
+	}
+}
+
+func TestLogsTemplatesOutputFormatsRender(t *testing.T) {
+	for _, format := range []string{"json", "table", "plain"} {
+		format := format
+		t.Run(format, func(t *testing.T) {
+			outputFormat := format
+			deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+				switch req.URL.Path {
+				case "/umbraco/management/api/v1/security/back-office/token":
+					return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+				case "/umbraco/management/api/v1/log-viewer/message-template":
+					return endpointJSONResponse(http.StatusOK, `{"items":[{"messageTemplate":"Template"}],"total":1}`), nil
+				default:
+					return endpointJSONResponse(http.StatusNotFound, `null`), nil
+				}
+			})
+			deps.OutputFlag = &outputFormat
+
+			output, err := execute(buildRootWithCollections(t, deps), "logs", "templates", "--take", "1")
+			if err != nil {
+				t.Fatalf("logs templates --output %s failed: %v", format, err)
+			}
+			if strings.TrimSpace(output) == "" {
+				t.Fatalf("expected %s output to render response", format)
+			}
+			if format == "json" {
+				var payload map[string]any
+				if err := json.Unmarshal([]byte(output), &payload); err != nil {
+					t.Fatalf("failed to decode json output: %v", err)
+				}
+			}
+		})
+	}
+}
+
 func TestLogsFallbackStopsOnNonNotFoundAPIError(t *testing.T) {
 	var legacyCalled bool
 
