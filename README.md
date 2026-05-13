@@ -36,19 +36,33 @@ brew upgrade --cask albanistrefi/tap/umbraco-cli
 brew untap albanist/tap
 ```
 
-Important:
-- The Homebrew tap lives at `https://github.com/albanistrefi/homebrew-tap`.
-- GitHub release assets are downloaded anonymously by Homebrew. The source
-  release repository must therefore be public, or the cask must be configured
-  with authenticated download headers.
+The Homebrew tap lives at `https://github.com/albanistrefi/homebrew-tap`.
 
 ### Build from source
 
-Clone the repository and enter the project directory.
+Clone the repository, then run the standard Go workflow:
 
-## Setup
+```bash
+go test ./...
+go build ./...
+```
 
-1. Configure access:
+Run directly with `go run`:
+
+```bash
+go run ./cmd/umbraco --help
+```
+
+Or build a local binary:
+
+```bash
+go build -o ./bin/umbraco ./cmd/umbraco
+./bin/umbraco --help
+```
+
+## Configure access
+
+Set credentials via environment variables:
 
 ```bash
 export UMBRACO_BASE_URL="https://localhost:44391"
@@ -59,8 +73,8 @@ export UMBRACO_CLIENT_SECRET="your-secret"
 Or store credentials persistently once:
 
 ```bash
-go run ./cmd/umbraco auth login --base-url "https://localhost:44314" --client-id "umbraco-back-office-api-user" --client-secret "your-secret"
-go run ./cmd/umbraco auth status
+umbraco auth login --base-url "https://localhost:44314" --client-id "umbraco-back-office-api-user" --client-secret "your-secret"
+umbraco auth status
 ```
 
 Notes:
@@ -72,7 +86,7 @@ Notes:
 - If `UMBRACO_BASE_URL` is still unset, the CLI tries local `.NET` config files such as `Properties/launchSettings.json`, `appsettings.Development.json`, and `appsettings.json`.
 - `UMBRACO_BASE_URL` should be the site root, for example `https://localhost:44391`, not `https://localhost:44391/umbraco`. The CLI normalizes a trailing `/umbraco` if present.
 - Shell profiles such as `.zshrc` are not read.
-- Auth/connectivity errors now include the resolved base URL so it is obvious what the CLI is trying to reach.
+- Auth/connectivity errors include the resolved base URL so it is obvious what the CLI is trying to reach.
 
 Config precedence, highest to lowest:
 
@@ -118,89 +132,77 @@ OS trust store or use a certificate issued by a trusted local CA. For example,
 `NODE_TLS_REJECT_UNAUTHORIZED=0` does not affect this CLI because it is a Go
 binary, not a Node.js process.
 
-2. Build and test:
-
-```bash
-go test ./...
-go build ./...
-```
-
-3. Run directly:
-
-```bash
-go run ./cmd/umbraco --help
-```
-
-Optional binary build:
-
-```bash
-go build -o ./bin/umbraco ./cmd/umbraco
-./bin/umbraco --help
-```
-
 ## Release
 
 Tagging a release publishes GitHub release archives and updates the Homebrew
 cask in the dedicated tap repository `albanistrefi/homebrew-tap`:
 
 ```bash
-git tag v0.2.5
-git push origin v0.2.5
+git tag v0.3.11
+git push origin v0.3.11
 ```
 
 The release workflow uses GoReleaser and expects to run in GitHub Actions.
 
+GitHub release assets are downloaded anonymously by Homebrew, so the source
+release repository must stay public — or the cask must be configured with
+authenticated download headers.
+
 ## First Commands
+
+The examples below assume the installed binary on your `PATH` (`umbraco …`).
+If you are working from a source checkout, substitute `go run ./cmd/umbraco …`
+in every command.
 
 Schema introspection:
 
 ```bash
-go run ./cmd/umbraco schema --list
-go run ./cmd/umbraco schema document.create
-go run ./cmd/umbraco schema doctype.create --template
-go run ./cmd/umbraco schema document
+umbraco schema --list
+umbraco schema document.create
+umbraco schema doctype.create --template
+umbraco schema document
 ```
 
 Auth helpers:
 
 ```bash
-go run ./cmd/umbraco auth login --base-url "https://localhost:44314" --client-id "umbraco-back-office-api-user" --client-secret "your-secret"
-go run ./cmd/umbraco auth status
-go run ./cmd/umbraco auth status --check
-go run ./cmd/umbraco auth logout --dry-run
+umbraco auth login --base-url "https://localhost:44314" --client-id "umbraco-back-office-api-user" --client-secret "your-secret"
+umbraco auth status
+umbraco auth status --check
+umbraco auth logout --dry-run
 ```
 
 Safe read:
 
 ```bash
-go run ./cmd/umbraco document get <id> --fields "id,name,updateDate"
-go run ./cmd/umbraco document search --query "Toxic" --skip 0 --take 25 --output json
-go run ./cmd/umbraco document search --query "Toxic" --under <parent-id> --skip 0 --take 25 --output json
-go run ./cmd/umbraco media search --query "Hero" --skip 0 --take 25 --output json
-go run ./cmd/umbraco doctype root --summarize --first-n 10 --output json
-go run ./cmd/umbraco tree walk "Home/Partners/Partner List" --output json
+umbraco document get <id> --fields "id,name,updateDate"
+umbraco document search --query "Toxic" --skip 0 --take 25 --output json
+umbraco document search --query "Toxic" --under <parent-id> --skip 0 --take 25 --output json
+umbraco media search --query "Hero" --skip 0 --take 25 --output json
+umbraco doctype root --summarize --first-n 10 --output json
+umbraco tree walk "Home/Partners/Partner List" --output json
 ```
 
 Safe write pattern (always dry-run first):
 
 ```bash
-go run ./cmd/umbraco document publish <id> --json '{"cultures":["en-US"]}' --dry-run --output json
-go run ./cmd/umbraco document update <id> --merge-json '{"values":[{"alias":"title","value":"New title"}]}' --dry-run --output json
-go run ./cmd/umbraco document update <id> --property skills --value 'C#;Go' --dry-run --output json
-go run ./cmd/umbraco document update <id> --property skills --value 'C#;Go' --save-and-publish --culture en-US --dry-run --output json
-go run ./cmd/umbraco document copy <id> --to <parent-id> --publish --dry-run --output json
-go run ./cmd/umbraco document bulk-update --id <id> --id <id> --merge-json '{"values":[{"alias":"title","value":"New title"}]}' --dry-run --output json
-go run ./cmd/umbraco document csv-update --file partners.csv --property skills --dry-run --output json
+umbraco document publish <id> --json '{"cultures":["en-US"]}' --dry-run --output json
+umbraco document update <id> --merge-json '{"values":[{"alias":"title","value":"New title"}]}' --dry-run --output json
+umbraco document update <id> --property skills --value 'C#;Go' --dry-run --output json
+umbraco document update <id> --property skills --value 'C#;Go' --save-and-publish --culture en-US --dry-run --output json
+umbraco document copy <id> --to <parent-id> --publish --dry-run --output json
+umbraco document bulk-update --id <id> --id <id> --merge-json '{"values":[{"alias":"title","value":"New title"}]}' --dry-run --output json
+umbraco document csv-update --file partners.csv --property skills --dry-run --output json
 # then run without --dry-run
 ```
 
 Create payload discovery:
 
 ```bash
-go run ./cmd/umbraco doctype create --print-template
-go run ./cmd/umbraco datatype create --print-template
-go run ./cmd/umbraco media upload ./hero.svg --name "Hero" --type SVG --parent <media-parent-id> --dry-run --output json
-go run ./cmd/umbraco media upload ./hero.png --name "Hero" --type Image --culture en-US --dry-run --output json
+umbraco doctype create --print-template
+umbraco datatype create --print-template
+umbraco media upload ./hero.svg --name "Hero" --type SVG --parent <media-parent-id> --dry-run --output json
+umbraco media upload ./hero.png --name "Hero" --type Image --culture en-US --dry-run --output json
 ```
 
 `media upload --type` accepts a media type ID or an existing media type alias/name; names and aliases are resolved from the live media type list before media creation. Use `--culture` when the media type varies by culture.
@@ -208,34 +210,54 @@ go run ./cmd/umbraco media upload ./hero.png --name "Hero" --type Image --cultur
 Datatype discovery and ergonomic updates:
 
 ```bash
-go run ./cmd/umbraco datatype list --skip 0 --take 50
-go run ./cmd/umbraco datatype search --query "rich text" --skip 0 --take 25
-go run ./cmd/umbraco datatype search --editor-alias Umbraco.TextBox --skip 0 --take 25
-go run ./cmd/umbraco datatype extensions <id>
-go run ./cmd/umbraco datatype update <id> --merge-json '{"configuration":{"toolbar":{"italic":false}}}' --dry-run
-go run ./cmd/umbraco datatype add-extension <id> UmbracoDotCom.Tiptap.GoogleDocsPasteCleanup --dry-run
-go run ./cmd/umbraco datatype remove-extension <id> UmbracoDotCom.Tiptap.GoogleDocsPasteCleanup --dry-run
-go run ./cmd/umbraco datatype add-value <id> --alias extensions --value Custom.Extension --dry-run
+umbraco datatype list --skip 0 --take 50
+umbraco datatype search --query "rich text" --skip 0 --take 25
+umbraco datatype search --editor-alias Umbraco.TextBox --skip 0 --take 25
+umbraco datatype extensions <id>
+umbraco datatype update <id> --merge-json '{"configuration":{"toolbar":{"italic":false}}}' --dry-run
+umbraco datatype add-extension <id> UmbracoDotCom.Tiptap.GoogleDocsPasteCleanup --dry-run
+umbraco datatype remove-extension <id> UmbracoDotCom.Tiptap.GoogleDocsPasteCleanup --dry-run
+umbraco datatype add-value <id> --alias extensions --value Custom.Extension --dry-run
 ```
 
 ## Skills Bundle
 
-This repo includes 67 bundled Umbraco skills under `skills/`.
+This repo ships two sets of SKILL.md files under `skills/`:
 
-Verify bundle integrity:
+- **67 bundled Umbraco extension-development skills** (`skills/foundation/`, `skills/backend/`, `skills/extensions/`, `skills/property-editors/`, `skills/rich-text/`, `skills/testing/`) — copied from `.agents/skills/` by `npm run bundle:skills`.
+- **16 CLI command skills** (`skills/cli/`) — generated from the cobra command tree by `umbraco generate-skills`.
+
+Verify both sets are present and consistent with the package version:
 
 ```bash
 npm run verify:skills
 ```
+
+**Heads-up for Homebrew users:** the cask currently installs only the `umbraco`
+binary. The bundled skills are not extracted to disk by `brew install`. To use
+them with an agent harness — Claude Code, Codex CLI, Cursor, or any other tool
+that reads SKILL.md files — clone this repo and point the harness at the local
+`skills/` tree (each harness has its own conventional location, e.g.
+`~/.claude/skills/`, `~/.codex/skills/`, project-local `.claude/skills/`):
+
+```bash
+git clone https://github.com/albanistrefi/umbraco_CLI.git
+# then configure your agent harness with the cloned skills/ path
+```
+
+An `umbraco skills install --target <dir>` command that extracts the bundled
+skills into whichever harness directory you point it at is on the roadmap.
 
 ## Project Commands
 
 - `go test ./...` - run tests
 - `go build ./...` - build all packages
 - `go run ./cmd/umbraco ...` - run CLI
-- `npm run verify:skills` - verify skills count and structure
+- `npm run bundle:skills` - copy curated extension-development skills from `.agents/skills/` into `skills/`
+- `npm run verify:skills` - verify skills count, structure, and version parity
+- `npm run sync:version` - propagate `internal/version/VERSION` into `package.json` / `package-lock.json`
 
-## Collections in MVP
+## Collections
 
 - `document` (17)
 - `dictionary` (6)
@@ -256,4 +278,4 @@ Total: **84 commands**
 - Use `--dry-run` first for all mutating commands.
 - Use `--fields` on reads to limit response size.
 - Prefer `--json` payloads to avoid lossy argument mapping.
-- Do not construct IDs manually; reuse IDs returned by API responses.
+- Let the CLI generate IDs — every `create` does this automatically and echoes the new id back; reuse that id for subsequent operations.
