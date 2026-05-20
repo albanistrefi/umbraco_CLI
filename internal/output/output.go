@@ -73,7 +73,10 @@ func printTable(data any, out io.Writer) error {
 	switch value := data.(type) {
 	case []any:
 		for i, item := range value {
-			encoded, _ := json.Marshal(item)
+			encoded, err := json.Marshal(item)
+			if err != nil {
+				return err
+			}
 			fmt.Fprintf(tw, "%d\t%s\n", i, string(encoded))
 		}
 		return nil
@@ -84,7 +87,10 @@ func printTable(data any, out io.Writer) error {
 		}
 		sort.Strings(keys)
 		for _, key := range keys {
-			encoded, _ := json.Marshal(value[key])
+			encoded, err := json.Marshal(value[key])
+			if err != nil {
+				return err
+			}
 			fmt.Fprintf(tw, "%s\t%s\n", key, string(encoded))
 		}
 		return nil

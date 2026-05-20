@@ -3,6 +3,7 @@ package output
 import (
 	"bytes"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"umbraco-cli/internal/config"
@@ -38,6 +39,29 @@ func TestJSONOutputEscapesControlCharactersInStrings(t *testing.T) {
 	item := values[0].(map[string]any)
 	if item["value"] != controlString {
 		t.Fatalf("round-trip value mismatch: got %q", item["value"])
+	}
+}
+
+func TestTableOutputReturnsMarshalErrors(t *testing.T) {
+	tests := []struct {
+		name string
+		data any
+	}{
+		{name: "array item", data: []any{func() {}}},
+		{name: "map value", data: map[string]any{"bad": func() {}}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var out bytes.Buffer
+			err := Print(tt.data, "table", config.OutputJSON, &out)
+			if err == nil {
+				t.Fatal("expected table output to return json marshal error")
+			}
+			if !strings.Contains(err.Error(), "unsupported type: func") {
+				t.Fatalf("expected unsupported type error, got %v", err)
+			}
+		})
 	}
 }
 
