@@ -1,6 +1,7 @@
 package output
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -38,9 +39,7 @@ func Print(data any, requested string, envFormat config.OutputFormat, out io.Wri
 
 	if data == nil {
 		if format == config.OutputJSON {
-			payload, _ := json.MarshalIndent(map[string]any{"success": true}, "", "  ")
-			_, err := fmt.Fprintln(out, string(payload))
-			return err
+			return writeJSON(out, map[string]any{"success": true})
 		}
 		_, err := fmt.Fprintln(out, "Done")
 		return err
@@ -48,17 +47,23 @@ func Print(data any, requested string, envFormat config.OutputFormat, out io.Wri
 
 	switch format {
 	case config.OutputJSON, config.OutputPlain:
-		payload, err := json.MarshalIndent(data, "", "  ")
-		if err != nil {
-			return err
-		}
-		_, err = fmt.Fprintln(out, string(payload))
-		return err
+		return writeJSON(out, data)
 	case config.OutputTable:
 		return printTable(data, out)
 	default:
 		return fmt.Errorf("unsupported output format: %s", format)
 	}
+}
+
+func writeJSON(out io.Writer, data any) error {
+	var buf bytes.Buffer
+	encoder := json.NewEncoder(&buf)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(data); err != nil {
+		return err
+	}
+	_, err := out.Write(buf.Bytes())
+	return err
 }
 
 func printTable(data any, out io.Writer) error {

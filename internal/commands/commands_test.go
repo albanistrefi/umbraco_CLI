@@ -27,6 +27,9 @@ func buildRootWithCollections(t *testing.T, deps Dependencies) *cobra.Command {
 	t.Helper()
 	root := &cobra.Command{Use: "umbraco", SilenceErrors: true, SilenceUsage: true}
 	root.SetErr(io.Discard)
+	if deps.OutputFlag != nil {
+		root.PersistentFlags().StringVarP(deps.OutputFlag, "output", "o", *deps.OutputFlag, "Output format: json, table, plain")
+	}
 	RegisterDocument(root, deps)
 	RegisterDictionary(root, deps)
 	RegisterMedia(root, deps)

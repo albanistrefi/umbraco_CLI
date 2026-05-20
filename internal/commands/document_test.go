@@ -1,10 +1,13 @@
 package commands
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -51,6 +54,58 @@ func TestDocumentSearchUsesItemSearchEndpointAndFallsBack(t *testing.T) {
 	}
 }
 
+func TestDocumentGetJSONOutputEscapesControlCharacters(t *testing.T) {
+	controlString := allJSONControlCharacters() + `"\\emoji: 😀`
+	apiPayload := map[string]any{
+		"id":   "doc-control",
+		"name": "Control Characters",
+		"values": []any{
+			map[string]any{
+				"alias": "richText",
+				"value": controlString,
+			},
+		},
+	}
+	apiBody, err := json.Marshal(apiPayload)
+	if err != nil {
+		t.Fatalf("failed to encode API fixture: %v", err)
+	}
+
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/document/doc-control":
+			return endpointJSONResponse(http.StatusOK, string(apiBody)), nil
+		default:
+			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	output, err := execute(buildRootWithCollections(t, deps), "document", "get", "doc-control", "-o", "json")
+	if err != nil {
+		t.Fatalf("document get failed: %v", err)
+	}
+
+	if !json.Valid([]byte(output)) {
+		t.Fatalf("document get -o json emitted invalid JSON: %q", output)
+	}
+	assertNoRawControlCharactersInJSONStringTokens(t, output)
+	assertStrictJSONParsersAccept(t, output)
+
+	var fromCLI map[string]any
+	if err := json.Unmarshal([]byte(output), &fromCLI); err != nil {
+		t.Fatalf("failed to decode CLI output: %v", err)
+	}
+	var fromAPI map[string]any
+	if err := json.Unmarshal(apiBody, &fromAPI); err != nil {
+		t.Fatalf("failed to decode API fixture: %v", err)
+	}
+	if !reflect.DeepEqual(fromCLI, fromAPI) {
+		t.Fatalf("CLI output changed API semantics:\nCLI: %+v\nAPI: %+v", fromCLI, fromAPI)
+	}
+}
+
 func TestDocumentCopyPublishPublishesCopiedDocument(t *testing.T) {
 	var publishPath string
 
@@ -81,6 +136,62 @@ func TestDocumentCopyPublishPublishesCopiedDocument(t *testing.T) {
 	}
 	if result["copied"] == nil || result["published"] == nil {
 		t.Fatalf("unexpected copy publish result: %+v", result)
+	}
+}
+
+func allJSONControlCharacters() string {
+	runes := make([]rune, 0, 32)
+	for value := rune(0); value <= 0x1f; value++ {
+		runes = append(runes, value)
+	}
+	return string(runes)
+}
+
+func assertNoRawControlCharactersInJSONStringTokens(t *testing.T, raw string) {
+	t.Helper()
+
+	inString := false
+	escaped := false
+	for index, r := range raw {
+		switch {
+		case escaped:
+			escaped = false
+		case r == '\\' && inString:
+			escaped = true
+		case r == '"':
+			inString = !inString
+		case inString && r <= 0x1f:
+			t.Fatalf("raw control character U+%04X found inside JSON string at byte %d", r, index)
+		}
+	}
+	if inString {
+		t.Fatal("unterminated JSON string")
+	}
+}
+
+func assertStrictJSONParsersAccept(t *testing.T, raw string) {
+	t.Helper()
+
+	parsers := []struct {
+		name string
+		args []string
+	}{
+		{name: "python3", args: []string{"-c", "import json,sys; json.load(sys.stdin)"}},
+		{name: "node", args: []string{"-e", "JSON.parse(require('fs').readFileSync(0, 'utf8'))"}},
+		{name: "jq", args: []string{"."}},
+	}
+	for _, parser := range parsers {
+		if _, err := exec.LookPath(parser.name); err != nil {
+			t.Logf("%s not found; skipping external JSON parser check", parser.name)
+			continue
+		}
+		cmd := exec.Command(parser.name, parser.args...)
+		cmd.Stdin = strings.NewReader(raw)
+		var stderr bytes.Buffer
+		cmd.Stderr = &stderr
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("%s rejected CLI JSON output: %v: %s", parser.name, err, stderr.String())
+		}
 	}
 }
 
