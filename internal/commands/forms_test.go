@@ -78,6 +78,44 @@ func TestFormsListFallsBackToFlatEndpoint(t *testing.T) {
 	}
 }
 
+func TestFormsChildrenQueriesFormsByFolderId(t *testing.T) {
+	var observedQuery string
+
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/forms/management/api/v1/form":
+			observedQuery = req.URL.RawQuery
+			return datatypeJSONResponse(http.StatusOK, `[
+				{"id":"f-1","name":"Albans cool form","entries":0,"summary":"2 page form with 4 fields"},
+				{"id":"f-2","name":"Event Form","entries":3,"summary":"1 page form with 16 fields"}
+			]`), nil
+		default:
+			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	output, err := execute(buildRootWithCollections(t, deps), "forms", "children", "folder-1", "--fields", "id,name")
+	if err != nil {
+		t.Fatalf("forms children failed: %v", err)
+	}
+	if !strings.Contains(observedQuery, "folderId=folder-1") {
+		t.Fatalf("expected folderId query param, got %q", observedQuery)
+	}
+
+	var items []map[string]any
+	if err := json.Unmarshal([]byte(output), &items); err != nil {
+		t.Fatalf("failed to decode children payload: %v", err)
+	}
+	if len(items) != 2 || items[0]["id"] != "f-1" || items[0]["name"] != "Albans cool form" {
+		t.Fatalf("unexpected projected items: %+v", items)
+	}
+	if _, hasSummary := items[0]["summary"]; hasSummary {
+		t.Fatalf("expected --fields projection to drop summary, got %+v", items[0])
+	}
+}
+
 func TestFormsGetHitsFormsPrefix(t *testing.T) {
 	var observedPath string
 

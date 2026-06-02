@@ -26,6 +26,7 @@ func RegisterForms(root *cobra.Command, deps Dependencies) {
 		Long:  "Read-focused commands for the Umbraco Forms Management API. Useful for resolving form and field GUIDs when composing Umbraco.Forms.Automate flows, and for inspecting submitted records.",
 	}
 	forms.AddCommand(formsList(deps))
+	forms.AddCommand(formsChildren(deps))
 	forms.AddCommand(formsGet(deps))
 	forms.AddCommand(formsRecords(deps))
 	forms.AddCommand(formsRecord(deps))
@@ -48,6 +49,31 @@ func formsList(deps Dependencies) *cobra.Command {
 		}
 		return printResult(cmd, deps, applyReadTriage(applyFieldsProjection(result, fields), triage))
 	}}
+	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
+	addReadTriageFlags(cmd, &triage)
+	return cmd
+}
+
+func formsChildren(deps Dependencies) *cobra.Command {
+	var fields string
+	var triage readTriageOptions
+	cmd := &cobra.Command{
+		Use:   "children <folderId>",
+		Short: "List forms inside a folder",
+		Long:  "Forms in Umbraco are organized into folders. 'forms list' returns root-level items (mostly folders); use 'forms children <folderId>' to drill into a folder returned with isFolder=true.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			result, err := deps.Client.Get(
+				context.Background(),
+				"/form",
+				formsRequestOpts(fields, map[string]any{"folderId": args[0]}),
+			)
+			if err != nil {
+				return err
+			}
+			return printResult(cmd, deps, applyReadTriage(applyFieldsProjection(result, fields), triage))
+		},
+	}
 	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
 	addReadTriageFlags(cmd, &triage)
 	return cmd

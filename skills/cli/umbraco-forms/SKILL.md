@@ -22,11 +22,25 @@ umbraco forms <command> [flags]
 
 | Command | Description |
 |---------|-------------|
+| `forms children <folderId>` | List forms inside a folder |
 | `forms get <id>` | Get form definition by ID (includes fields, pages, workflows) |
 | `forms list` | List forms |
 | `forms record <formId> <recordId>` | Get a single form record |
 | `forms record-workflow-log <formId> <recordId>` | Get the workflow execution audit trail for a record |
 | `forms records <formId>` | List form records (submissions) |
+
+### children
+
+```bash
+umbraco forms children <folderId>
+```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--fields` | string | — | Limit response fields |
+| `--first-n` | int | 0 | Return only the first N items from item collections |
+| `--ids-only` | bool | false | Return only item IDs for item collections |
+| `--summarize` | bool | false | Return only id/name/alias fields for item collections |
 
 ### get
 
