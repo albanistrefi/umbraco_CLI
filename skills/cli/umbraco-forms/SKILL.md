@@ -24,7 +24,7 @@ umbraco forms <command> [flags]
 |---------|-------------|
 | `forms children <folderId>` | List forms inside a folder |
 | `forms get <id>` | Get form definition by ID (includes fields, pages, workflows) |
-| `forms list` | List forms |
+| `forms list` | List forms (tree root: returns folders and root-level forms) |
 | `forms record <formId> <recordId>` | Get a single form record |
 | `forms record-workflow-log <formId> <recordId>` | Get the workflow execution audit trail for a record |
 | `forms records <formId>` | List form records (submissions) |
@@ -101,7 +101,7 @@ umbraco forms records <formId>
 | `--skip` | int | 0 | Number of records to skip |
 | `--state` | string | — | Filter by record state (e.g. submitted, approved, pending). Pass-through; see your Umbraco Forms version for supported values |
 | `--summarize` | bool | false | Return only id/name/alias fields for item collections |
-| `--take` | int | 0 | Maximum number of records to return |
+| `--take` | int | 0 | Maximum number of records to return (defaults to 100 if not set; pass --take 0 explicitly for no limit) |
 | `--to` | string | — | Filter records created on or before this ISO 8601 date/time |
 
 ## Discovering Commands

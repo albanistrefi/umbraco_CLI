@@ -13,7 +13,14 @@ import (
 // formsAPIPrefix is the mount point for the Umbraco Forms Management API.
 // It is distinct from the core CMS prefix and is passed per-request via
 // api.RequestOptions.APIPrefix so existing commands are unaffected.
-const formsAPIPrefix = "/umbraco/forms/management/api/v1"
+const (
+	formsAPIPrefix = "/umbraco/forms/management/api/v1"
+	// formsRecordsDefaultTake caps records pulls when the caller does not pass
+	// --take, so agents don't accidentally pull thousands of submissions in
+	// one go. Overridden by an explicit --take (including --take=0 for "no
+	// limit") or by --params.take.
+	formsRecordsDefaultTake = 100
+)
 
 func formsRequestOpts(fields string, params map[string]any) api.RequestOptions {
 	return api.RequestOptions{APIPrefix: formsAPIPrefix, Fields: fields, Params: params}
@@ -37,7 +44,11 @@ func RegisterForms(root *cobra.Command, deps Dependencies) {
 func formsList(deps Dependencies) *cobra.Command {
 	var fields string
 	var triage readTriageOptions
-	cmd := &cobra.Command{Use: "list", Short: "List forms", RunE: func(cmd *cobra.Command, args []string) error {
+	cmd := &cobra.Command{
+		Use:   "list",
+		Short: "List forms (tree root: returns folders and root-level forms)",
+		Long:  "Returns the Forms tree root. On real installs this is mostly folders — use 'forms children <folderId>' to drill into a folder returned with isFolder=true.",
+		RunE: func(cmd *cobra.Command, args []string) error {
 		result, err := getWithFallback(
 			context.Background(),
 			deps.Client,
@@ -48,7 +59,8 @@ func formsList(deps Dependencies) *cobra.Command {
 			return err
 		}
 		return printResult(cmd, deps, applyReadTriage(applyFieldsProjection(result, fields), triage))
-	}}
+		},
+	}
 	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
 	addReadTriageFlags(cmd, &triage)
 	return cmd
@@ -143,6 +155,8 @@ func formsRecords(deps Dependencies) *cobra.Command {
 				if _, ok := params["take"]; !ok {
 					params["take"] = take
 				}
+			} else if _, ok := params["take"]; !ok {
+				params["take"] = formsRecordsDefaultTake
 			}
 
 			result, err := deps.Client.Get(
@@ -161,7 +175,7 @@ func formsRecords(deps Dependencies) *cobra.Command {
 	cmd.Flags().StringVar(&from, "from", "", "Filter records created on or after this ISO 8601 date/time")
 	cmd.Flags().StringVar(&to, "to", "", "Filter records created on or before this ISO 8601 date/time")
 	cmd.Flags().IntVar(&skip, "skip", 0, "Number of records to skip")
-	cmd.Flags().IntVar(&take, "take", 0, "Maximum number of records to return")
+	cmd.Flags().IntVar(&take, "take", 0, "Maximum number of records to return (defaults to 100 if not set; pass --take 0 explicitly for no limit)")
 	cmd.Flags().StringVar(&paramsRaw, "params", "", "Additional query parameters as JSON; merged with --state/--from/--to/--skip/--take, with --params taking precedence on key collisions")
 	addReadTriageFlags(cmd, &triage)
 	return cmd

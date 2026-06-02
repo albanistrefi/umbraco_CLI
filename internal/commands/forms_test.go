@@ -181,6 +181,89 @@ func TestFormsRecordsPassesThroughFiltersWithParamsPrecedence(t *testing.T) {
 	}
 }
 
+func TestFormsRecordsAppliesDefaultTakeCapWhenNotSet(t *testing.T) {
+	var observedQuery string
+
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/forms/management/api/v1/form/f-1/record":
+			observedQuery = req.URL.RawQuery
+			return datatypeJSONResponse(http.StatusOK, `{"total":0,"items":[]}`), nil
+		default:
+			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	if _, err := execute(buildRootWithCollections(t, deps), "forms", "records", "f-1"); err != nil {
+		t.Fatalf("forms records failed: %v", err)
+	}
+	if !strings.Contains(observedQuery, "take=100") {
+		t.Fatalf("expected default take=100 to be applied, got query %q", observedQuery)
+	}
+}
+
+func TestFormsRecordsExplicitTakeZeroDisablesDefaultCap(t *testing.T) {
+	var observedQuery string
+
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/forms/management/api/v1/form/f-1/record":
+			observedQuery = req.URL.RawQuery
+			return datatypeJSONResponse(http.StatusOK, `{"total":0,"items":[]}`), nil
+		default:
+			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	if _, err := execute(buildRootWithCollections(t, deps), "forms", "records", "f-1", "--take", "0"); err != nil {
+		t.Fatalf("forms records --take 0 failed: %v", err)
+	}
+	if !strings.Contains(observedQuery, "take=0") {
+		t.Fatalf("expected explicit --take=0 to pass through verbatim, got %q", observedQuery)
+	}
+	if strings.Contains(observedQuery, "take=100") {
+		t.Fatalf("expected explicit --take=0 to override the default cap, got %q", observedQuery)
+	}
+}
+
+func TestFormsRecordsPassesThroughDateFilters(t *testing.T) {
+	var observedQuery string
+
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/forms/management/api/v1/form/f-1/record":
+			observedQuery = req.URL.RawQuery
+			return datatypeJSONResponse(http.StatusOK, `{"total":0,"items":[]}`), nil
+		default:
+			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	_, err := execute(
+		buildRootWithCollections(t, deps),
+		"forms", "records", "f-1",
+		"--from", "2026-01-01T00:00:00Z",
+		"--to", "2026-06-30T23:59:59Z",
+		"--skip", "10",
+		"--take", "25",
+	)
+	if err != nil {
+		t.Fatalf("forms records with date filters failed: %v", err)
+	}
+
+	for _, want := range []string{"from=2026-01-01", "to=2026-06-30", "skip=10", "take=25"} {
+		if !strings.Contains(observedQuery, want) {
+			t.Fatalf("expected query to contain %q, got %q", want, observedQuery)
+		}
+	}
+}
+
 func TestFormsRecordRequiresFormIdAndRecordId(t *testing.T) {
 	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
