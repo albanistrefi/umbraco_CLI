@@ -195,39 +195,3 @@ func TestFormsRecordWorkflowLogHitsAuditTrail(t *testing.T) {
 	}
 }
 
-func TestFormsSearchRequiresQueryOrParams(t *testing.T) {
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
-		return datatypeJSONResponse(http.StatusNotFound, `null`), nil
-	})
-
-	_, err := execute(buildRootWithCollections(t, deps), "forms", "search")
-	if err == nil {
-		t.Fatalf("expected forms search to require --query or --params")
-	}
-	if !strings.Contains(err.Error(), "--params or --query") {
-		t.Fatalf("unexpected error message: %v", err)
-	}
-}
-
-func TestFormsSearchUsesItemFormFallback(t *testing.T) {
-	var observedQuery string
-
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
-		switch req.URL.Path {
-		case "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
-		case "/umbraco/forms/management/api/v1/item/form":
-			observedQuery = req.URL.RawQuery
-			return datatypeJSONResponse(http.StatusOK, `[{"id":"f-1","name":"Contact"}]`), nil
-		default:
-			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
-		}
-	})
-
-	if _, err := execute(buildRootWithCollections(t, deps), "forms", "search", "--query", "contact"); err != nil {
-		t.Fatalf("forms search failed: %v", err)
-	}
-	if !strings.Contains(observedQuery, "query=contact") {
-		t.Fatalf("expected query param to pass through, got %q", observedQuery)
-	}
-}

@@ -27,7 +27,6 @@ func RegisterForms(root *cobra.Command, deps Dependencies) {
 	}
 	forms.AddCommand(formsList(deps))
 	forms.AddCommand(formsGet(deps))
-	forms.AddCommand(formsSearch(deps))
 	forms.AddCommand(formsRecords(deps))
 	forms.AddCommand(formsRecord(deps))
 	forms.AddCommand(formsRecordWorkflowLog(deps))
@@ -69,36 +68,6 @@ func formsGet(deps Dependencies) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
-	return cmd
-}
-
-func formsSearch(deps Dependencies) *cobra.Command {
-	var paramsRaw string
-	var query string
-	cmd := &cobra.Command{Use: "search", Short: "Search forms by name/alias", RunE: func(cmd *cobra.Command, args []string) error {
-		params, err := parseParams(paramsRaw)
-		if err != nil {
-			return err
-		}
-		if params == nil {
-			if query == "" {
-				return fmt.Errorf("forms search requires either --params or --query")
-			}
-			params = map[string]any{"query": query}
-		}
-		result, err := getWithFallback(
-			context.Background(),
-			deps.Client,
-			getRequestCandidate{path: "/item/form", opts: formsRequestOpts("", params)},
-			getRequestCandidate{path: "/form/search", opts: formsRequestOpts("", params)},
-		)
-		if err != nil {
-			return err
-		}
-		return printResult(cmd, deps, result)
-	}}
-	cmd.Flags().StringVar(&paramsRaw, "params", "", "Query parameters as JSON")
-	cmd.Flags().StringVar(&query, "query", "", "Search query")
 	return cmd
 }
 

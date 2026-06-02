@@ -27,7 +27,6 @@ umbraco forms <command> [flags]
 | `forms record <formId> <recordId>` | Get a single form record |
 | `forms record-workflow-log <formId> <recordId>` | Get the workflow execution audit trail for a record |
 | `forms records <formId>` | List form records (submissions) |
-| `forms search` | Search forms by name/alias |
 
 ### get
 
@@ -90,17 +89,6 @@ umbraco forms records <formId>
 | `--summarize` | bool | false | Return only id/name/alias fields for item collections |
 | `--take` | int | 0 | Maximum number of records to return |
 | `--to` | string | — | Filter records created on or before this ISO 8601 date/time |
-
-### search
-
-```bash
-umbraco forms search
-```
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--params` | string | — | Query parameters as JSON |
-| `--query` | string | — | Search query |
 
 ## Discovering Commands
 
