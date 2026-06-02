@@ -29,7 +29,14 @@ type RequestOptions struct {
 	Params         map[string]any
 	DryRun         bool
 	SkipValidation bool
+	// APIPrefix overrides the default "/umbraco/management/api/v1" base path
+	// when non-empty. Used by command surfaces that target a different
+	// Management API mount (e.g. Umbraco Forms at
+	// "/umbraco/forms/management/api/v1").
+	APIPrefix string
 }
+
+const defaultAPIPrefix = "/umbraco/management/api/v1"
 
 type DryRunResult struct {
 	DryRun bool   `json:"dryRun"`
@@ -81,7 +88,15 @@ func (c *Client) buildURL(path string, opts RequestOptions) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	base.Path = strings.TrimRight(base.Path, "/") + "/umbraco/management/api/v1" + normalizedPath
+	prefix := opts.APIPrefix
+	if prefix == "" {
+		prefix = defaultAPIPrefix
+	}
+	if !strings.HasPrefix(prefix, "/") {
+		prefix = "/" + prefix
+	}
+	prefix = strings.TrimRight(prefix, "/")
+	base.Path = strings.TrimRight(base.Path, "/") + prefix + normalizedPath
 
 	query := base.Query()
 	if opts.Params != nil {
@@ -238,7 +253,7 @@ func buildAPIErrorHint(statusCode int, method string, path string) string {
 	if statusCode != http.StatusNotFound {
 		return ""
 	}
-	if !strings.HasPrefix(path, "/umbraco/management/api/v1/") {
+	if !strings.Contains(path, "/management/api/v") {
 		return ""
 	}
 

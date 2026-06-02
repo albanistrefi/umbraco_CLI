@@ -39,6 +39,7 @@ func NewRootCommand() (*cobra.Command, error) {
 	commands.RegisterDoctype(root, deps)
 	commands.RegisterDatatype(root, deps)
 	commands.RegisterTemplate(root, deps)
+	commands.RegisterForms(root, deps)
 	commands.RegisterLogs(root, deps)
 	commands.RegisterServer(root, deps)
 	commands.RegisterHealth(root, deps)
