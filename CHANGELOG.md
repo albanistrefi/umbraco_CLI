@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.3.13 - 2026-06-02
+
+- added `forms` command group wrapping the Umbraco Forms Management API (`/umbraco/forms/management/api/v1`) for read-only access: `forms list`, `forms children <folderId>`, `forms get <id>`, `forms records <formId>`, `forms record <formId> <recordId>`, `forms record-workflow-log <formId> <recordId>`
+- added `RequestOptions.APIPrefix` override on the HTTP client so command surfaces can target Management API mounts other than the core `/umbraco/management/api/v1` without affecting existing commands
+- `forms records` defaults to `--take 100` to prevent agents pulling thousands of submissions in one shot; pass `--take 0` for no limit, or override via `--params`
+- `forms records` accepts `--state`, `--from`, `--to`, `--skip`, `--take` as pass-through filters, with `--params` taking precedence on key collisions
+
 ## v0.3.11 - 2026-05-12
 
 - fixed `logs templates` on Umbraco v17 by routing it through `/log-viewer/message-template`, with 404-only fallback to the legacy templates route

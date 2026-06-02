@@ -2,7 +2,7 @@
 name: umbraco-template
 description: "Template operations"
 metadata:
-  version: 0.3.10
+  version: 0.3.13
   requires:
     bins:
       - umbraco
