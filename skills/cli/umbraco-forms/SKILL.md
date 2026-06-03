@@ -25,7 +25,7 @@ umbraco forms <command> [flags]
 | `forms children <folderId>` | List forms inside a folder |
 | `forms get <id>` | Get form definition by ID (includes fields, pages, workflows) |
 | `forms list` | List forms (tree root: returns folders and root-level forms) |
-| `forms record <formId> <recordId>` | Get a single form record |
+| `forms record <formId> <recordId>` | Get a single form record by its uniqueId (GUID) |
 | `forms record-workflow-log <formId> <recordId>` | Get the workflow execution audit trail for a record |
 | `forms records <formId>` | List form records (submissions) |
 
@@ -74,6 +74,7 @@ umbraco forms record <formId> <recordId>
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--fields` | string | — | Limit response fields |
+| `--scan` | int | 500 | Maximum number of records to scan when looking up the record (the Forms API has no direct GET-by-id, so we filter client-side) |
 
 ### record-workflow-log
 

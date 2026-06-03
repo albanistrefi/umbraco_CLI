@@ -26,6 +26,48 @@ func formsRequestOpts(fields string, params map[string]any) api.RequestOptions {
 	return api.RequestOptions{APIPrefix: formsAPIPrefix, Fields: fields, Params: params}
 }
 
+// findFormsRecord locates a record inside the GET /form/{id}/record response
+// by matching either the GUID-shaped 'uniqueId' or the numeric 'id'
+// (stringified). The response shape is {"results": [...], "schema": [...]}
+// per the Forms Management API.
+func findFormsRecord(payload any, recordID string) map[string]any {
+	envelope, ok := payload.(map[string]any)
+	if !ok {
+		return nil
+	}
+	results, ok := envelope["results"].([]any)
+	if !ok {
+		return nil
+	}
+	for _, item := range results {
+		entry, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		if asString(entry["uniqueId"]) == recordID || asString(entry["id"]) == recordID {
+			return entry
+		}
+	}
+	return nil
+}
+
+func asString(v any) string {
+	switch value := v.(type) {
+	case nil:
+		return ""
+	case string:
+		return value
+	case float64:
+		// JSON numbers decode as float64; render integers without trailing .0
+		if value == float64(int64(value)) {
+			return fmt.Sprintf("%d", int64(value))
+		}
+		return fmt.Sprintf("%v", value)
+	default:
+		return fmt.Sprintf("%v", v)
+	}
+}
+
 func RegisterForms(root *cobra.Command, deps Dependencies) {
 	forms := &cobra.Command{
 		Use:   "forms",
@@ -183,24 +225,32 @@ func formsRecords(deps Dependencies) *cobra.Command {
 
 func formsRecord(deps Dependencies) *cobra.Command {
 	var fields string
+	var scan int
 	cmd := &cobra.Command{
 		Use:   "record <formId> <recordId>",
-		Short: "Get a single form record",
-		Long:  "The Umbraco Forms API scopes records under a form, so both IDs are required.",
-		Args:  cobra.ExactArgs(2),
+		Short: "Get a single form record by its uniqueId (GUID)",
+		Long: "Returns one record from a form. recordId is the record's uniqueId (GUID, e.g. 917a242d-d48c-44ac-ad99-9dcfaf2d3e7f), visible in 'forms records' output. The numeric 'id' field is also accepted.\n\n" +
+			"Implementation note: the Forms Management API does not expose a GET endpoint on /form/{formId}/record/{recordId} — only PUT is registered. This subcommand therefore fetches the records list and filters client-side. Use --scan to control how many records are scanned (default 500); for forms with more records, narrow by date with 'forms records --from/--to' and pipe to jq.",
+		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			formID, recordID := args[0], args[1]
 			result, err := deps.Client.Get(
 				context.Background(),
-				fmt.Sprintf("/form/%s/record/%s", args[0], args[1]),
-				formsRequestOpts(fields, nil),
+				fmt.Sprintf("/form/%s/record", formID),
+				formsRequestOpts("", map[string]any{"take": scan}),
 			)
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, deps, applyFieldsProjection(result, fields))
+			match := findFormsRecord(result, recordID)
+			if match == nil {
+				return fmt.Errorf("no record with id %q in the first %d records of form %s; widen with --scan or narrow with 'forms records --from/--to'", recordID, scan, formID)
+			}
+			return printResult(cmd, deps, applyFieldsProjection(match, fields))
 		},
 	}
 	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
+	cmd.Flags().IntVar(&scan, "scan", 500, "Maximum number of records to scan when looking up the record (the Forms API has no direct GET-by-id, so we filter client-side)")
 	return cmd
 }
 

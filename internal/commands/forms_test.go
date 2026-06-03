@@ -264,28 +264,84 @@ func TestFormsRecordsPassesThroughDateFilters(t *testing.T) {
 	}
 }
 
-func TestFormsRecordRequiresFormIdAndRecordId(t *testing.T) {
+func TestFormsRecordFiltersListByUniqueIDAndNumericID(t *testing.T) {
+	recordsPayload := `{
+		"results": [
+			{"id":16813,"uniqueId":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","state":"Submitted","fields":[]},
+			{"id":16814,"uniqueId":"917a242d-d48c-44ac-ad99-9dcfaf2d3e7f","state":"Approved","fields":[{"fieldId":"f-email","value":"alb@umbraco.dk"}]}
+		],
+		"schema": []
+	}`
+
+	var observedTake string
 	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
 			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
-		case "/umbraco/forms/management/api/v1/form/f-1/record/r-7":
-			return datatypeJSONResponse(http.StatusOK, `{"id":"r-7","state":"approved"}`), nil
+		case "/umbraco/forms/management/api/v1/form/f-1/record":
+			observedTake = req.URL.Query().Get("take")
+			return datatypeJSONResponse(http.StatusOK, recordsPayload), nil
 		default:
 			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	if _, err := execute(buildRootWithCollections(t, deps), "forms", "record", "r-7"); err == nil {
-		t.Fatalf("expected forms record to require both formId and recordId, got nil error")
+	// Two-arg requirement holds.
+	if _, err := execute(buildRootWithCollections(t, deps), "forms", "record", "f-1"); err == nil {
+		t.Fatalf("expected forms record to require both formId and recordId")
 	}
 
-	output, err := execute(buildRootWithCollections(t, deps), "forms", "record", "f-1", "r-7")
+	// Lookup by uniqueId (GUID).
+	output, err := execute(buildRootWithCollections(t, deps), "forms", "record", "f-1", "917a242d-d48c-44ac-ad99-9dcfaf2d3e7f")
 	if err != nil {
-		t.Fatalf("forms record failed: %v", err)
+		t.Fatalf("forms record by uniqueId failed: %v", err)
 	}
-	if !strings.Contains(output, `"id": "r-7"`) {
-		t.Fatalf("expected record payload to round-trip, got %q", output)
+	var byGUID map[string]any
+	if err := json.Unmarshal([]byte(output), &byGUID); err != nil {
+		t.Fatalf("failed to decode GUID lookup: %v", err)
+	}
+	if byGUID["uniqueId"] != "917a242d-d48c-44ac-ad99-9dcfaf2d3e7f" || byGUID["state"] != "Approved" {
+		t.Fatalf("expected approved record back, got %+v", byGUID)
+	}
+
+	// Default scan should request 500 records.
+	if observedTake != "500" {
+		t.Fatalf("expected default scan=500, got take=%q", observedTake)
+	}
+
+	// Lookup by numeric id (stringified) hits the same record.
+	output, err = execute(buildRootWithCollections(t, deps), "forms", "record", "f-1", "16814")
+	if err != nil {
+		t.Fatalf("forms record by numeric id failed: %v", err)
+	}
+	var byID map[string]any
+	if err := json.Unmarshal([]byte(output), &byID); err != nil {
+		t.Fatalf("failed to decode id lookup: %v", err)
+	}
+	if byID["uniqueId"] != "917a242d-d48c-44ac-ad99-9dcfaf2d3e7f" {
+		t.Fatalf("expected numeric id 16814 to resolve to the same record, got %+v", byID)
+	}
+}
+
+func TestFormsRecordNotFoundReturnsHelpfulError(t *testing.T) {
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/forms/management/api/v1/form/f-1/record":
+			return datatypeJSONResponse(http.StatusOK, `{"results":[],"schema":[]}`), nil
+		default:
+			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	_, err := execute(buildRootWithCollections(t, deps), "forms", "record", "f-1", "nope", "--scan", "25")
+	if err == nil {
+		t.Fatalf("expected not-found error")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "no record with id") || !strings.Contains(msg, "first 25 records") {
+		t.Fatalf("error should mention scan window, got: %v", err)
 	}
 }
 
