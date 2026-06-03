@@ -1,6 +1,6 @@
 {
   "name": "umbraco-cli",
-  "version": "0.3.13",
+  "version": "0.3.14",
   "description": "Agent-first CLI for Umbraco Management API (Go implementation)",
   "private": true,
   "scripts": {

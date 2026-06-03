@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.3.14 - 2026-06-03
+
+- fixed `forms record <formId> <recordId>` 404 on Umbraco v17.x — the Forms Management API does not expose a GET endpoint on `/form/{formId}/record/{recordId}` (only PUT), so the CLI now fetches the records list and filters client-side
+- `forms record` matches against either the record's `uniqueId` (GUID) or its numeric `id`; help text documents both
+- added `--scan` flag (default 500) controlling how many records are pulled for the lookup; rejects non-positive values
+- not-found errors now distinguish "scan window exhausted (the record may exist outside the window)" from "definitively not present (API returned fewer rows than --scan)" so agents know whether to widen or stop
+
 ## v0.3.13 - 2026-06-02
 
 - added `forms` command group wrapping the Umbraco Forms Management API (`/umbraco/forms/management/api/v1`) for read-only access: `forms list`, `forms children <folderId>`, `forms get <id>`, `forms records <formId>`, `forms record <formId> <recordId>`, `forms record-workflow-log <formId> <recordId>`

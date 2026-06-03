@@ -2,7 +2,7 @@
 name: umbraco-datatype
 description: "Data type operations"
 metadata:
-  version: 0.3.13
+  version: 0.3.14
   requires:
     bins:
       - umbraco
