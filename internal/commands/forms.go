@@ -51,6 +51,27 @@ func findFormsRecord(payload any, recordID string) map[string]any {
 	return nil
 }
 
+// formsRecordCount returns how many records the API actually returned in
+// the envelope, regardless of what was requested via take.
+func formsRecordCount(payload any) int {
+	envelope, ok := payload.(map[string]any)
+	if !ok {
+		return 0
+	}
+	results, ok := envelope["results"].([]any)
+	if !ok {
+		return 0
+	}
+	return len(results)
+}
+
+// formsRecordScanWindowExhausted reports whether the API filled the scan
+// window — i.e. the returned page is as large as requested, meaning more
+// records likely exist beyond it.
+func formsRecordScanWindowExhausted(payload any, scan int) bool {
+	return formsRecordCount(payload) >= scan
+}
+
 func asString(v any) string {
 	switch value := v.(type) {
 	case nil:
@@ -228,11 +249,15 @@ func formsRecord(deps Dependencies) *cobra.Command {
 	var scan int
 	cmd := &cobra.Command{
 		Use:   "record <formId> <recordId>",
-		Short: "Get a single form record by its uniqueId (GUID)",
+		Short: "Get a single form record by its uniqueId (GUID); scans the first --scan records (default 500)",
 		Long: "Returns one record from a form. recordId is the record's uniqueId (GUID, e.g. 917a242d-d48c-44ac-ad99-9dcfaf2d3e7f), visible in 'forms records' output. The numeric 'id' field is also accepted.\n\n" +
-			"Implementation note: the Forms Management API does not expose a GET endpoint on /form/{formId}/record/{recordId} — only PUT is registered. This subcommand therefore fetches the records list and filters client-side. Use --scan to control how many records are scanned (default 500); for forms with more records, narrow by date with 'forms records --from/--to' and pipe to jq.",
+			"Implementation note: the Forms Management API does not expose a GET endpoint on /form/{formId}/record/{recordId} — only PUT is registered. This subcommand therefore fetches the records list and filters client-side. Use --scan to control how many records are scanned (default 500); for forms with more records, narrow by date with 'forms records --from/--to' and pipe to jq.\n\n" +
+			"Record ordering is controlled by the Forms API and is not part of its public contract. Observation against v17.3 suggests newest-first, but agents shouldn't rely on it — if a record isn't in the scan window, the error distinguishes 'definitely not present' from 'scan window exhausted' so you know whether to widen.",
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if scan <= 0 {
+				return fmt.Errorf("--scan must be a positive integer, got %d", scan)
+			}
 			formID, recordID := args[0], args[1]
 			result, err := deps.Client.Get(
 				context.Background(),
@@ -244,13 +269,16 @@ func formsRecord(deps Dependencies) *cobra.Command {
 			}
 			match := findFormsRecord(result, recordID)
 			if match == nil {
-				return fmt.Errorf("no record with id %q in the first %d records of form %s; widen with --scan or narrow with 'forms records --from/--to'", recordID, scan, formID)
+				if formsRecordScanWindowExhausted(result, scan) {
+					return fmt.Errorf("no record with id %q in the first %d records of form %s (scan window exhausted — the record may exist outside this window; widen with --scan or narrow with 'forms records --from/--to')", recordID, scan, formID)
+				}
+				return fmt.Errorf("no record with id %q on form %s (scanned all %d records the form returned)", recordID, formID, formsRecordCount(result))
 			}
 			return printResult(cmd, deps, applyFieldsProjection(match, fields))
 		},
 	}
 	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
-	cmd.Flags().IntVar(&scan, "scan", 500, "Maximum number of records to scan when looking up the record (the Forms API has no direct GET-by-id, so we filter client-side)")
+	cmd.Flags().IntVar(&scan, "scan", 500, "Maximum number of records to scan when looking up the record (the Forms API has no direct GET-by-id, so we filter client-side). Must be positive.")
 	return cmd
 }
 

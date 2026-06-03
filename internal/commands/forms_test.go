@@ -323,25 +323,65 @@ func TestFormsRecordFiltersListByUniqueIDAndNumericID(t *testing.T) {
 	}
 }
 
-func TestFormsRecordNotFoundReturnsHelpfulError(t *testing.T) {
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+func TestFormsRecordNotFoundDistinguishesExhaustedFromDefinitive(t *testing.T) {
+	// Scan window exhausted: API returned `scan` rows, more may exist.
+	exhaustedDeps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
 			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/forms/management/api/v1/form/f-1/record":
-			return datatypeJSONResponse(http.StatusOK, `{"results":[],"schema":[]}`), nil
+			// Return exactly --scan rows so the window is "full".
+			rows := strings.Repeat(`{"id":1,"uniqueId":"aaa","state":"Submitted"},`, 3)
+			rows = strings.TrimRight(rows, ",")
+			return datatypeJSONResponse(http.StatusOK, `{"results":[`+rows+`],"schema":[]}`), nil
 		default:
 			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
-
-	_, err := execute(buildRootWithCollections(t, deps), "forms", "record", "f-1", "nope", "--scan", "25")
+	_, err := execute(buildRootWithCollections(t, exhaustedDeps), "forms", "record", "f-1", "missing", "--scan", "3")
 	if err == nil {
-		t.Fatalf("expected not-found error")
+		t.Fatalf("expected not-found error when scan window is exhausted")
 	}
-	msg := err.Error()
-	if !strings.Contains(msg, "no record with id") || !strings.Contains(msg, "first 25 records") {
-		t.Fatalf("error should mention scan window, got: %v", err)
+	if !strings.Contains(err.Error(), "scan window exhausted") {
+		t.Fatalf("expected 'scan window exhausted' wording, got: %v", err)
+	}
+
+	// Definitive miss: API returned fewer rows than --scan, so the record
+	// genuinely isn't on the form.
+	definitiveDeps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/forms/management/api/v1/form/f-1/record":
+			return datatypeJSONResponse(http.StatusOK, `{"results":[{"id":1,"uniqueId":"aaa"}],"schema":[]}`), nil
+		default:
+			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+	_, err = execute(buildRootWithCollections(t, definitiveDeps), "forms", "record", "f-1", "missing", "--scan", "500")
+	if err == nil {
+		t.Fatalf("expected not-found error when record is definitively absent")
+	}
+	if strings.Contains(err.Error(), "scan window exhausted") {
+		t.Fatalf("did not expect exhaustion wording when only %d rows came back, got: %v", 1, err)
+	}
+	if !strings.Contains(err.Error(), "scanned all 1 records") {
+		t.Fatalf("expected definitive-miss wording mentioning actual row count, got: %v", err)
+	}
+}
+
+func TestFormsRecordRejectsNonPositiveScan(t *testing.T) {
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+	})
+	for _, v := range []string{"0", "-1"} {
+		_, err := execute(buildRootWithCollections(t, deps), "forms", "record", "f-1", "x", "--scan", v)
+		if err == nil {
+			t.Fatalf("--scan=%s should be rejected", v)
+		}
+		if !strings.Contains(err.Error(), "must be a positive integer") {
+			t.Fatalf("--scan=%s wrong error: %v", v, err)
+		}
 	}
 }
 
