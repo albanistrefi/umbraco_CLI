@@ -97,7 +97,7 @@ umbraco doctype search
 | `doctype add-container <id>` | Append a tab or group container to a document type |
 | `doctype add-property <id>` | Append a property to a document type under an existing container alias |
 | `doctype copy <id>` | Copy document type |
-| `doctype create` | Create document type |
+| `doctype create` | Create document type (pass --element to create an element type) |
 | `doctype move <id>` | Move document type |
 | `doctype update <id>` | Update document type |
 
@@ -181,6 +181,7 @@ umbraco doctype create
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--dry-run` | bool | false | Validate request without executing |
+| `--element` | bool | false | Convenience flag for --json '{...,"isElement":true}'; overrides any isElement set in --json |
 | `--json` | string | — | Create payload as JSON |
 | `--print-template` | bool | false | Print an annotated JSON skeleton; substitute placeholders before passing to --json |
 

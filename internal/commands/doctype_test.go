@@ -153,6 +153,41 @@ func TestDoctypeUpdateMergeJSONFetchesCurrentAndSendsMergedPayload(t *testing.T)
 	}
 }
 
+func TestDoctypeCreateElementFlagSetsIsElementTrue(t *testing.T) {
+	var postPayload map[string]any
+
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/document-type":
+			if req.Method != http.MethodPost {
+				return datatypeJSONResponse(http.StatusMethodNotAllowed, `{"error":"method not allowed"}`), nil
+			}
+			if err := json.NewDecoder(req.Body).Decode(&postPayload); err != nil {
+				t.Fatalf("failed to decode create payload: %v", err)
+			}
+			return datatypeJSONResponse(http.StatusOK, `{"success":true}`), nil
+		default:
+			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	// --element should win over an explicit isElement:false in --json so agents
+	// can opt in with a single flag instead of editing the JSON payload.
+	if _, err := execute(
+		buildRootWithCollections(t, deps),
+		"doctype", "create",
+		"--element",
+		"--json", `{"name":"HeroBlock","alias":"heroBlock","isElement":false}`,
+	); err != nil {
+		t.Fatalf("doctype create --element failed: %v", err)
+	}
+	if postPayload["isElement"] != true {
+		t.Fatalf("expected --element to force isElement=true, got %+v", postPayload["isElement"])
+	}
+}
+
 func TestDoctypeCreateNormalizesDataTypeIDAndReturnsCreatedIdentity(t *testing.T) {
 	var postPayload map[string]any
 

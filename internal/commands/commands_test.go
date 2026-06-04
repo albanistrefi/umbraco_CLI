@@ -123,6 +123,13 @@ func TestSchemaTemplatePrintsPayloadSkeleton(t *testing.T) {
 	if payload["name"] == "" || payload["properties"] == nil {
 		t.Fatalf("expected doctype create template fields, got %+v", payload)
 	}
+	// Fields agents were missing in v0.3.14 — the template should advertise them
+	// so element types and history-cleanup config are discoverable from --print-template.
+	for _, field := range []string{"isElement", "allowedTemplates", "defaultTemplate", "historyCleanup", "collection"} {
+		if _, ok := payload[field]; !ok {
+			t.Fatalf("doctype create template missing %q (agents need it to know the field is accepted)", field)
+		}
+	}
 }
 
 func TestRegisteredAPICommandsHaveSchemas(t *testing.T) {
