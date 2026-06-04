@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.3.15 - 2026-06-04
+
+- added `models-builder` command group (`dashboard`, `status`, `build`) wrapping `/umbraco/management/api/v1/models-builder/*`; `build --wait` polls until `Current` so scripts can sequence `doctype create → build --wait → dotnet build`. `build` pre-checks dashboard mode (refuses `InMemory`/`Nothing` with a clear message) and `canGenerate` (surfaces `lastError` instead of POSTing into a guaranteed failure). `--dry-run` returns the planned POST without triggering generation.
+- added `datatype block add|remove|list` for Umbraco.BlockList and Umbraco.BlockGrid datatypes: read-modify-write helpers that mutate the `blocks` value entry without clobbering unrelated configuration. Idempotent on `contentElementTypeKey`. Pre-checks `editorAlias` so non-block datatypes are rejected before any PUT. BlockGrid placement flags `--allow-at-root` and `--allow-in-areas` default to `true` so registered blocks are placeable straight away (the server defaults both to `false` when omitted, which would silently register an invisible block). `--group` over BlockGrid's `blockGroups` array is a deferred follow-up.
+- fixed `datatype update --json` silently dropping fields the caller didn't mention (`editorUiAlias`, `items`, `multiple`, etc.). Both `--json` and `--merge-json` now route through fetch-and-merge using the existing `mergeAliasPayload` helper, so a one-field `--json '{"description":"x"}'` no longer nukes everything else server-side.
+- expanded `doctype.create --print-template` to advertise `isElement`, `allowedTemplates`, `defaultTemplate`, `historyCleanup`, `collection`, and a clearer `compositions` annotation. Added `--element` convenience flag on `doctype create` that forces `isElement=true`.
+- added schema entries for `models-builder.dashboard`, `models-builder.status`, `models-builder.build` so `umbraco schema models-builder.*` resolves (matches the pattern used by `server.*`, `logs.*`, etc.).
+
 ## v0.3.14 - 2026-06-03
 
 - fixed `forms record <formId> <recordId>` 404 on Umbraco v17.x — the Forms Management API does not expose a GET endpoint on `/form/{formId}/record/{recordId}` (only PUT), so the CLI now fetches the records list and filters client-side

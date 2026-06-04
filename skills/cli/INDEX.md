@@ -25,6 +25,7 @@ Per-resource CLI command skills.
 | [umbraco-health](umbraco-health/SKILL.md) | Health check operations |
 | [umbraco-logs](umbraco-logs/SKILL.md) | Log and diagnostics operations |
 | [umbraco-media](umbraco-media/SKILL.md) | Media asset operations |
+| [umbraco-models-builder](umbraco-models-builder/SKILL.md) | Trigger and inspect ModelsBuilder source generation |
 | [umbraco-server](umbraco-server/SKILL.md) | Server information and diagnostics |
 | [umbraco-template](umbraco-template/SKILL.md) | Template operations |
 | [umbraco-tree](umbraco-tree/SKILL.md) | Tree navigation helpers |
