@@ -79,12 +79,14 @@ func datatypeBlockAdd(deps Dependencies) *cobra.Command {
 	var editorSize string
 	var thumbnail string
 	var forceHideContentEditor bool
+	var allowAtRoot bool
+	var allowInAreas bool
 	var dryRun bool
 
 	cmd := &cobra.Command{
 		Use:   "add <datatypeId>",
 		Short: "Register an element type as an allowed block",
-		Long:  "Appends a block to the datatype's blocks array. Idempotent: if a block with the same --content-element-type is already present, no PUT is sent. BlockGrid notes: blocks are registered ungrouped in this version; --group support is a deferred follow-up.",
+		Long:  "Appends a block to the datatype's blocks array. Idempotent: if a block with the same --content-element-type is already present, no PUT is sent.\n\nBlockGrid: --allow-at-root and --allow-in-areas default to true so the block is actually placeable after registration (server-side both default to false when omitted, which would register a block that's invisible to editors). Pass --allow-at-root=false or --allow-in-areas=false to override. --group support over BlockGrid's blockGroups array is a deferred follow-up.\n\nBlockList: --allow-at-root and --allow-in-areas are ignored (those flags only apply to Block Grid).",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := requireValue("--content-element-type", contentElementType); err != nil {
@@ -132,6 +134,15 @@ func datatypeBlockAdd(deps Dependencies) *cobra.Command {
 			if thumbnail != "" {
 				block["thumbnail"] = thumbnail
 			}
+			// BlockGrid placement flags. Server defaults both to false when
+			// omitted, which produces a block that's registered but invisible
+			// in the editor — so we default to true here and let users
+			// override with --allow-at-root=false / --allow-in-areas=false.
+			// BlockList ignores these fields, so omit them entirely there.
+			if editor == "Umbraco.BlockGrid" {
+				block["allowAtRoot"] = allowAtRoot
+				block["allowInAreas"] = allowInAreas
+			}
 
 			next := append([]map[string]any{}, blocks...)
 			next = append(next, block)
@@ -166,6 +177,8 @@ func datatypeBlockAdd(deps Dependencies) *cobra.Command {
 	cmd.Flags().StringVar(&editorSize, "editor-size", "", "Overlay size: small | medium | large")
 	cmd.Flags().StringVar(&thumbnail, "thumbnail", "", "Optional path/URL to a thumbnail image")
 	cmd.Flags().BoolVar(&forceHideContentEditor, "force-hide-content-editor", false, "Hide the content editor in the overlay (settings-only blocks)")
+	cmd.Flags().BoolVar(&allowAtRoot, "allow-at-root", true, "BlockGrid only: allow placing the block at the grid's root level (default true). Ignored for BlockList.")
+	cmd.Flags().BoolVar(&allowInAreas, "allow-in-areas", true, "BlockGrid only: allow placing the block inside areas of other blocks (default true). Ignored for BlockList.")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate the resulting payload without writing it")
 	return cmd
 }

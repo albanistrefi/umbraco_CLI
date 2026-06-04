@@ -290,10 +290,11 @@ func TestDatatypeBlockRemoveIsIdempotent(t *testing.T) {
 	}
 }
 
-func TestDatatypeBlockAcceptsBlockGridEditor(t *testing.T) {
-	// BlockGrid uses the same blocks-array shape; just confirm the editor
-	// allowlist accepts it. --group support is a deferred follow-up; this
-	// test just verifies a v1 add on a BlockGrid datatype doesn't error.
+// blockGridAddCaptured runs `datatype block add` against a synthetic
+// BlockGrid datatype and returns the block object that landed in the PUT
+// payload. Helper so the BlockGrid placement tests stay readable.
+func blockGridAddCaptured(t *testing.T, args ...string) map[string]any {
+	t.Helper()
 	var putBody map[string]any
 	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
@@ -309,14 +310,93 @@ func TestDatatypeBlockAcceptsBlockGridEditor(t *testing.T) {
 		return datatypeJSONResponse(http.StatusNotFound, `null`), nil
 	})
 
-	if _, err := execute(
-		buildRootWithCollections(t, deps),
-		"datatype", "block", "add", blListID,
-		"--content-element-type", "grid-block-1",
-	); err != nil {
+	if _, err := execute(buildRootWithCollections(t, deps), append([]string{"datatype", "block", "add", blListID}, args...)...); err != nil {
 		t.Fatalf("BlockGrid add failed: %v", err)
 	}
 	if putBody == nil {
 		t.Fatalf("expected PUT to fire on first block add against BlockGrid")
+	}
+	for _, v := range putBody["values"].([]any) {
+		entry := v.(map[string]any)
+		if entry["alias"] == "blocks" {
+			blocks := entry["value"].([]any)
+			if len(blocks) != 1 {
+				t.Fatalf("expected exactly one block, got %d", len(blocks))
+			}
+			return blocks[0].(map[string]any)
+		}
+	}
+	t.Fatalf("no blocks entry found in PUT payload")
+	return nil
+}
+
+func TestDatatypeBlockBlockGridDefaultsAllowAtRootAndAllowInAreasToTrue(t *testing.T) {
+	// Both placement flags default to true so the block is actually placeable
+	// after registration — the server defaults to false when omitted, which
+	// would silently register a block that's invisible in the editor.
+	block := blockGridAddCaptured(t, "--content-element-type", "grid-block-1")
+	if block["allowAtRoot"] != true {
+		t.Fatalf("expected allowAtRoot=true default, got %+v", block["allowAtRoot"])
+	}
+	if block["allowInAreas"] != true {
+		t.Fatalf("expected allowInAreas=true default, got %+v", block["allowInAreas"])
+	}
+}
+
+func TestDatatypeBlockBlockGridHonoursExplicitPlacementOverrides(t *testing.T) {
+	block := blockGridAddCaptured(t,
+		"--content-element-type", "grid-block-1",
+		"--allow-at-root=false",
+		"--allow-in-areas=false",
+	)
+	if block["allowAtRoot"] != false {
+		t.Fatalf("expected --allow-at-root=false to override, got %+v", block["allowAtRoot"])
+	}
+	if block["allowInAreas"] != false {
+		t.Fatalf("expected --allow-in-areas=false to override, got %+v", block["allowInAreas"])
+	}
+}
+
+func TestDatatypeBlockBlockListOmitsPlacementFlags(t *testing.T) {
+	// Placement flags are BlockGrid-only; setting them on a BlockList add
+	// must NOT pollute the payload with fields the editor doesn't understand.
+	var putBody map[string]any
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case blPath:
+			if req.Method == http.MethodPut {
+				_ = json.NewDecoder(req.Body).Decode(&putBody)
+				return datatypeJSONResponse(http.StatusOK, `{}`), nil
+			}
+			return datatypeJSONResponse(http.StatusOK, blockListPayload(t)), nil
+		}
+		return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+	})
+
+	if _, err := execute(
+		buildRootWithCollections(t, deps),
+		"datatype", "block", "add", blListID,
+		"--content-element-type", "list-block-new",
+		"--allow-at-root=true", "--allow-in-areas=true",
+	); err != nil {
+		t.Fatalf("BlockList add failed: %v", err)
+	}
+
+	var newBlock map[string]any
+	for _, v := range putBody["values"].([]any) {
+		entry := v.(map[string]any)
+		if entry["alias"] == "blocks" {
+			blocks := entry["value"].([]any)
+			newBlock = blocks[len(blocks)-1].(map[string]any)
+			break
+		}
+	}
+	if _, hasRoot := newBlock["allowAtRoot"]; hasRoot {
+		t.Fatalf("BlockList block must not include allowAtRoot, got %+v", newBlock)
+	}
+	if _, hasAreas := newBlock["allowInAreas"]; hasAreas {
+		t.Fatalf("BlockList block must not include allowInAreas, got %+v", newBlock)
 	}
 }
