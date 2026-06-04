@@ -78,8 +78,8 @@ func TestCommandCountsMatchMVP(t *testing.T) {
 		total += len(found.Commands())
 	}
 
-	if total != 93 {
-		t.Fatalf("expected 93 collection commands, got %d", total)
+	if total != 94 {
+		t.Fatalf("expected 94 collection commands, got %d", total)
 	}
 }
 
@@ -157,6 +157,7 @@ func TestRegisteredAPICommandsHaveSchemas(t *testing.T) {
 		"datatype.remove-extension": "payload mutation convenience command",
 		"datatype.add-value":        "payload mutation convenience command",
 		"datatype.remove-value":     "payload mutation convenience command",
+		"datatype.block":            "Block List / Block Grid mutation convenience command (subgroup)",
 		"logs.levels":               "hidden compatibility stub for removed v17 endpoint",
 	}
 

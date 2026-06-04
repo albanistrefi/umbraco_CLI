@@ -41,6 +41,7 @@ func RegisterDatatype(root *cobra.Command, deps Dependencies) {
 	datatype.AddCommand(datatypeRemoveExtension(deps))
 	datatype.AddCommand(datatypeAddValue(deps))
 	datatype.AddCommand(datatypeRemoveValue(deps))
+	datatype.AddCommand(datatypeBlock(deps))
 	datatype.AddCommand(datatypeDelete(deps))
 	root.AddCommand(datatype)
 }

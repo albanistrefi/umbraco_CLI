@@ -22,12 +22,19 @@ umbraco datatype <command> [flags]
 
 | Command | Description |
 |---------|-------------|
+| `datatype block` | Manage allowed blocks on a Block List / Block Grid datatype |
 | `datatype extensions <id>` | List enabled data type extension aliases |
 | `datatype get <id>` | Get data type by ID |
 | `datatype is-used <id>` | Check whether a data type is in use |
 | `datatype list` | List data types |
 | `datatype root` | Get root data types |
 | `datatype search` | Search data types |
+
+### block
+
+```bash
+umbraco datatype block
+```
 
 ### extensions
 
