@@ -232,8 +232,8 @@ umbraco datatype update <id>
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--dry-run` | bool | false | Validate request without executing |
-| `--json` | string | — | Update payload as JSON |
-| `--merge-json` | string | — | Partial JSON payload merged into the current data type before update |
+| `--json` | string | — | Update payload as JSON; merged into the current data type so fields not mentioned (e.g. editorUiAlias) are preserved |
+| `--merge-json` | string | — | Partial JSON payload merged into the current data type before update (alias for --json) |
 
 **Safe pattern:**
 

@@ -908,6 +908,67 @@ func TestDatatypeUpdateMergeJSONSupportsDryRunForNestedObjectConfig(t *testing.T
 	}
 }
 
+func TestDatatypeUpdateJSONPreservesEditorUiAliasAndOtherUnmentionedFields(t *testing.T) {
+	// Regression: --json used to PUT only what the caller passed, which the
+	// Management API treats as a full replacement — silently dropping
+	// editorUiAlias, items, multiple, and anything else not in the payload.
+	// Both --json and --merge-json now route through fetch-and-merge.
+	var observedPutBody map[string]any
+
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/data-type/dt-1":
+			if req.Method == http.MethodGet {
+				return datatypeJSONResponse(http.StatusOK, `{
+					"id":"dt-1",
+					"name":"Tags",
+					"editorAlias":"Umbraco.Tags",
+					"editorUiAlias":"Umb.PropertyEditorUi.Tags",
+					"values":[
+						{"alias":"group","value":"default"},
+						{"alias":"storageType","value":"Csv"}
+					]
+				}`), nil
+			}
+			if req.Method == http.MethodPut {
+				if err := json.NewDecoder(req.Body).Decode(&observedPutBody); err != nil {
+					t.Fatalf("decode PUT: %v", err)
+				}
+				return datatypeJSONResponse(http.StatusOK, `{"updated":true}`), nil
+			}
+		}
+		return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+	})
+
+	// Caller passes a minimal --json with just the field they want to change.
+	// Prior to the fix this would have nuked editorUiAlias, both values
+	// entries, and editorAlias on the server side.
+	_, err := execute(
+		buildRootWithCollections(t, deps),
+		"datatype", "update", "dt-1",
+		"--json", `{"name":"Renamed Tags"}`,
+	)
+	if err != nil {
+		t.Fatalf("update failed: %v", err)
+	}
+
+	if observedPutBody["name"] != "Renamed Tags" {
+		t.Fatalf("expected the user-supplied name change to survive, got %+v", observedPutBody["name"])
+	}
+	if observedPutBody["editorAlias"] != "Umbraco.Tags" {
+		t.Fatalf("editorAlias must be preserved by the merge, got %+v", observedPutBody["editorAlias"])
+	}
+	if observedPutBody["editorUiAlias"] != "Umb.PropertyEditorUi.Tags" {
+		t.Fatalf("editorUiAlias must be preserved by the merge (the original regression), got %+v", observedPutBody["editorUiAlias"])
+	}
+	values, ok := observedPutBody["values"].([]any)
+	if !ok || len(values) != 2 {
+		t.Fatalf("both values entries must be preserved, got %+v", observedPutBody["values"])
+	}
+}
+
 func TestDatatypeUpdateRejectsJSONAndMergeJSONTogether(t *testing.T) {
 	deps := makeDeps()
 	root := buildRootWithCollections(t, deps)

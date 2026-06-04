@@ -433,40 +433,38 @@ func datatypeUpdate(deps Dependencies) *cobra.Command {
 			return fmt.Errorf("datatype update requires exactly one of --json or --merge-json")
 		}
 
+		// Both --json and --merge-json now go through the same fetch-and-merge
+		// path. The previous --json implementation PUT only what the caller
+		// passed, which the Management API treats as a complete replacement —
+		// silently dropping any field not explicitly included (e.g.
+		// editorUiAlias, items, multiple). That made --json a footgun for
+		// agents partially-updating a datatype. Both flags are kept for
+		// backward compatibility but are now equivalent in behavior; --json
+		// reads more naturally when supplying the full intended state, and
+		// --merge-json reads more naturally when supplying a small patch.
+		raw := jsonPayload
 		if hasMergeJSON {
-			patch, err := parsePayload(mergeJSON)
-			if err != nil {
-				return err
-			}
-
-			current, err := fetchDatatypeObject(context.Background(), deps.Client, args[0])
-			if err != nil {
-				return err
-			}
-
-			merged := mergeAliasPayload(current, patch)
-			result, err := deps.Client.Put(context.Background(), fmt.Sprintf("%s/%s", dataTypeLegacyCollectionPath, args[0]), merged, api.RequestOptions{DryRun: dryRun, SkipValidation: true})
-			if err != nil {
-				return err
-			}
-			return printResult(cmd, deps, result)
+			raw = mergeJSON
 		}
-
-		if err := requireValue("--json", jsonPayload); err != nil {
-			return err
-		}
-		body, err := parsePayload(jsonPayload)
+		patch, err := parsePayload(raw)
 		if err != nil {
 			return err
 		}
-		result, err := deps.Client.Put(context.Background(), fmt.Sprintf("%s/%s", dataTypeLegacyCollectionPath, args[0]), body, api.RequestOptions{DryRun: dryRun})
+
+		current, err := fetchDatatypeObject(context.Background(), deps.Client, args[0])
+		if err != nil {
+			return err
+		}
+
+		merged := mergeAliasPayload(current, patch)
+		result, err := deps.Client.Put(context.Background(), fmt.Sprintf("%s/%s", dataTypeLegacyCollectionPath, args[0]), merged, api.RequestOptions{DryRun: dryRun, SkipValidation: true})
 		if err != nil {
 			return err
 		}
 		return printResult(cmd, deps, result)
 	}}
-	cmd.Flags().StringVar(&jsonPayload, "json", "", "Update payload as JSON")
-	cmd.Flags().StringVar(&mergeJSON, "merge-json", "", "Partial JSON payload merged into the current data type before update")
+	cmd.Flags().StringVar(&jsonPayload, "json", "", "Update payload as JSON; merged into the current data type so fields not mentioned (e.g. editorUiAlias) are preserved")
+	cmd.Flags().StringVar(&mergeJSON, "merge-json", "", "Partial JSON payload merged into the current data type before update (alias for --json)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
 	return cmd
 }
