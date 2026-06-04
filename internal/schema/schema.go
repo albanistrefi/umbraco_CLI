@@ -129,6 +129,11 @@ var rawSchemas = map[string]rawSchema{
 	"server.troubleshoot":  {Method: "GET", Path: "/server/troubleshooting"},
 	"server.upgrade-check": {Method: "GET", Path: "/server/upgrade-check"},
 
+	// models-builder (3)
+	"models-builder.dashboard": {Method: "GET", Path: "/models-builder/dashboard"},
+	"models-builder.status":    {Method: "GET", Path: "/models-builder/status"},
+	"models-builder.build":     {Method: "POST", Path: "/models-builder/build", RequestBody: &ObjectSchema{Type: "object", Description: "Empty body; the build is triggered by the POST itself. Server returns once generation has been queued (not waited on)."}},
+
 	// health (4)
 	"health.groups": {Method: "GET", Path: "/health-check-group"},
 	"health.group":  {Method: "GET", Path: "/health-check-group/{name}", PathParams: map[string]ParamSchema{"name": {Type: "string", Required: true}}},

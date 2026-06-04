@@ -136,15 +136,16 @@ func TestSchemaTemplatePrintsPayloadSkeleton(t *testing.T) {
 func TestRegisteredAPICommandsHaveSchemas(t *testing.T) {
 	root := buildRootWithCollections(t, makeDeps())
 	schemaBackedCollections := map[string]struct{}{
-		"document":   {},
-		"dictionary": {},
-		"media":      {},
-		"doctype":    {},
-		"datatype":   {},
-		"template":   {},
-		"logs":       {},
-		"server":     {},
-		"health":     {},
+		"document":       {},
+		"dictionary":     {},
+		"media":          {},
+		"doctype":        {},
+		"datatype":       {},
+		"template":       {},
+		"logs":           {},
+		"server":         {},
+		"health":         {},
+		"models-builder": {},
 	}
 	convenienceCommands := map[string]string{
 		"document.bulk-update":      "batch convenience command",
