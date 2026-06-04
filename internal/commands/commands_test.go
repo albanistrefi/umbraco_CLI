@@ -37,6 +37,7 @@ func buildRootWithCollections(t *testing.T, deps Dependencies) *cobra.Command {
 	RegisterDatatype(root, deps)
 	RegisterTemplate(root, deps)
 	RegisterForms(root, deps)
+	RegisterModelsBuilder(root, deps)
 	RegisterLogs(root, deps)
 	RegisterServer(root, deps)
 	RegisterHealth(root, deps)
@@ -77,8 +78,8 @@ func TestCommandCountsMatchMVP(t *testing.T) {
 		total += len(found.Commands())
 	}
 
-	if total != 90 {
-		t.Fatalf("expected 90 collection commands, got %d", total)
+	if total != 94 {
+		t.Fatalf("expected 94 collection commands, got %d", total)
 	}
 }
 
@@ -123,20 +124,28 @@ func TestSchemaTemplatePrintsPayloadSkeleton(t *testing.T) {
 	if payload["name"] == "" || payload["properties"] == nil {
 		t.Fatalf("expected doctype create template fields, got %+v", payload)
 	}
+	// Fields agents were missing in v0.3.14 — the template should advertise them
+	// so element types and history-cleanup config are discoverable from --print-template.
+	for _, field := range []string{"isElement", "allowedTemplates", "defaultTemplate", "historyCleanup", "collection"} {
+		if _, ok := payload[field]; !ok {
+			t.Fatalf("doctype create template missing %q (agents need it to know the field is accepted)", field)
+		}
+	}
 }
 
 func TestRegisteredAPICommandsHaveSchemas(t *testing.T) {
 	root := buildRootWithCollections(t, makeDeps())
 	schemaBackedCollections := map[string]struct{}{
-		"document":   {},
-		"dictionary": {},
-		"media":      {},
-		"doctype":    {},
-		"datatype":   {},
-		"template":   {},
-		"logs":       {},
-		"server":     {},
-		"health":     {},
+		"document":       {},
+		"dictionary":     {},
+		"media":          {},
+		"doctype":        {},
+		"datatype":       {},
+		"template":       {},
+		"logs":           {},
+		"server":         {},
+		"health":         {},
+		"models-builder": {},
 	}
 	convenienceCommands := map[string]string{
 		"document.bulk-update":      "batch convenience command",
@@ -149,6 +158,7 @@ func TestRegisteredAPICommandsHaveSchemas(t *testing.T) {
 		"datatype.remove-extension": "payload mutation convenience command",
 		"datatype.add-value":        "payload mutation convenience command",
 		"datatype.remove-value":     "payload mutation convenience command",
+		"datatype.block":            "Block List / Block Grid mutation convenience command (subgroup)",
 		"logs.levels":               "hidden compatibility stub for removed v17 endpoint",
 	}
 

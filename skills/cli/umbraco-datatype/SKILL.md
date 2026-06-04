@@ -22,12 +22,19 @@ umbraco datatype <command> [flags]
 
 | Command | Description |
 |---------|-------------|
+| `datatype block` | Manage allowed blocks on a Block List / Block Grid datatype |
 | `datatype extensions <id>` | List enabled data type extension aliases |
 | `datatype get <id>` | Get data type by ID |
 | `datatype is-used <id>` | Check whether a data type is in use |
 | `datatype list` | List data types |
 | `datatype root` | Get root data types |
 | `datatype search` | Search data types |
+
+### block
+
+```bash
+umbraco datatype block
+```
 
 ### extensions
 
@@ -225,8 +232,8 @@ umbraco datatype update <id>
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--dry-run` | bool | false | Validate request without executing |
-| `--json` | string | — | Update payload as JSON |
-| `--merge-json` | string | — | Partial JSON payload merged into the current data type before update |
+| `--json` | string | — | Update payload as JSON; merged into the current data type so fields not mentioned (e.g. editorUiAlias) are preserved |
+| `--merge-json` | string | — | Partial JSON payload merged into the current data type before update (alias for --json) |
 
 **Safe pattern:**
 

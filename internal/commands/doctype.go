@@ -147,7 +147,8 @@ func doctypeCreate(deps Dependencies) *cobra.Command {
 	var jsonPayload string
 	var dryRun bool
 	var printTemplate bool
-	cmd := &cobra.Command{Use: "create", Short: "Create document type", RunE: func(cmd *cobra.Command, args []string) error {
+	var element bool
+	cmd := &cobra.Command{Use: "create", Short: "Create document type (pass --element to create an element type)", RunE: func(cmd *cobra.Command, args []string) error {
 		if printTemplate {
 			return printResult(cmd, deps, schema.Templates["doctype.create"])
 		}
@@ -162,6 +163,9 @@ func doctypeCreate(deps Dependencies) *cobra.Command {
 			return err
 		}
 		normalizeDoctypePayload(body)
+		if element {
+			body["isElement"] = true
+		}
 		result, err := deps.Client.Post(context.Background(), "/document-type", body, api.RequestOptions{DryRun: dryRun})
 		if err != nil {
 			return err
@@ -171,6 +175,7 @@ func doctypeCreate(deps Dependencies) *cobra.Command {
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Create payload as JSON")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
 	cmd.Flags().BoolVar(&printTemplate, "print-template", false, "Print an annotated JSON skeleton; substitute placeholders before passing to --json")
+	cmd.Flags().BoolVar(&element, "element", false, "Convenience flag for --json '{...,\"isElement\":true}'; overrides any isElement set in --json")
 	return cmd
 }
 
