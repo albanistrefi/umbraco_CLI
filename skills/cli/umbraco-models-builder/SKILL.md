@@ -22,21 +22,8 @@ umbraco models-builder <command> [flags]
 
 | Command | Description |
 |---------|-------------|
-| `models-builder build` | Trigger source generation (SourceCodeManual / SourceCodeAuto only) |
 | `models-builder dashboard` | Get dashboard: mode, modelsNamespace, outOfDate flag, last error |
 | `models-builder status` | Get out-of-date status: Current | OutOfDate | Unknown |
-
-### build
-
-```bash
-umbraco models-builder build
-```
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--poll-interval` | duration | 1s | How often to poll status when --wait is set |
-| `--timeout` | duration | 1m0s | How long to wait when --wait is set (e.g. 30s, 2m) |
-| `--wait` | bool | false | Poll status after triggering the build until it reports Current or --timeout elapses |
 
 ### dashboard
 
@@ -52,6 +39,37 @@ umbraco models-builder dashboard
 
 ```bash
 umbraco models-builder status
+```
+
+## Mutation Commands
+
+> **Safety:** Always use `--dry-run` first. Remove the flag only after verifying the dry-run output.
+
+| Command | Description |
+|---------|-------------|
+| `models-builder build` | Trigger source generation (SourceCodeManual / SourceCodeAuto only) |
+
+### build
+
+```bash
+umbraco models-builder build
+```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--dry-run` | bool | false | Run dashboard/mode pre-checks and return the planned POST without triggering generation; incompatible with --wait |
+| `--poll-interval` | duration | 1s | How often to poll status when --wait is set |
+| `--timeout` | duration | 1m0s | How long to wait when --wait is set (e.g. 30s, 2m) |
+| `--wait` | bool | false | Poll status after triggering the build until it reports Current or --timeout elapses |
+
+**Safe pattern:**
+
+```bash
+# 1. Dry run first
+umbraco models-builder build --dry-run
+
+# 2. Execute
+umbraco models-builder build
 ```
 
 ## Discovering Commands

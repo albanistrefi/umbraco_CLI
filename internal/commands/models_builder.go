@@ -69,11 +69,16 @@ func modelsBuilderBuild(deps Dependencies) *cobra.Command {
 	var wait bool
 	var timeout time.Duration
 	var pollInterval time.Duration
+	var dryRun bool
 	cmd := &cobra.Command{
 		Use:   "build",
 		Short: "Trigger source generation (SourceCodeManual / SourceCodeAuto only)",
-		Long:  "POSTs to /models-builder/build. Pre-checks the dashboard mode so non-source-generating modes (InMemory, Nothing) fail with a clear message instead of an opaque server error. With --wait, polls status until Current or --timeout elapses.",
+		Long:  "POSTs to /models-builder/build. Pre-checks the dashboard mode so non-source-generating modes (InMemory, Nothing) fail with a clear message instead of an opaque server error. With --wait, polls status until Current or --timeout elapses. --dry-run runs the dashboard/mode pre-checks and returns the planned POST without triggering generation.",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if dryRun && wait {
+				return fmt.Errorf("--dry-run does not trigger a build, so --wait has nothing to poll for; pass one or the other")
+			}
+
 			ctx := context.Background()
 
 			dashboard, err := deps.Client.Get(ctx, "/models-builder/dashboard", api.RequestOptions{})
@@ -95,7 +100,7 @@ func modelsBuilderBuild(deps Dependencies) *cobra.Command {
 				return fmt.Errorf("ModelsBuilder reports canGenerate=false; check the dashboard")
 			}
 
-			result, err := deps.Client.Post(ctx, "/models-builder/build", map[string]any{}, api.RequestOptions{})
+			result, err := deps.Client.Post(ctx, "/models-builder/build", map[string]any{}, api.RequestOptions{DryRun: dryRun})
 			if err != nil {
 				return err
 			}
@@ -128,6 +133,7 @@ func modelsBuilderBuild(deps Dependencies) *cobra.Command {
 	cmd.Flags().BoolVar(&wait, "wait", false, "Poll status after triggering the build until it reports Current or --timeout elapses")
 	cmd.Flags().DurationVar(&timeout, "timeout", 60*time.Second, "How long to wait when --wait is set (e.g. 30s, 2m)")
 	cmd.Flags().DurationVar(&pollInterval, "poll-interval", time.Second, "How often to poll status when --wait is set")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Run dashboard/mode pre-checks and return the planned POST without triggering generation; incompatible with --wait")
 	return cmd
 }
 
