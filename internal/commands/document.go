@@ -37,6 +37,9 @@ func RegisterDocument(root *cobra.Command, deps Dependencies) {
 	document.AddCommand(documentDelete(deps))
 	document.AddCommand(documentTrash(deps))
 	document.AddCommand(documentRestore(deps))
+	document.AddCommand(documentReferences(deps))
+	document.AddCommand(documentReferencedDescendants(deps))
+	document.AddCommand(documentAreReferenced(deps))
 
 	root.AddCommand(document)
 }
@@ -806,4 +809,110 @@ func documentRestore(deps Dependencies) *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
 	return cmd
+}
+
+// documentReferences wraps GET /document/{id}/referenced-by — "what other
+// items reference this document." Headline use case from the bug report:
+// content-audit questions like "which case studies reference the Media
+// sector node?" (orphan checks, safe-delete checks, taxonomy usage). The
+// endpoint returns the standard {items, total} envelope, so pagination
+// flags compose with it the same way they do on children/root.
+func documentReferences(deps Dependencies) *cobra.Command {
+	var fields string
+	var skip, take int
+	var all bool
+	var triage readTriageOptions
+	cmd := &cobra.Command{
+		Use:   "references <id>",
+		Short: "List items that reference this document (paginated; --skip/--take/--all)",
+		Long:  "Wraps GET /document/{id}/referenced-by. Used to answer 'what uses this node' for orphan checks, safe-delete verification, and taxonomy usage audits.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runReferencesQuery(cmd, deps, fmt.Sprintf("/document/%s/referenced-by", args[0]), fields, skip, take, all, triage)
+		},
+	}
+	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
+	addPaginationFlags(cmd, &skip, &take)
+	addAutoPaginationFlag(cmd, &all)
+	addReadTriageFlags(cmd, &triage)
+	return cmd
+}
+
+// documentReferencedDescendants wraps GET /document/{id}/referenced-descendants
+// — like 'references' but also includes references to any descendant of the
+// given node. Useful for 'is this whole subtree referenced anywhere outside
+// itself' checks before bulk-deleting or moving sections.
+func documentReferencedDescendants(deps Dependencies) *cobra.Command {
+	var fields string
+	var skip, take int
+	var all bool
+	var triage readTriageOptions
+	cmd := &cobra.Command{
+		Use:   "referenced-descendants <id>",
+		Short: "List items that reference this document or any of its descendants",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runReferencesQuery(cmd, deps, fmt.Sprintf("/document/%s/referenced-descendants", args[0]), fields, skip, take, all, triage)
+		},
+	}
+	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
+	addPaginationFlags(cmd, &skip, &take)
+	addAutoPaginationFlag(cmd, &all)
+	addReadTriageFlags(cmd, &triage)
+	return cmd
+}
+
+// documentAreReferenced wraps GET /document/are-referenced?id=... — a bulk
+// 'is anything referencing any of these?' check. Returns the subset of the
+// supplied ids that have references. Useful when iterating a candidate list
+// for deletion: filter to safe-to-delete before issuing the deletes.
+func documentAreReferenced(deps Dependencies) *cobra.Command {
+	var idsCSV string
+	cmd := &cobra.Command{
+		Use:   "are-referenced",
+		Short: "Bulk check: which of these document IDs are referenced by something",
+		Long:  "GET /document/are-referenced?id=<csv>. Returns the ids that have at least one inbound reference; safe-to-delete candidates are the complement.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ids := uniqueCSV(idsCSV)
+			if len(ids) == 0 {
+				return fmt.Errorf("document are-referenced requires --ids <comma-separated guids>")
+			}
+			anyIDs := make([]any, len(ids))
+			for i, v := range ids {
+				anyIDs[i] = v
+			}
+			result, err := deps.Client.Get(context.Background(), "/document/are-referenced", api.RequestOptions{Params: map[string]any{"id": anyIDs}})
+			if err != nil {
+				return err
+			}
+			return printResult(cmd, deps, result)
+		},
+	}
+	cmd.Flags().StringVar(&idsCSV, "ids", "", "Comma-separated document GUIDs to check (required)")
+	return cmd
+}
+
+// runReferencesQuery is the shared body for 'references' and
+// 'referenced-descendants'. The two endpoints have identical request/response
+// shapes, so the only thing that differs at the command layer is the path.
+// Threading the path through here keeps the pagination/triage plumbing in
+// one place instead of duplicated per-command.
+func runReferencesQuery(cmd *cobra.Command, deps Dependencies, path string, fields string, skip int, take int, all bool, triage readTriageOptions) error {
+	ctx := context.Background()
+	candidate := getRequestCandidate{
+		path: path,
+		opts: api.RequestOptions{Fields: fields, Params: applyPaginationParams(nil, skip, take)},
+	}
+
+	var result any
+	var err error
+	if all {
+		result, err = getAllPagesWithFallback(ctx, deps.Client, take, skip, triage.FirstN, candidate)
+	} else {
+		result, err = getWithFallback(ctx, deps.Client, candidate)
+	}
+	if err != nil {
+		return err
+	}
+	return printResult(cmd, deps, applyReadTriage(applyFieldsProjection(result, fields), triage))
 }

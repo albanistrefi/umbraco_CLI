@@ -1241,3 +1241,83 @@ func TestDocumentChildrenAllRespectsFirstNAsEarlyStop(t *testing.T) {
 		t.Fatalf("expected --first-n 150 to stop after the first 500-item page, got %d pages", got)
 	}
 }
+
+// 'document references' wraps /document/{id}/referenced-by and shares the
+// pagination plumbing with children/root, so the same skip/take/all flags
+// pass through to the URL.
+func TestDocumentReferencesPassesPaginationToReferencedByEndpoint(t *testing.T) {
+	var observedQuery string
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/document/doc-1/referenced-by":
+			observedQuery = req.URL.RawQuery
+			return endpointJSONResponse(http.StatusOK, `{"items":[{"id":"ref-1"},{"id":"ref-2"}],"total":2}`), nil
+		}
+		return endpointJSONResponse(http.StatusNotFound, `null`), nil
+	})
+
+	output, err := execute(buildRootWithCollections(t, deps), "document", "references", "doc-1", "--skip", "10", "--take", "50")
+	if err != nil {
+		t.Fatalf("references failed: %v", err)
+	}
+	for _, want := range []string{"skip=10", "take=50"} {
+		if !strings.Contains(observedQuery, want) {
+			t.Fatalf("expected %q in query, got %q", want, observedQuery)
+		}
+	}
+	if !strings.Contains(output, "ref-1") {
+		t.Fatalf("expected response body to surface, got %q", output)
+	}
+}
+
+func TestDocumentReferencedDescendantsHitsDescendantsEndpoint(t *testing.T) {
+	var hit bool
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/document/doc-1/referenced-descendants":
+			hit = true
+			return endpointJSONResponse(http.StatusOK, `{"items":[],"total":0}`), nil
+		}
+		return endpointJSONResponse(http.StatusNotFound, `null`), nil
+	})
+	if _, err := execute(buildRootWithCollections(t, deps), "document", "referenced-descendants", "doc-1"); err != nil {
+		t.Fatalf("referenced-descendants failed: %v", err)
+	}
+	if !hit {
+		t.Fatalf("expected the descendants endpoint to be called")
+	}
+}
+
+func TestDocumentAreReferencedRequiresIDsAndRepeatsQueryParam(t *testing.T) {
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		return endpointJSONResponse(http.StatusNotFound, `null`), nil
+	})
+	if _, err := execute(buildRootWithCollections(t, deps), "document", "are-referenced"); err == nil {
+		t.Fatalf("expected error when --ids is missing")
+	}
+
+	var observedQuery string
+	deps = endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/document/are-referenced":
+			observedQuery = req.URL.RawQuery
+			return endpointJSONResponse(http.StatusOK, `{"items":["doc-1"],"total":1}`), nil
+		}
+		return endpointJSONResponse(http.StatusNotFound, `null`), nil
+	})
+	if _, err := execute(buildRootWithCollections(t, deps), "document", "are-referenced", "--ids", "doc-1,doc-2,doc-3"); err != nil {
+		t.Fatalf("are-referenced failed: %v", err)
+	}
+	// Each id must be its own ?id=...&id=... entry.
+	for _, want := range []string{"id=doc-1", "id=doc-2", "id=doc-3"} {
+		if !strings.Contains(observedQuery, want) {
+			t.Fatalf("expected %q in query, got %q", want, observedQuery)
+		}
+	}
+}

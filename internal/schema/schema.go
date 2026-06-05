@@ -57,6 +57,9 @@ var rawSchemas = map[string]rawSchema{
 	"document.delete":            {Method: "DELETE", Path: "/document/{id}", PathParams: map[string]ParamSchema{"id": idParam}},
 	"document.trash":             {Method: "POST", Path: "/document/{id}/move-to-recycle-bin", PathParams: map[string]ParamSchema{"id": idParam}},
 	"document.restore":           {Method: "POST", Path: "/document/{id}/restore", PathParams: map[string]ParamSchema{"id": idParam}},
+	"document.references":             {Method: "GET", Path: "/document/{id}/referenced-by", PathParams: map[string]ParamSchema{"id": idParam}, QueryParams: map[string]ParamSchema{"skip": {Type: "number"}, "take": {Type: "number"}}},
+	"document.referenced-descendants": {Method: "GET", Path: "/document/{id}/referenced-descendants", PathParams: map[string]ParamSchema{"id": idParam}, QueryParams: map[string]ParamSchema{"skip": {Type: "number"}, "take": {Type: "number"}}},
+	"document.are-referenced":         {Method: "GET", Path: "/document/are-referenced", QueryParams: map[string]ParamSchema{"id": {Type: "array", Format: "uuid", Required: true, Description: "Repeat the id query parameter for each document"}}},
 
 	// dictionary (12)
 	"dictionary.list":      {Method: "GET", Path: "/dictionary", QueryParams: map[string]ParamSchema{"filter": {Type: "string"}, "skip": {Type: "number"}, "take": {Type: "number"}}},

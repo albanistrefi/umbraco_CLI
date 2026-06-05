@@ -1,7 +1,7 @@
 package commands
 
 var ExpectedCollectionCommandCounts = map[string]int{
-	"document":       17,
+	"document":       20,
 	"dictionary":     6,
 	"media":          12,
 	"doctype":        12,
