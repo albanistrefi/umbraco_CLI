@@ -52,6 +52,8 @@ func getAllPagesWithFallback(
 	var all []any
 	var total any
 	skip := baseSkip
+	exhausted := false
+	limitReached := false
 
 	for iter := 0; iter < autoPaginateMaxPages; iter++ {
 		paged := make([]getRequestCandidate, len(candidates))
@@ -85,12 +87,25 @@ func getAllPagesWithFallback(
 
 		if limit > 0 && len(all) >= limit {
 			all = all[:limit]
+			limitReached = true
 			break
 		}
 		if len(items) < pageSize {
+			exhausted = true
 			break
 		}
 		skip += pageSize
+	}
+
+	// If neither exit condition fired the loop hit the safety ceiling
+	// (autoPaginateMaxPages × pageSize items pulled, no short page seen).
+	// Returning a normal envelope here would silently truncate large
+	// collections — surface it as an error so callers don't mistake a cap
+	// hit for a complete walk. --first-n early exits do NOT count as
+	// truncation: the caller asked for at most N items and got them.
+	if !exhausted && !limitReached {
+		return nil, fmt.Errorf("--all hit the safety ceiling of %d pages × %d items = %d after %d items collected; the collection has more items than the auto-paginator will walk in one shot. Use --skip %d to resume from this offset, or --take with a larger page size to raise the ceiling",
+			autoPaginateMaxPages, pageSize, autoPaginateMaxPages*pageSize, len(all), skip+pageSize)
 	}
 
 	return map[string]any{"items": all, "total": total}, nil

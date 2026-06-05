@@ -1343,3 +1343,42 @@ func TestMediaReferencesHitsMediaReferencedByEndpoint(t *testing.T) {
 		t.Fatalf("expected the media referenced-by endpoint to be called")
 	}
 }
+
+// Regression for the silent-truncation bug surfaced by Codex review.
+// When --all hits the safety ceiling (200 pages × 500 items = 100k items)
+// without the server ever returning a short page, the helper must error
+// out — silently returning the first 100k items would let callers mistake
+// a cap hit for a complete walk.
+func TestDocumentChildrenAllErrorsOnSafetyCeiling(t *testing.T) {
+	var pages int32
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/tree/document/children":
+			atomic.AddInt32(&pages, 1)
+			// Always return a full page so the loop never sees a short page
+			// and runs straight into the cap. Use a small page size (--take
+			// 5) so the cap is hit in 200 quick iterations rather than
+			// 200 × default 500 = 100k network round-trips in the test.
+			items := make([]string, 5)
+			for i := range items {
+				items[i] = `{"id":"x"}`
+			}
+			return endpointJSONResponse(http.StatusOK, `{"items":[`+strings.Join(items, ",")+`],"total":999999}`), nil
+		}
+		return endpointJSONResponse(http.StatusNotFound, `null`), nil
+	})
+
+	_, err := execute(buildRootWithCollections(t, deps), "document", "children", "doc-1", "--all", "--take", "5")
+	if err == nil {
+		t.Fatalf("expected --all to error on the safety ceiling, got success")
+	}
+	if !strings.Contains(err.Error(), "safety ceiling") {
+		t.Fatalf("error should mention 'safety ceiling', got: %v", err)
+	}
+	// Sanity: the loop did walk the full cap before giving up.
+	if got := atomic.LoadInt32(&pages); got != 200 {
+		t.Fatalf("expected 200 pages walked before bailing, got %d", got)
+	}
+}
