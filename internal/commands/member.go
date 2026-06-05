@@ -20,7 +20,7 @@ func RegisterMember(root *cobra.Command, deps Dependencies) {
 		Use:     "member",
 		Aliases: []string{"members"},
 		Short:   "Front-office member operations (login, profile, groups)",
-		Long:    "Wraps /umbraco/management/api/v1/member and /filter/member. Lookups, edits, group assignment, plus convenience commands for the common diagnostic flows (approve, unlock, set-groups).",
+		Long:    "Wraps /umbraco/management/api/v1/member and /filter/member. Lookups, edits, and group assignment.",
 	}
 	member.AddCommand(memberList(deps))
 	member.AddCommand(memberSearch(deps))
@@ -160,13 +160,14 @@ func memberUpdate(deps Dependencies) *cobra.Command {
 		Short: "Update a member (fetch-and-merge)",
 		Long: `Both --json and --merge-json fetch the current member, deep-merge the patch, and PUT the merged result. This matches the datatype/document fix: an unmentioned field is never silently dropped.
 
-Known API limitation (Umbraco 17.x): the Management API's UpdateMemberRequestModel does NOT accept the following fields, even though they appear on the read model. Including them in the patch returns 204 but the server-side value does not change:
+Known API limitation (Umbraco 17.x): the Management API's UpdateMemberRequestModel does NOT accept the following fields, even though they appear on the read model. The CLI rejects any patch that includes them up front — letting the request through would silently return 204 with the server value unchanged, producing a false-positive {"updated": true}:
   - isApproved
   - isLockedOut
   - failedPasswordAttempts
+  - isTwoFactorEnabled
 
-These are managed by the auth subsystem (login flow / backoffice action). The CLI does not silently rewrite the request — it sends what you ask — but agents should be aware that mutating these via 'member update' is a no-op.`,
-		Args:  cobra.ExactArgs(1),
+These are managed by the auth subsystem (login flow / backoffice action), not by PUT /member/{id}.`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			hasJSON := strings.TrimSpace(jsonPayload) != ""
 			hasMergeJSON := strings.TrimSpace(mergeJSON) != ""
@@ -180,6 +181,9 @@ These are managed by the auth subsystem (login flow / backoffice action). The CL
 			patch, err := parsePayload(raw)
 			if err != nil {
 				return err
+			}
+			if blocked := readOnlyMemberKeysIn(patch); len(blocked) > 0 {
+				return fmt.Errorf("the Management API silently ignores these fields on PUT /member/{id} — including them would surface as {\"updated\": true} while the server value never changes: %s", strings.Join(blocked, ", "))
 			}
 			current, err := fetchMemberObject(context.Background(), deps.Client, args[0])
 			if err != nil {
@@ -259,8 +263,8 @@ func memberDelete(deps Dependencies) *cobra.Command {
 	return cmd
 }
 
-// memberMutationSummary describes a member convenience mutation (approve /
-// unlock / set-groups). Changed=false signals no PUT was issued because the
+// memberMutationSummary describes a member convenience mutation (currently
+// only set-groups). Changed=false signals no PUT was issued because the
 // member was already in the target state, matching the idempotent pattern
 // used by 'datatype block add/remove'.
 type memberMutationSummary struct {
@@ -445,4 +449,30 @@ func stringSlicesEqualUnordered(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+// memberUpdateReadOnlyFields are the fields that exist on
+// MemberResponseModel but NOT on UpdateMemberRequestModel — the API
+// accepts patches containing them with a 204, but the server value
+// does not change. We refuse them at the CLI layer so agents don't
+// get false-positive {"updated": true} signals.
+//
+// Verified live against Umbraco 17.4.2: PUT /member/{id} with any of
+// these in the body returns 204; subsequent GET shows the value
+// unchanged. No dedicated mutation endpoints exist either.
+var memberUpdateReadOnlyFields = []string{
+	"isApproved",
+	"isLockedOut",
+	"failedPasswordAttempts",
+	"isTwoFactorEnabled",
+}
+
+func readOnlyMemberKeysIn(patch map[string]any) []string {
+	hits := []string{}
+	for _, key := range memberUpdateReadOnlyFields {
+		if _, present := patch[key]; present {
+			hits = append(hits, key)
+		}
+	}
+	return hits
 }

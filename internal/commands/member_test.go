@@ -225,3 +225,40 @@ func TestMemberGroupListFallsBackToTreeRoot(t *testing.T) {
 		t.Fatalf("expected fallback to /tree/member-group/root after /member-group 404, got %v", observedPaths)
 	}
 }
+
+// Codex re-review caught that 'member update' would still produce
+// {"updated":true} for a patch containing isApproved / isLockedOut /
+// failedPasswordAttempts / isTwoFactorEnabled — the Management API
+// accepts the PUT (204) but doesn't change the field, so the CLI's
+// help text was the only safeguard. Now reject those keys up front.
+func TestMemberUpdateRejectsReadOnlyFields(t *testing.T) {
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case memberAPIPath:
+			t.Fatalf("read-only-field patch must be rejected before any HTTP call")
+			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		}
+		return endpointJSONResponse(http.StatusNotFound, `null`), nil
+	})
+
+	for _, field := range []string{"isApproved", "isLockedOut", "failedPasswordAttempts", "isTwoFactorEnabled"} {
+		_, err := execute(buildRootWithCollections(t, deps), "member", "update", memberID, "--merge-json", `{"`+field+`":true}`)
+		if err == nil {
+			t.Fatalf("expected --merge-json with %q to be rejected", field)
+		}
+		if !strings.Contains(err.Error(), field) {
+			t.Fatalf("error must name the offending field %q, got: %v", field, err)
+		}
+	}
+}
+
+// Patches without any read-only field still work — sanity check that the
+// rejection isn't catching everything.
+func TestMemberUpdateAllowsLegitimateFields(t *testing.T) {
+	deps, _ := mockMemberMutations(t)
+	if _, err := execute(buildRootWithCollections(t, deps), "member", "update", memberID, "--merge-json", `{"email":"new@example.invalid"}`); err != nil {
+		t.Fatalf("legitimate update must pass the read-only gate: %v", err)
+	}
+}
