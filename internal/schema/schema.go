@@ -256,7 +256,6 @@ var Templates = map[string]any{
 			"culture": "<culture, optional; null for invariant>",
 			"segment": "<segment, optional; null for unsegmented>",
 		}},
-		"_apiNote_readOnlyFields": "isApproved, isLockedOut, failedPasswordAttempts, and isTwoFactorEnabled appear on the GET response but are NOT accepted by POST /member or PUT /member/{id} on Umbraco 17.x — they are managed by the auth subsystem. Including them in the payload returns 2xx but the server value does not change.",
 	},
 }
 
