@@ -1321,3 +1321,25 @@ func TestDocumentAreReferencedRequiresIDsAndRepeatsQueryParam(t *testing.T) {
 		}
 	}
 }
+
+// Media references symmetry — should hit the /media/{id}/referenced-by path
+// exactly like document references hits /document/.../referenced-by.
+func TestMediaReferencesHitsMediaReferencedByEndpoint(t *testing.T) {
+	var hit bool
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/media/m-1/referenced-by":
+			hit = true
+			return endpointJSONResponse(http.StatusOK, `{"items":[],"total":0}`), nil
+		}
+		return endpointJSONResponse(http.StatusNotFound, `null`), nil
+	})
+	if _, err := execute(buildRootWithCollections(t, deps), "media", "references", "m-1"); err != nil {
+		t.Fatalf("media references failed: %v", err)
+	}
+	if !hit {
+		t.Fatalf("expected the media referenced-by endpoint to be called")
+	}
+}

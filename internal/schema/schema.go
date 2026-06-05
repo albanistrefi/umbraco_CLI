@@ -88,6 +88,9 @@ var rawSchemas = map[string]rawSchema{
 	"media.move":          {Method: "POST", Path: "/media/{id}/move", PathParams: map[string]ParamSchema{"id": idParam}, RequestBody: genericRequestBody},
 	"media.delete":        {Method: "DELETE", Path: "/media/{id}", PathParams: map[string]ParamSchema{"id": idParam}},
 	"media.trash":         {Method: "POST", Path: "/media/{id}/move-to-recycle-bin", PathParams: map[string]ParamSchema{"id": idParam}},
+	"media.references":             {Method: "GET", Path: "/media/{id}/referenced-by", PathParams: map[string]ParamSchema{"id": idParam}, QueryParams: map[string]ParamSchema{"skip": {Type: "number"}, "take": {Type: "number"}}},
+	"media.referenced-descendants": {Method: "GET", Path: "/media/{id}/referenced-descendants", PathParams: map[string]ParamSchema{"id": idParam}, QueryParams: map[string]ParamSchema{"skip": {Type: "number"}, "take": {Type: "number"}}},
+	"media.are-referenced":         {Method: "GET", Path: "/media/are-referenced", QueryParams: map[string]ParamSchema{"id": {Type: "array", Format: "uuid", Required: true, Description: "Repeat the id query parameter for each media item"}}},
 
 	// doctype (10)
 	"doctype.get":      {Method: "GET", Path: "/document-type/{id}", PathParams: map[string]ParamSchema{"id": idParam}, QueryParams: map[string]ParamSchema{"fields": fieldsQuery}},
