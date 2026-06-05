@@ -101,7 +101,7 @@ umbraco document search
 | `document trash <id>` | Move a document to recycle bin |
 | `document unpublish <id>` | Unpublish a document |
 | `document update <id>` | Update a document |
-| `document update-properties <id>` | Update document properties |
+| `document update-properties <id>` | Update document properties (merges into values[] by alias) |
 
 ### bulk-update
 
@@ -341,7 +341,7 @@ umbraco document update-properties <id>
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--dry-run` | bool | false | Validate request without executing |
-| `--json` | string | — | Properties payload as JSON |
+| `--json` | string | — | Properties payload as JSON; accepts object {alias: value}, array [{alias, value, culture?, segment?}], or envelope {"values":[...]} |
 
 **Safe pattern:**
 

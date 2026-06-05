@@ -2,8 +2,11 @@ package commands
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -312,6 +315,9 @@ func documentUpdate(deps Dependencies) *cobra.Command {
 			}
 
 			if !saveAndPublish {
+				if !dryRun && result == nil {
+					return printResult(cmd, deps, map[string]any{"updated": true})
+				}
 				return printResult(cmd, deps, result)
 			}
 
@@ -319,15 +325,15 @@ func documentUpdate(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			publishResult, err := deps.Client.Put(context.Background(), fmt.Sprintf("/document/%s/publish", args[0]), publishBody, api.RequestOptions{DryRun: dryRun})
+			publishResult, err := publishWithInvariantRaceRetry(context.Background(), deps.Client, args[0], publishBody, api.RequestOptions{DryRun: dryRun})
 			if err != nil {
 				return err
 			}
 
 			return printResult(cmd, deps, map[string]any{
 				"saveAndPublish": true,
-				"updated":        result,
-				"published":      publishResult,
+				"updated":        coalescePutResult(result, dryRun),
+				"published":      coalescePutResult(publishResult, dryRun),
 			})
 		},
 	}
@@ -454,31 +460,99 @@ func documentUpdateProperties(deps Dependencies) *cobra.Command {
 	var dryRun bool
 	cmd := &cobra.Command{
 		Use:   "update-properties <id>",
-		Short: "Update document properties",
-		Args:  cobra.ExactArgs(1),
+		Short: "Update document properties (merges into values[] by alias)",
+		Long: `Updates one or more property values on a document by merging into its values[] array.
+
+Three input shapes are accepted:
+
+  Object form (most common for invariant docs):
+    --json '{"isFeatured": true, "products": ["Umbraco CMS"]}'
+    Each key becomes a values[] entry with culture=null, segment=null.
+
+  Array form (for culture/segment-variant properties):
+    --json '[{"alias":"title","value":"Hi","culture":"en-US","segment":null}]'
+    Used verbatim as values[].
+
+  Envelope form (matches 'document update --merge-json'):
+    --json '{"values":[{"alias":"title","value":"Hi","culture":null,"segment":null}]}'
+
+In all shapes the resulting values[] is merged by alias into the current document, so untouched properties survive.`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := requireValue("--json", jsonPayload); err != nil {
 				return err
 			}
-			body, err := parsePayload(jsonPayload)
+			patch, err := buildUpdatePropertiesPatch(jsonPayload)
 			if err != nil {
 				return err
 			}
+
 			current, err := fetchDocumentObject(context.Background(), deps.Client, args[0])
 			if err != nil {
 				return err
 			}
-			merged := mergeAliasPayload(current, body)
+			merged := mergeAliasPayload(current, patch)
 			result, err := deps.Client.Put(context.Background(), fmt.Sprintf("/document/%s", args[0]), merged, api.RequestOptions{DryRun: dryRun, SkipValidation: true})
 			if err != nil {
 				return err
 			}
+			if !dryRun && result == nil {
+				return printResult(cmd, deps, map[string]any{"updated": true})
+			}
 			return printResult(cmd, deps, result)
 		},
 	}
-	cmd.Flags().StringVar(&jsonPayload, "json", "", "Properties payload as JSON")
+	cmd.Flags().StringVar(&jsonPayload, "json", "", "Properties payload as JSON; accepts object {alias: value}, array [{alias, value, culture?, segment?}], or envelope {\"values\":[...]}")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
 	return cmd
+}
+
+// buildUpdatePropertiesPatch normalizes the three accepted input shapes into
+// a {"values":[...]} envelope ready to merge into the current document via
+// mergeAliasPayload. Returning a structured error here means update-properties
+// never silently sends a payload the Management API will ignore — which was
+// the v0.3.15 footgun where object-shape input landed at the document root
+// instead of inside values[].
+func buildUpdatePropertiesPatch(raw string) (map[string]any, error) {
+	var parsed any
+	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+		return nil, fmt.Errorf("invalid --json: %w", err)
+	}
+
+	switch payload := parsed.(type) {
+	case []any:
+		// Array form: assumed to already be values[] entries.
+		for i, item := range payload {
+			entry, ok := item.(map[string]any)
+			if !ok {
+				return nil, fmt.Errorf("--json array entry %d must be an object with 'alias' and 'value' keys", i)
+			}
+			if _, hasAlias := entry["alias"]; !hasAlias {
+				return nil, fmt.Errorf("--json array entry %d is missing required 'alias' key", i)
+			}
+		}
+		return map[string]any{"values": payload}, nil
+
+	case map[string]any:
+		// Envelope form: { "values": [...] }
+		if values, isEnvelope := payload["values"].([]any); isEnvelope && len(payload) == 1 {
+			return map[string]any{"values": values}, nil
+		}
+		// Object form: { alias: value, ... } → values entries.
+		values := make([]any, 0, len(payload))
+		for alias, value := range payload {
+			values = append(values, map[string]any{
+				"alias":   alias,
+				"value":   value,
+				"culture": nil,
+				"segment": nil,
+			})
+		}
+		return map[string]any{"values": values}, nil
+
+	default:
+		return nil, fmt.Errorf("--json must be an object, an array of values entries, or an envelope {\"values\":[...]}; got %T", parsed)
+	}
 }
 
 func documentPublish(deps Dependencies) *cobra.Command {
@@ -505,6 +579,74 @@ func documentPublish(deps Dependencies) *cobra.Command {
 	cmd.Flags().StringVar(&culture, "culture", "", "Culture shortcut")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
 	return cmd
+}
+
+// coalescePutResult returns true for a real (non-dry-run) PUT whose response
+// body was empty (Umbraco answers 204 No Content for successful document
+// update/publish calls, which surfaces as a nil result through the HTTP
+// client). The previous behaviour of returning nil here surfaced as
+// {"updated":null,"published":null} in --save-and-publish output, which
+// scripts could not distinguish from failure.
+func coalescePutResult(result any, dryRun bool) any {
+	if dryRun {
+		return result
+	}
+	if result == nil {
+		return true
+	}
+	return result
+}
+
+// invariantRaceMaxAttempts is the upper bound on retries for the spurious
+// "culture for invariant content" 400 that the Management API throws under
+// rapid back-to-back save-and-publish loops. The error is timing-dependent
+// and clears on retry; 4 attempts with exponential-ish backoff matches what
+// the bug report saw work in practice.
+const invariantRaceMaxAttempts = 4
+
+var invariantRaceBackoffs = []time.Duration{200 * time.Millisecond, 500 * time.Millisecond, 1 * time.Second}
+
+// publishWithInvariantRaceRetry PUTs the publish body and retries on the
+// specific 400 "culture for invariant content" error that Umbraco intermittently
+// returns under tight save-and-publish loops on invariant content. The
+// payload is valid (verified via --dry-run in the bug report) — the same
+// request succeeds on retry, so the retry is the right correctness-preserving
+// workaround at the CLI layer. Other 400s are surfaced immediately.
+func publishWithInvariantRaceRetry(ctx context.Context, client *api.Client, id string, body map[string]any, opts api.RequestOptions) (any, error) {
+	path := fmt.Sprintf("/document/%s/publish", id)
+	var lastErr error
+	for attempt := 0; attempt < invariantRaceMaxAttempts; attempt++ {
+		result, err := client.Put(ctx, path, body, opts)
+		if err == nil {
+			return result, nil
+		}
+		if opts.DryRun || !isInvariantContentRaceError(err) || attempt == invariantRaceMaxAttempts-1 {
+			return nil, err
+		}
+		lastErr = err
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(invariantRaceBackoffs[attempt]):
+		}
+	}
+	return nil, lastErr
+}
+
+// isInvariantContentRaceError matches the spurious 400 the Management API
+// returns under the save-and-publish race. The payload looks like
+// {"detail":"One or more property values specify a culture for an [invariant content]"}.
+// Substring-match on "invariant content" inside the rendered error is robust
+// to message phrasing tweaks without false-positiving on unrelated 400s.
+func isInvariantContentRaceError(err error) bool {
+	var apiErr *api.APIError
+	if !errors.As(err, &apiErr) {
+		return false
+	}
+	if apiErr.StatusCode != 400 {
+		return false
+	}
+	return strings.Contains(apiErr.Error(), "invariant content")
 }
 
 func documentPublishBody(jsonPayload string, culture string) (map[string]any, error) {
