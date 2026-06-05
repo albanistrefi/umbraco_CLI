@@ -262,3 +262,35 @@ func TestMemberUpdateAllowsLegitimateFields(t *testing.T) {
 		t.Fatalf("legitimate update must pass the read-only gate: %v", err)
 	}
 }
+
+// Symmetric guard: 'member create --json' must reject the same read-only
+// fields that 'member update' does. Otherwise an agent that passes
+// isApproved=true at create time gets a successful create with the
+// server-side default (false), which is the same false-positive shape
+// the update-side gate was added to prevent.
+func TestMemberCreateRejectsReadOnlyFields(t *testing.T) {
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/member":
+			t.Fatalf("read-only-field create payload must be rejected before any HTTP call")
+			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		}
+		return endpointJSONResponse(http.StatusNotFound, `null`), nil
+	})
+
+	for _, field := range []string{"isApproved", "isLockedOut", "failedPasswordAttempts", "isTwoFactorEnabled"} {
+		_, err := execute(
+			buildRootWithCollections(t, deps),
+			"member", "create",
+			"--json", `{"email":"x@example.invalid","username":"x","password":"P@ss!123","memberType":{"id":"mt-1"},"`+field+`":true}`,
+		)
+		if err == nil {
+			t.Fatalf("expected create with %q to be rejected", field)
+		}
+		if !strings.Contains(err.Error(), field) {
+			t.Fatalf("error must name the offending field %q, got: %v", field, err)
+		}
+	}
+}

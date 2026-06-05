@@ -143,6 +143,9 @@ These are managed by the auth subsystem (login flow / backoffice action), not by
 			if err != nil {
 				return err
 			}
+			if blocked := readOnlyMemberKeysIn(body); len(blocked) > 0 {
+				return fmt.Errorf("POST /member silently ignores these fields — including them would surface as a successful create while the server value is set to its default, not what you asked for: %s", strings.Join(blocked, ", "))
+			}
 			if _, err := ensurePayloadID(body); err != nil {
 				return err
 			}
