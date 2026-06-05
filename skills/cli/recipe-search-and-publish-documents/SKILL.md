@@ -2,7 +2,7 @@
 name: recipe-search-and-publish-documents
 description: "Search for documents matching a query and publish them."
 metadata:
-  version: 0.3.15
+  version: 0.3.16
   requires:
     bins:
       - umbraco

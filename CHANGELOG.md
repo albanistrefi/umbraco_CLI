@@ -1,5 +1,30 @@
 # Changelog
 
+## v0.3.16 - 2026-06-05
+
+### Document fixes
+
+- fixed `document update-properties --json` silently no-op'ing when given an object payload — keys landed at the document root instead of merging into `values[]`. The parser now accepts three shapes (object `{alias: value}`, array `[{alias, value, culture?, segment?}]`, envelope `{"values": [...]}`) and rejects malformed payloads loudly
+- fixed `document update --save-and-publish` returning `{"published": null, "updated": null}` on 204 No Content — both flags are now `true` booleans on success
+- added retry-on-race for the spurious `"culture for an [invariant content]"` 400 that the Management API throws under rapid back-to-back save-and-publish loops (200ms / 500ms / 1s backoffs, max 4 attempts). Other 400s surface immediately
+- fixed `mergeAliasObjectArrays` collapsing culture-variant entries — values[] now keys by `(alias, culture, segment)` so a patch updating the same alias on two cultures doesn't overwrite one with the other
+
+### New command surfaces
+
+- added `member` command group (list / search / get / create / update / update-properties / delete / set-groups) and `member-group` (list / get), closing the gap where the entire backoffice Members section was unreachable from the CLI
+- added `member` read-only-field guards: `member create` and `member update` reject patches containing `isApproved`, `isLockedOut`, `failedPasswordAttempts`, or `isTwoFactorEnabled` because the Management API silently ignores them (verified live against v17.4.2). Help text documents the API limitation explicitly
+- added `document references <id>` / `document referenced-descendants <id>` / `document are-referenced --ids …` wrapping the Management API's tracked-references endpoints — answers "what uses this node" for orphan checks, safe-delete checks, and taxonomy usage audits
+- added `media references <id>` / `media referenced-descendants <id>` / `media are-referenced --ids …` — symmetric port of the above to media assets
+
+### Pagination
+
+- added `--skip` and `--take` flags to `document/media/doctype children` and `root` — was capped at the server's default page (~100) with no way to walk past it. `--first-n` is a client-side cap on a single response; `--skip` lets you paginate
+- added `--all` flag to the same commands for auto-paginated walks. Defaults to 500-item pages, capped internally at 100k items, honours `--first-n` as an early stop. Errors with a precise resume offset if it hits the safety ceiling without exhausting the collection
+
+### Generated SKILL.md improvements
+
+- the skill generator now propagates each command's `cobra.Long` help text into the generated SKILL.md, so agents reading the skill file see the same warnings a human gets from `--help` (notably the API-limitation callouts on `member create` and `member update`)
+
 ## v0.3.15 - 2026-06-04
 
 - added `models-builder` command group (`dashboard`, `status`, `build`) wrapping `/umbraco/management/api/v1/models-builder/*`; `build --wait` polls until `Current` so scripts can sequence `doctype create → build --wait → dotnet build`. `build` pre-checks dashboard mode (refuses `InMemory`/`Nothing` with a clear message) and `canGenerate` (surfaces `lastError` instead of POSTing into a guaranteed failure). `--dry-run` returns the planned POST without triggering generation.
