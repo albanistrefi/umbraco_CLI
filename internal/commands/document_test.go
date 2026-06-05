@@ -1114,3 +1114,53 @@ func TestDocumentSaveAndPublishDoesNotRetryUnrelated400s(t *testing.T) {
 		t.Fatalf("expected exactly one publish attempt for non-race 400, got %d", got)
 	}
 }
+
+// Regression: document children was capped at the server's default page (~100)
+// because --skip/--take weren't exposed. The flags now pass through verbatim
+// and the request URL carries them — so '--first-n N' is a client-side cap
+// on a per-page response, while --skip lets you walk past page 1.
+func TestDocumentChildrenPassesSkipAndTakeAsQueryParams(t *testing.T) {
+	var observedQuery string
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/tree/document/children":
+			observedQuery = req.URL.RawQuery
+			return endpointJSONResponse(http.StatusOK, `{"items":[],"total":0}`), nil
+		}
+		return endpointJSONResponse(http.StatusNotFound, `null`), nil
+	})
+
+	if _, err := execute(buildRootWithCollections(t, deps), "document", "children", "doc-1", "--skip", "100", "--take", "100"); err != nil {
+		t.Fatalf("children failed: %v", err)
+	}
+	for _, want := range []string{"parentId=doc-1", "skip=100", "take=100"} {
+		if !strings.Contains(observedQuery, want) {
+			t.Fatalf("expected query to contain %q, got %q", want, observedQuery)
+		}
+	}
+}
+
+func TestDocumentRootPassesSkipAndTakeAsQueryParams(t *testing.T) {
+	var observedQuery string
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/tree/document/root":
+			observedQuery = req.URL.RawQuery
+			return endpointJSONResponse(http.StatusOK, `{"items":[],"total":0}`), nil
+		}
+		return endpointJSONResponse(http.StatusNotFound, `null`), nil
+	})
+
+	if _, err := execute(buildRootWithCollections(t, deps), "document", "root", "--skip", "50", "--take", "25"); err != nil {
+		t.Fatalf("root failed: %v", err)
+	}
+	for _, want := range []string{"skip=50", "take=25"} {
+		if !strings.Contains(observedQuery, want) {
+			t.Fatalf("expected query to contain %q, got %q", want, observedQuery)
+		}
+	}
+}

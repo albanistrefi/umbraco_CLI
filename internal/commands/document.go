@@ -62,15 +62,17 @@ func documentGet(deps Dependencies) *cobra.Command {
 func documentRoot(deps Dependencies) *cobra.Command {
 	var fields string
 	var paramsRaw string
+	var skip, take int
 	var triage readTriageOptions
 	cmd := &cobra.Command{
 		Use:   "root",
-		Short: "Get root documents",
+		Short: "Get root documents (paginated; use --skip/--take to walk past the server page size)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			params, err := parseParams(paramsRaw)
 			if err != nil {
 				return err
 			}
+			params = applyPaginationParams(params, skip, take)
 			result, err := getWithFallback(
 				context.Background(),
 				deps.Client,
@@ -85,28 +87,32 @@ func documentRoot(deps Dependencies) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
 	cmd.Flags().StringVar(&paramsRaw, "params", "", "Query parameters as JSON")
+	addPaginationFlags(cmd, &skip, &take)
 	addReadTriageFlags(cmd, &triage)
 	return cmd
 }
 
 func documentChildren(deps Dependencies) *cobra.Command {
 	var fields string
+	var skip, take int
 	var triage readTriageOptions
 	cmd := &cobra.Command{
 		Use:   "children <id>",
-		Short: "Get child documents",
+		Short: "Get child documents (paginated; use --skip/--take to walk past the server page size)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			treeParams := applyPaginationParams(map[string]any{"parentId": args[0]}, skip, take)
+			legacyParams := applyPaginationParams(nil, skip, take)
 			result, err := getWithFallback(
 				context.Background(),
 				deps.Client,
 				getRequestCandidate{
 					path: "/tree/document/children",
-					opts: api.RequestOptions{Fields: fields, Params: map[string]any{"parentId": args[0]}},
+					opts: api.RequestOptions{Fields: fields, Params: treeParams},
 				},
 				getRequestCandidate{
 					path: fmt.Sprintf("/document/%s/children", args[0]),
-					opts: api.RequestOptions{Fields: fields},
+					opts: api.RequestOptions{Fields: fields, Params: legacyParams},
 				},
 			)
 			if err != nil {
@@ -116,6 +122,7 @@ func documentChildren(deps Dependencies) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
+	addPaginationFlags(cmd, &skip, &take)
 	addReadTriageFlags(cmd, &triage)
 	return cmd
 }

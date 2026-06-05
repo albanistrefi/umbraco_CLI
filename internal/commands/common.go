@@ -33,6 +33,35 @@ func printResult(cmd *cobra.Command, deps Dependencies, data any) error {
 	return output.Print(data, deps.requestedOutput(), deps.EnvOutput, cmd.OutOrStdout())
 }
 
+// addPaginationFlags registers --skip/--take with the same -1-sentinel
+// convention already used by documentSearch. Sentinel rather than Changed()
+// because the helper has no easy way to access cmd.Flags() at apply time
+// without coupling, and -1 is a value the API itself rejects so collision
+// is impossible.
+func addPaginationFlags(cmd *cobra.Command, skip *int, take *int) {
+	cmd.Flags().IntVar(skip, "skip", -1, "Skip count (passes through as ?skip=N; lets you walk past the server page size on large children/root collections)")
+	cmd.Flags().IntVar(take, "take", -1, "Take count (passes through as ?take=N; combine with --skip to page)")
+}
+
+// applyPaginationParams folds skip/take into an existing params map, leaving
+// it nil-safe so callers don't need to pre-allocate when no other params
+// are present.
+func applyPaginationParams(params map[string]any, skip int, take int) map[string]any {
+	if skip < 0 && take < 0 {
+		return params
+	}
+	if params == nil {
+		params = map[string]any{}
+	}
+	if skip >= 0 {
+		params["skip"] = skip
+	}
+	if take >= 0 {
+		params["take"] = take
+	}
+	return params
+}
+
 func addReadTriageFlags(cmd *cobra.Command, opts *readTriageOptions) {
 	cmd.Flags().BoolVar(&opts.Summarize, "summarize", false, "Return only id/name/alias fields for item collections")
 	cmd.Flags().BoolVar(&opts.IDsOnly, "ids-only", false, "Return only item IDs for item collections")
