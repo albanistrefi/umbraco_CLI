@@ -23,9 +23,12 @@ umbraco document <command> [flags]
 | Command | Description |
 |---------|-------------|
 | `document ancestors <id>` | Get ancestor documents |
-| `document children <id>` | Get child documents |
+| `document are-referenced` | Bulk check: which of these document IDs are referenced by something |
+| `document children <id>` | Get child documents (paginated; --skip/--take/--all) |
 | `document get <id>` | Get a document by ID |
-| `document root` | Get root documents |
+| `document referenced-descendants <id>` | List items that reference this document or any of its descendants |
+| `document references <id>` | List items that reference this document (paginated; --skip/--take/--all) |
+| `document root` | Get root documents (paginated; --skip/--take/--all) |
 | `document search` | Search documents |
 
 ### ancestors
@@ -33,6 +36,16 @@ umbraco document <command> [flags]
 ```bash
 umbraco document ancestors <id>
 ```
+
+### are-referenced
+
+```bash
+umbraco document are-referenced
+```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--ids` | string | — | Comma-separated document GUIDs to check (required) |
 
 ### children
 
@@ -42,10 +55,13 @@ umbraco document children <id>
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--all` | bool | false | Walk every page until exhausted (auto-paginates with --take as the page size, default 500; combine with --skip to start partway through). Bounded by an internal 100k-item ceiling. |
 | `--fields` | string | — | Limit response fields |
 | `--first-n` | int | 0 | Return only the first N items from item collections |
 | `--ids-only` | bool | false | Return only item IDs for item collections |
+| `--skip` | int | -1 | Skip count (passes through as ?skip=N; lets you walk past the server page size on large children/root collections) |
 | `--summarize` | bool | false | Return only id/name/alias fields for item collections |
+| `--take` | int | -1 | Take count (passes through as ?take=N; combine with --skip to page) |
 
 ### get
 
@@ -57,6 +73,38 @@ umbraco document get <id>
 |------|------|---------|-------------|
 | `--fields` | string | — | Limit response fields |
 
+### referenced-descendants
+
+```bash
+umbraco document referenced-descendants <id>
+```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--all` | bool | false | Walk every page until exhausted (auto-paginates with --take as the page size, default 500; combine with --skip to start partway through). Bounded by an internal 100k-item ceiling. |
+| `--fields` | string | — | Limit response fields |
+| `--first-n` | int | 0 | Return only the first N items from item collections |
+| `--ids-only` | bool | false | Return only item IDs for item collections |
+| `--skip` | int | -1 | Skip count (passes through as ?skip=N; lets you walk past the server page size on large children/root collections) |
+| `--summarize` | bool | false | Return only id/name/alias fields for item collections |
+| `--take` | int | -1 | Take count (passes through as ?take=N; combine with --skip to page) |
+
+### references
+
+```bash
+umbraco document references <id>
+```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--all` | bool | false | Walk every page until exhausted (auto-paginates with --take as the page size, default 500; combine with --skip to start partway through). Bounded by an internal 100k-item ceiling. |
+| `--fields` | string | — | Limit response fields |
+| `--first-n` | int | 0 | Return only the first N items from item collections |
+| `--ids-only` | bool | false | Return only item IDs for item collections |
+| `--skip` | int | -1 | Skip count (passes through as ?skip=N; lets you walk past the server page size on large children/root collections) |
+| `--summarize` | bool | false | Return only id/name/alias fields for item collections |
+| `--take` | int | -1 | Take count (passes through as ?take=N; combine with --skip to page) |
+
 ### root
 
 ```bash
@@ -65,11 +113,14 @@ umbraco document root
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--all` | bool | false | Walk every page until exhausted (auto-paginates with --take as the page size, default 500; combine with --skip to start partway through). Bounded by an internal 100k-item ceiling. |
 | `--fields` | string | — | Limit response fields |
 | `--first-n` | int | 0 | Return only the first N items from item collections |
 | `--ids-only` | bool | false | Return only item IDs for item collections |
 | `--params` | string | — | Query parameters as JSON |
+| `--skip` | int | -1 | Skip count (passes through as ?skip=N; lets you walk past the server page size on large children/root collections) |
 | `--summarize` | bool | false | Return only id/name/alias fields for item collections |
+| `--take` | int | -1 | Take count (passes through as ?take=N; combine with --skip to page) |
 
 ### search
 

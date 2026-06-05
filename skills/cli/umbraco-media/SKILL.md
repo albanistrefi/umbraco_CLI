@@ -22,11 +22,24 @@ umbraco media <command> [flags]
 
 | Command | Description |
 |---------|-------------|
-| `media children <id>` | Get child media items |
+| `media are-referenced` | Bulk check: which of these media IDs are referenced by something |
+| `media children <id>` | Get child media items (paginated; --skip/--take/--all) |
 | `media get <id>` | Get media by ID |
-| `media root` | Get root media items |
+| `media referenced-descendants <id>` | List items that reference this media item or any of its descendants |
+| `media references <id>` | List items that reference this media item (paginated; --skip/--take/--all) |
+| `media root` | Get root media items (paginated; --skip/--take/--all) |
 | `media search` | Search media items |
 | `media urls <id>` | Get media URLs |
+
+### are-referenced
+
+```bash
+umbraco media are-referenced
+```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--ids` | string | — | Comma-separated media GUIDs to check (required) |
 
 ### children
 
@@ -36,10 +49,13 @@ umbraco media children <id>
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--all` | bool | false | Walk every page until exhausted (auto-paginates with --take as the page size, default 500; combine with --skip to start partway through). Bounded by an internal 100k-item ceiling. |
 | `--fields` | string | — | Limit response fields |
 | `--first-n` | int | 0 | Return only the first N items from item collections |
 | `--ids-only` | bool | false | Return only item IDs for item collections |
+| `--skip` | int | -1 | Skip count (passes through as ?skip=N; lets you walk past the server page size on large children/root collections) |
 | `--summarize` | bool | false | Return only id/name/alias fields for item collections |
+| `--take` | int | -1 | Take count (passes through as ?take=N; combine with --skip to page) |
 
 ### get
 
@@ -51,6 +67,38 @@ umbraco media get <id>
 |------|------|---------|-------------|
 | `--fields` | string | — | Limit response fields |
 
+### referenced-descendants
+
+```bash
+umbraco media referenced-descendants <id>
+```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--all` | bool | false | Walk every page until exhausted (auto-paginates with --take as the page size, default 500; combine with --skip to start partway through). Bounded by an internal 100k-item ceiling. |
+| `--fields` | string | — | Limit response fields |
+| `--first-n` | int | 0 | Return only the first N items from item collections |
+| `--ids-only` | bool | false | Return only item IDs for item collections |
+| `--skip` | int | -1 | Skip count (passes through as ?skip=N; lets you walk past the server page size on large children/root collections) |
+| `--summarize` | bool | false | Return only id/name/alias fields for item collections |
+| `--take` | int | -1 | Take count (passes through as ?take=N; combine with --skip to page) |
+
+### references
+
+```bash
+umbraco media references <id>
+```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--all` | bool | false | Walk every page until exhausted (auto-paginates with --take as the page size, default 500; combine with --skip to start partway through). Bounded by an internal 100k-item ceiling. |
+| `--fields` | string | — | Limit response fields |
+| `--first-n` | int | 0 | Return only the first N items from item collections |
+| `--ids-only` | bool | false | Return only item IDs for item collections |
+| `--skip` | int | -1 | Skip count (passes through as ?skip=N; lets you walk past the server page size on large children/root collections) |
+| `--summarize` | bool | false | Return only id/name/alias fields for item collections |
+| `--take` | int | -1 | Take count (passes through as ?take=N; combine with --skip to page) |
+
 ### root
 
 ```bash
@@ -59,10 +107,13 @@ umbraco media root
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--all` | bool | false | Walk every page until exhausted (auto-paginates with --take as the page size, default 500; combine with --skip to start partway through). Bounded by an internal 100k-item ceiling. |
 | `--fields` | string | — | Limit response fields |
 | `--first-n` | int | 0 | Return only the first N items from item collections |
 | `--ids-only` | bool | false | Return only item IDs for item collections |
+| `--skip` | int | -1 | Skip count (passes through as ?skip=N; lets you walk past the server page size on large children/root collections) |
 | `--summarize` | bool | false | Return only id/name/alias fields for item collections |
+| `--take` | int | -1 | Take count (passes through as ?take=N; combine with --skip to page) |
 
 ### search
 
