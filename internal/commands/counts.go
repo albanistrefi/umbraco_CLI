@@ -9,6 +9,8 @@ var ExpectedCollectionCommandCounts = map[string]int{
 	"template":       6,
 	"forms":          6,
 	"models-builder": 3,
+	"member":         10,
+	"member-group":   2,
 	"logs":           5,
 	"server":         5,
 	"health":         4,

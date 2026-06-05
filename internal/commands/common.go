@@ -94,6 +94,70 @@ func optionalBody(raw string) (map[string]any, error) {
 	return parsePayload(raw)
 }
 
+// buildUpdatePropertiesPatch normalizes the three accepted input shapes for
+// "<resource> update-properties --json" into a {"values":[...]} envelope ready
+// to merge into the current resource via mergeAliasPayload. Used by both
+// document update-properties and member update-properties — any future
+// resource with the same values[] shape can reuse it.
+//
+// Returning a structured error here is what prevents the v0.3.15 footgun
+// where object-shape input landed at the resource root instead of inside
+// values[] and silently no-op'd against the Management API.
+func buildUpdatePropertiesPatch(raw string) (map[string]any, error) {
+	var parsed any
+	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+		return nil, fmt.Errorf("invalid --json: %w", err)
+	}
+
+	switch payload := parsed.(type) {
+	case []any:
+		for i, item := range payload {
+			entry, ok := item.(map[string]any)
+			if !ok {
+				return nil, fmt.Errorf("--json array entry %d must be an object with 'alias' and 'value' keys", i)
+			}
+			if _, hasAlias := entry["alias"]; !hasAlias {
+				return nil, fmt.Errorf("--json array entry %d is missing required 'alias' key", i)
+			}
+		}
+		return map[string]any{"values": payload}, nil
+
+	case map[string]any:
+		if values, isEnvelope := payload["values"].([]any); isEnvelope && len(payload) == 1 {
+			return map[string]any{"values": values}, nil
+		}
+		values := make([]any, 0, len(payload))
+		for alias, value := range payload {
+			values = append(values, map[string]any{
+				"alias":   alias,
+				"value":   value,
+				"culture": nil,
+				"segment": nil,
+			})
+		}
+		return map[string]any{"values": values}, nil
+
+	default:
+		return nil, fmt.Errorf("--json must be an object, an array of values entries, or an envelope {\"values\":[...]}; got %T", parsed)
+	}
+}
+
+// coalescePutResult returns true for a real (non-dry-run) PUT whose response
+// body was empty (Umbraco answers 204 No Content for successful update /
+// publish calls on documents, members, etc.). The previous behaviour of
+// returning the raw nil here surfaced as {"updated":null} or
+// {"published":null} in command output, which scripts could not distinguish
+// from failure.
+func coalescePutResult(result any, dryRun bool) any {
+	if dryRun {
+		return result
+	}
+	if result == nil {
+		return true
+	}
+	return result
+}
+
 func decodeResult[T any](raw any) (T, error) {
 	var result T
 	encoded, err := json.Marshal(raw)

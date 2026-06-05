@@ -2,7 +2,6 @@ package commands
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -507,54 +506,6 @@ In all shapes the resulting values[] is merged by alias into the current documen
 	return cmd
 }
 
-// buildUpdatePropertiesPatch normalizes the three accepted input shapes into
-// a {"values":[...]} envelope ready to merge into the current document via
-// mergeAliasPayload. Returning a structured error here means update-properties
-// never silently sends a payload the Management API will ignore — which was
-// the v0.3.15 footgun where object-shape input landed at the document root
-// instead of inside values[].
-func buildUpdatePropertiesPatch(raw string) (map[string]any, error) {
-	var parsed any
-	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
-		return nil, fmt.Errorf("invalid --json: %w", err)
-	}
-
-	switch payload := parsed.(type) {
-	case []any:
-		// Array form: assumed to already be values[] entries.
-		for i, item := range payload {
-			entry, ok := item.(map[string]any)
-			if !ok {
-				return nil, fmt.Errorf("--json array entry %d must be an object with 'alias' and 'value' keys", i)
-			}
-			if _, hasAlias := entry["alias"]; !hasAlias {
-				return nil, fmt.Errorf("--json array entry %d is missing required 'alias' key", i)
-			}
-		}
-		return map[string]any{"values": payload}, nil
-
-	case map[string]any:
-		// Envelope form: { "values": [...] }
-		if values, isEnvelope := payload["values"].([]any); isEnvelope && len(payload) == 1 {
-			return map[string]any{"values": values}, nil
-		}
-		// Object form: { alias: value, ... } → values entries.
-		values := make([]any, 0, len(payload))
-		for alias, value := range payload {
-			values = append(values, map[string]any{
-				"alias":   alias,
-				"value":   value,
-				"culture": nil,
-				"segment": nil,
-			})
-		}
-		return map[string]any{"values": values}, nil
-
-	default:
-		return nil, fmt.Errorf("--json must be an object, an array of values entries, or an envelope {\"values\":[...]}; got %T", parsed)
-	}
-}
-
 func documentPublish(deps Dependencies) *cobra.Command {
 	var jsonPayload string
 	var culture string
@@ -579,22 +530,6 @@ func documentPublish(deps Dependencies) *cobra.Command {
 	cmd.Flags().StringVar(&culture, "culture", "", "Culture shortcut")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
 	return cmd
-}
-
-// coalescePutResult returns true for a real (non-dry-run) PUT whose response
-// body was empty (Umbraco answers 204 No Content for successful document
-// update/publish calls, which surfaces as a nil result through the HTTP
-// client). The previous behaviour of returning nil here surfaced as
-// {"updated":null,"published":null} in --save-and-publish output, which
-// scripts could not distinguish from failure.
-func coalescePutResult(result any, dryRun bool) any {
-	if dryRun {
-		return result
-	}
-	if result == nil {
-		return true
-	}
-	return result
 }
 
 // invariantRaceMaxAttempts is the upper bound on retries for the spurious

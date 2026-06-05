@@ -41,6 +41,8 @@ func NewRootCommand() (*cobra.Command, error) {
 	commands.RegisterTemplate(root, deps)
 	commands.RegisterForms(root, deps)
 	commands.RegisterModelsBuilder(root, deps)
+	commands.RegisterMember(root, deps)
+	commands.RegisterMemberGroup(root, deps)
 	commands.RegisterLogs(root, deps)
 	commands.RegisterServer(root, deps)
 	commands.RegisterHealth(root, deps)
