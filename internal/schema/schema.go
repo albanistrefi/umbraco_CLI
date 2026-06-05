@@ -43,8 +43,8 @@ var (
 var rawSchemas = map[string]rawSchema{
 	// document (15)
 	"document.get":               {Method: "GET", Path: "/document/{id}", PathParams: map[string]ParamSchema{"id": idParam}, QueryParams: map[string]ParamSchema{"fields": fieldsQuery}},
-	"document.root":              {Method: "GET", Path: "/tree/document/root", QueryParams: map[string]ParamSchema{"fields": fieldsQuery}},
-	"document.children":          {Method: "GET", Path: "/tree/document/children", QueryParams: map[string]ParamSchema{"parentId": {Type: "string", Format: "uuid", Required: true}, "fields": fieldsQuery}},
+	"document.root":              {Method: "GET", Path: "/tree/document/root", QueryParams: map[string]ParamSchema{"fields": fieldsQuery, "skip": {Type: "number"}, "take": {Type: "number"}}},
+	"document.children":          {Method: "GET", Path: "/tree/document/children", QueryParams: map[string]ParamSchema{"parentId": {Type: "string", Format: "uuid", Required: true}, "fields": fieldsQuery, "skip": {Type: "number"}, "take": {Type: "number"}}},
 	"document.ancestors":         {Method: "GET", Path: "/tree/document/ancestors", QueryParams: map[string]ParamSchema{"descendantId": {Type: "string", Format: "uuid", Required: true}}},
 	"document.search":            {Method: "GET", Path: "/item/document/search", QueryParams: map[string]ParamSchema{"query": {Type: "string"}, "skip": {Type: "number"}, "take": {Type: "number"}, "parentId": {Type: "string", Format: "uuid"}, "culture": {Type: "string"}, "dataTypeId": {Type: "string", Format: "uuid"}, "trashed": {Type: "boolean"}, "allowedDocumentTypes": {Type: "array", Format: "uuid"}}},
 	"document.create":            {Method: "POST", Path: "/document", RequestBody: genericRequestBody},
@@ -77,8 +77,8 @@ var rawSchemas = map[string]rawSchema{
 
 	// media (12)
 	"media.get":           {Method: "GET", Path: "/media/{id}", PathParams: map[string]ParamSchema{"id": idParam}, QueryParams: map[string]ParamSchema{"fields": fieldsQuery}},
-	"media.root":          {Method: "GET", Path: "/tree/media/root", QueryParams: map[string]ParamSchema{"fields": fieldsQuery}},
-	"media.children":      {Method: "GET", Path: "/tree/media/children", QueryParams: map[string]ParamSchema{"parentId": {Type: "string", Format: "uuid", Required: true}, "fields": fieldsQuery}},
+	"media.root":          {Method: "GET", Path: "/tree/media/root", QueryParams: map[string]ParamSchema{"fields": fieldsQuery, "skip": {Type: "number"}, "take": {Type: "number"}}},
+	"media.children":      {Method: "GET", Path: "/tree/media/children", QueryParams: map[string]ParamSchema{"parentId": {Type: "string", Format: "uuid", Required: true}, "fields": fieldsQuery, "skip": {Type: "number"}, "take": {Type: "number"}}},
 	"media.search":        {Method: "GET", Path: "/item/media/search", QueryParams: map[string]ParamSchema{"query": {Type: "string"}, "skip": {Type: "number"}, "take": {Type: "number"}}},
 	"media.urls":          {Method: "GET", Path: "/media/{id}/urls", PathParams: map[string]ParamSchema{"id": idParam}},
 	"media.create":        {Method: "POST", Path: "/media", RequestBody: genericRequestBody},
@@ -95,8 +95,8 @@ var rawSchemas = map[string]rawSchema{
 	// doctype (10)
 	"doctype.get":      {Method: "GET", Path: "/document-type/{id}", PathParams: map[string]ParamSchema{"id": idParam}, QueryParams: map[string]ParamSchema{"fields": fieldsQuery}},
 	"doctype.list":     {Method: "GET", Path: "/document-type", QueryParams: map[string]ParamSchema{"fields": fieldsQuery}},
-	"doctype.root":     {Method: "GET", Path: "/tree/document-type/root"},
-	"doctype.children": {Method: "GET", Path: "/tree/document-type/children", QueryParams: map[string]ParamSchema{"parentId": {Type: "string", Format: "uuid", Required: true}}},
+	"doctype.root":     {Method: "GET", Path: "/tree/document-type/root", QueryParams: map[string]ParamSchema{"skip": {Type: "number"}, "take": {Type: "number"}}},
+	"doctype.children": {Method: "GET", Path: "/tree/document-type/children", QueryParams: map[string]ParamSchema{"parentId": {Type: "string", Format: "uuid", Required: true}, "skip": {Type: "number"}, "take": {Type: "number"}}},
 	"doctype.search":   {Method: "GET", Path: "/item/document-type/search", QueryParams: map[string]ParamSchema{"query": {Type: "string"}}},
 	"doctype.create":   {Method: "POST", Path: "/document-type", RequestBody: genericRequestBody},
 	"doctype.update":   {Method: "PUT", Path: "/document-type/{id}", PathParams: map[string]ParamSchema{"id": idParam}, RequestBody: genericRequestBody},
