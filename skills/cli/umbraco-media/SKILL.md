@@ -89,6 +89,8 @@ umbraco media referenced-descendants <id>
 umbraco media references <id>
 ```
 
+Wraps GET /media/{id}/referenced-by. Same content-audit role as 'document references' for media assets.
+
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--all` | bool | false | Walk every page until exhausted (auto-paginates with --take as the page size, default 500; combine with --skip to start partway through). Bounded by an internal 100k-item ceiling. |

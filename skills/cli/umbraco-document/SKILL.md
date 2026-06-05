@@ -43,6 +43,8 @@ umbraco document ancestors <id>
 umbraco document are-referenced
 ```
 
+GET /document/are-referenced?id=<csv>. Returns the ids that have at least one inbound reference; safe-to-delete candidates are the complement.
+
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--ids` | string | — | Comma-separated document GUIDs to check (required) |
@@ -94,6 +96,8 @@ umbraco document referenced-descendants <id>
 ```bash
 umbraco document references <id>
 ```
+
+Wraps GET /document/{id}/referenced-by. Used to answer 'what uses this node' for orphan checks, safe-delete verification, and taxonomy usage audits.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
@@ -388,6 +392,23 @@ umbraco document update <id>
 ```bash
 umbraco document update-properties <id>
 ```
+
+Updates one or more property values on a document by merging into its values[] array.
+
+Three input shapes are accepted:
+
+  Object form (most common for invariant docs):
+    --json '{"isFeatured": true, "products": ["Umbraco CMS"]}'
+    Each key becomes a values[] entry with culture=null, segment=null.
+
+  Array form (for culture/segment-variant properties):
+    --json '[{"alias":"title","value":"Hi","culture":"en-US","segment":null}]'
+    Used verbatim as values[].
+
+  Envelope form (matches 'document update --merge-json'):
+    --json '{"values":[{"alias":"title","value":"Hi","culture":null,"segment":null}]}'
+
+In all shapes the resulting values[] is merged by alias into the current document, so untouched properties survive.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|

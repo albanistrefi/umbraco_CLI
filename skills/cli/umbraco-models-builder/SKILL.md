@@ -55,6 +55,8 @@ umbraco models-builder status
 umbraco models-builder build
 ```
 
+POSTs to /models-builder/build. Pre-checks the dashboard mode so non-source-generating modes (InMemory, Nothing) fail with a clear message instead of an opaque server error. With --wait, polls status until Current or --timeout elapses. --dry-run runs the dashboard/mode pre-checks and returns the planned POST without triggering generation.
+
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--dry-run` | bool | false | Run dashboard/mode pre-checks and return the planned POST without triggering generation; incompatible with --wait |
