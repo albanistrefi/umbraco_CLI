@@ -140,7 +140,7 @@ var rawSchemas = map[string]rawSchema{
 	"models-builder.status":    {Method: "GET", Path: "/models-builder/status"},
 	"models-builder.build":     {Method: "POST", Path: "/models-builder/build", RequestBody: &ObjectSchema{Type: "object", Description: "Empty body; the build is triggered by the POST itself. Server returns once generation has been queued (not waited on)."}},
 
-	// member (6 schema-backed endpoints; update-properties/approve/unlock/set-groups are convenience commands that piggy-back on member.update)
+	// member (6 schema-backed endpoints; update-properties and set-groups are convenience commands that piggy-back on member.update)
 	"member.list":   {Method: "GET", Path: "/filter/member", QueryParams: map[string]ParamSchema{"filter": {Type: "string", Description: "Substring filter against username/email"}, "skip": {Type: "number"}, "take": {Type: "number"}}},
 	"member.search": {Method: "GET", Path: "/filter/member", QueryParams: map[string]ParamSchema{"filter": {Type: "string", Required: true, Description: "Substring filter against username/email"}, "take": {Type: "number"}}},
 	"member.get":    {Method: "GET", Path: "/member/{id}", PathParams: map[string]ParamSchema{"id": idParam}, QueryParams: map[string]ParamSchema{"fields": fieldsQuery}},
