@@ -104,8 +104,12 @@ func getAllPagesWithFallback(
 	// hit for a complete walk. --first-n early exits do NOT count as
 	// truncation: the caller asked for at most N items and got them.
 	if !exhausted && !limitReached {
+		// skip already points at the next unread page (it's advanced at the
+		// end of each iteration that didn't see a short page), so the resume
+		// offset is `skip`, NOT `skip+pageSize` — adding pageSize would skip
+		// the very next page of data the caller is trying to resume from.
 		return nil, fmt.Errorf("--all hit the safety ceiling of %d pages × %d items = %d after %d items collected; the collection has more items than the auto-paginator will walk in one shot. Use --skip %d to resume from this offset, or --take with a larger page size to raise the ceiling",
-			autoPaginateMaxPages, pageSize, autoPaginateMaxPages*pageSize, len(all), skip+pageSize)
+			autoPaginateMaxPages, pageSize, autoPaginateMaxPages*pageSize, len(all), skip)
 	}
 
 	return map[string]any{"items": all, "total": total}, nil

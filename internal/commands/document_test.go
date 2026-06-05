@@ -1381,4 +1381,10 @@ func TestDocumentChildrenAllErrorsOnSafetyCeiling(t *testing.T) {
 	if got := atomic.LoadInt32(&pages); got != 200 {
 		t.Fatalf("expected 200 pages walked before bailing, got %d", got)
 	}
+	// The resume offset must point at the first UNREAD item, not one page
+	// past it. With --take 5 and 200 pages walked, collected offsets are
+	// 0..995 → resume must be --skip 1000, NOT 1005.
+	if !strings.Contains(err.Error(), "--skip 1000") {
+		t.Fatalf("error must point caller at the exact next-unread offset (--skip 1000), got: %v", err)
+	}
 }
