@@ -18,8 +18,8 @@ const memberFilterAPIPath = "/umbraco/management/api/v1/filter/member"
 func currentMemberPayload() string {
 	return `{
 		"id":"mem-1",
-		"username":"csm@umbraco.dk",
-		"email":"csm@umbraco.dk",
+		"username":"test-member@example.invalid",
+		"email":"test-member@example.invalid",
 		"memberType":{"id":"mt-1"},
 		"isApproved":false,
 		"isLockedOut":true,
@@ -58,15 +58,15 @@ func TestMemberListPassesFilterAndPaginationToFilterEndpoint(t *testing.T) {
 			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case memberFilterAPIPath:
 			observedQuery = req.URL.RawQuery
-			return endpointJSONResponse(http.StatusOK, `{"items":[{"id":"mem-1","username":"csm@umbraco.dk","email":"csm@umbraco.dk","isApproved":true}],"total":1}`), nil
+			return endpointJSONResponse(http.StatusOK, `{"items":[{"id":"mem-1","username":"test-member@example.invalid","email":"test-member@example.invalid","isApproved":true}],"total":1}`), nil
 		}
 		return endpointJSONResponse(http.StatusNotFound, `null`), nil
 	})
 
-	if _, err := execute(buildRootWithCollections(t, deps), "member", "list", "--filter", "csm", "--take", "5"); err != nil {
+	if _, err := execute(buildRootWithCollections(t, deps), "member", "list", "--filter", "testq", "--take", "5"); err != nil {
 		t.Fatalf("member list failed: %v", err)
 	}
-	for _, want := range []string{"filter=csm", "take=5"} {
+	for _, want := range []string{"filter=testq", "take=5"} {
 		if !strings.Contains(observedQuery, want) {
 			t.Fatalf("expected query to contain %q, got %q", want, observedQuery)
 		}
@@ -85,95 +85,11 @@ func TestMemberSearchUsesFilterAsPositionalArg(t *testing.T) {
 		}
 		return endpointJSONResponse(http.StatusNotFound, `null`), nil
 	})
-	if _, err := execute(buildRootWithCollections(t, deps), "member", "search", "csm"); err != nil {
+	if _, err := execute(buildRootWithCollections(t, deps), "member", "search", "testq"); err != nil {
 		t.Fatalf("member search failed: %v", err)
 	}
-	if !strings.Contains(observedQuery, "filter=csm") {
+	if !strings.Contains(observedQuery, "filter=testq") {
 		t.Fatalf("expected positional arg to map to filter=, got %q", observedQuery)
-	}
-}
-
-func TestMemberApproveIdempotentWhenAlreadyApproved(t *testing.T) {
-	var putCount int32
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
-		switch req.URL.Path {
-		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
-		case memberAPIPath:
-			if req.Method == http.MethodGet {
-				return endpointJSONResponse(http.StatusOK, `{"id":"mem-1","isApproved":true}`), nil
-			}
-			if req.Method == http.MethodPut {
-				atomic.AddInt32(&putCount, 1)
-				return endpointNoContent(), nil
-			}
-		}
-		return endpointJSONResponse(http.StatusNotFound, `null`), nil
-	})
-
-	output, err := execute(buildRootWithCollections(t, deps), "member", "approve", memberID)
-	if err != nil {
-		t.Fatalf("approve failed: %v", err)
-	}
-	if atomic.LoadInt32(&putCount) != 0 {
-		t.Fatalf("idempotent approve should not issue a PUT, got %d", putCount)
-	}
-	var summary map[string]any
-	if err := json.Unmarshal([]byte(output), &summary); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if summary["changed"] != false || summary["message"] == nil {
-		t.Fatalf("expected changed=false with explanatory message, got %+v", summary)
-	}
-}
-
-func TestMemberApproveSetsIsApprovedAndPreservesOtherFields(t *testing.T) {
-	deps, captured := mockMemberMutations(t)
-
-	if _, err := execute(buildRootWithCollections(t, deps), "member", "approve", memberID); err != nil {
-		t.Fatalf("approve failed: %v", err)
-	}
-	put := *captured
-	if put["isApproved"] != true {
-		t.Fatalf("expected isApproved=true in PUT, got %+v", put["isApproved"])
-	}
-	// Untouched fields must survive the merge.
-	if put["username"] != "csm@umbraco.dk" || put["email"] != "csm@umbraco.dk" {
-		t.Fatalf("merge dropped identity fields: %+v", put)
-	}
-	// Groups and values arrays must be preserved.
-	groups, _ := put["groups"].([]any)
-	if len(groups) != 2 {
-		t.Fatalf("expected groups[] preserved, got %+v", put["groups"])
-	}
-	values, _ := put["values"].([]any)
-	if len(values) != 1 {
-		t.Fatalf("expected values[] preserved, got %+v", put["values"])
-	}
-}
-
-func TestMemberUnlockClearsLockoutAndFailedAttempts(t *testing.T) {
-	deps, captured := mockMemberMutations(t)
-
-	if _, err := execute(buildRootWithCollections(t, deps), "member", "unlock", memberID); err != nil {
-		t.Fatalf("unlock failed: %v", err)
-	}
-	put := *captured
-	if put["isLockedOut"] != false {
-		t.Fatalf("expected isLockedOut=false, got %+v", put["isLockedOut"])
-	}
-	// JSON unmarshals numbers as float64; allow either form.
-	switch v := put["failedPasswordAttempts"].(type) {
-	case float64:
-		if v != 0 {
-			t.Fatalf("expected failedPasswordAttempts=0, got %v", v)
-		}
-	case int:
-		if v != 0 {
-			t.Fatalf("expected failedPasswordAttempts=0, got %v", v)
-		}
-	default:
-		t.Fatalf("failedPasswordAttempts not numeric: %T %v", v, v)
 	}
 }
 

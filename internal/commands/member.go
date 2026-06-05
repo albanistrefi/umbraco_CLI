@@ -29,8 +29,6 @@ func RegisterMember(root *cobra.Command, deps Dependencies) {
 	member.AddCommand(memberUpdate(deps))
 	member.AddCommand(memberUpdateProperties(deps))
 	member.AddCommand(memberDelete(deps))
-	member.AddCommand(memberApprove(deps))
-	member.AddCommand(memberUnlock(deps))
 	member.AddCommand(memberSetGroups(deps))
 	root.AddCommand(member)
 }
@@ -160,7 +158,14 @@ func memberUpdate(deps Dependencies) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "update <id>",
 		Short: "Update a member (fetch-and-merge)",
-		Long:  "Both --json and --merge-json fetch the current member, deep-merge the patch, and PUT the merged result. This matches the datatype/document fix: an unmentioned field (e.g. memberType, groups, isApproved) is never silently dropped.",
+		Long: `Both --json and --merge-json fetch the current member, deep-merge the patch, and PUT the merged result. This matches the datatype/document fix: an unmentioned field is never silently dropped.
+
+Known API limitation (Umbraco 17.x): the Management API's UpdateMemberRequestModel does NOT accept the following fields, even though they appear on the read model. Including them in the patch returns 204 but the server-side value does not change:
+  - isApproved
+  - isLockedOut
+  - failedPasswordAttempts
+
+These are managed by the auth subsystem (login flow / backoffice action). The CLI does not silently rewrite the request — it sends what you ask — but agents should be aware that mutating these via 'member update' is a no-op.`,
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			hasJSON := strings.TrimSpace(jsonPayload) != ""
@@ -265,84 +270,6 @@ type memberMutationSummary struct {
 	Message string `json:"message,omitempty"`
 	Before  any    `json:"before,omitempty"`
 	After   any    `json:"after,omitempty"`
-}
-
-func memberApprove(deps Dependencies) *cobra.Command {
-	var dryRun bool
-	cmd := &cobra.Command{
-		Use:   "approve <id>",
-		Short: "Set isApproved=true on a member (idempotent)",
-		Long:  "Common diagnostic for 'cannot authenticate' on new members. Idempotent: no PUT if the member is already approved.",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			current, err := fetchMemberObject(context.Background(), deps.Client, args[0])
-			if err != nil {
-				return err
-			}
-			before, _ := current["isApproved"].(bool)
-			if before {
-				return printResult(cmd, deps, memberMutationSummary{
-					Action: "approve", ID: args[0], Changed: false,
-					Message: "member is already approved", Before: true, After: true,
-				})
-			}
-			merged := mergeAliasPayload(current, map[string]any{"isApproved": true})
-			result, err := deps.Client.Put(context.Background(), fmt.Sprintf("%s/%s", memberPath, args[0]), merged, api.RequestOptions{DryRun: dryRun, SkipValidation: true})
-			if err != nil {
-				return err
-			}
-			if dryRun {
-				return printResult(cmd, deps, result)
-			}
-			return printResult(cmd, deps, memberMutationSummary{
-				Action: "approve", ID: args[0], Changed: true, Before: false, After: true,
-			})
-		},
-	}
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
-	return cmd
-}
-
-func memberUnlock(deps Dependencies) *cobra.Command {
-	var dryRun bool
-	cmd := &cobra.Command{
-		Use:   "unlock <id>",
-		Short: "Clear a member's lockout state (sets isLockedOut=false and failedPasswordAttempts=0)",
-		Long:  "Common diagnostic for 'cannot authenticate' on members who've tripped the lockout policy. Idempotent: no PUT if the member is not locked out and has zero failed attempts.",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			current, err := fetchMemberObject(context.Background(), deps.Client, args[0])
-			if err != nil {
-				return err
-			}
-			lockedOut, _ := current["isLockedOut"].(bool)
-			failed, _ := current["failedPasswordAttempts"].(float64)
-			if !lockedOut && failed == 0 {
-				return printResult(cmd, deps, memberMutationSummary{
-					Action: "unlock", ID: args[0], Changed: false,
-					Message: "member is not locked out and has no failed attempts",
-				})
-			}
-			merged := mergeAliasPayload(current, map[string]any{
-				"isLockedOut":            false,
-				"failedPasswordAttempts": 0,
-			})
-			result, err := deps.Client.Put(context.Background(), fmt.Sprintf("%s/%s", memberPath, args[0]), merged, api.RequestOptions{DryRun: dryRun, SkipValidation: true})
-			if err != nil {
-				return err
-			}
-			if dryRun {
-				return printResult(cmd, deps, result)
-			}
-			return printResult(cmd, deps, memberMutationSummary{
-				Action: "unlock", ID: args[0], Changed: true,
-				Before: map[string]any{"isLockedOut": lockedOut, "failedPasswordAttempts": failed},
-				After:  map[string]any{"isLockedOut": false, "failedPasswordAttempts": 0},
-			})
-		},
-	}
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
-	return cmd
 }
 
 func memberSetGroups(deps Dependencies) *cobra.Command {

@@ -72,33 +72,11 @@ umbraco member search <query>
 
 | Command | Description |
 |---------|-------------|
-| `member approve <id>` | Set isApproved=true on a member (idempotent) |
 | `member create` | Create a member |
 | `member delete <id>` | Delete a member |
 | `member set-groups <id>` | Replace or modify a member's group memberships |
-| `member unlock <id>` | Clear a member's lockout state (sets isLockedOut=false and failedPasswordAttempts=0) |
 | `member update <id>` | Update a member (fetch-and-merge) |
 | `member update-properties <id>` | Update member custom property values (merges into values[] by alias) |
-
-### approve
-
-```bash
-umbraco member approve <id>
-```
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--dry-run` | bool | false | Validate request without executing |
-
-**Safe pattern:**
-
-```bash
-# 1. Dry run first
-umbraco member approve <id> --dry-run
-
-# 2. Execute
-umbraco member approve <id>
-```
 
 ### create
 
@@ -163,26 +141,6 @@ umbraco member set-groups <id> --dry-run
 
 # 2. Execute
 umbraco member set-groups <id>
-```
-
-### unlock
-
-```bash
-umbraco member unlock <id>
-```
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--dry-run` | bool | false | Validate request without executing |
-
-**Safe pattern:**
-
-```bash
-# 1. Dry run first
-umbraco member unlock <id> --dry-run
-
-# 2. Execute
-umbraco member unlock <id>
 ```
 
 ### update

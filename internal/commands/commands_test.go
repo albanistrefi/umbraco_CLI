@@ -80,8 +80,8 @@ func TestCommandCountsMatchMVP(t *testing.T) {
 		total += len(found.Commands())
 	}
 
-	if total != 112 {
-		t.Fatalf("expected 112 collection commands, got %d", total)
+	if total != 110 {
+		t.Fatalf("expected 110 collection commands, got %d", total)
 	}
 }
 
@@ -164,8 +164,6 @@ func TestRegisteredAPICommandsHaveSchemas(t *testing.T) {
 		"datatype.remove-value":     "payload mutation convenience command",
 		"datatype.block":            "Block List / Block Grid mutation convenience command (subgroup)",
 		"member.update-properties":  "payload mutation convenience command (shares the values[] parser with document update-properties)",
-		"member.approve":            "idempotent convenience over PUT /member/{id} setting isApproved",
-		"member.unlock":             "idempotent convenience over PUT /member/{id} clearing lockout state",
 		"member.set-groups":         "idempotent convenience over PUT /member/{id} mutating the groups[] array",
 		"logs.levels":               "hidden compatibility stub for removed v17 endpoint",
 	}
