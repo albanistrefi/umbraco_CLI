@@ -934,15 +934,61 @@ func TestDocumentUpdatePropertiesRejectsMalformedPayloads(t *testing.T) {
 		return endpointJSONResponse(http.StatusNotFound, `null`), nil
 	})
 	for label, json := range map[string]string{
-		"array entry missing alias": `[{"value":"x"}]`,
-		"non-object array entry":    `["string-not-object"]`,
-		"top-level string":          `"just a string"`,
-		"top-level number":          `42`,
+		"array entry missing alias":           `[{"value":"x"}]`,
+		"array entry missing value":           `[{"alias":"x"}]`,
+		"envelope entry missing value":        `{"values":[{"alias":"x"}]}`,
+		"envelope entry missing alias":        `{"values":[{"value":"x"}]}`,
+		"non-object array entry":              `["string-not-object"]`,
+		"top-level string":                    `"just a string"`,
+		"top-level number":                    `42`,
 	} {
 		_, err := execute(buildRootWithCollections(t, deps), "document", "update-properties", "doc-1", "--json", json)
 		if err == nil {
 			t.Fatalf("%s: expected rejection, got nil", label)
 		}
+	}
+}
+
+// Explicit "value":null must be accepted — it's how callers clear a property
+// value. Distinguishing "key absent" from "value:null" is the whole reason we
+// validate key presence rather than just nil-ness.
+func TestDocumentUpdatePropertiesAcceptsExplicitNullValue(t *testing.T) {
+	var captured map[string]any
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/document/doc-1":
+			if req.Method == http.MethodGet {
+				return endpointJSONResponse(http.StatusOK, `{"id":"doc-1","values":[{"alias":"existingProp","value":"keep me"}]}`), nil
+			}
+			if req.Method == http.MethodPut {
+				_ = json.NewDecoder(req.Body).Decode(&captured)
+				return endpointNoContent(), nil
+			}
+		}
+		return endpointJSONResponse(http.StatusNotFound, `null`), nil
+	})
+	if _, err := execute(
+		buildRootWithCollections(t, deps),
+		"document", "update-properties", "doc-1",
+		"--json", `[{"alias":"products","value":null,"culture":null,"segment":null}]`,
+	); err != nil {
+		t.Fatalf("explicit value:null should be accepted, got: %v", err)
+	}
+	values := captured["values"].([]any)
+	var found bool
+	for _, v := range values {
+		entry := v.(map[string]any)
+		if entry["alias"] == "products" {
+			if entry["value"] != nil {
+				t.Fatalf("explicit null lost: %+v", entry)
+			}
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("products entry never landed in PUT body: %+v", values)
 	}
 }
 

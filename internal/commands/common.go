@@ -111,19 +111,16 @@ func buildUpdatePropertiesPatch(raw string) (map[string]any, error) {
 
 	switch payload := parsed.(type) {
 	case []any:
-		for i, item := range payload {
-			entry, ok := item.(map[string]any)
-			if !ok {
-				return nil, fmt.Errorf("--json array entry %d must be an object with 'alias' and 'value' keys", i)
-			}
-			if _, hasAlias := entry["alias"]; !hasAlias {
-				return nil, fmt.Errorf("--json array entry %d is missing required 'alias' key", i)
-			}
+		if err := validateValuesEntries(payload); err != nil {
+			return nil, err
 		}
 		return map[string]any{"values": payload}, nil
 
 	case map[string]any:
 		if values, isEnvelope := payload["values"].([]any); isEnvelope && len(payload) == 1 {
+			if err := validateValuesEntries(values); err != nil {
+				return nil, err
+			}
 			return map[string]any{"values": values}, nil
 		}
 		values := make([]any, 0, len(payload))
@@ -140,6 +137,29 @@ func buildUpdatePropertiesPatch(raw string) (map[string]any, error) {
 	default:
 		return nil, fmt.Errorf("--json must be an object, an array of values entries, or an envelope {\"values\":[...]}; got %T", parsed)
 	}
+}
+
+// validateValuesEntries enforces that every entry in a values[]-shaped array
+// carries both 'alias' and 'value'. An explicit "value": null is fine (Umbraco
+// treats it as "clear the value"), but a missing value key is rejected —
+// otherwise the merge preserves the existing value and the PUT silently
+// no-op's on that property, recreating the exact footgun this surface was
+// built to prevent.
+func validateValuesEntries(items []any) error {
+	for i, item := range items {
+		entry, ok := item.(map[string]any)
+		if !ok {
+			return fmt.Errorf("values entry %d must be an object with 'alias' and 'value' keys", i)
+		}
+		alias, hasAlias := entry["alias"]
+		if !hasAlias {
+			return fmt.Errorf("values entry %d is missing required 'alias' key", i)
+		}
+		if _, hasValue := entry["value"]; !hasValue {
+			return fmt.Errorf("values entry %d (alias %q) is missing required 'value' key; pass \"value\":null to clear", i, alias)
+		}
+	}
+	return nil
 }
 
 // coalescePutResult returns true for a real (non-dry-run) PUT whose response
