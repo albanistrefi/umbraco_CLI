@@ -3,14 +3,28 @@ package commands
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
+
+// endpointNoContent simulates a 204 No Content reply (the shape Umbraco
+// returns for successful document update / publish PUTs). The HTTP client's
+// parseResponse maps an empty body to nil, which is what reaches the
+// command layer.
+func endpointNoContent() *http.Response {
+	return &http.Response{
+		StatusCode: http.StatusNoContent,
+		Header:     http.Header{},
+		Body:       io.NopCloser(strings.NewReader("")),
+	}
+}
 
 func TestDocumentSearchUsesItemSearchEndpointAndFallsBack(t *testing.T) {
 	var requests []string
@@ -780,5 +794,597 @@ func TestDocumentCSVUpdateRejectsDuplicateIDs(t *testing.T) {
 	}
 	if payload.Failed != 1 {
 		t.Fatalf("expected one failed duplicate row, got %+v", payload)
+	}
+}
+
+// --- Regression coverage for the four document command bugs reported
+//     against v0.3.15. See commit message for the full background. ---
+
+// currentDocPayload is the GET response used across the update-properties
+// regressions. Includes one pre-existing values entry so tests can assert
+// that the merge preserves untouched properties.
+func currentDocPayload() string {
+	return `{
+		"id":"doc-1",
+		"name":"Test Doc",
+		"documentType":{"id":"type-1"},
+		"values":[{"alias":"existingProp","value":"keep me","culture":null,"segment":null}]
+	}`
+}
+
+func mockUpdatePropertiesPut(t *testing.T) (deps Dependencies, captured *map[string]any) {
+	t.Helper()
+	put := map[string]any{}
+	deps = endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/document/doc-1":
+			if req.Method == http.MethodGet {
+				return endpointJSONResponse(http.StatusOK, currentDocPayload()), nil
+			}
+			if req.Method == http.MethodPut {
+				_ = json.NewDecoder(req.Body).Decode(&put)
+				return endpointNoContent(), nil
+			}
+		}
+		return endpointJSONResponse(http.StatusNotFound, `null`), nil
+	})
+	return deps, &put
+}
+
+// Bug #1: --json object form used to land at the document root and silently
+// no-op. It must now merge into values[] as alias entries.
+func TestDocumentUpdatePropertiesObjectFormMergesIntoValuesArray(t *testing.T) {
+	deps, captured := mockUpdatePropertiesPut(t)
+
+	output, err := execute(
+		buildRootWithCollections(t, deps),
+		"document", "update-properties", "doc-1",
+		"--json", `{"isMigrationCaseStudy": true, "products": ["Umbraco CMS","Forms"]}`,
+	)
+	if err != nil {
+		t.Fatalf("object-form update-properties failed: %v", err)
+	}
+
+	put := *captured
+	// The pre-bug regression: object keys must NOT appear at the document root.
+	for _, leakedKey := range []string{"isMigrationCaseStudy", "products"} {
+		if _, leaked := put[leakedKey]; leaked {
+			t.Fatalf("property %q leaked to top-level body — silent no-op regression: %+v", leakedKey, put)
+		}
+	}
+
+	values, ok := put["values"].([]any)
+	if !ok {
+		t.Fatalf("expected values array in PUT, got %+v", put["values"])
+	}
+	got := map[string]any{}
+	for _, v := range values {
+		entry := v.(map[string]any)
+		got[entry["alias"].(string)] = entry
+	}
+	for _, alias := range []string{"isMigrationCaseStudy", "products", "existingProp"} {
+		if _, present := got[alias]; !present {
+			t.Fatalf("expected alias %q in merged values[], got %+v", alias, values)
+		}
+	}
+	if got["existingProp"].(map[string]any)["value"] != "keep me" {
+		t.Fatalf("untouched property must be preserved by the merge, got %+v", got["existingProp"])
+	}
+	if got["isMigrationCaseStudy"].(map[string]any)["value"] != true {
+		t.Fatalf("new bool value missing, got %+v", got["isMigrationCaseStudy"])
+	}
+
+	// 204 No Content from the server must surface as {"updated": true}, not nil.
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("decode output: %v", err)
+	}
+	if payload["updated"] != true {
+		t.Fatalf("expected {\"updated\":true} for empty 204 response, got %+v", payload)
+	}
+}
+
+// Bug #2: array form used to be rejected up front.
+func TestDocumentUpdatePropertiesAcceptsArrayForm(t *testing.T) {
+	deps, captured := mockUpdatePropertiesPut(t)
+
+	if _, err := execute(
+		buildRootWithCollections(t, deps),
+		"document", "update-properties", "doc-1",
+		"--json", `[{"alias":"isMigrationCaseStudy","value":true,"culture":null,"segment":null}]`,
+	); err != nil {
+		t.Fatalf("array-form update-properties failed: %v", err)
+	}
+
+	values := (*captured)["values"].([]any)
+	var found bool
+	for _, v := range values {
+		entry := v.(map[string]any)
+		if entry["alias"] == "isMigrationCaseStudy" && entry["value"] == true {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("array-form entry didn't land in values[]: %+v", values)
+	}
+}
+
+// Envelope form continues to work after the parser refactor.
+func TestDocumentUpdatePropertiesAcceptsEnvelopeForm(t *testing.T) {
+	deps, captured := mockUpdatePropertiesPut(t)
+
+	if _, err := execute(
+		buildRootWithCollections(t, deps),
+		"document", "update-properties", "doc-1",
+		"--json", `{"values":[{"alias":"isMigrationCaseStudy","value":true,"culture":null,"segment":null}]}`,
+	); err != nil {
+		t.Fatalf("envelope-form update-properties failed: %v", err)
+	}
+	values := (*captured)["values"].([]any)
+	if len(values) < 2 { // existing + new
+		t.Fatalf("expected merged values[], got %+v", values)
+	}
+}
+
+// Malformed inputs are rejected loudly so agents don't get a silent no-op.
+func TestDocumentUpdatePropertiesRejectsMalformedPayloads(t *testing.T) {
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		return endpointJSONResponse(http.StatusNotFound, `null`), nil
+	})
+	for label, json := range map[string]string{
+		"array entry missing alias":           `[{"value":"x"}]`,
+		"array entry missing value":           `[{"alias":"x"}]`,
+		"envelope entry missing value":        `{"values":[{"alias":"x"}]}`,
+		"envelope entry missing alias":        `{"values":[{"value":"x"}]}`,
+		"non-object array entry":              `["string-not-object"]`,
+		"top-level string":                    `"just a string"`,
+		"top-level number":                    `42`,
+	} {
+		_, err := execute(buildRootWithCollections(t, deps), "document", "update-properties", "doc-1", "--json", json)
+		if err == nil {
+			t.Fatalf("%s: expected rejection, got nil", label)
+		}
+	}
+}
+
+// Explicit "value":null must be accepted — it's how callers clear a property
+// value. Distinguishing "key absent" from "value:null" is the whole reason we
+// validate key presence rather than just nil-ness.
+func TestDocumentUpdatePropertiesAcceptsExplicitNullValue(t *testing.T) {
+	var captured map[string]any
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/document/doc-1":
+			if req.Method == http.MethodGet {
+				return endpointJSONResponse(http.StatusOK, `{"id":"doc-1","values":[{"alias":"existingProp","value":"keep me"}]}`), nil
+			}
+			if req.Method == http.MethodPut {
+				_ = json.NewDecoder(req.Body).Decode(&captured)
+				return endpointNoContent(), nil
+			}
+		}
+		return endpointJSONResponse(http.StatusNotFound, `null`), nil
+	})
+	if _, err := execute(
+		buildRootWithCollections(t, deps),
+		"document", "update-properties", "doc-1",
+		"--json", `[{"alias":"products","value":null,"culture":null,"segment":null}]`,
+	); err != nil {
+		t.Fatalf("explicit value:null should be accepted, got: %v", err)
+	}
+	values := captured["values"].([]any)
+	var found bool
+	for _, v := range values {
+		entry := v.(map[string]any)
+		if entry["alias"] == "products" {
+			if entry["value"] != nil {
+				t.Fatalf("explicit null lost: %+v", entry)
+			}
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("products entry never landed in PUT body: %+v", values)
+	}
+}
+
+// Bug #3: --save-and-publish previously returned {"updated":null,"published":null}
+// because Umbraco answers 204 No Content. Both flags must be true booleans on
+// success.
+func TestDocumentUpdateSaveAndPublishReturnsTrueBooleansOn204(t *testing.T) {
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/document/doc-1":
+			if req.Method == http.MethodGet {
+				return endpointJSONResponse(http.StatusOK, currentDocPayload()), nil
+			}
+			if req.Method == http.MethodPut {
+				return endpointNoContent(), nil
+			}
+		case "/umbraco/management/api/v1/document/doc-1/publish":
+			return endpointNoContent(), nil
+		}
+		return endpointJSONResponse(http.StatusNotFound, `null`), nil
+	})
+
+	output, err := execute(
+		buildRootWithCollections(t, deps),
+		"document", "update", "doc-1",
+		"--merge-json", `{"values":[{"alias":"existingProp","value":"new","culture":null,"segment":null}]}`,
+		"--save-and-publish",
+	)
+	if err != nil {
+		t.Fatalf("save-and-publish failed: %v", err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if payload["updated"] != true || payload["published"] != true || payload["saveAndPublish"] != true {
+		t.Fatalf("expected all three flags true on 204+204 success, got %+v", payload)
+	}
+}
+
+// Bug #4: the spurious 400 "culture for an [invariant content]" race that
+// surfaces under rapid back-to-back save-and-publish loops should be retried
+// transparently. The exact same publish request succeeds on retry per the
+// bug report.
+func TestDocumentSaveAndPublishRetriesInvariantContentRace(t *testing.T) {
+	var publishAttempts int32
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/document/doc-1":
+			if req.Method == http.MethodGet {
+				return endpointJSONResponse(http.StatusOK, currentDocPayload()), nil
+			}
+			if req.Method == http.MethodPut {
+				return endpointNoContent(), nil
+			}
+		case "/umbraco/management/api/v1/document/doc-1/publish":
+			n := atomic.AddInt32(&publishAttempts, 1)
+			// First two publish attempts hit the race; third succeeds.
+			if n < 3 {
+				return endpointJSONResponse(http.StatusBadRequest, `{"detail":"One or more property values specify a culture for an [invariant content]"}`), nil
+			}
+			return endpointNoContent(), nil
+		}
+		return endpointJSONResponse(http.StatusNotFound, `null`), nil
+	})
+
+	output, err := execute(
+		buildRootWithCollections(t, deps),
+		"document", "update", "doc-1",
+		"--merge-json", `{"values":[{"alias":"existingProp","value":"v","culture":null,"segment":null}]}`,
+		"--save-and-publish",
+	)
+	if err != nil {
+		t.Fatalf("save-and-publish under race should retry to success, got: %v", err)
+	}
+	if got := atomic.LoadInt32(&publishAttempts); got != 3 {
+		t.Fatalf("expected exactly 3 publish attempts (2 races + 1 success), got %d", got)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if payload["published"] != true {
+		t.Fatalf("expected published=true after retry, got %+v", payload)
+	}
+}
+
+// Unrelated 400s must NOT be retried — only the specific invariant-content race.
+func TestDocumentSaveAndPublishDoesNotRetryUnrelated400s(t *testing.T) {
+	var publishAttempts int32
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/document/doc-1":
+			if req.Method == http.MethodGet {
+				return endpointJSONResponse(http.StatusOK, currentDocPayload()), nil
+			}
+			if req.Method == http.MethodPut {
+				return endpointNoContent(), nil
+			}
+		case "/umbraco/management/api/v1/document/doc-1/publish":
+			atomic.AddInt32(&publishAttempts, 1)
+			return endpointJSONResponse(http.StatusBadRequest, `{"detail":"Validation failed: country is required"}`), nil
+		}
+		return endpointJSONResponse(http.StatusNotFound, `null`), nil
+	})
+
+	_, err := execute(
+		buildRootWithCollections(t, deps),
+		"document", "update", "doc-1",
+		"--merge-json", `{"values":[{"alias":"existingProp","value":"v","culture":null,"segment":null}]}`,
+		"--save-and-publish",
+	)
+	if err == nil {
+		t.Fatalf("expected the unrelated 400 to surface, not be retried")
+	}
+	if got := atomic.LoadInt32(&publishAttempts); got != 1 {
+		t.Fatalf("expected exactly one publish attempt for non-race 400, got %d", got)
+	}
+}
+
+// Regression: document children was capped at the server's default page (~100)
+// because --skip/--take weren't exposed. The flags now pass through verbatim
+// and the request URL carries them — so '--first-n N' is a client-side cap
+// on a per-page response, while --skip lets you walk past page 1.
+func TestDocumentChildrenPassesSkipAndTakeAsQueryParams(t *testing.T) {
+	var observedQuery string
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/tree/document/children":
+			observedQuery = req.URL.RawQuery
+			return endpointJSONResponse(http.StatusOK, `{"items":[],"total":0}`), nil
+		}
+		return endpointJSONResponse(http.StatusNotFound, `null`), nil
+	})
+
+	if _, err := execute(buildRootWithCollections(t, deps), "document", "children", "doc-1", "--skip", "100", "--take", "100"); err != nil {
+		t.Fatalf("children failed: %v", err)
+	}
+	for _, want := range []string{"parentId=doc-1", "skip=100", "take=100"} {
+		if !strings.Contains(observedQuery, want) {
+			t.Fatalf("expected query to contain %q, got %q", want, observedQuery)
+		}
+	}
+}
+
+func TestDocumentRootPassesSkipAndTakeAsQueryParams(t *testing.T) {
+	var observedQuery string
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/tree/document/root":
+			observedQuery = req.URL.RawQuery
+			return endpointJSONResponse(http.StatusOK, `{"items":[],"total":0}`), nil
+		}
+		return endpointJSONResponse(http.StatusNotFound, `null`), nil
+	})
+
+	if _, err := execute(buildRootWithCollections(t, deps), "document", "root", "--skip", "50", "--take", "25"); err != nil {
+		t.Fatalf("root failed: %v", err)
+	}
+	for _, want := range []string{"skip=50", "take=25"} {
+		if !strings.Contains(observedQuery, want) {
+			t.Fatalf("expected query to contain %q, got %q", want, observedQuery)
+		}
+	}
+}
+
+// --all walks pages until the server returns a short page or items run out.
+// 'short page' is len(items) < take — what the server signals at the
+// boundary of the collection. Three pages of 100 + a final 7-item page
+// should be merged into one envelope of 307 items, with the loop stopping
+// because the last page is shorter than the page size.
+func TestDocumentChildrenAllAutoPaginatesAcrossPages(t *testing.T) {
+	var pages int32
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/tree/document/children":
+			skip := req.URL.Query().Get("skip")
+			n := atomic.AddInt32(&pages, 1)
+			items := make([]string, 0, 100)
+			pageSize := 100
+			if n == 4 { // last partial page
+				pageSize = 7
+			}
+			if n > 4 {
+				return endpointJSONResponse(http.StatusOK, `{"items":[],"total":307}`), nil
+			}
+			for i := 0; i < pageSize; i++ {
+				items = append(items, `{"id":"x"}`)
+			}
+			return endpointJSONResponse(http.StatusOK, `{"items":[`+strings.Join(items, ",")+`],"total":307,"_observed_skip":"`+skip+`"}`), nil
+		}
+		return endpointJSONResponse(http.StatusNotFound, `null`), nil
+	})
+
+	// --take pins the page size so the mock's 100-item pages match what
+	// the helper requests; loop should walk 3 full pages + 1 short.
+	output, err := execute(buildRootWithCollections(t, deps), "document", "children", "doc-1", "--all", "--take", "100")
+	if err != nil {
+		t.Fatalf("--all failed: %v", err)
+	}
+	if got := atomic.LoadInt32(&pages); got != 4 {
+		t.Fatalf("expected exactly 4 pages walked (3 full + 1 short), got %d", got)
+	}
+	var env map[string]any
+	if err := json.Unmarshal([]byte(output), &env); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	items := env["items"].([]any)
+	if len(items) != 307 {
+		t.Fatalf("expected 307 merged items, got %d", len(items))
+	}
+}
+
+// --first-n should short-circuit --all so the loop doesn't pull pages whose
+// items would be thrown away.
+func TestDocumentChildrenAllRespectsFirstNAsEarlyStop(t *testing.T) {
+	var pages int32
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/tree/document/children":
+			atomic.AddInt32(&pages, 1)
+			// 500 items per page (default --all page size); plenty.
+			items := make([]string, 500)
+			for i := range items {
+				items[i] = `{"id":"x"}`
+			}
+			return endpointJSONResponse(http.StatusOK, `{"items":[`+strings.Join(items, ",")+`],"total":99999}`), nil
+		}
+		return endpointJSONResponse(http.StatusNotFound, `null`), nil
+	})
+
+	if _, err := execute(buildRootWithCollections(t, deps), "document", "children", "doc-1", "--all", "--first-n", "150"); err != nil {
+		t.Fatalf("--all --first-n failed: %v", err)
+	}
+	if got := atomic.LoadInt32(&pages); got != 1 {
+		t.Fatalf("expected --first-n 150 to stop after the first 500-item page, got %d pages", got)
+	}
+}
+
+// 'document references' wraps /document/{id}/referenced-by and shares the
+// pagination plumbing with children/root, so the same skip/take/all flags
+// pass through to the URL.
+func TestDocumentReferencesPassesPaginationToReferencedByEndpoint(t *testing.T) {
+	var observedQuery string
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/document/doc-1/referenced-by":
+			observedQuery = req.URL.RawQuery
+			return endpointJSONResponse(http.StatusOK, `{"items":[{"id":"ref-1"},{"id":"ref-2"}],"total":2}`), nil
+		}
+		return endpointJSONResponse(http.StatusNotFound, `null`), nil
+	})
+
+	output, err := execute(buildRootWithCollections(t, deps), "document", "references", "doc-1", "--skip", "10", "--take", "50")
+	if err != nil {
+		t.Fatalf("references failed: %v", err)
+	}
+	for _, want := range []string{"skip=10", "take=50"} {
+		if !strings.Contains(observedQuery, want) {
+			t.Fatalf("expected %q in query, got %q", want, observedQuery)
+		}
+	}
+	if !strings.Contains(output, "ref-1") {
+		t.Fatalf("expected response body to surface, got %q", output)
+	}
+}
+
+func TestDocumentReferencedDescendantsHitsDescendantsEndpoint(t *testing.T) {
+	var hit bool
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/document/doc-1/referenced-descendants":
+			hit = true
+			return endpointJSONResponse(http.StatusOK, `{"items":[],"total":0}`), nil
+		}
+		return endpointJSONResponse(http.StatusNotFound, `null`), nil
+	})
+	if _, err := execute(buildRootWithCollections(t, deps), "document", "referenced-descendants", "doc-1"); err != nil {
+		t.Fatalf("referenced-descendants failed: %v", err)
+	}
+	if !hit {
+		t.Fatalf("expected the descendants endpoint to be called")
+	}
+}
+
+func TestDocumentAreReferencedRequiresIDsAndRepeatsQueryParam(t *testing.T) {
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		return endpointJSONResponse(http.StatusNotFound, `null`), nil
+	})
+	if _, err := execute(buildRootWithCollections(t, deps), "document", "are-referenced"); err == nil {
+		t.Fatalf("expected error when --ids is missing")
+	}
+
+	var observedQuery string
+	deps = endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/document/are-referenced":
+			observedQuery = req.URL.RawQuery
+			return endpointJSONResponse(http.StatusOK, `{"items":["doc-1"],"total":1}`), nil
+		}
+		return endpointJSONResponse(http.StatusNotFound, `null`), nil
+	})
+	if _, err := execute(buildRootWithCollections(t, deps), "document", "are-referenced", "--ids", "doc-1,doc-2,doc-3"); err != nil {
+		t.Fatalf("are-referenced failed: %v", err)
+	}
+	// Each id must be its own ?id=...&id=... entry.
+	for _, want := range []string{"id=doc-1", "id=doc-2", "id=doc-3"} {
+		if !strings.Contains(observedQuery, want) {
+			t.Fatalf("expected %q in query, got %q", want, observedQuery)
+		}
+	}
+}
+
+// Media references symmetry — should hit the /media/{id}/referenced-by path
+// exactly like document references hits /document/.../referenced-by.
+func TestMediaReferencesHitsMediaReferencedByEndpoint(t *testing.T) {
+	var hit bool
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/media/m-1/referenced-by":
+			hit = true
+			return endpointJSONResponse(http.StatusOK, `{"items":[],"total":0}`), nil
+		}
+		return endpointJSONResponse(http.StatusNotFound, `null`), nil
+	})
+	if _, err := execute(buildRootWithCollections(t, deps), "media", "references", "m-1"); err != nil {
+		t.Fatalf("media references failed: %v", err)
+	}
+	if !hit {
+		t.Fatalf("expected the media referenced-by endpoint to be called")
+	}
+}
+
+// Regression for the silent-truncation bug surfaced by Codex review.
+// When --all hits the safety ceiling (200 pages × 500 items = 100k items)
+// without the server ever returning a short page, the helper must error
+// out — silently returning the first 100k items would let callers mistake
+// a cap hit for a complete walk.
+func TestDocumentChildrenAllErrorsOnSafetyCeiling(t *testing.T) {
+	var pages int32
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/tree/document/children":
+			atomic.AddInt32(&pages, 1)
+			// Always return a full page so the loop never sees a short page
+			// and runs straight into the cap. Use a small page size (--take
+			// 5) so the cap is hit in 200 quick iterations rather than
+			// 200 × default 500 = 100k network round-trips in the test.
+			items := make([]string, 5)
+			for i := range items {
+				items[i] = `{"id":"x"}`
+			}
+			return endpointJSONResponse(http.StatusOK, `{"items":[`+strings.Join(items, ",")+`],"total":999999}`), nil
+		}
+		return endpointJSONResponse(http.StatusNotFound, `null`), nil
+	})
+
+	_, err := execute(buildRootWithCollections(t, deps), "document", "children", "doc-1", "--all", "--take", "5")
+	if err == nil {
+		t.Fatalf("expected --all to error on the safety ceiling, got success")
+	}
+	if !strings.Contains(err.Error(), "safety ceiling") {
+		t.Fatalf("error should mention 'safety ceiling', got: %v", err)
+	}
+	// Sanity: the loop did walk the full cap before giving up.
+	if got := atomic.LoadInt32(&pages); got != 200 {
+		t.Fatalf("expected 200 pages walked before bailing, got %d", got)
+	}
+	// The resume offset must point at the first UNREAD item, not one page
+	// past it. With --take 5 and 200 pages walked, collected offsets are
+	// 0..995 → resume must be --skip 1000, NOT 1005.
+	if !strings.Contains(err.Error(), "--skip 1000") {
+		t.Fatalf("error must point caller at the exact next-unread offset (--skip 1000), got: %v", err)
 	}
 }

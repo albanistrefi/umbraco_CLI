@@ -23,9 +23,12 @@ umbraco document <command> [flags]
 | Command | Description |
 |---------|-------------|
 | `document ancestors <id>` | Get ancestor documents |
-| `document children <id>` | Get child documents |
+| `document are-referenced` | Bulk check: which of these document IDs are referenced by something |
+| `document children <id>` | Get child documents (paginated; --skip/--take/--all) |
 | `document get <id>` | Get a document by ID |
-| `document root` | Get root documents |
+| `document referenced-descendants <id>` | List items that reference this document or any of its descendants |
+| `document references <id>` | List items that reference this document (paginated; --skip/--take/--all) |
+| `document root` | Get root documents (paginated; --skip/--take/--all) |
 | `document search` | Search documents |
 
 ### ancestors
@@ -33,6 +36,18 @@ umbraco document <command> [flags]
 ```bash
 umbraco document ancestors <id>
 ```
+
+### are-referenced
+
+```bash
+umbraco document are-referenced
+```
+
+GET /document/are-referenced?id=<csv>. Returns the ids that have at least one inbound reference; safe-to-delete candidates are the complement.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--ids` | string | — | Comma-separated document GUIDs to check (required) |
 
 ### children
 
@@ -42,10 +57,13 @@ umbraco document children <id>
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--all` | bool | false | Walk every page until exhausted (auto-paginates with --take as the page size, default 500; combine with --skip to start partway through). Bounded by an internal 100k-item ceiling. |
 | `--fields` | string | — | Limit response fields |
 | `--first-n` | int | 0 | Return only the first N items from item collections |
 | `--ids-only` | bool | false | Return only item IDs for item collections |
+| `--skip` | int | -1 | Skip count (passes through as ?skip=N; lets you walk past the server page size on large children/root collections) |
 | `--summarize` | bool | false | Return only id/name/alias fields for item collections |
+| `--take` | int | -1 | Take count (passes through as ?take=N; combine with --skip to page) |
 
 ### get
 
@@ -57,6 +75,40 @@ umbraco document get <id>
 |------|------|---------|-------------|
 | `--fields` | string | — | Limit response fields |
 
+### referenced-descendants
+
+```bash
+umbraco document referenced-descendants <id>
+```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--all` | bool | false | Walk every page until exhausted (auto-paginates with --take as the page size, default 500; combine with --skip to start partway through). Bounded by an internal 100k-item ceiling. |
+| `--fields` | string | — | Limit response fields |
+| `--first-n` | int | 0 | Return only the first N items from item collections |
+| `--ids-only` | bool | false | Return only item IDs for item collections |
+| `--skip` | int | -1 | Skip count (passes through as ?skip=N; lets you walk past the server page size on large children/root collections) |
+| `--summarize` | bool | false | Return only id/name/alias fields for item collections |
+| `--take` | int | -1 | Take count (passes through as ?take=N; combine with --skip to page) |
+
+### references
+
+```bash
+umbraco document references <id>
+```
+
+Wraps GET /document/{id}/referenced-by. Used to answer 'what uses this node' for orphan checks, safe-delete verification, and taxonomy usage audits.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--all` | bool | false | Walk every page until exhausted (auto-paginates with --take as the page size, default 500; combine with --skip to start partway through). Bounded by an internal 100k-item ceiling. |
+| `--fields` | string | — | Limit response fields |
+| `--first-n` | int | 0 | Return only the first N items from item collections |
+| `--ids-only` | bool | false | Return only item IDs for item collections |
+| `--skip` | int | -1 | Skip count (passes through as ?skip=N; lets you walk past the server page size on large children/root collections) |
+| `--summarize` | bool | false | Return only id/name/alias fields for item collections |
+| `--take` | int | -1 | Take count (passes through as ?take=N; combine with --skip to page) |
+
 ### root
 
 ```bash
@@ -65,11 +117,14 @@ umbraco document root
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--all` | bool | false | Walk every page until exhausted (auto-paginates with --take as the page size, default 500; combine with --skip to start partway through). Bounded by an internal 100k-item ceiling. |
 | `--fields` | string | — | Limit response fields |
 | `--first-n` | int | 0 | Return only the first N items from item collections |
 | `--ids-only` | bool | false | Return only item IDs for item collections |
 | `--params` | string | — | Query parameters as JSON |
+| `--skip` | int | -1 | Skip count (passes through as ?skip=N; lets you walk past the server page size on large children/root collections) |
 | `--summarize` | bool | false | Return only id/name/alias fields for item collections |
+| `--take` | int | -1 | Take count (passes through as ?take=N; combine with --skip to page) |
 
 ### search
 
@@ -101,7 +156,7 @@ umbraco document search
 | `document trash <id>` | Move a document to recycle bin |
 | `document unpublish <id>` | Unpublish a document |
 | `document update <id>` | Update a document |
-| `document update-properties <id>` | Update document properties |
+| `document update-properties <id>` | Update document properties (merges into values[] by alias) |
 
 ### bulk-update
 
@@ -338,10 +393,27 @@ umbraco document update <id>
 umbraco document update-properties <id>
 ```
 
+Updates one or more property values on a document by merging into its values[] array.
+
+Three input shapes are accepted:
+
+  Object form (most common for invariant docs):
+    --json '{"isFeatured": true, "products": ["Umbraco CMS"]}'
+    Each key becomes a values[] entry with culture=null, segment=null.
+
+  Array form (for culture/segment-variant properties):
+    --json '[{"alias":"title","value":"Hi","culture":"en-US","segment":null}]'
+    Used verbatim as values[].
+
+  Envelope form (matches 'document update --merge-json'):
+    --json '{"values":[{"alias":"title","value":"Hi","culture":null,"segment":null}]}'
+
+In all shapes the resulting values[] is merged by alias into the current document, so untouched properties survive.
+
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--dry-run` | bool | false | Validate request without executing |
-| `--json` | string | — | Properties payload as JSON |
+| `--json` | string | — | Properties payload as JSON; accepts object {alias: value}, array [{alias, value, culture?, segment?}], or envelope {"values":[...]} |
 
 **Safe pattern:**
 

@@ -22,10 +22,10 @@ umbraco doctype <command> [flags]
 
 | Command | Description |
 |---------|-------------|
-| `doctype children <id>` | Get child document types |
+| `doctype children <id>` | Get child document types (paginated; --skip/--take/--all) |
 | `doctype get <id>` | Get document type by ID |
 | `doctype list` | List document types |
-| `doctype root` | Get root document types |
+| `doctype root` | Get root document types (paginated; --skip/--take/--all) |
 | `doctype search` | Search document types |
 
 ### children
@@ -36,10 +36,13 @@ umbraco doctype children <id>
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--all` | bool | false | Walk every page until exhausted (auto-paginates with --take as the page size, default 500; combine with --skip to start partway through). Bounded by an internal 100k-item ceiling. |
 | `--fields` | string | — | Limit response fields |
 | `--first-n` | int | 0 | Return only the first N items from item collections |
 | `--ids-only` | bool | false | Return only item IDs for item collections |
+| `--skip` | int | -1 | Skip count (passes through as ?skip=N; lets you walk past the server page size on large children/root collections) |
 | `--summarize` | bool | false | Return only id/name/alias fields for item collections |
+| `--take` | int | -1 | Take count (passes through as ?take=N; combine with --skip to page) |
 
 ### get
 
@@ -72,10 +75,13 @@ umbraco doctype root
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--all` | bool | false | Walk every page until exhausted (auto-paginates with --take as the page size, default 500; combine with --skip to start partway through). Bounded by an internal 100k-item ceiling. |
 | `--fields` | string | — | Limit response fields |
 | `--first-n` | int | 0 | Return only the first N items from item collections |
 | `--ids-only` | bool | false | Return only item IDs for item collections |
+| `--skip` | int | -1 | Skip count (passes through as ?skip=N; lets you walk past the server page size on large children/root collections) |
 | `--summarize` | bool | false | Return only id/name/alias fields for item collections |
+| `--take` | int | -1 | Take count (passes through as ?take=N; combine with --skip to page) |
 
 ### search
 

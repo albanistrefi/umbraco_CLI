@@ -43,8 +43,8 @@ var (
 var rawSchemas = map[string]rawSchema{
 	// document (15)
 	"document.get":               {Method: "GET", Path: "/document/{id}", PathParams: map[string]ParamSchema{"id": idParam}, QueryParams: map[string]ParamSchema{"fields": fieldsQuery}},
-	"document.root":              {Method: "GET", Path: "/tree/document/root", QueryParams: map[string]ParamSchema{"fields": fieldsQuery}},
-	"document.children":          {Method: "GET", Path: "/tree/document/children", QueryParams: map[string]ParamSchema{"parentId": {Type: "string", Format: "uuid", Required: true}, "fields": fieldsQuery}},
+	"document.root":              {Method: "GET", Path: "/tree/document/root", QueryParams: map[string]ParamSchema{"fields": fieldsQuery, "skip": {Type: "number"}, "take": {Type: "number"}}},
+	"document.children":          {Method: "GET", Path: "/tree/document/children", QueryParams: map[string]ParamSchema{"parentId": {Type: "string", Format: "uuid", Required: true}, "fields": fieldsQuery, "skip": {Type: "number"}, "take": {Type: "number"}}},
 	"document.ancestors":         {Method: "GET", Path: "/tree/document/ancestors", QueryParams: map[string]ParamSchema{"descendantId": {Type: "string", Format: "uuid", Required: true}}},
 	"document.search":            {Method: "GET", Path: "/item/document/search", QueryParams: map[string]ParamSchema{"query": {Type: "string"}, "skip": {Type: "number"}, "take": {Type: "number"}, "parentId": {Type: "string", Format: "uuid"}, "culture": {Type: "string"}, "dataTypeId": {Type: "string", Format: "uuid"}, "trashed": {Type: "boolean"}, "allowedDocumentTypes": {Type: "array", Format: "uuid"}}},
 	"document.create":            {Method: "POST", Path: "/document", RequestBody: genericRequestBody},
@@ -57,6 +57,9 @@ var rawSchemas = map[string]rawSchema{
 	"document.delete":            {Method: "DELETE", Path: "/document/{id}", PathParams: map[string]ParamSchema{"id": idParam}},
 	"document.trash":             {Method: "POST", Path: "/document/{id}/move-to-recycle-bin", PathParams: map[string]ParamSchema{"id": idParam}},
 	"document.restore":           {Method: "POST", Path: "/document/{id}/restore", PathParams: map[string]ParamSchema{"id": idParam}},
+	"document.references":             {Method: "GET", Path: "/document/{id}/referenced-by", PathParams: map[string]ParamSchema{"id": idParam}, QueryParams: map[string]ParamSchema{"skip": {Type: "number"}, "take": {Type: "number"}}},
+	"document.referenced-descendants": {Method: "GET", Path: "/document/{id}/referenced-descendants", PathParams: map[string]ParamSchema{"id": idParam}, QueryParams: map[string]ParamSchema{"skip": {Type: "number"}, "take": {Type: "number"}}},
+	"document.are-referenced":         {Method: "GET", Path: "/document/are-referenced", QueryParams: map[string]ParamSchema{"id": {Type: "array", Format: "uuid", Required: true, Description: "Repeat the id query parameter for each document"}}},
 
 	// dictionary (12)
 	"dictionary.list":      {Method: "GET", Path: "/dictionary", QueryParams: map[string]ParamSchema{"filter": {Type: "string"}, "skip": {Type: "number"}, "take": {Type: "number"}}},
@@ -74,8 +77,8 @@ var rawSchemas = map[string]rawSchema{
 
 	// media (12)
 	"media.get":           {Method: "GET", Path: "/media/{id}", PathParams: map[string]ParamSchema{"id": idParam}, QueryParams: map[string]ParamSchema{"fields": fieldsQuery}},
-	"media.root":          {Method: "GET", Path: "/tree/media/root", QueryParams: map[string]ParamSchema{"fields": fieldsQuery}},
-	"media.children":      {Method: "GET", Path: "/tree/media/children", QueryParams: map[string]ParamSchema{"parentId": {Type: "string", Format: "uuid", Required: true}, "fields": fieldsQuery}},
+	"media.root":          {Method: "GET", Path: "/tree/media/root", QueryParams: map[string]ParamSchema{"fields": fieldsQuery, "skip": {Type: "number"}, "take": {Type: "number"}}},
+	"media.children":      {Method: "GET", Path: "/tree/media/children", QueryParams: map[string]ParamSchema{"parentId": {Type: "string", Format: "uuid", Required: true}, "fields": fieldsQuery, "skip": {Type: "number"}, "take": {Type: "number"}}},
 	"media.search":        {Method: "GET", Path: "/item/media/search", QueryParams: map[string]ParamSchema{"query": {Type: "string"}, "skip": {Type: "number"}, "take": {Type: "number"}}},
 	"media.urls":          {Method: "GET", Path: "/media/{id}/urls", PathParams: map[string]ParamSchema{"id": idParam}},
 	"media.create":        {Method: "POST", Path: "/media", RequestBody: genericRequestBody},
@@ -85,12 +88,15 @@ var rawSchemas = map[string]rawSchema{
 	"media.move":          {Method: "POST", Path: "/media/{id}/move", PathParams: map[string]ParamSchema{"id": idParam}, RequestBody: genericRequestBody},
 	"media.delete":        {Method: "DELETE", Path: "/media/{id}", PathParams: map[string]ParamSchema{"id": idParam}},
 	"media.trash":         {Method: "POST", Path: "/media/{id}/move-to-recycle-bin", PathParams: map[string]ParamSchema{"id": idParam}},
+	"media.references":             {Method: "GET", Path: "/media/{id}/referenced-by", PathParams: map[string]ParamSchema{"id": idParam}, QueryParams: map[string]ParamSchema{"skip": {Type: "number"}, "take": {Type: "number"}}},
+	"media.referenced-descendants": {Method: "GET", Path: "/media/{id}/referenced-descendants", PathParams: map[string]ParamSchema{"id": idParam}, QueryParams: map[string]ParamSchema{"skip": {Type: "number"}, "take": {Type: "number"}}},
+	"media.are-referenced":         {Method: "GET", Path: "/media/are-referenced", QueryParams: map[string]ParamSchema{"id": {Type: "array", Format: "uuid", Required: true, Description: "Repeat the id query parameter for each media item"}}},
 
 	// doctype (10)
 	"doctype.get":      {Method: "GET", Path: "/document-type/{id}", PathParams: map[string]ParamSchema{"id": idParam}, QueryParams: map[string]ParamSchema{"fields": fieldsQuery}},
 	"doctype.list":     {Method: "GET", Path: "/document-type", QueryParams: map[string]ParamSchema{"fields": fieldsQuery}},
-	"doctype.root":     {Method: "GET", Path: "/tree/document-type/root"},
-	"doctype.children": {Method: "GET", Path: "/tree/document-type/children", QueryParams: map[string]ParamSchema{"parentId": {Type: "string", Format: "uuid", Required: true}}},
+	"doctype.root":     {Method: "GET", Path: "/tree/document-type/root", QueryParams: map[string]ParamSchema{"skip": {Type: "number"}, "take": {Type: "number"}}},
+	"doctype.children": {Method: "GET", Path: "/tree/document-type/children", QueryParams: map[string]ParamSchema{"parentId": {Type: "string", Format: "uuid", Required: true}, "skip": {Type: "number"}, "take": {Type: "number"}}},
 	"doctype.search":   {Method: "GET", Path: "/item/document-type/search", QueryParams: map[string]ParamSchema{"query": {Type: "string"}}},
 	"doctype.create":   {Method: "POST", Path: "/document-type", RequestBody: genericRequestBody},
 	"doctype.update":   {Method: "PUT", Path: "/document-type/{id}", PathParams: map[string]ParamSchema{"id": idParam}, RequestBody: genericRequestBody},
@@ -133,6 +139,18 @@ var rawSchemas = map[string]rawSchema{
 	"models-builder.dashboard": {Method: "GET", Path: "/models-builder/dashboard"},
 	"models-builder.status":    {Method: "GET", Path: "/models-builder/status"},
 	"models-builder.build":     {Method: "POST", Path: "/models-builder/build", RequestBody: &ObjectSchema{Type: "object", Description: "Empty body; the build is triggered by the POST itself. Server returns once generation has been queued (not waited on)."}},
+
+	// member (6 schema-backed endpoints; update-properties and set-groups are convenience commands that piggy-back on member.update)
+	"member.list":   {Method: "GET", Path: "/filter/member", QueryParams: map[string]ParamSchema{"filter": {Type: "string", Description: "Substring filter against username/email"}, "skip": {Type: "number"}, "take": {Type: "number"}}},
+	"member.search": {Method: "GET", Path: "/filter/member", QueryParams: map[string]ParamSchema{"filter": {Type: "string", Required: true, Description: "Substring filter against username/email"}, "take": {Type: "number"}}},
+	"member.get":    {Method: "GET", Path: "/member/{id}", PathParams: map[string]ParamSchema{"id": idParam}, QueryParams: map[string]ParamSchema{"fields": fieldsQuery}},
+	"member.create": {Method: "POST", Path: "/member", RequestBody: genericRequestBody},
+	"member.update": {Method: "PUT", Path: "/member/{id}", PathParams: map[string]ParamSchema{"id": idParam}, RequestBody: genericRequestBody},
+	"member.delete": {Method: "DELETE", Path: "/member/{id}", PathParams: map[string]ParamSchema{"id": idParam}},
+
+	// member-group (2)
+	"member-group.list": {Method: "GET", Path: "/member-group"},
+	"member-group.get":  {Method: "GET", Path: "/member-group/{id}", PathParams: map[string]ParamSchema{"id": idParam}, QueryParams: map[string]ParamSchema{"fields": fieldsQuery}},
 
 	// health (4)
 	"health.groups": {Method: "GET", Path: "/health-check-group"},
@@ -219,6 +237,25 @@ var Templates = map[string]any{
 		"name":    "<string, required>",
 		"alias":   "<camelCase string, required>",
 		"content": "<template markup, optional>",
+	},
+	"member.create": map[string]any{
+		"id":         "<uuid, optional; generated by CLI when omitted>",
+		"email":      "<string, required, valid email>",
+		"username":   "<string, required; usually the email for front-office members>",
+		"password":   "<string, required at create time>",
+		"memberType": map[string]any{"id": "<member type id, required; from member-type endpoints>"},
+		"variants": []any{map[string]any{
+			"culture": "<culture, optional; null for invariant member types>",
+			"segment": "<segment, optional; null for unsegmented>",
+			"name":    "<string, required — the member's display name>",
+		}},
+		"groups": []any{"<member group GUID from 'member-group list'>"},
+		"values": []any{map[string]any{
+			"alias":   "<custom property alias defined on the member type>",
+			"value":   "<property value>",
+			"culture": "<culture, optional; null for invariant>",
+			"segment": "<segment, optional; null for unsegmented>",
+		}},
 	},
 }
 

@@ -321,6 +321,15 @@ func renderSubcommand(b *strings.Builder, collection string, sub *cobra.Command)
 
 	b.WriteString(fmt.Sprintf("```bash\numbraco %s %s\n```\n\n", collection, sub.Use))
 
+	// Long help text (caveats, API limitations, etc.) — agents reading the
+	// generated SKILL.md should see the same warnings a human gets from
+	// '<cmd> --help', otherwise they'll bypass guardrails the human author
+	// expected the help text to convey.
+	if long := strings.TrimSpace(sub.Long); long != "" && long != strings.TrimSpace(sub.Short) {
+		b.WriteString(long)
+		b.WriteString("\n\n")
+	}
+
 	// Flags table
 	flags := collectFlags(sub)
 	if len(flags) > 0 {

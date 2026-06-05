@@ -38,6 +38,8 @@ func buildRootWithCollections(t *testing.T, deps Dependencies) *cobra.Command {
 	RegisterTemplate(root, deps)
 	RegisterForms(root, deps)
 	RegisterModelsBuilder(root, deps)
+	RegisterMember(root, deps)
+	RegisterMemberGroup(root, deps)
 	RegisterLogs(root, deps)
 	RegisterServer(root, deps)
 	RegisterHealth(root, deps)
@@ -78,8 +80,8 @@ func TestCommandCountsMatchMVP(t *testing.T) {
 		total += len(found.Commands())
 	}
 
-	if total != 94 {
-		t.Fatalf("expected 94 collection commands, got %d", total)
+	if total != 110 {
+		t.Fatalf("expected 110 collection commands, got %d", total)
 	}
 }
 
@@ -146,6 +148,8 @@ func TestRegisteredAPICommandsHaveSchemas(t *testing.T) {
 		"server":         {},
 		"health":         {},
 		"models-builder": {},
+		"member":         {},
+		"member-group":   {},
 	}
 	convenienceCommands := map[string]string{
 		"document.bulk-update":      "batch convenience command",
@@ -159,6 +163,8 @@ func TestRegisteredAPICommandsHaveSchemas(t *testing.T) {
 		"datatype.add-value":        "payload mutation convenience command",
 		"datatype.remove-value":     "payload mutation convenience command",
 		"datatype.block":            "Block List / Block Grid mutation convenience command (subgroup)",
+		"member.update-properties":  "payload mutation convenience command (shares the values[] parser with document update-properties)",
+		"member.set-groups":         "idempotent convenience over PUT /member/{id} mutating the groups[] array",
 		"logs.levels":               "hidden compatibility stub for removed v17 endpoint",
 	}
 

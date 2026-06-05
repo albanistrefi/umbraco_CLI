@@ -27,6 +27,9 @@ func RegisterMedia(root *cobra.Command, deps Dependencies) {
 	media.AddCommand(mediaMove(deps))
 	media.AddCommand(mediaDelete(deps))
 	media.AddCommand(mediaTrash(deps))
+	media.AddCommand(mediaReferences(deps))
+	media.AddCommand(mediaReferencedDescendants(deps))
+	media.AddCommand(mediaAreReferenced(deps))
 
 	root.AddCommand(media)
 }
@@ -46,46 +49,65 @@ func mediaGet(deps Dependencies) *cobra.Command {
 
 func mediaRoot(deps Dependencies) *cobra.Command {
 	var fields string
+	var skip, take int
+	var all bool
 	var triage readTriageOptions
-	cmd := &cobra.Command{Use: "root", Short: "Get root media items", RunE: func(cmd *cobra.Command, args []string) error {
-		result, err := getWithFallback(
-			context.Background(),
-			deps.Client,
-			getRequestCandidate{path: "/tree/media/root", opts: api.RequestOptions{Fields: fields}},
-			getRequestCandidate{path: "/media/root", opts: api.RequestOptions{Fields: fields}},
-		)
+	cmd := &cobra.Command{Use: "root", Short: "Get root media items (paginated; --skip/--take/--all)", RunE: func(cmd *cobra.Command, args []string) error {
+		ctx := context.Background()
+		params := applyPaginationParams(nil, skip, take)
+		tree := getRequestCandidate{path: "/tree/media/root", opts: api.RequestOptions{Fields: fields, Params: params}}
+		legacy := getRequestCandidate{path: "/media/root", opts: api.RequestOptions{Fields: fields, Params: params}}
+
+		var result any
+		var err error
+		if all {
+			result, err = getAllPagesWithFallback(ctx, deps.Client, take, skip, triage.FirstN, tree, legacy)
+		} else {
+			result, err = getWithFallback(ctx, deps.Client, tree, legacy)
+		}
 		if err != nil {
 			return err
 		}
 		return printResult(cmd, deps, applyReadTriage(applyFieldsProjection(result, fields), triage))
 	}}
 	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
+	addPaginationFlags(cmd, &skip, &take)
+	addAutoPaginationFlag(cmd, &all)
 	addReadTriageFlags(cmd, &triage)
 	return cmd
 }
 
 func mediaChildren(deps Dependencies) *cobra.Command {
 	var fields string
+	var skip, take int
+	var all bool
 	var triage readTriageOptions
-	cmd := &cobra.Command{Use: "children <id>", Short: "Get child media items", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		result, err := getWithFallback(
-			context.Background(),
-			deps.Client,
-			getRequestCandidate{
-				path: "/tree/media/children",
-				opts: api.RequestOptions{Fields: fields, Params: map[string]any{"parentId": args[0]}},
-			},
-			getRequestCandidate{
-				path: fmt.Sprintf("/media/%s/children", args[0]),
-				opts: api.RequestOptions{Fields: fields},
-			},
-		)
+	cmd := &cobra.Command{Use: "children <id>", Short: "Get child media items (paginated; --skip/--take/--all)", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		ctx := context.Background()
+		tree := getRequestCandidate{
+			path: "/tree/media/children",
+			opts: api.RequestOptions{Fields: fields, Params: applyPaginationParams(map[string]any{"parentId": args[0]}, skip, take)},
+		}
+		legacy := getRequestCandidate{
+			path: fmt.Sprintf("/media/%s/children", args[0]),
+			opts: api.RequestOptions{Fields: fields, Params: applyPaginationParams(nil, skip, take)},
+		}
+
+		var result any
+		var err error
+		if all {
+			result, err = getAllPagesWithFallback(ctx, deps.Client, take, skip, triage.FirstN, tree, legacy)
+		} else {
+			result, err = getWithFallback(ctx, deps.Client, tree, legacy)
+		}
 		if err != nil {
 			return err
 		}
 		return printResult(cmd, deps, applyReadTriage(applyFieldsProjection(result, fields), triage))
 	}}
 	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
+	addPaginationFlags(cmd, &skip, &take)
+	addAutoPaginationFlag(cmd, &all)
 	addReadTriageFlags(cmd, &triage)
 	return cmd
 }
@@ -626,5 +648,77 @@ func mediaTrash(deps Dependencies) *cobra.Command {
 		return printResult(cmd, deps, result)
 	}}
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
+	return cmd
+}
+
+// Media references commands mirror their document equivalents: same
+// endpoint shape, same pagination plumbing. Common use case from the bug
+// report — "which content references this media item" before deleting an
+// image asset, or "is this whole media folder referenced by anything"
+// before archiving.
+
+func mediaReferences(deps Dependencies) *cobra.Command {
+	var fields string
+	var skip, take int
+	var all bool
+	var triage readTriageOptions
+	cmd := &cobra.Command{
+		Use:   "references <id>",
+		Short: "List items that reference this media item (paginated; --skip/--take/--all)",
+		Long:  "Wraps GET /media/{id}/referenced-by. Same content-audit role as 'document references' for media assets.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runReferencesQuery(cmd, deps, fmt.Sprintf("/media/%s/referenced-by", args[0]), fields, skip, take, all, triage)
+		},
+	}
+	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
+	addPaginationFlags(cmd, &skip, &take)
+	addAutoPaginationFlag(cmd, &all)
+	addReadTriageFlags(cmd, &triage)
+	return cmd
+}
+
+func mediaReferencedDescendants(deps Dependencies) *cobra.Command {
+	var fields string
+	var skip, take int
+	var all bool
+	var triage readTriageOptions
+	cmd := &cobra.Command{
+		Use:   "referenced-descendants <id>",
+		Short: "List items that reference this media item or any of its descendants",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runReferencesQuery(cmd, deps, fmt.Sprintf("/media/%s/referenced-descendants", args[0]), fields, skip, take, all, triage)
+		},
+	}
+	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
+	addPaginationFlags(cmd, &skip, &take)
+	addAutoPaginationFlag(cmd, &all)
+	addReadTriageFlags(cmd, &triage)
+	return cmd
+}
+
+func mediaAreReferenced(deps Dependencies) *cobra.Command {
+	var idsCSV string
+	cmd := &cobra.Command{
+		Use:   "are-referenced",
+		Short: "Bulk check: which of these media IDs are referenced by something",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ids := uniqueCSV(idsCSV)
+			if len(ids) == 0 {
+				return fmt.Errorf("media are-referenced requires --ids <comma-separated guids>")
+			}
+			anyIDs := make([]any, len(ids))
+			for i, v := range ids {
+				anyIDs[i] = v
+			}
+			result, err := deps.Client.Get(context.Background(), "/media/are-referenced", api.RequestOptions{Params: map[string]any{"id": anyIDs}})
+			if err != nil {
+				return err
+			}
+			return printResult(cmd, deps, result)
+		},
+	}
+	cmd.Flags().StringVar(&idsCSV, "ids", "", "Comma-separated media GUIDs to check (required)")
 	return cmd
 }

@@ -2,8 +2,10 @@ package commands
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -35,6 +37,9 @@ func RegisterDocument(root *cobra.Command, deps Dependencies) {
 	document.AddCommand(documentDelete(deps))
 	document.AddCommand(documentTrash(deps))
 	document.AddCommand(documentRestore(deps))
+	document.AddCommand(documentReferences(deps))
+	document.AddCommand(documentReferencedDescendants(deps))
+	document.AddCommand(documentAreReferenced(deps))
 
 	root.AddCommand(document)
 }
@@ -60,21 +65,28 @@ func documentGet(deps Dependencies) *cobra.Command {
 func documentRoot(deps Dependencies) *cobra.Command {
 	var fields string
 	var paramsRaw string
+	var skip, take int
+	var all bool
 	var triage readTriageOptions
 	cmd := &cobra.Command{
 		Use:   "root",
-		Short: "Get root documents",
+		Short: "Get root documents (paginated; --skip/--take/--all)",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := context.Background()
 			params, err := parseParams(paramsRaw)
 			if err != nil {
 				return err
 			}
-			result, err := getWithFallback(
-				context.Background(),
-				deps.Client,
-				getRequestCandidate{path: "/tree/document/root", opts: api.RequestOptions{Fields: fields, Params: params}},
-				getRequestCandidate{path: "/document/root", opts: api.RequestOptions{Fields: fields, Params: params}},
-			)
+			params = applyPaginationParams(params, skip, take)
+			tree := getRequestCandidate{path: "/tree/document/root", opts: api.RequestOptions{Fields: fields, Params: params}}
+			legacy := getRequestCandidate{path: "/document/root", opts: api.RequestOptions{Fields: fields, Params: params}}
+
+			var result any
+			if all {
+				result, err = getAllPagesWithFallback(ctx, deps.Client, take, skip, triage.FirstN, tree, legacy)
+			} else {
+				result, err = getWithFallback(ctx, deps.Client, tree, legacy)
+			}
 			if err != nil {
 				return err
 			}
@@ -83,30 +95,39 @@ func documentRoot(deps Dependencies) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
 	cmd.Flags().StringVar(&paramsRaw, "params", "", "Query parameters as JSON")
+	addPaginationFlags(cmd, &skip, &take)
+	addAutoPaginationFlag(cmd, &all)
 	addReadTriageFlags(cmd, &triage)
 	return cmd
 }
 
 func documentChildren(deps Dependencies) *cobra.Command {
 	var fields string
+	var skip, take int
+	var all bool
 	var triage readTriageOptions
 	cmd := &cobra.Command{
 		Use:   "children <id>",
-		Short: "Get child documents",
+		Short: "Get child documents (paginated; --skip/--take/--all)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			result, err := getWithFallback(
-				context.Background(),
-				deps.Client,
-				getRequestCandidate{
-					path: "/tree/document/children",
-					opts: api.RequestOptions{Fields: fields, Params: map[string]any{"parentId": args[0]}},
-				},
-				getRequestCandidate{
-					path: fmt.Sprintf("/document/%s/children", args[0]),
-					opts: api.RequestOptions{Fields: fields},
-				},
-			)
+			ctx := context.Background()
+			treeCandidate := getRequestCandidate{
+				path: "/tree/document/children",
+				opts: api.RequestOptions{Fields: fields, Params: applyPaginationParams(map[string]any{"parentId": args[0]}, skip, take)},
+			}
+			legacyCandidate := getRequestCandidate{
+				path: fmt.Sprintf("/document/%s/children", args[0]),
+				opts: api.RequestOptions{Fields: fields, Params: applyPaginationParams(nil, skip, take)},
+			}
+
+			var result any
+			var err error
+			if all {
+				result, err = getAllPagesWithFallback(ctx, deps.Client, take, skip, triage.FirstN, treeCandidate, legacyCandidate)
+			} else {
+				result, err = getWithFallback(ctx, deps.Client, treeCandidate, legacyCandidate)
+			}
 			if err != nil {
 				return err
 			}
@@ -114,6 +135,8 @@ func documentChildren(deps Dependencies) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
+	addPaginationFlags(cmd, &skip, &take)
+	addAutoPaginationFlag(cmd, &all)
 	addReadTriageFlags(cmd, &triage)
 	return cmd
 }
@@ -312,6 +335,9 @@ func documentUpdate(deps Dependencies) *cobra.Command {
 			}
 
 			if !saveAndPublish {
+				if !dryRun && result == nil {
+					return printResult(cmd, deps, map[string]any{"updated": true})
+				}
 				return printResult(cmd, deps, result)
 			}
 
@@ -319,15 +345,15 @@ func documentUpdate(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			publishResult, err := deps.Client.Put(context.Background(), fmt.Sprintf("/document/%s/publish", args[0]), publishBody, api.RequestOptions{DryRun: dryRun})
+			publishResult, err := publishWithInvariantRaceRetry(context.Background(), deps.Client, args[0], publishBody, api.RequestOptions{DryRun: dryRun})
 			if err != nil {
 				return err
 			}
 
 			return printResult(cmd, deps, map[string]any{
 				"saveAndPublish": true,
-				"updated":        result,
-				"published":      publishResult,
+				"updated":        coalescePutResult(result, dryRun),
+				"published":      coalescePutResult(publishResult, dryRun),
 			})
 		},
 	}
@@ -454,29 +480,49 @@ func documentUpdateProperties(deps Dependencies) *cobra.Command {
 	var dryRun bool
 	cmd := &cobra.Command{
 		Use:   "update-properties <id>",
-		Short: "Update document properties",
-		Args:  cobra.ExactArgs(1),
+		Short: "Update document properties (merges into values[] by alias)",
+		Long: `Updates one or more property values on a document by merging into its values[] array.
+
+Three input shapes are accepted:
+
+  Object form (most common for invariant docs):
+    --json '{"isFeatured": true, "products": ["Umbraco CMS"]}'
+    Each key becomes a values[] entry with culture=null, segment=null.
+
+  Array form (for culture/segment-variant properties):
+    --json '[{"alias":"title","value":"Hi","culture":"en-US","segment":null}]'
+    Used verbatim as values[].
+
+  Envelope form (matches 'document update --merge-json'):
+    --json '{"values":[{"alias":"title","value":"Hi","culture":null,"segment":null}]}'
+
+In all shapes the resulting values[] is merged by alias into the current document, so untouched properties survive.`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := requireValue("--json", jsonPayload); err != nil {
 				return err
 			}
-			body, err := parsePayload(jsonPayload)
+			patch, err := buildUpdatePropertiesPatch(jsonPayload)
 			if err != nil {
 				return err
 			}
+
 			current, err := fetchDocumentObject(context.Background(), deps.Client, args[0])
 			if err != nil {
 				return err
 			}
-			merged := mergeAliasPayload(current, body)
+			merged := mergeAliasPayload(current, patch)
 			result, err := deps.Client.Put(context.Background(), fmt.Sprintf("/document/%s", args[0]), merged, api.RequestOptions{DryRun: dryRun, SkipValidation: true})
 			if err != nil {
 				return err
 			}
+			if !dryRun && result == nil {
+				return printResult(cmd, deps, map[string]any{"updated": true})
+			}
 			return printResult(cmd, deps, result)
 		},
 	}
-	cmd.Flags().StringVar(&jsonPayload, "json", "", "Properties payload as JSON")
+	cmd.Flags().StringVar(&jsonPayload, "json", "", "Properties payload as JSON; accepts object {alias: value}, array [{alias, value, culture?, segment?}], or envelope {\"values\":[...]}")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
 	return cmd
 }
@@ -505,6 +551,58 @@ func documentPublish(deps Dependencies) *cobra.Command {
 	cmd.Flags().StringVar(&culture, "culture", "", "Culture shortcut")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
 	return cmd
+}
+
+// invariantRaceMaxAttempts is the upper bound on retries for the spurious
+// "culture for invariant content" 400 that the Management API throws under
+// rapid back-to-back save-and-publish loops. The error is timing-dependent
+// and clears on retry; 4 attempts with exponential-ish backoff matches what
+// the bug report saw work in practice.
+const invariantRaceMaxAttempts = 4
+
+var invariantRaceBackoffs = []time.Duration{200 * time.Millisecond, 500 * time.Millisecond, 1 * time.Second}
+
+// publishWithInvariantRaceRetry PUTs the publish body and retries on the
+// specific 400 "culture for invariant content" error that Umbraco intermittently
+// returns under tight save-and-publish loops on invariant content. The
+// payload is valid (verified via --dry-run in the bug report) — the same
+// request succeeds on retry, so the retry is the right correctness-preserving
+// workaround at the CLI layer. Other 400s are surfaced immediately.
+func publishWithInvariantRaceRetry(ctx context.Context, client *api.Client, id string, body map[string]any, opts api.RequestOptions) (any, error) {
+	path := fmt.Sprintf("/document/%s/publish", id)
+	var lastErr error
+	for attempt := 0; attempt < invariantRaceMaxAttempts; attempt++ {
+		result, err := client.Put(ctx, path, body, opts)
+		if err == nil {
+			return result, nil
+		}
+		if opts.DryRun || !isInvariantContentRaceError(err) || attempt == invariantRaceMaxAttempts-1 {
+			return nil, err
+		}
+		lastErr = err
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(invariantRaceBackoffs[attempt]):
+		}
+	}
+	return nil, lastErr
+}
+
+// isInvariantContentRaceError matches the spurious 400 the Management API
+// returns under the save-and-publish race. The payload looks like
+// {"detail":"One or more property values specify a culture for an [invariant content]"}.
+// Substring-match on "invariant content" inside the rendered error is robust
+// to message phrasing tweaks without false-positiving on unrelated 400s.
+func isInvariantContentRaceError(err error) bool {
+	var apiErr *api.APIError
+	if !errors.As(err, &apiErr) {
+		return false
+	}
+	if apiErr.StatusCode != 400 {
+		return false
+	}
+	return strings.Contains(apiErr.Error(), "invariant content")
 }
 
 func documentPublishBody(jsonPayload string, culture string) (map[string]any, error) {
@@ -711,4 +809,110 @@ func documentRestore(deps Dependencies) *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
 	return cmd
+}
+
+// documentReferences wraps GET /document/{id}/referenced-by — "what other
+// items reference this document." Headline use case from the bug report:
+// content-audit questions like "which case studies reference the Media
+// sector node?" (orphan checks, safe-delete checks, taxonomy usage). The
+// endpoint returns the standard {items, total} envelope, so pagination
+// flags compose with it the same way they do on children/root.
+func documentReferences(deps Dependencies) *cobra.Command {
+	var fields string
+	var skip, take int
+	var all bool
+	var triage readTriageOptions
+	cmd := &cobra.Command{
+		Use:   "references <id>",
+		Short: "List items that reference this document (paginated; --skip/--take/--all)",
+		Long:  "Wraps GET /document/{id}/referenced-by. Used to answer 'what uses this node' for orphan checks, safe-delete verification, and taxonomy usage audits.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runReferencesQuery(cmd, deps, fmt.Sprintf("/document/%s/referenced-by", args[0]), fields, skip, take, all, triage)
+		},
+	}
+	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
+	addPaginationFlags(cmd, &skip, &take)
+	addAutoPaginationFlag(cmd, &all)
+	addReadTriageFlags(cmd, &triage)
+	return cmd
+}
+
+// documentReferencedDescendants wraps GET /document/{id}/referenced-descendants
+// — like 'references' but also includes references to any descendant of the
+// given node. Useful for 'is this whole subtree referenced anywhere outside
+// itself' checks before bulk-deleting or moving sections.
+func documentReferencedDescendants(deps Dependencies) *cobra.Command {
+	var fields string
+	var skip, take int
+	var all bool
+	var triage readTriageOptions
+	cmd := &cobra.Command{
+		Use:   "referenced-descendants <id>",
+		Short: "List items that reference this document or any of its descendants",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runReferencesQuery(cmd, deps, fmt.Sprintf("/document/%s/referenced-descendants", args[0]), fields, skip, take, all, triage)
+		},
+	}
+	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
+	addPaginationFlags(cmd, &skip, &take)
+	addAutoPaginationFlag(cmd, &all)
+	addReadTriageFlags(cmd, &triage)
+	return cmd
+}
+
+// documentAreReferenced wraps GET /document/are-referenced?id=... — a bulk
+// 'is anything referencing any of these?' check. Returns the subset of the
+// supplied ids that have references. Useful when iterating a candidate list
+// for deletion: filter to safe-to-delete before issuing the deletes.
+func documentAreReferenced(deps Dependencies) *cobra.Command {
+	var idsCSV string
+	cmd := &cobra.Command{
+		Use:   "are-referenced",
+		Short: "Bulk check: which of these document IDs are referenced by something",
+		Long:  "GET /document/are-referenced?id=<csv>. Returns the ids that have at least one inbound reference; safe-to-delete candidates are the complement.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ids := uniqueCSV(idsCSV)
+			if len(ids) == 0 {
+				return fmt.Errorf("document are-referenced requires --ids <comma-separated guids>")
+			}
+			anyIDs := make([]any, len(ids))
+			for i, v := range ids {
+				anyIDs[i] = v
+			}
+			result, err := deps.Client.Get(context.Background(), "/document/are-referenced", api.RequestOptions{Params: map[string]any{"id": anyIDs}})
+			if err != nil {
+				return err
+			}
+			return printResult(cmd, deps, result)
+		},
+	}
+	cmd.Flags().StringVar(&idsCSV, "ids", "", "Comma-separated document GUIDs to check (required)")
+	return cmd
+}
+
+// runReferencesQuery is the shared body for 'references' and
+// 'referenced-descendants'. The two endpoints have identical request/response
+// shapes, so the only thing that differs at the command layer is the path.
+// Threading the path through here keeps the pagination/triage plumbing in
+// one place instead of duplicated per-command.
+func runReferencesQuery(cmd *cobra.Command, deps Dependencies, path string, fields string, skip int, take int, all bool, triage readTriageOptions) error {
+	ctx := context.Background()
+	candidate := getRequestCandidate{
+		path: path,
+		opts: api.RequestOptions{Fields: fields, Params: applyPaginationParams(nil, skip, take)},
+	}
+
+	var result any
+	var err error
+	if all {
+		result, err = getAllPagesWithFallback(ctx, deps.Client, take, skip, triage.FirstN, candidate)
+	} else {
+		result, err = getWithFallback(ctx, deps.Client, candidate)
+	}
+	if err != nil {
+		return err
+	}
+	return printResult(cmd, deps, applyReadTriage(applyFieldsProjection(result, fields), triage))
 }
