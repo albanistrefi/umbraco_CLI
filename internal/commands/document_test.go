@@ -1164,3 +1164,80 @@ func TestDocumentRootPassesSkipAndTakeAsQueryParams(t *testing.T) {
 		}
 	}
 }
+
+// --all walks pages until the server returns a short page or items run out.
+// 'short page' is len(items) < take — what the server signals at the
+// boundary of the collection. Three pages of 100 + a final 7-item page
+// should be merged into one envelope of 307 items, with the loop stopping
+// because the last page is shorter than the page size.
+func TestDocumentChildrenAllAutoPaginatesAcrossPages(t *testing.T) {
+	var pages int32
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/tree/document/children":
+			skip := req.URL.Query().Get("skip")
+			n := atomic.AddInt32(&pages, 1)
+			items := make([]string, 0, 100)
+			pageSize := 100
+			if n == 4 { // last partial page
+				pageSize = 7
+			}
+			if n > 4 {
+				return endpointJSONResponse(http.StatusOK, `{"items":[],"total":307}`), nil
+			}
+			for i := 0; i < pageSize; i++ {
+				items = append(items, `{"id":"x"}`)
+			}
+			return endpointJSONResponse(http.StatusOK, `{"items":[`+strings.Join(items, ",")+`],"total":307,"_observed_skip":"`+skip+`"}`), nil
+		}
+		return endpointJSONResponse(http.StatusNotFound, `null`), nil
+	})
+
+	// --take pins the page size so the mock's 100-item pages match what
+	// the helper requests; loop should walk 3 full pages + 1 short.
+	output, err := execute(buildRootWithCollections(t, deps), "document", "children", "doc-1", "--all", "--take", "100")
+	if err != nil {
+		t.Fatalf("--all failed: %v", err)
+	}
+	if got := atomic.LoadInt32(&pages); got != 4 {
+		t.Fatalf("expected exactly 4 pages walked (3 full + 1 short), got %d", got)
+	}
+	var env map[string]any
+	if err := json.Unmarshal([]byte(output), &env); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	items := env["items"].([]any)
+	if len(items) != 307 {
+		t.Fatalf("expected 307 merged items, got %d", len(items))
+	}
+}
+
+// --first-n should short-circuit --all so the loop doesn't pull pages whose
+// items would be thrown away.
+func TestDocumentChildrenAllRespectsFirstNAsEarlyStop(t *testing.T) {
+	var pages int32
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/tree/document/children":
+			atomic.AddInt32(&pages, 1)
+			// 500 items per page (default --all page size); plenty.
+			items := make([]string, 500)
+			for i := range items {
+				items[i] = `{"id":"x"}`
+			}
+			return endpointJSONResponse(http.StatusOK, `{"items":[`+strings.Join(items, ",")+`],"total":99999}`), nil
+		}
+		return endpointJSONResponse(http.StatusNotFound, `null`), nil
+	})
+
+	if _, err := execute(buildRootWithCollections(t, deps), "document", "children", "doc-1", "--all", "--first-n", "150"); err != nil {
+		t.Fatalf("--all --first-n failed: %v", err)
+	}
+	if got := atomic.LoadInt32(&pages); got != 1 {
+		t.Fatalf("expected --first-n 150 to stop after the first 500-item page, got %d pages", got)
+	}
+}

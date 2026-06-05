@@ -63,22 +63,27 @@ func documentRoot(deps Dependencies) *cobra.Command {
 	var fields string
 	var paramsRaw string
 	var skip, take int
+	var all bool
 	var triage readTriageOptions
 	cmd := &cobra.Command{
 		Use:   "root",
-		Short: "Get root documents (paginated; use --skip/--take to walk past the server page size)",
+		Short: "Get root documents (paginated; --skip/--take/--all)",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := context.Background()
 			params, err := parseParams(paramsRaw)
 			if err != nil {
 				return err
 			}
 			params = applyPaginationParams(params, skip, take)
-			result, err := getWithFallback(
-				context.Background(),
-				deps.Client,
-				getRequestCandidate{path: "/tree/document/root", opts: api.RequestOptions{Fields: fields, Params: params}},
-				getRequestCandidate{path: "/document/root", opts: api.RequestOptions{Fields: fields, Params: params}},
-			)
+			tree := getRequestCandidate{path: "/tree/document/root", opts: api.RequestOptions{Fields: fields, Params: params}}
+			legacy := getRequestCandidate{path: "/document/root", opts: api.RequestOptions{Fields: fields, Params: params}}
+
+			var result any
+			if all {
+				result, err = getAllPagesWithFallback(ctx, deps.Client, take, skip, triage.FirstN, tree, legacy)
+			} else {
+				result, err = getWithFallback(ctx, deps.Client, tree, legacy)
+			}
 			if err != nil {
 				return err
 			}
@@ -88,6 +93,7 @@ func documentRoot(deps Dependencies) *cobra.Command {
 	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
 	cmd.Flags().StringVar(&paramsRaw, "params", "", "Query parameters as JSON")
 	addPaginationFlags(cmd, &skip, &take)
+	addAutoPaginationFlag(cmd, &all)
 	addReadTriageFlags(cmd, &triage)
 	return cmd
 }
@@ -95,26 +101,30 @@ func documentRoot(deps Dependencies) *cobra.Command {
 func documentChildren(deps Dependencies) *cobra.Command {
 	var fields string
 	var skip, take int
+	var all bool
 	var triage readTriageOptions
 	cmd := &cobra.Command{
 		Use:   "children <id>",
-		Short: "Get child documents (paginated; use --skip/--take to walk past the server page size)",
+		Short: "Get child documents (paginated; --skip/--take/--all)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			treeParams := applyPaginationParams(map[string]any{"parentId": args[0]}, skip, take)
-			legacyParams := applyPaginationParams(nil, skip, take)
-			result, err := getWithFallback(
-				context.Background(),
-				deps.Client,
-				getRequestCandidate{
-					path: "/tree/document/children",
-					opts: api.RequestOptions{Fields: fields, Params: treeParams},
-				},
-				getRequestCandidate{
-					path: fmt.Sprintf("/document/%s/children", args[0]),
-					opts: api.RequestOptions{Fields: fields, Params: legacyParams},
-				},
-			)
+			ctx := context.Background()
+			treeCandidate := getRequestCandidate{
+				path: "/tree/document/children",
+				opts: api.RequestOptions{Fields: fields, Params: applyPaginationParams(map[string]any{"parentId": args[0]}, skip, take)},
+			}
+			legacyCandidate := getRequestCandidate{
+				path: fmt.Sprintf("/document/%s/children", args[0]),
+				opts: api.RequestOptions{Fields: fields, Params: applyPaginationParams(nil, skip, take)},
+			}
+
+			var result any
+			var err error
+			if all {
+				result, err = getAllPagesWithFallback(ctx, deps.Client, take, skip, triage.FirstN, treeCandidate, legacyCandidate)
+			} else {
+				result, err = getWithFallback(ctx, deps.Client, treeCandidate, legacyCandidate)
+			}
 			if err != nil {
 				return err
 			}
@@ -123,6 +133,7 @@ func documentChildren(deps Dependencies) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
 	addPaginationFlags(cmd, &skip, &take)
+	addAutoPaginationFlag(cmd, &all)
 	addReadTriageFlags(cmd, &triage)
 	return cmd
 }

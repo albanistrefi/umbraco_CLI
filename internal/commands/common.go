@@ -43,6 +43,14 @@ func addPaginationFlags(cmd *cobra.Command, skip *int, take *int) {
 	cmd.Flags().IntVar(take, "take", -1, "Take count (passes through as ?take=N; combine with --skip to page)")
 }
 
+// addAutoPaginationFlag registers --all on collection commands that support
+// auto-paging. Separate from addPaginationFlags so commands that genuinely
+// need only a single page (e.g. previews) can register --skip/--take without
+// gaining --all by accident.
+func addAutoPaginationFlag(cmd *cobra.Command, all *bool) {
+	cmd.Flags().BoolVar(all, "all", false, "Walk every page until exhausted (auto-paginates with --take as the page size, default 500; combine with --skip to start partway through). Bounded by an internal 100k-item ceiling.")
+}
+
 // applyPaginationParams folds skip/take into an existing params map, leaving
 // it nil-safe so callers don't need to pre-allocate when no other params
 // are present.
