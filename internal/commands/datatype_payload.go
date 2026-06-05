@@ -60,46 +60,67 @@ func mergeAliasValue(current any, patch any) any {
 
 func mergeAliasObjectArrays(current []any, patch []any) []any {
 	merged := make([]any, 0, len(current)+len(patch))
-	patchByAlias := make(map[string]map[string]any, len(patch))
+	patchByKey := make(map[string]map[string]any, len(patch))
 	for _, item := range patch {
-		alias, itemMap, ok := aliasObject(item)
+		key, itemMap, ok := aliasMergeKey(item)
 		if !ok {
 			continue
 		}
-		patchByAlias[alias] = itemMap
+		patchByKey[key] = itemMap
 	}
 
-	seen := make(map[string]struct{}, len(patchByAlias))
+	seen := make(map[string]struct{}, len(patchByKey))
 	for _, item := range current {
-		alias, itemMap, ok := aliasObject(item)
+		key, itemMap, ok := aliasMergeKey(item)
 		if !ok {
 			merged = append(merged, cloneAliasValue(item))
 			continue
 		}
 
-		patchItem, hasPatch := patchByAlias[alias]
+		patchItem, hasPatch := patchByKey[key]
 		if !hasPatch {
 			merged = append(merged, cloneAliasValue(itemMap))
 			continue
 		}
 
 		merged = append(merged, mergeAliasPayload(itemMap, patchItem))
-		seen[alias] = struct{}{}
+		seen[key] = struct{}{}
 	}
 
 	for _, item := range patch {
-		alias, itemMap, ok := aliasObject(item)
+		key, itemMap, ok := aliasMergeKey(item)
 		if !ok {
 			merged = append(merged, cloneAliasValue(item))
 			continue
 		}
-		if _, alreadyMerged := seen[alias]; alreadyMerged {
+		if _, alreadyMerged := seen[key]; alreadyMerged {
 			continue
 		}
 		merged = append(merged, cloneAliasValue(itemMap))
 	}
 
 	return merged
+}
+
+// aliasMergeKey returns the compound key used to match patch entries against
+// current entries inside an alias-keyed object array (e.g. a document's
+// values[]).
+//
+// For Umbraco "values entry" shapes the legitimate identity is the triple
+// (alias, culture, segment) — the same alias appears once per culture on a
+// variant property, so keying on alias alone collapses culture-specific
+// entries into one another. For shapes that don't carry culture/segment
+// (e.g. doctype properties, where alias alone is the identity), both fields
+// default to the empty string and the behaviour is identical to the old
+// alias-only key.
+func aliasMergeKey(item any) (string, map[string]any, bool) {
+	alias, itemMap, ok := aliasObject(item)
+	if !ok {
+		return "", nil, false
+	}
+	culture, _ := itemMap["culture"].(string)
+	segment, _ := itemMap["segment"].(string)
+	return alias + "\x00" + culture + "\x00" + segment, itemMap, true
 }
 
 func isAliasObjectArray(items []any) bool {
