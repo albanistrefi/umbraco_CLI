@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.3.17 - 2026-06-08
+
+- added `datatype block update <datatypeId> --content-element-type <guid> [flags]` for partial edits to an existing block on a Block List / Block Grid datatype. Only flags whose `cmd.Flags().Changed()` is true mutate their property, so `--editor-size large` alone won't wipe the label. Missing target block errors with `not found; use 'datatype block add'` (deliberate difference from `add`). Idempotent via `reflect.DeepEqual` — no PUT when the resulting block is byte-identical to the current one. `--label ""` / `--thumbnail ""` / `--settings-element-type ""` clear those optional fields. `editorUiAlias` and every other top-level value / sibling block survive the round-trip
+- added GUID format validation to `--content-element-type` and `--settings-element-type` flags on `datatype block add` / `update` / `remove`. A typo'd GUID now errors with `must be a GUID (8-4-4-4-12 hex), got "..."` before any HTTP call instead of falling through to `block not found` (misleading) or silently persisting garbage on the server
+
 ## v0.3.16 - 2026-06-05
 
 ### Document fixes
