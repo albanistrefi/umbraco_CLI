@@ -22,8 +22,8 @@ func blockListPayload(t *testing.T) string {
 		"editorAlias":"Umbraco.BlockList",
 		"values":[
 			{"alias":"blocks","value":[
-				{"contentElementTypeKey":"existing-1","label":"Text Block","editorSize":"medium","forceHideContentEditorInOverlay":false},
-				{"contentElementTypeKey":"existing-2","label":"Image Block","editorSize":"large","forceHideContentEditorInOverlay":false}
+				{"contentElementTypeKey":"11111111-1111-1111-1111-111111111111","label":"Text Block","editorSize":"medium","forceHideContentEditorInOverlay":false},
+				{"contentElementTypeKey":"22222222-2222-2222-2222-222222222222","label":"Image Block","editorSize":"large","forceHideContentEditorInOverlay":false}
 			]},
 			{"alias":"validationLimit","value":{"min":1,"max":10}}
 		]
@@ -50,7 +50,7 @@ func TestDatatypeBlockListReturnsExistingBlocks(t *testing.T) {
 	if err := json.Unmarshal([]byte(output), &blocks); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if len(blocks) != 2 || blocks[0]["contentElementTypeKey"] != "existing-1" {
+	if len(blocks) != 2 || blocks[0]["contentElementTypeKey"] != "11111111-1111-1111-1111-111111111111" {
 		t.Fatalf("unexpected blocks output: %+v", blocks)
 	}
 }
@@ -78,8 +78,8 @@ func TestDatatypeBlockAddPreservesExistingBlocksAndUnrelatedConfig(t *testing.T)
 	output, err := execute(
 		buildRootWithCollections(t, deps),
 		"datatype", "block", "add", blListID,
-		"--content-element-type", "new-block-guid",
-		"--settings-element-type", "settings-guid",
+		"--content-element-type", "33333333-3333-3333-3333-333333333333",
+		"--settings-element-type", "44444444-4444-4444-4444-444444444444",
 		"--label", "Hero Block",
 		"--editor-size", "Large",
 	)
@@ -105,10 +105,10 @@ func TestDatatypeBlockAddPreservesExistingBlocksAndUnrelatedConfig(t *testing.T)
 		t.Fatalf("expected 3 blocks after append, got %d: %+v", len(blocks), blocks)
 	}
 	last := blocks[2].(map[string]any)
-	if last["contentElementTypeKey"] != "new-block-guid" {
+	if last["contentElementTypeKey"] != "33333333-3333-3333-3333-333333333333" {
 		t.Fatalf("new block should be appended at the end, got %+v", last)
 	}
-	if last["settingsElementTypeKey"] != "settings-guid" {
+	if last["settingsElementTypeKey"] != "44444444-4444-4444-4444-444444444444" {
 		t.Fatalf("settings element type missing, got %+v", last)
 	}
 	if last["editorSize"] != "large" {
@@ -144,7 +144,7 @@ func TestDatatypeBlockAddIsIdempotent(t *testing.T) {
 	output, err := execute(
 		buildRootWithCollections(t, deps),
 		"datatype", "block", "add", blListID,
-		"--content-element-type", "existing-1",
+		"--content-element-type", "11111111-1111-1111-1111-111111111111",
 	)
 	if err != nil {
 		t.Fatalf("add idempotent failed: %v", err)
@@ -179,7 +179,7 @@ func TestDatatypeBlockAddRejectsNonBlockEditor(t *testing.T) {
 	_, err := execute(
 		buildRootWithCollections(t, deps),
 		"datatype", "block", "add", blListID,
-		"--content-element-type", "some-guid",
+		"--content-element-type", "00000000-0000-0000-0000-aaaaaaaaaaaa",
 	)
 	if err == nil {
 		t.Fatalf("expected rejection for non-block editor")
@@ -197,7 +197,7 @@ func TestDatatypeBlockAddRejectsInvalidEditorSize(t *testing.T) {
 	_, err := execute(
 		buildRootWithCollections(t, deps),
 		"datatype", "block", "add", blListID,
-		"--content-element-type", "x",
+		"--content-element-type", "11111111-1111-1111-1111-111111111111",
 		"--editor-size", "huge",
 	)
 	if err == nil {
@@ -231,7 +231,7 @@ func TestDatatypeBlockRemoveDropsBlockAndPreservesRest(t *testing.T) {
 	_, err := execute(
 		buildRootWithCollections(t, deps),
 		"datatype", "block", "remove", blListID,
-		"--content-element-type", "existing-1",
+		"--content-element-type", "11111111-1111-1111-1111-111111111111",
 	)
 	if err != nil {
 		t.Fatalf("remove failed: %v", err)
@@ -248,7 +248,7 @@ func TestDatatypeBlockRemoveDropsBlockAndPreservesRest(t *testing.T) {
 	if len(blocks) != 1 {
 		t.Fatalf("expected one remaining block, got %+v", blocks)
 	}
-	if blocks[0].(map[string]any)["contentElementTypeKey"] != "existing-2" {
+	if blocks[0].(map[string]any)["contentElementTypeKey"] != "22222222-2222-2222-2222-222222222222" {
 		t.Fatalf("wrong block survived: %+v", blocks[0])
 	}
 }
@@ -272,7 +272,7 @@ func TestDatatypeBlockRemoveIsIdempotent(t *testing.T) {
 	output, err := execute(
 		buildRootWithCollections(t, deps),
 		"datatype", "block", "remove", blListID,
-		"--content-element-type", "never-there",
+		"--content-element-type", "00000000-0000-0000-0000-bbbbbbbbbbbb",
 	)
 	if err != nil {
 		t.Fatalf("idempotent remove failed: %v", err)
@@ -334,7 +334,7 @@ func TestDatatypeBlockBlockGridDefaultsAllowAtRootAndAllowInAreasToTrue(t *testi
 	// Both placement flags default to true so the block is actually placeable
 	// after registration — the server defaults to false when omitted, which
 	// would silently register a block that's invisible in the editor.
-	block := blockGridAddCaptured(t, "--content-element-type", "grid-block-1")
+	block := blockGridAddCaptured(t, "--content-element-type", "55555555-5555-5555-5555-555555555555")
 	if block["allowAtRoot"] != true {
 		t.Fatalf("expected allowAtRoot=true default, got %+v", block["allowAtRoot"])
 	}
@@ -345,7 +345,7 @@ func TestDatatypeBlockBlockGridDefaultsAllowAtRootAndAllowInAreasToTrue(t *testi
 
 func TestDatatypeBlockBlockGridHonoursExplicitPlacementOverrides(t *testing.T) {
 	block := blockGridAddCaptured(t,
-		"--content-element-type", "grid-block-1",
+		"--content-element-type", "55555555-5555-5555-5555-555555555555",
 		"--allow-at-root=false",
 		"--allow-in-areas=false",
 	)
@@ -378,7 +378,7 @@ func TestDatatypeBlockBlockListOmitsPlacementFlags(t *testing.T) {
 	if _, err := execute(
 		buildRootWithCollections(t, deps),
 		"datatype", "block", "add", blListID,
-		"--content-element-type", "list-block-new",
+		"--content-element-type", "66666666-6666-6666-6666-666666666666",
 		"--allow-at-root=true", "--allow-in-areas=true",
 	); err != nil {
 		t.Fatalf("BlockList add failed: %v", err)
@@ -421,8 +421,8 @@ func blockListPayloadWithEditorUI(t *testing.T) string {
 		"editorUiAlias":"Umb.PropertyEditorUi.BlockList",
 		"values":[
 			{"alias":"blocks","value":[
-				{"contentElementTypeKey":"existing-1","label":"Text Block","editorSize":"medium","forceHideContentEditorInOverlay":false,"thumbnail":"/img/old.png"},
-				{"contentElementTypeKey":"existing-2","label":"Image Block","editorSize":"large","forceHideContentEditorInOverlay":false}
+				{"contentElementTypeKey":"11111111-1111-1111-1111-111111111111","label":"Text Block","editorSize":"medium","forceHideContentEditorInOverlay":false,"thumbnail":"/img/old.png"},
+				{"contentElementTypeKey":"22222222-2222-2222-2222-222222222222","label":"Image Block","editorSize":"large","forceHideContentEditorInOverlay":false}
 			]},
 			{"alias":"validationLimit","value":{"min":1,"max":10}},
 			{"alias":"useSingleBlockMode","value":false}
@@ -457,7 +457,7 @@ func TestDatatypeBlockUpdatePreservesEverythingElse(t *testing.T) {
 	if _, err := execute(
 		buildRootWithCollections(t, deps),
 		"datatype", "block", "update", blListID,
-		"--content-element-type", "existing-1",
+		"--content-element-type", "11111111-1111-1111-1111-111111111111",
 		"--label", "Updated Text Block",
 	); err != nil {
 		t.Fatalf("update failed: %v", err)
@@ -471,7 +471,7 @@ func TestDatatypeBlockUpdatePreservesEverythingElse(t *testing.T) {
 		t.Fatalf("expected validationLimit and useSingleBlockMode preserved, got %d values entries", len(values))
 	}
 
-	// Find blocks entry; siblings unchanged, only existing-1's label mutated.
+	// Find blocks entry; siblings unchanged, only 11111111-1111-1111-1111-111111111111's label mutated.
 	var blocks []any
 	for _, v := range values {
 		entry := v.(map[string]any)
@@ -485,7 +485,7 @@ func TestDatatypeBlockUpdatePreservesEverythingElse(t *testing.T) {
 	}
 	updated := blocks[0].(map[string]any)
 	sibling := blocks[1].(map[string]any)
-	if updated["contentElementTypeKey"] != "existing-1" || updated["label"] != "Updated Text Block" {
+	if updated["contentElementTypeKey"] != "11111111-1111-1111-1111-111111111111" || updated["label"] != "Updated Text Block" {
 		t.Fatalf("target block label not updated, got %+v", updated)
 	}
 	// Unpassed fields on the target must NOT have moved.
@@ -496,7 +496,7 @@ func TestDatatypeBlockUpdatePreservesEverythingElse(t *testing.T) {
 		t.Fatalf("thumbnail on the target was clobbered, got %+v", updated["thumbnail"])
 	}
 	// Sibling block unchanged.
-	if sibling["contentElementTypeKey"] != "existing-2" || sibling["label"] != "Image Block" || sibling["editorSize"] != "large" {
+	if sibling["contentElementTypeKey"] != "22222222-2222-2222-2222-222222222222" || sibling["label"] != "Image Block" || sibling["editorSize"] != "large" {
 		t.Fatalf("sibling block was disturbed, got %+v", sibling)
 	}
 }
@@ -525,7 +525,7 @@ func TestDatatypeBlockUpdateOnlyMutatesPassedFlags(t *testing.T) {
 	if _, err := execute(
 		buildRootWithCollections(t, deps),
 		"datatype", "block", "update", blListID,
-		"--content-element-type", "existing-1",
+		"--content-element-type", "11111111-1111-1111-1111-111111111111",
 		"--editor-size", "large",
 	); err != nil {
 		t.Fatalf("update failed: %v", err)
@@ -540,7 +540,7 @@ func TestDatatypeBlockUpdateOnlyMutatesPassedFlags(t *testing.T) {
 		}
 		for _, b := range entry["value"].([]any) {
 			block := b.(map[string]any)
-			if block["contentElementTypeKey"] == "existing-1" {
+			if block["contentElementTypeKey"] == "11111111-1111-1111-1111-111111111111" {
 				target = block
 				break
 			}
@@ -578,7 +578,7 @@ func TestDatatypeBlockUpdateEmptyStringClearsOptionalFields(t *testing.T) {
 	if _, err := execute(
 		buildRootWithCollections(t, deps),
 		"datatype", "block", "update", blListID,
-		"--content-element-type", "existing-1",
+		"--content-element-type", "11111111-1111-1111-1111-111111111111",
 		"--label", "",
 		"--thumbnail", "",
 	); err != nil {
@@ -618,16 +618,17 @@ func TestDatatypeBlockUpdateErrorsWhenBlockMissing(t *testing.T) {
 		return datatypeJSONResponse(http.StatusNotFound, `null`), nil
 	})
 
+	const absentGUID = "deadbeef-dead-beef-dead-beefdeadbeef"
 	_, err := execute(
 		buildRootWithCollections(t, deps),
 		"datatype", "block", "update", blListID,
-		"--content-element-type", "does-not-exist",
+		"--content-element-type", absentGUID,
 		"--label", "X",
 	)
 	if err == nil {
 		t.Fatalf("expected update to error on missing block")
 	}
-	if !strings.Contains(err.Error(), "does-not-exist") || !strings.Contains(err.Error(), "not found") {
+	if !strings.Contains(err.Error(), absentGUID) || !strings.Contains(err.Error(), "not found") {
 		t.Fatalf("error should name the missing block clearly, got: %v", err)
 	}
 	if putCount != 0 {
@@ -655,7 +656,7 @@ func TestDatatypeBlockUpdateIsIdempotent(t *testing.T) {
 	output, err := execute(
 		buildRootWithCollections(t, deps),
 		"datatype", "block", "update", blListID,
-		"--content-element-type", "existing-1",
+		"--content-element-type", "11111111-1111-1111-1111-111111111111",
 		"--label", "Text Block",
 	)
 	if err != nil {
@@ -680,7 +681,7 @@ func TestDatatypeBlockUpdateRejectsInvalidEditorSize(t *testing.T) {
 	_, err := execute(
 		buildRootWithCollections(t, deps),
 		"datatype", "block", "update", blListID,
-		"--content-element-type", "existing-1",
+		"--content-element-type", "11111111-1111-1111-1111-111111111111",
 		"--editor-size", "huge",
 	)
 	if err == nil {
@@ -710,7 +711,7 @@ func TestDatatypeBlockUpdateBlockListIgnoresGridFlags(t *testing.T) {
 	if _, err := execute(
 		buildRootWithCollections(t, deps),
 		"datatype", "block", "update", blListID,
-		"--content-element-type", "existing-1",
+		"--content-element-type", "11111111-1111-1111-1111-111111111111",
 		"--label", "Touch Label",
 		"--allow-at-root=false",
 		"--allow-in-areas=false",
@@ -745,7 +746,7 @@ func TestDatatypeBlockUpdateBlockGridHonoursPlacementFlags(t *testing.T) {
 				_ = json.NewDecoder(req.Body).Decode(&putBody)
 				return datatypeJSONResponse(http.StatusOK, `{}`), nil
 			}
-			return datatypeJSONResponse(http.StatusOK, `{"id":"dt-blocklist-1","editorAlias":"Umbraco.BlockGrid","values":[{"alias":"blocks","value":[{"contentElementTypeKey":"grid-1","label":"Old","allowAtRoot":true,"allowInAreas":true}]}]}`), nil
+			return datatypeJSONResponse(http.StatusOK, `{"id":"dt-blocklist-1","editorAlias":"Umbraco.BlockGrid","values":[{"alias":"blocks","value":[{"contentElementTypeKey":"77777777-7777-7777-7777-777777777777","label":"Old","allowAtRoot":true,"allowInAreas":true}]}]}`), nil
 		}
 		return datatypeJSONResponse(http.StatusNotFound, `null`), nil
 	})
@@ -753,7 +754,7 @@ func TestDatatypeBlockUpdateBlockGridHonoursPlacementFlags(t *testing.T) {
 	if _, err := execute(
 		buildRootWithCollections(t, deps),
 		"datatype", "block", "update", blListID,
-		"--content-element-type", "grid-1",
+		"--content-element-type", "77777777-7777-7777-7777-777777777777",
 		"--allow-at-root=false",
 	); err != nil {
 		t.Fatalf("BlockGrid update failed: %v", err)
@@ -787,7 +788,7 @@ func TestDatatypeBlockUpdateDryRunSendsNoPut(t *testing.T) {
 	output, err := execute(
 		buildRootWithCollections(t, deps),
 		"datatype", "block", "update", blListID,
-		"--content-element-type", "existing-1",
+		"--content-element-type", "11111111-1111-1111-1111-111111111111",
 		"--label", "New label",
 		"--dry-run",
 	)
@@ -803,5 +804,129 @@ func TestDatatypeBlockUpdateDryRunSendsNoPut(t *testing.T) {
 	}
 	if dry["dryRun"] != true || dry["method"] != "PUT" {
 		t.Fatalf("expected DryRunResult envelope, got %+v", dry)
+	}
+}
+
+// --- GUID flag validation across block add/update/remove ---
+// Codex re-review on PR #5 flagged that --content-element-type and
+// --settings-element-type were unchecked: a typo'd content GUID would fall
+// through to "block not found" (misleading) and a typo'd settings GUID
+// would persist as-is (broken settings overlay in the backoffice). Pinned
+// across all three subcommands since the surface is symmetric.
+
+func TestDatatypeBlockAddRejectsMalformedContentGUID(t *testing.T) {
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		t.Fatalf("invalid GUID must short-circuit before any HTTP call")
+		return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+	})
+	_, err := execute(
+		buildRootWithCollections(t, deps),
+		"datatype", "block", "add", blListID,
+		"--content-element-type", "not-a-uuid",
+	)
+	if err == nil {
+		t.Fatalf("expected GUID rejection")
+	}
+	if !strings.Contains(err.Error(), "must be a GUID") || !strings.Contains(err.Error(), "--content-element-type") {
+		t.Fatalf("error should name flag and reason, got: %v", err)
+	}
+}
+
+func TestDatatypeBlockAddRejectsMalformedSettingsGUID(t *testing.T) {
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		t.Fatalf("invalid GUID must short-circuit before any HTTP call")
+		return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+	})
+	_, err := execute(
+		buildRootWithCollections(t, deps),
+		"datatype", "block", "add", blListID,
+		"--content-element-type", "11111111-1111-1111-1111-111111111111",
+		"--settings-element-type", "garbage",
+	)
+	if err == nil {
+		t.Fatalf("expected settings GUID rejection")
+	}
+	if !strings.Contains(err.Error(), "--settings-element-type") {
+		t.Fatalf("error should name the offending flag, got: %v", err)
+	}
+}
+
+func TestDatatypeBlockUpdateRejectsMalformedContentGUID(t *testing.T) {
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		t.Fatalf("invalid GUID must short-circuit before any HTTP call")
+		return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+	})
+	_, err := execute(
+		buildRootWithCollections(t, deps),
+		"datatype", "block", "update", blListID,
+		"--content-element-type", "not-a-uuid",
+		"--label", "X",
+	)
+	if err == nil || !strings.Contains(err.Error(), "--content-element-type") {
+		t.Fatalf("expected --content-element-type rejection, got: %v", err)
+	}
+}
+
+func TestDatatypeBlockUpdateRejectsMalformedSettingsGUID(t *testing.T) {
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		t.Fatalf("invalid GUID must short-circuit before any HTTP call")
+		return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+	})
+	_, err := execute(
+		buildRootWithCollections(t, deps),
+		"datatype", "block", "update", blListID,
+		"--content-element-type", "11111111-1111-1111-1111-111111111111",
+		"--settings-element-type", "garbage",
+	)
+	if err == nil || !strings.Contains(err.Error(), "--settings-element-type") {
+		t.Fatalf("expected --settings-element-type rejection, got: %v", err)
+	}
+}
+
+// Empty --settings-element-type on update is the "clear this field" signal;
+// must NOT trigger the GUID validator (that was the whole point of guarding
+// behind cmd.Flags().Changed && value != "").
+func TestDatatypeBlockUpdateEmptySettingsClearsWithoutGUIDValidation(t *testing.T) {
+	var putBody map[string]any
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case blPath:
+			if req.Method == http.MethodPut {
+				_ = json.NewDecoder(req.Body).Decode(&putBody)
+				return datatypeJSONResponse(http.StatusOK, `{}`), nil
+			}
+			return datatypeJSONResponse(http.StatusOK, `{"id":"dt-blocklist-1","editorAlias":"Umbraco.BlockList","values":[{"alias":"blocks","value":[{"contentElementTypeKey":"11111111-1111-1111-1111-111111111111","settingsElementTypeKey":"44444444-4444-4444-4444-444444444444","label":"L"}]}]}`), nil
+		}
+		return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+	})
+
+	if _, err := execute(
+		buildRootWithCollections(t, deps),
+		"datatype", "block", "update", blListID,
+		"--content-element-type", "11111111-1111-1111-1111-111111111111",
+		"--settings-element-type", "",
+	); err != nil {
+		t.Fatalf("empty --settings-element-type should clear, not error: %v", err)
+	}
+	target := putBody["values"].([]any)[0].(map[string]any)["value"].([]any)[0].(map[string]any)
+	if _, present := target["settingsElementTypeKey"]; present {
+		t.Fatalf("empty --settings-element-type must delete the key, got %+v", target)
+	}
+}
+
+func TestDatatypeBlockRemoveRejectsMalformedContentGUID(t *testing.T) {
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		t.Fatalf("invalid GUID must short-circuit before any HTTP call")
+		return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+	})
+	_, err := execute(
+		buildRootWithCollections(t, deps),
+		"datatype", "block", "remove", blListID,
+		"--content-element-type", "not-a-uuid",
+	)
+	if err == nil || !strings.Contains(err.Error(), "--content-element-type") {
+		t.Fatalf("expected --content-element-type rejection, got: %v", err)
 	}
 }

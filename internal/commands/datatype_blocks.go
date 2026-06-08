@@ -4,12 +4,32 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"regexp"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
 )
+
+// guidPattern matches the standard 8-4-4-4-12 lowercase/uppercase hex form
+// the Umbraco Management API uses. Used to pre-validate block GUID flags
+// so a typo on --content-element-type / --settings-element-type errors with
+// "must be a GUID" instead of falling through to "block not found" (which
+// would be misleading) or, worse, persisting garbage on the server.
+var guidPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+
+// validateBlockGUID rejects flag values that don't look like a GUID. flagName
+// is included verbatim in the error so the user knows which flag was wrong.
+// Caller decides whether empty is valid (it usually means "clear this
+// optional field" — see datatypeBlockUpdate's --settings-element-type
+// handling).
+func validateBlockGUID(flagName string, value string) error {
+	if !guidPattern.MatchString(value) {
+		return fmt.Errorf("%s must be a GUID (8-4-4-4-12 hex), got %q", flagName, value)
+	}
+	return nil
+}
 
 // datatypeBlockEditorAliases is the set of editorAlias values whose
 // configuration includes a 'blocks' value entry shaped as an array of
@@ -93,6 +113,14 @@ func datatypeBlockAdd(deps Dependencies) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := requireValue("--content-element-type", contentElementType); err != nil {
 				return err
+			}
+			if err := validateBlockGUID("--content-element-type", contentElementType); err != nil {
+				return err
+			}
+			if settingsElementType != "" {
+				if err := validateBlockGUID("--settings-element-type", settingsElementType); err != nil {
+					return err
+				}
 			}
 			if editorSize != "" && !datatypeBlockValidEditorSizes[strings.ToLower(editorSize)] {
 				return fmt.Errorf("--editor-size must be one of small, medium, large (got %q)", editorSize)
@@ -212,6 +240,16 @@ BlockGrid: --allow-at-root and --allow-in-areas are honored when explicitly pass
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := requireValue("--content-element-type", contentElementType); err != nil {
 				return err
+			}
+			if err := validateBlockGUID("--content-element-type", contentElementType); err != nil {
+				return err
+			}
+			// Empty --settings-element-type is the "clear this field" signal;
+			// only validate when the caller actually supplied a value.
+			if cmd.Flags().Changed("settings-element-type") && settingsElementType != "" {
+				if err := validateBlockGUID("--settings-element-type", settingsElementType); err != nil {
+					return err
+				}
 			}
 			if cmd.Flags().Changed("editor-size") && editorSize != "" && !datatypeBlockValidEditorSizes[strings.ToLower(editorSize)] {
 				return fmt.Errorf("--editor-size must be one of small, medium, large (got %q)", editorSize)
@@ -342,6 +380,9 @@ func datatypeBlockRemove(deps Dependencies) *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := requireValue("--content-element-type", contentElementType); err != nil {
+				return err
+			}
+			if err := validateBlockGUID("--content-element-type", contentElementType); err != nil {
 				return err
 			}
 
