@@ -400,3 +400,408 @@ func TestDatatypeBlockBlockListOmitsPlacementFlags(t *testing.T) {
 		t.Fatalf("BlockList block must not include allowInAreas, got %+v", newBlock)
 	}
 }
+
+// --- datatype block update ---
+// These tests cover the acceptance criteria for the v0.3.16-follow-up
+// 'block update' command. Mirror the structure of 'block add' tests where
+// behaviour is symmetric (idempotency, BlockList-ignores-grid-flags,
+// editor-size validation, non-block-editor rejection).
+
+// blockListPayloadWithEditorUI is a variant of blockListPayload that
+// includes editorUiAlias and useSingleBlockMode at the top level. Used to
+// pin the "must not clobber top-level fields" regression that prompted
+// 'block update' to exist in the first place — agents hand-rolling the
+// full datatype update --json kept dropping editorUiAlias.
+func blockListPayloadWithEditorUI(t *testing.T) string {
+	t.Helper()
+	return `{
+		"id":"dt-blocklist-1",
+		"name":"Test Block List",
+		"editorAlias":"Umbraco.BlockList",
+		"editorUiAlias":"Umb.PropertyEditorUi.BlockList",
+		"values":[
+			{"alias":"blocks","value":[
+				{"contentElementTypeKey":"existing-1","label":"Text Block","editorSize":"medium","forceHideContentEditorInOverlay":false,"thumbnail":"/img/old.png"},
+				{"contentElementTypeKey":"existing-2","label":"Image Block","editorSize":"large","forceHideContentEditorInOverlay":false}
+			]},
+			{"alias":"validationLimit","value":{"min":1,"max":10}},
+			{"alias":"useSingleBlockMode","value":false}
+		]
+	}`
+}
+
+// Mutates only the targeted block; sibling blocks AND every top-level
+// field/value survive untouched. This is the regression guard for the
+// "datatype update --json dropped editorUiAlias" bug — block update must
+// not reintroduce it.
+func TestDatatypeBlockUpdatePreservesEverythingElse(t *testing.T) {
+	var putBody map[string]any
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case blPath:
+			switch req.Method {
+			case http.MethodGet:
+				return datatypeJSONResponse(http.StatusOK, blockListPayloadWithEditorUI(t)), nil
+			case http.MethodPut:
+				if err := json.NewDecoder(req.Body).Decode(&putBody); err != nil {
+					t.Fatalf("decode put: %v", err)
+				}
+				return datatypeJSONResponse(http.StatusOK, `{}`), nil
+			}
+		}
+		return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+	})
+
+	if _, err := execute(
+		buildRootWithCollections(t, deps),
+		"datatype", "block", "update", blListID,
+		"--content-element-type", "existing-1",
+		"--label", "Updated Text Block",
+	); err != nil {
+		t.Fatalf("update failed: %v", err)
+	}
+
+	if putBody["editorUiAlias"] != "Umb.PropertyEditorUi.BlockList" {
+		t.Fatalf("editorUiAlias must survive the PUT (the v0.3.15-era regression), got %+v", putBody["editorUiAlias"])
+	}
+	values := putBody["values"].([]any)
+	if len(values) != 3 {
+		t.Fatalf("expected validationLimit and useSingleBlockMode preserved, got %d values entries", len(values))
+	}
+
+	// Find blocks entry; siblings unchanged, only existing-1's label mutated.
+	var blocks []any
+	for _, v := range values {
+		entry := v.(map[string]any)
+		if entry["alias"] == "blocks" {
+			blocks = entry["value"].([]any)
+			break
+		}
+	}
+	if len(blocks) != 2 {
+		t.Fatalf("expected both blocks preserved, got %+v", blocks)
+	}
+	updated := blocks[0].(map[string]any)
+	sibling := blocks[1].(map[string]any)
+	if updated["contentElementTypeKey"] != "existing-1" || updated["label"] != "Updated Text Block" {
+		t.Fatalf("target block label not updated, got %+v", updated)
+	}
+	// Unpassed fields on the target must NOT have moved.
+	if updated["editorSize"] != "medium" {
+		t.Fatalf("editorSize on the target was clobbered (must only mutate passed flags), got %+v", updated["editorSize"])
+	}
+	if updated["thumbnail"] != "/img/old.png" {
+		t.Fatalf("thumbnail on the target was clobbered, got %+v", updated["thumbnail"])
+	}
+	// Sibling block unchanged.
+	if sibling["contentElementTypeKey"] != "existing-2" || sibling["label"] != "Image Block" || sibling["editorSize"] != "large" {
+		t.Fatalf("sibling block was disturbed, got %+v", sibling)
+	}
+}
+
+// Partial-update semantics: passing only --editor-size leaves label,
+// thumbnail, and settingsElementTypeKey alone. cmd.Flags().Changed is the
+// gate, not zero-value detection.
+func TestDatatypeBlockUpdateOnlyMutatesPassedFlags(t *testing.T) {
+	var putBody map[string]any
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case blPath:
+			if req.Method == http.MethodGet {
+				return datatypeJSONResponse(http.StatusOK, blockListPayload(t)), nil
+			}
+			if req.Method == http.MethodPut {
+				_ = json.NewDecoder(req.Body).Decode(&putBody)
+				return datatypeJSONResponse(http.StatusOK, `{}`), nil
+			}
+		}
+		return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+	})
+
+	if _, err := execute(
+		buildRootWithCollections(t, deps),
+		"datatype", "block", "update", blListID,
+		"--content-element-type", "existing-1",
+		"--editor-size", "large",
+	); err != nil {
+		t.Fatalf("update failed: %v", err)
+	}
+
+	values := putBody["values"].([]any)
+	var target map[string]any
+	for _, v := range values {
+		entry := v.(map[string]any)
+		if entry["alias"] != "blocks" {
+			continue
+		}
+		for _, b := range entry["value"].([]any) {
+			block := b.(map[string]any)
+			if block["contentElementTypeKey"] == "existing-1" {
+				target = block
+				break
+			}
+		}
+	}
+	if target["editorSize"] != "large" {
+		t.Fatalf("editorSize not updated, got %+v", target)
+	}
+	if target["label"] != "Text Block" {
+		t.Fatalf("label must remain 'Text Block' (unpassed flag), got %+v", target)
+	}
+}
+
+// --label "" / --thumbnail "" / --settings-element-type "" should remove
+// the key entirely (server falls back). Without this, agents have no way
+// to clear an override label they set earlier.
+func TestDatatypeBlockUpdateEmptyStringClearsOptionalFields(t *testing.T) {
+	var putBody map[string]any
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case blPath:
+			if req.Method == http.MethodGet {
+				return datatypeJSONResponse(http.StatusOK, blockListPayloadWithEditorUI(t)), nil
+			}
+			if req.Method == http.MethodPut {
+				_ = json.NewDecoder(req.Body).Decode(&putBody)
+				return datatypeJSONResponse(http.StatusOK, `{}`), nil
+			}
+		}
+		return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+	})
+
+	if _, err := execute(
+		buildRootWithCollections(t, deps),
+		"datatype", "block", "update", blListID,
+		"--content-element-type", "existing-1",
+		"--label", "",
+		"--thumbnail", "",
+	); err != nil {
+		t.Fatalf("update failed: %v", err)
+	}
+
+	values := putBody["values"].([]any)
+	var target map[string]any
+	for _, v := range values {
+		entry := v.(map[string]any)
+		if entry["alias"] != "blocks" {
+			continue
+		}
+		target = entry["value"].([]any)[0].(map[string]any)
+	}
+	if _, hasLabel := target["label"]; hasLabel {
+		t.Fatalf("empty --label must REMOVE the key, got %+v", target)
+	}
+	if _, hasThumbnail := target["thumbnail"]; hasThumbnail {
+		t.Fatalf("empty --thumbnail must REMOVE the key, got %+v", target)
+	}
+}
+
+func TestDatatypeBlockUpdateErrorsWhenBlockMissing(t *testing.T) {
+	var putCount int
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case blPath:
+			if req.Method == http.MethodPut {
+				putCount++
+				return datatypeJSONResponse(http.StatusOK, `{}`), nil
+			}
+			return datatypeJSONResponse(http.StatusOK, blockListPayload(t)), nil
+		}
+		return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+	})
+
+	_, err := execute(
+		buildRootWithCollections(t, deps),
+		"datatype", "block", "update", blListID,
+		"--content-element-type", "does-not-exist",
+		"--label", "X",
+	)
+	if err == nil {
+		t.Fatalf("expected update to error on missing block")
+	}
+	if !strings.Contains(err.Error(), "does-not-exist") || !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("error should name the missing block clearly, got: %v", err)
+	}
+	if putCount != 0 {
+		t.Fatalf("missing-block error must short-circuit before any PUT, got %d", putCount)
+	}
+}
+
+func TestDatatypeBlockUpdateIsIdempotent(t *testing.T) {
+	var putCount int
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case blPath:
+			if req.Method == http.MethodPut {
+				putCount++
+				return datatypeJSONResponse(http.StatusOK, `{}`), nil
+			}
+			return datatypeJSONResponse(http.StatusOK, blockListPayload(t)), nil
+		}
+		return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+	})
+
+	// Re-applying the existing label is a no-op.
+	output, err := execute(
+		buildRootWithCollections(t, deps),
+		"datatype", "block", "update", blListID,
+		"--content-element-type", "existing-1",
+		"--label", "Text Block",
+	)
+	if err != nil {
+		t.Fatalf("idempotent update failed: %v", err)
+	}
+	if putCount != 0 {
+		t.Fatalf("identical update must not PUT, got %d", putCount)
+	}
+	var summary map[string]any
+	if err := json.Unmarshal([]byte(output), &summary); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if summary["changed"] != false {
+		t.Fatalf("expected changed=false on no-op, got %+v", summary)
+	}
+}
+
+func TestDatatypeBlockUpdateRejectsInvalidEditorSize(t *testing.T) {
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+	})
+	_, err := execute(
+		buildRootWithCollections(t, deps),
+		"datatype", "block", "update", blListID,
+		"--content-element-type", "existing-1",
+		"--editor-size", "huge",
+	)
+	if err == nil {
+		t.Fatalf("expected --editor-size validation")
+	}
+	if !strings.Contains(err.Error(), "small, medium, large") {
+		t.Fatalf("error should list valid sizes, got: %v", err)
+	}
+}
+
+func TestDatatypeBlockUpdateBlockListIgnoresGridFlags(t *testing.T) {
+	var putBody map[string]any
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case blPath:
+			if req.Method == http.MethodPut {
+				_ = json.NewDecoder(req.Body).Decode(&putBody)
+				return datatypeJSONResponse(http.StatusOK, `{}`), nil
+			}
+			return datatypeJSONResponse(http.StatusOK, blockListPayload(t)), nil
+		}
+		return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+	})
+
+	if _, err := execute(
+		buildRootWithCollections(t, deps),
+		"datatype", "block", "update", blListID,
+		"--content-element-type", "existing-1",
+		"--label", "Touch Label",
+		"--allow-at-root=false",
+		"--allow-in-areas=false",
+	); err != nil {
+		t.Fatalf("update failed: %v", err)
+	}
+	values := putBody["values"].([]any)
+	var target map[string]any
+	for _, v := range values {
+		entry := v.(map[string]any)
+		if entry["alias"] != "blocks" {
+			continue
+		}
+		target = entry["value"].([]any)[0].(map[string]any)
+	}
+	if _, set := target["allowAtRoot"]; set {
+		t.Fatalf("BlockList block must not carry allowAtRoot (grid-only), got %+v", target)
+	}
+	if _, set := target["allowInAreas"]; set {
+		t.Fatalf("BlockList block must not carry allowInAreas (grid-only), got %+v", target)
+	}
+}
+
+func TestDatatypeBlockUpdateBlockGridHonoursPlacementFlags(t *testing.T) {
+	var putBody map[string]any
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case blPath:
+			if req.Method == http.MethodPut {
+				_ = json.NewDecoder(req.Body).Decode(&putBody)
+				return datatypeJSONResponse(http.StatusOK, `{}`), nil
+			}
+			return datatypeJSONResponse(http.StatusOK, `{"id":"dt-blocklist-1","editorAlias":"Umbraco.BlockGrid","values":[{"alias":"blocks","value":[{"contentElementTypeKey":"grid-1","label":"Old","allowAtRoot":true,"allowInAreas":true}]}]}`), nil
+		}
+		return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+	})
+
+	if _, err := execute(
+		buildRootWithCollections(t, deps),
+		"datatype", "block", "update", blListID,
+		"--content-element-type", "grid-1",
+		"--allow-at-root=false",
+	); err != nil {
+		t.Fatalf("BlockGrid update failed: %v", err)
+	}
+	values := putBody["values"].([]any)
+	target := values[0].(map[string]any)["value"].([]any)[0].(map[string]any)
+	if target["allowAtRoot"] != false {
+		t.Fatalf("expected allowAtRoot toggled false, got %+v", target["allowAtRoot"])
+	}
+	// allowInAreas was not passed → must remain the existing value (true).
+	if target["allowInAreas"] != true {
+		t.Fatalf("unpassed --allow-in-areas must leave the existing value (true), got %+v", target["allowInAreas"])
+	}
+}
+
+func TestDatatypeBlockUpdateDryRunSendsNoPut(t *testing.T) {
+	var putCount int
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case blPath:
+			if req.Method == http.MethodPut {
+				putCount++
+			}
+			return datatypeJSONResponse(http.StatusOK, blockListPayload(t)), nil
+		}
+		return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+	})
+
+	output, err := execute(
+		buildRootWithCollections(t, deps),
+		"datatype", "block", "update", blListID,
+		"--content-element-type", "existing-1",
+		"--label", "New label",
+		"--dry-run",
+	)
+	if err != nil {
+		t.Fatalf("dry-run failed: %v", err)
+	}
+	if putCount != 0 {
+		t.Fatalf("dry-run must not PUT, got %d", putCount)
+	}
+	var dry map[string]any
+	if err := json.Unmarshal([]byte(output), &dry); err != nil {
+		t.Fatalf("decode dry-run: %v", err)
+	}
+	if dry["dryRun"] != true || dry["method"] != "PUT" {
+		t.Fatalf("expected DryRunResult envelope, got %+v", dry)
+	}
+}
