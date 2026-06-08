@@ -3,12 +3,33 @@ package commands
 import (
 	"context"
 	"fmt"
+	"reflect"
+	"regexp"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
 )
+
+// guidPattern matches the standard 8-4-4-4-12 lowercase/uppercase hex form
+// the Umbraco Management API uses. Used to pre-validate block GUID flags
+// so a typo on --content-element-type / --settings-element-type errors with
+// "must be a GUID" instead of falling through to "block not found" (which
+// would be misleading) or, worse, persisting garbage on the server.
+var guidPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+
+// validateBlockGUID rejects flag values that don't look like a GUID. flagName
+// is included verbatim in the error so the user knows which flag was wrong.
+// Caller decides whether empty is valid (it usually means "clear this
+// optional field" — see datatypeBlockUpdate's --settings-element-type
+// handling).
+func validateBlockGUID(flagName string, value string) error {
+	if !guidPattern.MatchString(value) {
+		return fmt.Errorf("%s must be a GUID (8-4-4-4-12 hex), got %q", flagName, value)
+	}
+	return nil
+}
 
 // datatypeBlockEditorAliases is the set of editorAlias values whose
 // configuration includes a 'blocks' value entry shaped as an array of
@@ -40,10 +61,11 @@ func datatypeBlock(deps Dependencies) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "block",
 		Short: "Manage allowed blocks on a Block List / Block Grid datatype",
-		Long:  "Read-modify-write helpers that mutate the 'blocks' value entry on Umbraco.BlockList and Umbraco.BlockGrid datatypes without clobbering the rest of the configuration. Idempotent: 'add' is a no-op if the element type is already an allowed block; 'remove' is a no-op if it isn't.",
+		Long:  "Read-modify-write helpers that mutate the 'blocks' value entry on Umbraco.BlockList and Umbraco.BlockGrid datatypes without clobbering the rest of the configuration. Idempotent: 'add' is a no-op if the element type is already an allowed block; 'remove' is a no-op if it isn't; 'update' is a no-op if the resulting block is byte-identical to the current one.",
 	}
 	cmd.AddCommand(datatypeBlockList(deps))
 	cmd.AddCommand(datatypeBlockAdd(deps))
+	cmd.AddCommand(datatypeBlockUpdate(deps))
 	cmd.AddCommand(datatypeBlockRemove(deps))
 	return cmd
 }
@@ -91,6 +113,14 @@ func datatypeBlockAdd(deps Dependencies) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := requireValue("--content-element-type", contentElementType); err != nil {
 				return err
+			}
+			if err := validateBlockGUID("--content-element-type", contentElementType); err != nil {
+				return err
+			}
+			if settingsElementType != "" {
+				if err := validateBlockGUID("--settings-element-type", settingsElementType); err != nil {
+					return err
+				}
 			}
 			if editorSize != "" && !datatypeBlockValidEditorSizes[strings.ToLower(editorSize)] {
 				return fmt.Errorf("--editor-size must be one of small, medium, large (got %q)", editorSize)
@@ -183,6 +213,162 @@ func datatypeBlockAdd(deps Dependencies) *cobra.Command {
 	return cmd
 }
 
+func datatypeBlockUpdate(deps Dependencies) *cobra.Command {
+	var contentElementType string
+	var settingsElementType string
+	var label string
+	var editorSize string
+	var thumbnail string
+	var forceHideContentEditor bool
+	var allowAtRoot bool
+	var allowInAreas bool
+	var dryRun bool
+
+	cmd := &cobra.Command{
+		Use:   "update <datatypeId>",
+		Short: "Update an existing block's properties (partial; flags only mutate what you pass)",
+		Long: `Mutates a single existing block on a Block List / Block Grid datatype. The deliberate difference from 'block add': if no block with --content-element-type is present, this errors instead of creating one.
+
+Partial-update semantics: only flags you pass on the command line are applied. Unpassed flags leave that property untouched, so 'block update <dt> --content-element-type <guid> --editor-size large' will not wipe the label.
+
+Clearing optional fields: pass an empty string. --thumbnail "" and --settings-element-type "" remove those fields entirely. --label "" is also accepted and removes the override label (the editor falls back to the element type's name).
+
+Idempotent: if the resulting block is byte-identical to the current one, no PUT is sent.
+
+BlockGrid: --allow-at-root and --allow-in-areas are honored when explicitly passed. Both are ignored for BlockList (mirror of 'block add').`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := requireValue("--content-element-type", contentElementType); err != nil {
+				return err
+			}
+			if err := validateBlockGUID("--content-element-type", contentElementType); err != nil {
+				return err
+			}
+			// Empty --settings-element-type is the "clear this field" signal;
+			// only validate when the caller actually supplied a value.
+			if cmd.Flags().Changed("settings-element-type") && settingsElementType != "" {
+				if err := validateBlockGUID("--settings-element-type", settingsElementType); err != nil {
+					return err
+				}
+			}
+			if cmd.Flags().Changed("editor-size") && editorSize != "" && !datatypeBlockValidEditorSizes[strings.ToLower(editorSize)] {
+				return fmt.Errorf("--editor-size must be one of small, medium, large (got %q)", editorSize)
+			}
+
+			ctx := context.Background()
+			payload, err := fetchDatatypeObject(ctx, deps.Client, args[0])
+			if err != nil {
+				return err
+			}
+			editor, err := requireDatatypeBlockEditor(payload, args[0])
+			if err != nil {
+				return err
+			}
+
+			blocks := loadDatatypeBlocks(payload)
+			idx := findBlockIndex(blocks, contentElementType)
+			if idx < 0 {
+				return fmt.Errorf("block %s not found on datatype %s; use 'datatype block add' to create it", contentElementType, args[0])
+			}
+
+			// Deep-clone the target so unrelated keys on the original payload
+			// pass through untouched and we have a clean before/after pair
+			// for the idempotency check.
+			updated := cloneObject(blocks[idx])
+			if cmd.Flags().Changed("label") {
+				if label == "" {
+					delete(updated, "label")
+				} else {
+					updated["label"] = label
+				}
+			}
+			if cmd.Flags().Changed("editor-size") {
+				if editorSize == "" {
+					delete(updated, "editorSize")
+				} else {
+					updated["editorSize"] = strings.ToLower(editorSize)
+				}
+			}
+			if cmd.Flags().Changed("thumbnail") {
+				if thumbnail == "" {
+					delete(updated, "thumbnail")
+				} else {
+					updated["thumbnail"] = thumbnail
+				}
+			}
+			if cmd.Flags().Changed("settings-element-type") {
+				if settingsElementType == "" {
+					delete(updated, "settingsElementTypeKey")
+				} else {
+					updated["settingsElementTypeKey"] = settingsElementType
+				}
+			}
+			if cmd.Flags().Changed("force-hide-content-editor") {
+				updated["forceHideContentEditorInOverlay"] = forceHideContentEditor
+			}
+			// BlockGrid placement flags are only meaningful on BlockGrid; on
+			// BlockList we ignore them silently (matches 'block add').
+			if editor == "Umbraco.BlockGrid" {
+				if cmd.Flags().Changed("allow-at-root") {
+					updated["allowAtRoot"] = allowAtRoot
+				}
+				if cmd.Flags().Changed("allow-in-areas") {
+					updated["allowInAreas"] = allowInAreas
+				}
+			}
+
+			if reflect.DeepEqual(blocks[idx], updated) {
+				return printResult(cmd, deps, datatypeBlockMutationSummary{
+					Action:                "update",
+					DatatypeID:            args[0],
+					EditorAlias:           editor,
+					ContentElementTypeKey: contentElementType,
+					Changed:               false,
+					Message:               "no changes (resulting block is byte-identical to current)",
+					Block:                 updated,
+				})
+			}
+
+			next := make([]map[string]any, len(blocks))
+			copy(next, blocks)
+			next[idx] = updated
+			nextPayload := writeDatatypeBlocks(payload, next)
+
+			result, err := deps.Client.Put(
+				ctx,
+				fmt.Sprintf("%s/%s", dataTypeLegacyCollectionPath, args[0]),
+				nextPayload,
+				api.RequestOptions{DryRun: dryRun, SkipValidation: true},
+			)
+			if err != nil {
+				return err
+			}
+			if dryRun {
+				return printResult(cmd, deps, result)
+			}
+			return printResult(cmd, deps, datatypeBlockMutationSummary{
+				Action:                "update",
+				DatatypeID:            args[0],
+				EditorAlias:           editor,
+				ContentElementTypeKey: contentElementType,
+				Changed:               true,
+				Block:                 updated,
+			})
+		},
+	}
+
+	cmd.Flags().StringVar(&contentElementType, "content-element-type", "", "GUID of the block to update (required; identity key — same as 'block add' / 'block remove')")
+	cmd.Flags().StringVar(&settingsElementType, "settings-element-type", "", "Set the settings overlay element type. Pass empty string to clear.")
+	cmd.Flags().StringVar(&label, "label", "", "New block label. Pass empty string to clear (editor falls back to element type name).")
+	cmd.Flags().StringVar(&editorSize, "editor-size", "", "Overlay size: small | medium | large. Pass empty string to clear.")
+	cmd.Flags().StringVar(&thumbnail, "thumbnail", "", "Path/URL to a thumbnail image. Pass empty string to clear.")
+	cmd.Flags().BoolVar(&forceHideContentEditor, "force-hide-content-editor", false, "Hide the content editor in the overlay (settings-only blocks)")
+	cmd.Flags().BoolVar(&allowAtRoot, "allow-at-root", true, "BlockGrid only: allow placing the block at the grid's root level. Ignored for BlockList.")
+	cmd.Flags().BoolVar(&allowInAreas, "allow-in-areas", true, "BlockGrid only: allow placing the block inside areas of other blocks. Ignored for BlockList.")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate the resulting payload without writing it")
+	return cmd
+}
+
 func datatypeBlockRemove(deps Dependencies) *cobra.Command {
 	var contentElementType string
 	var dryRun bool
@@ -194,6 +380,9 @@ func datatypeBlockRemove(deps Dependencies) *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := requireValue("--content-element-type", contentElementType); err != nil {
+				return err
+			}
+			if err := validateBlockGUID("--content-element-type", contentElementType); err != nil {
 				return err
 			}
 
