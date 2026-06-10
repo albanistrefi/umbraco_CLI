@@ -32,7 +32,7 @@ func treeWalk(deps Dependencies) *cobra.Command {
 				return fmt.Errorf("tree walk requires a non-empty path")
 			}
 
-			ctx := context.Background()
+			ctx := cmd.Context()
 			var current treeNodeRef
 			var err error
 			for index, segment := range segments {
@@ -72,10 +72,15 @@ func currentPathString(segments []string) string {
 	return strings.Join(segments, "/")
 }
 
+// The lookups walk every page rather than trusting the server's default
+// page size: a single unpaginated GET silently misses nodes on parents
+// with more children than one page, making "could not find" a lie.
+
 func findDocumentRootByName(ctx context.Context, deps Dependencies, name string) (treeNodeRef, error) {
-	result, err := getWithFallback(
+	result, err := getAllPagesWithFallback(
 		ctx,
 		deps.Client,
+		0, 0, 0,
 		getRequestCandidate{path: "/tree/document/root", opts: api.RequestOptions{}},
 		getRequestCandidate{path: "/document/root", opts: api.RequestOptions{}},
 	)
@@ -86,9 +91,10 @@ func findDocumentRootByName(ctx context.Context, deps Dependencies, name string)
 }
 
 func findDocumentChildByName(ctx context.Context, deps Dependencies, parentID string, name string) (treeNodeRef, error) {
-	result, err := getWithFallback(
+	result, err := getAllPagesWithFallback(
 		ctx,
 		deps.Client,
+		0, 0, 0,
 		getRequestCandidate{path: "/tree/document/children", opts: api.RequestOptions{Params: map[string]any{"parentId": parentID}}},
 		getRequestCandidate{path: api.JoinPath("/document/%s/children", parentID), opts: api.RequestOptions{}},
 	)

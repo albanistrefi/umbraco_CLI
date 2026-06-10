@@ -85,7 +85,7 @@ func dictionaryImport(deps Dependencies) *cobra.Command {
 			}
 
 			result, err := executeDictionaryImport(
-				context.Background(),
+				cmd.Context(),
 				cmd,
 				deps,
 				dictionaryImportOptions{

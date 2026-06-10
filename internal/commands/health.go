@@ -1,8 +1,6 @@
 package commands
 
 import (
-	"context"
-
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
@@ -19,7 +17,7 @@ func RegisterHealth(root *cobra.Command, deps Dependencies) {
 
 func healthGroups(deps Dependencies) *cobra.Command {
 	return &cobra.Command{Use: "groups", Short: "List health check groups", RunE: func(cmd *cobra.Command, args []string) error {
-		result, err := deps.Client.Get(context.Background(), "/health-check-group", api.RequestOptions{})
+		result, err := deps.Client.Get(cmd.Context(), "/health-check-group", api.RequestOptions{})
 		if err != nil {
 			return err
 		}
@@ -29,7 +27,7 @@ func healthGroups(deps Dependencies) *cobra.Command {
 
 func healthGroup(deps Dependencies) *cobra.Command {
 	return &cobra.Command{Use: "group <name>", Short: "Get health check group details", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		result, err := deps.Client.Get(context.Background(), api.JoinPath("/health-check-group/%s", args[0]), api.RequestOptions{})
+		result, err := deps.Client.Get(cmd.Context(), api.JoinPath("/health-check-group/%s", args[0]), api.RequestOptions{})
 		if err != nil {
 			return err
 		}
@@ -39,7 +37,7 @@ func healthGroup(deps Dependencies) *cobra.Command {
 
 func healthRun(deps Dependencies) *cobra.Command {
 	return &cobra.Command{Use: "run <group-name>", Short: "Run health checks for group", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		result, err := deps.Client.Get(context.Background(), api.JoinPath("/health-check-group/%s/run", args[0]), api.RequestOptions{})
+		result, err := deps.Client.Get(cmd.Context(), api.JoinPath("/health-check-group/%s/run", args[0]), api.RequestOptions{})
 		if err != nil {
 			return err
 		}
@@ -55,7 +53,7 @@ func healthAction(deps Dependencies) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		result, err := deps.Client.Post(context.Background(), api.JoinPath("/health-check/%s", args[0]), body, api.RequestOptions{DryRun: dryRun})
+		result, err := deps.Client.Post(cmd.Context(), api.JoinPath("/health-check/%s", args[0]), body, api.RequestOptions{DryRun: dryRun})
 		if err != nil {
 			return err
 		}

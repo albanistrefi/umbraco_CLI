@@ -1,8 +1,6 @@
 package commands
 
 import (
-	"context"
-
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
@@ -20,7 +18,7 @@ func RegisterServer(root *cobra.Command, deps Dependencies) {
 
 func readOnlyEndpoint(deps Dependencies, use string, short string, path string) *cobra.Command {
 	return &cobra.Command{Use: use, Short: short, RunE: func(cmd *cobra.Command, args []string) error {
-		result, err := deps.Client.Get(context.Background(), path, api.RequestOptions{})
+		result, err := deps.Client.Get(cmd.Context(), path, api.RequestOptions{})
 		if err != nil {
 			return err
 		}
@@ -35,7 +33,7 @@ func readOnlyEndpointWithFallback(deps Dependencies, use string, short string, p
 			candidates = append(candidates, getRequestCandidate{path: path, opts: api.RequestOptions{}})
 		}
 
-		result, err := getWithFallback(context.Background(), deps.Client, candidates...)
+		result, err := getWithFallback(cmd.Context(), deps.Client, candidates...)
 		if err != nil {
 			return err
 		}

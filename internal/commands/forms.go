@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"context"
 	"fmt"
 	"strings"
 
@@ -113,7 +112,7 @@ func formsList(deps Dependencies) *cobra.Command {
 		Long:  "Returns the Forms tree root. On real installs this is mostly folders — use 'forms children <folderId>' to drill into a folder returned with isFolder=true.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			result, err := getWithFallback(
-				context.Background(),
+				cmd.Context(),
 				deps.Client,
 				getRequestCandidate{path: "/tree/form/root", opts: formsRequestOpts(fields, nil)},
 				getRequestCandidate{path: "/form", opts: formsRequestOpts(fields, nil)},
@@ -139,7 +138,7 @@ func formsChildren(deps Dependencies) *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			result, err := deps.Client.Get(
-				context.Background(),
+				cmd.Context(),
 				"/form",
 				formsRequestOpts(fields, map[string]any{"folderId": args[0]}),
 			)
@@ -161,7 +160,7 @@ func formsGet(deps Dependencies) *cobra.Command {
 		Short: "Get form definition by ID (includes fields, pages, workflows)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			result, err := deps.Client.Get(context.Background(), api.JoinPath("/form/%s", args[0]), formsRequestOpts(fields, nil))
+			result, err := deps.Client.Get(cmd.Context(), api.JoinPath("/form/%s", args[0]), formsRequestOpts(fields, nil))
 			if err != nil {
 				return err
 			}
@@ -223,7 +222,7 @@ func formsRecords(deps Dependencies) *cobra.Command {
 			}
 
 			result, err := deps.Client.Get(
-				context.Background(),
+				cmd.Context(),
 				api.JoinPath("/form/%s/record", args[0]),
 				formsRequestOpts(fields, params),
 			)
@@ -260,7 +259,7 @@ func formsRecord(deps Dependencies) *cobra.Command {
 			}
 			formID, recordID := args[0], args[1]
 			result, err := deps.Client.Get(
-				context.Background(),
+				cmd.Context(),
 				api.JoinPath("/form/%s/record", formID),
 				formsRequestOpts("", map[string]any{"take": scan}),
 			)
@@ -291,7 +290,7 @@ func formsRecordWorkflowLog(deps Dependencies) *cobra.Command {
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			result, err := deps.Client.Get(
-				context.Background(),
+				cmd.Context(),
 				api.JoinPath("/form/%s/record/%s/workflow-audit-trail", args[0], args[1]),
 				formsRequestOpts(fields, nil),
 			)

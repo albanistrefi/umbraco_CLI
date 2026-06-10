@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -39,7 +38,7 @@ func modelsBuilderDashboard(deps Dependencies) *cobra.Command {
 		Use:   "dashboard",
 		Short: "Get dashboard: mode, modelsNamespace, outOfDate flag, last error",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			result, err := deps.Client.Get(context.Background(), "/models-builder/dashboard", api.RequestOptions{Fields: fields})
+			result, err := deps.Client.Get(cmd.Context(), "/models-builder/dashboard", api.RequestOptions{Fields: fields})
 			if err != nil {
 				return err
 			}
@@ -55,7 +54,7 @@ func modelsBuilderStatus(deps Dependencies) *cobra.Command {
 		Use:   "status",
 		Short: "Get out-of-date status: Current | OutOfDate | Unknown",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			result, err := deps.Client.Get(context.Background(), "/models-builder/status", api.RequestOptions{})
+			result, err := deps.Client.Get(cmd.Context(), "/models-builder/status", api.RequestOptions{})
 			if err != nil {
 				return err
 			}
@@ -79,7 +78,7 @@ func modelsBuilderBuild(deps Dependencies) *cobra.Command {
 				return fmt.Errorf("--dry-run does not trigger a build, so --wait has nothing to poll for; pass one or the other")
 			}
 
-			ctx := context.Background()
+			ctx := cmd.Context()
 
 			dashboard, err := deps.Client.Get(ctx, "/models-builder/dashboard", api.RequestOptions{})
 			if err != nil {
@@ -126,7 +125,11 @@ func modelsBuilderBuild(deps Dependencies) *cobra.Command {
 				if time.Now().After(deadline) {
 					return fmt.Errorf("models-builder did not reach Current within %s (last status: %s); try increasing --timeout or check the dashboard for errors", timeout, status)
 				}
-				time.Sleep(pollInterval)
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-time.After(pollInterval):
+				}
 			}
 		},
 	}
