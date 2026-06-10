@@ -11,7 +11,8 @@ Implementation runtime is Go (`cmd/umbraco`).
 - Partial datatype updates can use `--merge-json` to fetch, merge, and send a full payload automatically.
 - Schema is introspectable at runtime (`umbraco schema ...`).
 - Response size should be constrained (`--fields`) to protect context window budget.
-- Mutations must be rehearsed first (`--dry-run`).
+- Mutations must be rehearsed first (`--dry-run` previews the planned request without executing).
+- Updates follow one contract everywhere: `--json` replaces the resource wholesale, `--merge-json` fetches and deep-merges. Hard deletes require `--force` or `--dry-run`.
 - Config resolves from env, project config, `.umbraco-cli.env`, `.env`, user config, and local `.NET` URL discovery in that order.
 - Auth/connectivity errors include the resolved base URL to make misconfiguration obvious.
 
@@ -51,6 +52,15 @@ Implementation runtime is Go (`cmd/umbraco`).
 - `umbraco datatype add-extension <id> My.Extension --dry-run`
 - `umbraco datatype remove-extension <id> My.Extension --dry-run`
 - `umbraco schema document.update`
+
+### Versions, webhooks, languages, users
+- `umbraco document version list <documentId>` / `umbraco document version rollback <versionId>`
+- `umbraco document audit-log <id>`
+- `umbraco webhook list` / `umbraco webhook create --json '{...}'` / `umbraco webhook logs [id]`
+- `umbraco language list` / `umbraco language cultures` / `umbraco language create --iso-code da-DK --name Danish`
+- `umbraco user list` / `umbraco user current` / `umbraco user permissions --ids <id> --type document`
+- `umbraco user client-credentials create <userId> --client-id ... --client-secret ...`
+- `umbraco user-group list`
 
 ### Diagnostics
 - `umbraco server status`

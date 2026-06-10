@@ -2,7 +2,7 @@
 name: umbraco-doctype
 description: "Document type schema operations"
 metadata:
-  version: 0.3.17
+  version: 0.4.0
   requires:
     bins:
       - umbraco
