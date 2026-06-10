@@ -8,3 +8,4 @@ coverage/
 /tasks/
 umbracoCLI_spec.md
 prompt-cli-dictionary-import.md
+.claude/
