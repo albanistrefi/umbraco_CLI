@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.4.1 - 2026-06-10
+
+Fixes for the three review findings on the v0.4.0 pull requests:
+
+- fixed `document restore` dead-ending on servers without the recycle-bin API: a 404 from the original-parent lookup now proceeds with a null target so the modern→legacy restore fallback chain decides, instead of erroring before the legacy `POST /document/{id}/restore` could run
+- fixed `api.JoinPath` leaving dot-only path arguments unescaped — `url.PathEscape` treats dots as unreserved, so a literal `.` or `..` argument still produced a relative-path segment that proxies and servers normalize into a route rewrite. Dot-only segments are now percent-encoded (`..` arrives as `%2E%2E`)
+- fixed `document update` masking fetch failures and invalid-JSON errors behind the `requires exactly one of --json, --merge-json, or --property` message; the mode check runs up front and real errors propagate unchanged
+
 ## v0.4.0 - 2026-06-10
 
 ### Breaking changes
