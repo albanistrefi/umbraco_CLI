@@ -42,9 +42,21 @@ const defaultAPIPrefix = "/umbraco/management/api/v1"
 func JoinPath(format string, args ...string) string {
 	escaped := make([]any, len(args))
 	for i, arg := range args {
-		escaped[i] = url.PathEscape(arg)
+		escaped[i] = escapePathSegment(arg)
 	}
 	return fmt.Sprintf(format, escaped...)
+}
+
+// escapePathSegment escapes one path segment. url.PathEscape leaves dots
+// untouched (they are unreserved), so a segment that is entirely dots —
+// "." or ".." — would survive as a relative-path segment that proxies and
+// servers normalize into a route rewrite; those are percent-encoded
+// explicitly.
+func escapePathSegment(segment string) string {
+	if strings.Trim(segment, ".") == "" && segment != "" {
+		return strings.Repeat("%2E", len(segment))
+	}
+	return url.PathEscape(segment)
 }
 
 type DryRunResult struct {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -181,7 +182,13 @@ func documentUpdate(deps Dependencies) *cobra.Command {
 			hasProperty := strings.TrimSpace(property) != ""
 			hasJSON := strings.TrimSpace(jsonPayload) != ""
 			hasMergeJSON := strings.TrimSpace(mergeJSON) != ""
-			if hasProperty && (hasJSON || hasMergeJSON) {
+			modes := 0
+			for _, set := range []bool{hasProperty, hasJSON, hasMergeJSON} {
+				if set {
+					modes++
+				}
+			}
+			if modes != 1 {
 				return fmt.Errorf("document update requires exactly one of --json, --merge-json, or --property")
 			}
 
@@ -200,7 +207,7 @@ func documentUpdate(deps Dependencies) *cobra.Command {
 			} else {
 				body, err = resolveUpdateBody(ctx, deps.Client, path, jsonPayload, mergeJSON, nil)
 				if err != nil {
-					return fmt.Errorf("document update requires exactly one of --json, --merge-json, or --property")
+					return err
 				}
 			}
 
@@ -650,7 +657,14 @@ func documentRestore(deps Dependencies) *cobra.Command {
 			default:
 				original, err := deps.Client.Get(ctx, api.JoinPath("/recycle-bin/document/%s/original-parent", args[0]), api.RequestOptions{})
 				if err != nil {
-					return fmt.Errorf("could not resolve the original parent (pass --to <parent-id> or --to root): %w", err)
+					// A 404 means the recycle-bin API is absent (older
+					// servers, where the legacy restore needs no target
+					// anyway) or the lookup has nothing to report — either
+					// way the restore call itself gives the real answer.
+					var apiErr *api.APIError
+					if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusNotFound {
+						return fmt.Errorf("could not resolve the original parent (pass --to <parent-id> or --to root): %w", err)
+					}
 				}
 				if id := extractResultID(original); id != "" {
 					target = map[string]any{"id": id}

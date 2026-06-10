@@ -341,6 +341,8 @@ func TestJoinPathEscapesArguments(t *testing.T) {
 		want   string
 	}{
 		{"/document/%s", []string{"abc-123"}, "/document/abc-123"},
+		{"/document/%s/children", []string{".."}, "/document/%2E%2E/children"},
+		{"/document/%s", []string{"."}, "/document/%2E"},
 		{"/document/%s/copy", []string{"../server/status"}, "/document/..%2Fserver%2Fstatus/copy"},
 		{"/document/%s", []string{"id?x=1#y"}, "/document/id%3Fx=1%23y"},
 		{"/health-check-group/%s", []string{"Data Integrity"}, "/health-check-group/Data%20Integrity"},
