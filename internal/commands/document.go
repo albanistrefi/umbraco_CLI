@@ -594,8 +594,11 @@ func documentMove(deps Dependencies) *cobra.Command {
 	return targetActionCommand(deps, targetActionSpec{
 		Use:   "move <id>",
 		Short: "Move a document",
-		Path:  func(args []string) string { return api.JoinPath("/document/%s/move", args[0]) },
-		Verb:  "moved",
+		Candidates: func(args []string) []mutationCandidate {
+			path := api.JoinPath("/document/%s/move", args[0])
+			return []mutationCandidate{{method: "PUT", path: path}, {method: "POST", path: path}}
+		},
+		Verb: "moved",
 	})
 }
 
@@ -612,7 +615,11 @@ func documentTrash(deps Dependencies) *cobra.Command {
 		Short: "Move a document to recycle bin",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			result, err := deps.Client.Post(cmd.Context(), api.JoinPath("/document/%s/move-to-recycle-bin", args[0]), map[string]any{}, api.RequestOptions{DryRun: dryRun})
+			path := api.JoinPath("/document/%s/move-to-recycle-bin", args[0])
+			result, err := mutateWithFallback(cmd.Context(), deps.Client, map[string]any{}, api.RequestOptions{DryRun: dryRun},
+				mutationCandidate{method: "PUT", path: path},
+				mutationCandidate{method: "POST", path: path},
+			)
 			if err != nil {
 				return err
 			}
@@ -624,19 +631,43 @@ func documentTrash(deps Dependencies) *cobra.Command {
 }
 
 func documentRestore(deps Dependencies) *cobra.Command {
+	var to string
 	var dryRun bool
 	cmd := &cobra.Command{
 		Use:   "restore <id>",
-		Short: "Restore a document",
+		Short: "Restore a document from the recycle bin",
+		Long:  "PUT /recycle-bin/document/{id}/restore. The restore target defaults to the document's original parent (looked up via the recycle-bin API); pass --to for a different parent, or --to root to restore at the content root.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			result, err := deps.Client.Post(cmd.Context(), api.JoinPath("/document/%s/restore", args[0]), map[string]any{}, api.RequestOptions{DryRun: dryRun})
+			ctx := cmd.Context()
+
+			var target any
+			switch {
+			case strings.EqualFold(strings.TrimSpace(to), "root"):
+				target = nil
+			case strings.TrimSpace(to) != "":
+				target = map[string]any{"id": to}
+			default:
+				original, err := deps.Client.Get(ctx, api.JoinPath("/recycle-bin/document/%s/original-parent", args[0]), api.RequestOptions{})
+				if err != nil {
+					return fmt.Errorf("could not resolve the original parent (pass --to <parent-id> or --to root): %w", err)
+				}
+				if id := extractResultID(original); id != "" {
+					target = map[string]any{"id": id}
+				}
+			}
+
+			result, err := mutateWithFallback(ctx, deps.Client, map[string]any{"target": target}, api.RequestOptions{DryRun: dryRun},
+				mutationCandidate{method: "PUT", path: api.JoinPath("/recycle-bin/document/%s/restore", args[0])},
+				mutationCandidate{method: "POST", path: api.JoinPath("/document/%s/restore", args[0])},
+			)
 			if err != nil {
 				return err
 			}
 			return printMutationResult(cmd, deps, "restored", result, dryRun)
 		},
 	}
+	cmd.Flags().StringVar(&to, "to", "", "Restore target parent ID, or 'root' (defaults to the original parent)")
 	addDryRunFlag(cmd, &dryRun)
 	return cmd
 }

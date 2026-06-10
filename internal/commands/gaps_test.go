@@ -265,6 +265,54 @@ func TestUserGroupMembershipSendsArrayBody(t *testing.T) {
 	}
 }
 
+func TestDocumentTrashPrefersModernMethodAndFallsBack(t *testing.T) {
+	var methods []string
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		return tokenOr404(t, req, func(req *http.Request) (*http.Response, error) {
+			if req.URL.Path == "/umbraco/management/api/v1/document/doc-1/move-to-recycle-bin" {
+				methods = append(methods, req.Method)
+				if req.Method == http.MethodPut {
+					return endpointJSONResponse(http.StatusNotFound, `null`), nil
+				}
+				return endpointJSONResponse(http.StatusOK, ``), nil
+			}
+			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		})
+	})
+
+	output, err := execute(buildRootWithCollections(t, deps), "document", "trash", "doc-1")
+	if err != nil {
+		t.Fatalf("document trash failed: %v", err)
+	}
+	if len(methods) != 2 || methods[0] != http.MethodPut || methods[1] != http.MethodPost {
+		t.Fatalf("expected PUT-then-POST fallback, got %v", methods)
+	}
+	if !strings.Contains(output, `"trashed": true`) {
+		t.Fatalf("expected trashed coalescing, got %s", output)
+	}
+}
+
+func TestDocumentRestoreUsesRecycleBinRouteFirst(t *testing.T) {
+	var observed []string
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		return tokenOr404(t, req, func(req *http.Request) (*http.Response, error) {
+			observed = append(observed, req.Method+" "+req.URL.Path)
+			return endpointJSONResponse(http.StatusOK, ``), nil
+		})
+	})
+
+	if _, err := execute(buildRootWithCollections(t, deps), "document", "restore", "doc-1"); err != nil {
+		t.Fatalf("document restore failed: %v", err)
+	}
+	want := []string{
+		"GET /umbraco/management/api/v1/recycle-bin/document/doc-1/original-parent",
+		"PUT /umbraco/management/api/v1/recycle-bin/document/doc-1/restore",
+	}
+	if len(observed) != 2 || observed[0] != want[0] || observed[1] != want[1] {
+		t.Fatalf("expected original-parent lookup then modern restore route, got %v", observed)
+	}
+}
+
 func TestUserPermissionsSelectsSurfaceByType(t *testing.T) {
 	var observedPath string
 	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {

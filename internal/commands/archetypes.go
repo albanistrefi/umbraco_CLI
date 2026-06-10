@@ -2,7 +2,9 @@ package commands
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -331,18 +333,50 @@ func updateCommand(deps Dependencies, spec updateSpec) *cobra.Command {
 	return cmd
 }
 
+// mutationCandidate is one method+path attempt for a mutation whose route
+// or HTTP method moved between Management API versions.
+type mutationCandidate struct {
+	method string
+	path   string
+}
+
+// mutateWithFallback issues the mutation against each candidate in order,
+// falling back past 404/405 so commands keep working on both modern and
+// older Management API versions. Dry-run plans the first (modern)
+// candidate. Note a 404 can also mean the target entity does not exist —
+// in that case every candidate 404s and the last error is returned.
+func mutateWithFallback(ctx context.Context, client *api.Client, body any, opts api.RequestOptions, candidates ...mutationCandidate) (any, error) {
+	var lastErr error
+	for i, candidate := range candidates {
+		result, err := client.Request(ctx, candidate.method, candidate.path, body, opts)
+		if err == nil {
+			return result, nil
+		}
+		var apiErr *api.APIError
+		retriable := errors.As(err, &apiErr) &&
+			(apiErr.StatusCode == http.StatusNotFound || apiErr.StatusCode == http.StatusMethodNotAllowed)
+		if retriable && i < len(candidates)-1 {
+			lastErr = err
+			continue
+		}
+		return nil, err
+	}
+	return nil, lastErr
+}
+
 type targetActionSpec struct {
 	Use   string
 	Short string
 	Long  string
-	// Path maps the positional args to the action path (e.g. /media/{id}/move).
-	Path func(args []string) string
+	// Candidates lists method+path attempts in modern-first order; later
+	// candidates are tried on 404/405 (older Umbraco versions).
+	Candidates func(args []string) []mutationCandidate
 	// Verb names the action in empty-success output (e.g. "moved").
 	Verb string
 }
 
-// targetActionCommand builds a move/copy-style mutation: POST with either
-// a raw --json body or the --to shortcut that expands to {target:{id}}.
+// targetActionCommand builds a move/copy-style mutation with either a raw
+// --json body or the --to shortcut that expands to {target:{id}}.
 func targetActionCommand(deps Dependencies, spec targetActionSpec) *cobra.Command {
 	var jsonPayload string
 	var to string
@@ -357,7 +391,7 @@ func targetActionCommand(deps Dependencies, spec targetActionSpec) *cobra.Comman
 			if err != nil {
 				return err
 			}
-			result, err := deps.Client.Post(cmd.Context(), spec.Path(args), body, api.RequestOptions{DryRun: dryRun})
+			result, err := mutateWithFallback(cmd.Context(), deps.Client, body, api.RequestOptions{DryRun: dryRun}, spec.Candidates(args)...)
 			if err != nil {
 				return err
 			}

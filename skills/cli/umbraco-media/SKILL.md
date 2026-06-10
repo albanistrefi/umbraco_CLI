@@ -181,11 +181,13 @@ umbraco media create
 umbraco media create-folder [name]
 ```
 
+Folders are regular media items of the built-in Folder type, so this resolves the Folder media type and POSTs /media with a variants envelope. --json passes a full media create payload through verbatim.
+
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--dry-run` | bool | false | Print the planned request without executing |
-| `--json` | string | — | Create-folder payload as JSON |
-| `--parent` | string | — | Target parent ID |
+| `--json` | string | — | Full media create payload as JSON (bypasses Folder-type resolution) |
+| `--parent` | string | — | Target parent media ID (omit for a root-level folder) |
 
 **Safe pattern:**
 

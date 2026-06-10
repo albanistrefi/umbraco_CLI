@@ -86,7 +86,12 @@ func mediaSearch(deps Dependencies) *cobra.Command {
 
 func mediaURLs(deps Dependencies) *cobra.Command {
 	return &cobra.Command{Use: "urls <id>", Short: "Get media URLs", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		result, err := deps.Client.Get(cmd.Context(), api.JoinPath("/media/%s/urls", args[0]), api.RequestOptions{})
+		result, err := getWithFallback(
+			cmd.Context(),
+			deps.Client,
+			getRequestCandidate{path: "/media/urls", opts: api.RequestOptions{Params: map[string]any{"id": args[0]}}},
+			getRequestCandidate{path: api.JoinPath("/media/%s/urls", args[0]), opts: api.RequestOptions{}},
+		)
 		if err != nil {
 			return err
 		}
@@ -479,31 +484,51 @@ func mediaCreateFolder(deps Dependencies) *cobra.Command {
 	var jsonPayload string
 	var parent string
 	var dryRun bool
-	cmd := &cobra.Command{Use: "create-folder [name]", Short: "Create media folder", Args: cobra.MaximumNArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		var body map[string]any
-		var err error
-		if jsonPayload != "" {
-			body, err = parsePayload(jsonPayload)
-		} else {
-			if len(args) == 0 || args[0] == "" {
-				return fmt.Errorf("create-folder requires [name] when --json is not provided")
+	cmd := &cobra.Command{
+		Use:   "create-folder [name]",
+		Short: "Create media folder",
+		Long:  "Folders are regular media items of the built-in Folder type, so this resolves the Folder media type and POSTs /media with a variants envelope. --json passes a full media create payload through verbatim.",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+			var body map[string]any
+			if jsonPayload != "" {
+				parsed, err := parsePayload(jsonPayload)
+				if err != nil {
+					return err
+				}
+				body = parsed
+			} else {
+				if len(args) == 0 || args[0] == "" {
+					return fmt.Errorf("create-folder requires [name] when --json is not provided")
+				}
+				folderType, err := resolveMediaTypeInfo(ctx, deps.Client, "Folder")
+				if err != nil {
+					return fmt.Errorf("could not resolve the Folder media type: %w", err)
+				}
+				folderID, err := newUUIDv4()
+				if err != nil {
+					return fmt.Errorf("failed to generate media id: %w", err)
+				}
+				body = map[string]any{
+					"id":        folderID,
+					"mediaType": map[string]any{"id": folderType.ID},
+					"variants":  []any{map[string]any{"name": args[0], "culture": nil}},
+					"values":    []any{},
+				}
+				if strings.TrimSpace(parent) != "" {
+					body["parent"] = map[string]any{"id": parent}
+				}
 			}
-			if err := requireValue("--parent", parent); err != nil {
+			result, err := deps.Client.Post(ctx, "/media", body, api.RequestOptions{DryRun: dryRun})
+			if err != nil {
 				return err
 			}
-			body = map[string]any{"name": args[0], "parent": map[string]any{"id": parent}}
-		}
-		if err != nil {
-			return err
-		}
-		result, err := deps.Client.Post(cmd.Context(), "/media/folder", body, api.RequestOptions{DryRun: dryRun})
-		if err != nil {
-			return err
-		}
-		return printMutationResult(cmd, deps, "created", result, dryRun)
-	}}
-	cmd.Flags().StringVar(&jsonPayload, "json", "", "Create-folder payload as JSON")
-	cmd.Flags().StringVar(&parent, "parent", "", "Target parent ID")
+			return printResult(cmd, deps, createResult(result, body))
+		},
+	}
+	cmd.Flags().StringVar(&jsonPayload, "json", "", "Full media create payload as JSON (bypasses Folder-type resolution)")
+	cmd.Flags().StringVar(&parent, "parent", "", "Target parent media ID (omit for a root-level folder)")
 	addDryRunFlag(cmd, &dryRun)
 	return cmd
 }
@@ -520,8 +545,11 @@ func mediaMove(deps Dependencies) *cobra.Command {
 	return targetActionCommand(deps, targetActionSpec{
 		Use:   "move <id>",
 		Short: "Move media item",
-		Path:  func(args []string) string { return api.JoinPath("/media/%s/move", args[0]) },
-		Verb:  "moved",
+		Candidates: func(args []string) []mutationCandidate {
+			path := api.JoinPath("/media/%s/move", args[0])
+			return []mutationCandidate{{method: "PUT", path: path}, {method: "POST", path: path}}
+		},
+		Verb: "moved",
 	})
 }
 
@@ -534,7 +562,11 @@ func mediaDelete(deps Dependencies) *cobra.Command {
 func mediaTrash(deps Dependencies) *cobra.Command {
 	var dryRun bool
 	cmd := &cobra.Command{Use: "trash <id>", Short: "Move media item to recycle bin", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		result, err := deps.Client.Post(cmd.Context(), api.JoinPath("/media/%s/move-to-recycle-bin", args[0]), map[string]any{}, api.RequestOptions{DryRun: dryRun})
+		path := api.JoinPath("/media/%s/move-to-recycle-bin", args[0])
+		result, err := mutateWithFallback(cmd.Context(), deps.Client, map[string]any{}, api.RequestOptions{DryRun: dryRun},
+			mutationCandidate{method: "PUT", path: path},
+			mutationCandidate{method: "POST", path: path},
+		)
 		if err != nil {
 			return err
 		}
