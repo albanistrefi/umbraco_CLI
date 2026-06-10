@@ -2,7 +2,7 @@
 name: umbraco-dictionary
 description: "Dictionary item and translation key operations"
 metadata:
-  version: 0.4.0
+  version: 0.4.1
   requires:
     bins:
       - umbraco
