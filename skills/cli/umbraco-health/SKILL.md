@@ -60,7 +60,7 @@ umbraco health action <action-id>
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--dry-run` | bool | false | Validate request without executing |
+| `--dry-run` | bool | false | Print the planned request without executing |
 | `--json` | string | — | Action payload as JSON |
 
 **Safe pattern:**

@@ -73,9 +73,9 @@ umbraco member search <query>
 | Command | Description |
 |---------|-------------|
 | `member create` | Create a member |
-| `member delete <id>` | Delete a member |
+| `member delete <id>` | Permanently delete a member |
 | `member set-groups <id>` | Replace or modify a member's group memberships |
-| `member update <id>` | Update a member (fetch-and-merge) |
+| `member update <id>` | Update a member |
 | `member update-properties <id>` | Update member custom property values (merges into values[] by alias) |
 
 ### create
@@ -96,7 +96,7 @@ These are managed by the auth subsystem (login flow / backoffice action), not by
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--dry-run` | bool | false | Validate request without executing |
+| `--dry-run` | bool | false | Print the planned request without executing |
 | `--json` | string | — | Create payload as JSON |
 | `--print-template` | bool | false | Print an annotated JSON skeleton; substitute placeholders before passing to --json |
 
@@ -118,7 +118,8 @@ umbraco member delete <id>
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--dry-run` | bool | false | Validate request without executing |
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--force` | bool | false | Confirm permanent deletion |
 
 **Safe pattern:**
 
@@ -147,7 +148,7 @@ Group GUIDs come from 'member-group list'. The PUT preserves every other field o
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--add-groups` | string | — | Comma-separated group GUIDs to add (idempotent) |
-| `--dry-run` | bool | false | Validate request without executing |
+| `--dry-run` | bool | false | Print the planned request without executing |
 | `--groups` | string | — | Comma-separated group GUIDs; replaces the member's groups[] with this exact set |
 | `--remove-groups` | string | — | Comma-separated group GUIDs to remove (idempotent) |
 
@@ -167,9 +168,16 @@ umbraco member set-groups <id>
 umbraco member update <id>
 ```
 
-Both --json and --merge-json fetch the current member, deep-merge the patch, and PUT the merged result. This matches the datatype/document fix: an unmentioned field is never silently dropped.
+Updates a member with the uniform CLI update contract:
 
-Known API limitation (Umbraco 17.x): the Management API's UpdateMemberRequestModel does NOT accept the following fields, even though they appear on the read model. The CLI rejects any patch that includes them up front — letting the request through would silently return 204 with the server value unchanged, producing a false-positive {"updated": true}:
+  --json        full replacement; the server resets any field not mentioned
+  --merge-json  fetches the current member, deep-merges the patch, and PUTs
+                the result; fields not mentioned are preserved
+
+Before v0.4.0 --json silently behaved like --merge-json on this resource.
+Pass --merge-json for partial edits.
+
+Known API limitation (Umbraco 17.x): the Management API's UpdateMemberRequestModel does NOT accept the following fields, even though they appear on the read model. The CLI rejects input that includes them up front — letting the request through would silently return 204 with the server value unchanged, producing a false-positive {"updated": true}:
   - isApproved
   - isLockedOut
   - failedPasswordAttempts
@@ -179,9 +187,9 @@ These are managed by the auth subsystem (login flow / backoffice action), not by
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--dry-run` | bool | false | Validate request without executing |
-| `--json` | string | — | Update payload as JSON; merged into the current member so fields not mentioned are preserved |
-| `--merge-json` | string | — | Alias for --json |
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--json` | string | — | Full replacement payload as JSON (fields not mentioned are reset by the server) |
+| `--merge-json` | string | — | Partial JSON deep-merged into the current member before update (fields not mentioned are preserved) |
 
 **Safe pattern:**
 
@@ -203,7 +211,7 @@ Accepts the same three input shapes as 'document update-properties': object {ali
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--dry-run` | bool | false | Validate request without executing |
+| `--dry-run` | bool | false | Print the planned request without executing |
 | `--json` | string | — | Properties payload as JSON (object / array / envelope) |
 
 **Safe pattern:**
