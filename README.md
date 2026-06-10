@@ -138,8 +138,8 @@ Tagging a release publishes GitHub release archives and updates the Homebrew
 cask in the dedicated tap repository `albanistrefi/homebrew-tap`:
 
 ```bash
-git tag v0.3.11
-git push origin v0.3.11
+git tag v0.4.1
+git push origin v0.4.1
 ```
 
 The release workflow uses GoReleaser and expects to run in GitHub Actions.
@@ -220,12 +220,28 @@ umbraco datatype remove-extension <id> UmbracoDotCom.Tiptap.GoogleDocsPasteClean
 umbraco datatype add-value <id> --alias extensions --value Custom.Extension --dry-run
 ```
 
+Version history, webhooks, languages, and users (added in v0.4.0):
+
+```bash
+umbraco document version list <document-id>
+umbraco document version rollback <version-id> --dry-run
+umbraco document audit-log <id> --take 20
+umbraco webhook events
+umbraco webhook create --print-template
+umbraco webhook logs
+umbraco language list
+umbraco language create --iso-code da-DK --name "Danish" --dry-run
+umbraco user current
+umbraco user permissions --ids <node-id> --type document
+umbraco user client-credentials create <user-id> --client-id umbraco-back-office-ci --client-secret <secret> --dry-run
+```
+
 ## Skills Bundle
 
 This repo ships two sets of SKILL.md files under `skills/`:
 
 - **67 bundled Umbraco extension-development skills** (`skills/foundation/`, `skills/backend/`, `skills/extensions/`, `skills/property-editors/`, `skills/rich-text/`, `skills/testing/`) — copied from `.agents/skills/` by `npm run bundle:skills`.
-- **16 CLI command skills** (`skills/cli/`) — generated from the cobra command tree by `umbraco generate-skills`.
+- **24 CLI command skills** (`skills/cli/`) — generated from the cobra command tree by `umbraco generate-skills`.
 
 Verify both sets are present and consistent with the package version:
 
@@ -259,23 +275,31 @@ skills into whichever harness directory you point it at is on the roadmap.
 
 ## Collections
 
-- `document` (17)
-- `dictionary` (6)
-- `media` (12)
+- `document` (27) — incl. `version` history/rollback, `audit-log`, `publish-descendants`, `sort`, `domains`, `public-access`
+- `media` (15)
 - `doctype` (12)
-- `datatype` (13)
+- `datatype` (14)
+- `dictionary` (6)
 - `template` (6)
+- `member` (8) / `member-group` (2)
+- `user` (13) / `user-group` (7)
+- `webhook` (7)
+- `language` (7)
+- `forms` (6, read-only)
+- `models-builder` (3)
 - `logs` (5)
 - `server` (5)
 - `health` (4)
 - `tree` (1)
 - `auth` (3)
 
-Total: **84 commands**
+Total: **151 commands**
 
 ## Agent Safety Rules
 
-- Use `--dry-run` first for all mutating commands.
+- Use `--dry-run` first for all mutating commands; it prints the planned request without executing.
 - Use `--fields` on reads to limit response size.
-- Prefer `--json` payloads to avoid lossy argument mapping.
+- Updates follow one contract everywhere: `--json` is a **full replacement** (the server resets unmentioned fields), `--merge-json` fetches the current resource and **deep-merges** your patch. Use `--merge-json` for partial edits.
+- Hard deletes require `--force` (or `--dry-run` to rehearse); recycle-bin moves (`trash`) do not.
 - Let the CLI generate IDs — every `create` does this automatically and echoes the new id back; reuse that id for subsequent operations.
+- Check permissions before destructive runs: `umbraco user permissions --ids <id> --type document`.
