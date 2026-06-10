@@ -32,6 +32,11 @@ func RegisterDocument(root *cobra.Command, deps Dependencies) {
 	document.AddCommand(documentUpdateProperties(deps))
 	document.AddCommand(documentPublish(deps))
 	document.AddCommand(documentUnpublish(deps))
+	document.AddCommand(documentPublishDescendants(deps))
+	document.AddCommand(documentPublishDescendantsResult(deps))
+	document.AddCommand(documentSort(deps))
+	document.AddCommand(documentDomains(deps))
+	document.AddCommand(documentPublicAccess(deps))
 	document.AddCommand(documentCopy(deps))
 	document.AddCommand(documentMove(deps))
 	document.AddCommand(documentDelete(deps))
@@ -40,6 +45,8 @@ func RegisterDocument(root *cobra.Command, deps Dependencies) {
 	document.AddCommand(documentReferences(deps))
 	document.AddCommand(documentReferencedDescendants(deps))
 	document.AddCommand(documentAreReferenced(deps))
+	document.AddCommand(documentVersion(deps))
+	document.AddCommand(documentAuditLog(deps))
 
 	root.AddCommand(document)
 }

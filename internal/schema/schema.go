@@ -1,5 +1,7 @@
 package schema
 
+import "sort"
+
 type ParamSchema struct {
 	Type        string `json:"type"`
 	Format      string `json:"format,omitempty"`
@@ -157,6 +159,53 @@ var rawSchemas = map[string]rawSchema{
 	"health.group":  {Method: "GET", Path: "/health-check-group/{name}", PathParams: map[string]ParamSchema{"name": {Type: "string", Required: true}}},
 	"health.run":    {Method: "GET", Path: "/health-check-group/{name}/run", PathParams: map[string]ParamSchema{"name": {Type: "string", Required: true}}},
 	"health.action": {Method: "POST", Path: "/health-check/{actionId}", PathParams: map[string]ParamSchema{"actionId": {Type: "string", Required: true}}},
+
+	// document lifecycle and history
+	"document.publish-descendants":        {Method: "PUT", Path: "/document/{id}/publish-with-descendants", PathParams: map[string]ParamSchema{"id": idParam}, RequestBody: &ObjectSchema{Type: "object", Required: []string{"cultures", "includeUnpublishedDescendants"}, Properties: map[string]any{"cultures": "array of culture codes; empty for invariant content", "includeUnpublishedDescendants": "boolean"}}, Response: &ObjectSchema{Type: "object", Description: "Asynchronous; carries a taskId for publish-descendants-result"}},
+	"document.publish-descendants-result": {Method: "GET", Path: "/document/{id}/publish-with-descendants/result/{taskId}", PathParams: map[string]ParamSchema{"id": idParam, "taskId": {Type: "string", Required: true}}},
+	"document.sort":                       {Method: "PUT", Path: "/document/sort", RequestBody: &ObjectSchema{Type: "object", Required: []string{"sorting"}, Properties: map[string]any{"parent": "{id} ref; omit for root-level documents", "sorting": "array of {id, sortOrder}"}}},
+	"document.audit-log":                  {Method: "GET", Path: "/document/{id}/audit-log", PathParams: map[string]ParamSchema{"id": idParam}, QueryParams: map[string]ParamSchema{"orderDirection": {Type: "string"}, "sinceDate": {Type: "string", Format: "date-time"}, "skip": {Type: "number"}, "take": {Type: "number"}}},
+
+	// webhook (7)
+	"webhook.list":   {Method: "GET", Path: "/webhook", QueryParams: map[string]ParamSchema{"skip": {Type: "number"}, "take": {Type: "number"}}},
+	"webhook.get":    {Method: "GET", Path: "/webhook/{id}", PathParams: map[string]ParamSchema{"id": idParam}},
+	"webhook.create": {Method: "POST", Path: "/webhook", RequestBody: &ObjectSchema{Type: "object", Required: []string{"url", "events", "enabled", "contentTypeKeys", "headers"}, Properties: map[string]any{"url": "target URL", "events": "array of event aliases from 'webhook events'", "enabled": "boolean", "contentTypeKeys": "array of content type GUIDs; empty = all", "headers": "object of extra HTTP headers", "name": "optional display name", "description": "optional"}}},
+	"webhook.update": {Method: "PUT", Path: "/webhook/{id}", PathParams: map[string]ParamSchema{"id": idParam}, RequestBody: genericRequestBody},
+	"webhook.delete": {Method: "DELETE", Path: "/webhook/{id}", PathParams: map[string]ParamSchema{"id": idParam}},
+	"webhook.events": {Method: "GET", Path: "/webhook/events", QueryParams: map[string]ParamSchema{"skip": {Type: "number"}, "take": {Type: "number"}}},
+	"webhook.logs":   {Method: "GET", Path: "/webhook/logs", QueryParams: map[string]ParamSchema{"skip": {Type: "number"}, "take": {Type: "number"}}},
+
+	// language (7)
+	"language.list":     {Method: "GET", Path: "/language", QueryParams: map[string]ParamSchema{"skip": {Type: "number"}, "take": {Type: "number"}}},
+	"language.get":      {Method: "GET", Path: "/language/{isoCode}", PathParams: map[string]ParamSchema{"isoCode": {Type: "string", Required: true}}},
+	"language.create":   {Method: "POST", Path: "/language", RequestBody: &ObjectSchema{Type: "object", Required: []string{"isoCode", "name", "isDefault", "isMandatory"}, Properties: map[string]any{"isoCode": "ISO culture code from 'language cultures'", "name": "display name", "isDefault": "boolean", "isMandatory": "boolean", "fallbackIsoCode": "optional fallback language"}}},
+	"language.update":   {Method: "PUT", Path: "/language/{isoCode}", PathParams: map[string]ParamSchema{"isoCode": {Type: "string", Required: true}}, RequestBody: genericRequestBody},
+	"language.delete":   {Method: "DELETE", Path: "/language/{isoCode}", PathParams: map[string]ParamSchema{"isoCode": {Type: "string", Required: true}}},
+	"language.default":  {Method: "GET", Path: "/item/language/default"},
+	"language.cultures": {Method: "GET", Path: "/culture", QueryParams: map[string]ParamSchema{"skip": {Type: "number"}, "take": {Type: "number"}}},
+
+	// user (12)
+	"user.list":        {Method: "GET", Path: "/filter/user", QueryParams: map[string]ParamSchema{"filter": {Type: "string"}, "skip": {Type: "number"}, "take": {Type: "number"}}},
+	"user.get":         {Method: "GET", Path: "/user/{id}", PathParams: map[string]ParamSchema{"id": idParam}, QueryParams: map[string]ParamSchema{"fields": fieldsQuery}},
+	"user.create":      {Method: "POST", Path: "/user", RequestBody: &ObjectSchema{Type: "object", Required: []string{"email", "userName", "name", "userGroupIds", "kind"}, Properties: map[string]any{"email": "string", "userName": "login name (usually the email)", "name": "display name", "userGroupIds": "array of {id} refs from 'user-group list'", "kind": "Default for humans, Api for credential-only users"}}},
+	"user.invite":      {Method: "POST", Path: "/user/invite", RequestBody: &ObjectSchema{Type: "object", Required: []string{"email", "userName", "name", "userGroupIds"}, Properties: map[string]any{"email": "string", "userName": "string", "name": "string", "userGroupIds": "array of {id} refs", "message": "optional text included in the invitation email"}}},
+	"user.update":      {Method: "PUT", Path: "/user/{id}", PathParams: map[string]ParamSchema{"id": idParam}, RequestBody: genericRequestBody},
+	"user.delete":      {Method: "DELETE", Path: "/user/{id}", PathParams: map[string]ParamSchema{"id": idParam}},
+	"user.enable":      {Method: "POST", Path: "/user/enable", RequestBody: &ObjectSchema{Type: "object", Required: []string{"userIds"}, Properties: map[string]any{"userIds": "array of {id} refs"}}},
+	"user.disable":     {Method: "POST", Path: "/user/disable", RequestBody: &ObjectSchema{Type: "object", Required: []string{"userIds"}, Properties: map[string]any{"userIds": "array of {id} refs"}}},
+	"user.unlock":      {Method: "POST", Path: "/user/unlock", RequestBody: &ObjectSchema{Type: "object", Required: []string{"userIds"}, Properties: map[string]any{"userIds": "array of {id} refs"}}},
+	"user.set-groups":  {Method: "POST", Path: "/user/set-user-groups", RequestBody: &ObjectSchema{Type: "object", Required: []string{"userIds", "userGroupIds"}, Properties: map[string]any{"userIds": "array of {id} refs", "userGroupIds": "array of {id} refs; the users' groups become exactly this set"}}},
+	"user.current":     {Method: "GET", Path: "/user/current"},
+	"user.permissions": {Method: "GET", Path: "/user/current/permissions", QueryParams: map[string]ParamSchema{"id": {Type: "array", Format: "uuid", Required: true, Description: "Repeat the id query parameter for each entity"}}},
+
+	// user-group (7)
+	"user-group.list":         {Method: "GET", Path: "/user-group", QueryParams: map[string]ParamSchema{"skip": {Type: "number"}, "take": {Type: "number"}}},
+	"user-group.get":          {Method: "GET", Path: "/user-group/{id}", PathParams: map[string]ParamSchema{"id": idParam}, QueryParams: map[string]ParamSchema{"fields": fieldsQuery}},
+	"user-group.create":       {Method: "POST", Path: "/user-group", RequestBody: genericRequestBody},
+	"user-group.update":       {Method: "PUT", Path: "/user-group/{id}", PathParams: map[string]ParamSchema{"id": idParam}, RequestBody: genericRequestBody},
+	"user-group.delete":       {Method: "DELETE", Path: "/user-group/{id}", PathParams: map[string]ParamSchema{"id": idParam}},
+	"user-group.add-users":    {Method: "POST", Path: "/user-group/{id}/users", PathParams: map[string]ParamSchema{"id": idParam}, RequestBody: &ObjectSchema{Type: "array", Description: "Array of {id} user refs", Items: map[string]any{"id": "user GUID"}}},
+	"user-group.remove-users": {Method: "DELETE", Path: "/user-group/{id}/users", PathParams: map[string]ParamSchema{"id": idParam}, RequestBody: &ObjectSchema{Type: "array", Description: "Array of {id} user refs", Items: map[string]any{"id": "user GUID"}}},
 }
 
 var Schemas = buildSchemas()
@@ -238,6 +287,39 @@ var Templates = map[string]any{
 		"alias":   "<camelCase string, required>",
 		"content": "<template markup, optional>",
 	},
+	"webhook.create": map[string]any{
+		"id":              "<uuid, optional; generated by CLI when omitted>",
+		"name":            "<string, optional display name>",
+		"description":     "<string, optional>",
+		"url":             "<target URL the webhook POSTs to, required>",
+		"events":          []any{"<event alias from 'webhook events', e.g. Umbraco.ContentPublish>"},
+		"enabled":         "<boolean, required>",
+		"contentTypeKeys": []any{"<content type GUID; pass [] for all content types>"},
+		"headers":         map[string]any{"<header-name>": "<header value; pass {} for none>"},
+	},
+	"user.create": map[string]any{
+		"id":           "<uuid, optional; generated by CLI when omitted>",
+		"email":        "<string, required, valid email>",
+		"userName":     "<login name, required; usually the email>",
+		"name":         "<display name, required>",
+		"userGroupIds": []any{map[string]any{"id": "<user group GUID from 'user-group list'>"}},
+		"kind":         "<Default for humans, Api for credential-only API users>",
+	},
+	"user-group.create": map[string]any{
+		"id":                      "<uuid, optional; generated by CLI when omitted>",
+		"name":                    "<display name, required>",
+		"alias":                   "<camelCase string, required>",
+		"icon":                    "<icon name, optional, e.g. icon-users>",
+		"sections":                []any{"<section alias, e.g. Umb.Section.Content>"},
+		"languages":               []any{"<language ISO code; pass [] with hasAccessToAllLanguages true>"},
+		"hasAccessToAllLanguages": "<boolean, required>",
+		"documentRootAccess":      "<boolean, required; true grants the whole content tree>",
+		"documentStartNode":       "<map {id} ref, optional; used when documentRootAccess is false>",
+		"mediaRootAccess":         "<boolean, required>",
+		"mediaStartNode":          "<map {id} ref, optional>",
+		"fallbackPermissions":     []any{"<single-letter permission verb codes matching the backoffice>"},
+		"permissions":             []any{"<granular permission entries, optional; see an existing group via 'user-group get'>"},
+	},
 	"member.create": map[string]any{
 		"id":         "<uuid, optional; generated by CLI when omitted>",
 		"email":      "<string, required, valid email>",
@@ -280,16 +362,6 @@ func endpointList() []string {
 	for endpoint := range Schemas {
 		endpoints = append(endpoints, endpoint)
 	}
-	sortStrings(endpoints)
+	sort.Strings(endpoints)
 	return endpoints
-}
-
-func sortStrings(items []string) {
-	for i := 0; i < len(items)-1; i++ {
-		for j := i + 1; j < len(items); j++ {
-			if items[j] < items[i] {
-				items[i], items[j] = items[j], items[i]
-			}
-		}
-	}
 }

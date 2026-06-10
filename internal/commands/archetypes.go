@@ -99,6 +99,9 @@ type collectionSpec struct {
 	Short string
 	Long  string
 	NArgs int
+	// Args overrides the default cobra.ExactArgs(NArgs) validation for
+	// commands with optional positional arguments.
+	Args cobra.PositionalArgs
 	// Endpoints maps the positional args and resolved query params to the
 	// candidate endpoints in fallback order. Params must not be mutated;
 	// candidates that need extra keys clone via withParam.
@@ -114,11 +117,15 @@ func collectionCommand(deps Dependencies, spec collectionSpec) *cobra.Command {
 	var skip, take int
 	var all bool
 	var triage readTriageOptions
+	positionalArgs := spec.Args
+	if positionalArgs == nil {
+		positionalArgs = cobra.ExactArgs(spec.NArgs)
+	}
 	cmd := &cobra.Command{
 		Use:   spec.Use,
 		Short: spec.Short,
 		Long:  spec.Long,
-		Args:  cobra.ExactArgs(spec.NArgs),
+		Args:  positionalArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			params, err := parseParams(paramsRaw)
 			if err != nil {
@@ -240,8 +247,11 @@ func searchCommand(deps Dependencies, spec searchSpec) *cobra.Command {
 // resolveUpdateBody enforces the uniform update contract: --json replaces
 // the resource wholesale, --merge-json fetches the current resource and
 // deep-merges the patch so unmentioned fields survive. Exactly one of the
-// two must be provided. normalize, when non-nil, is applied to the parsed
-// input before any merge.
+// two must be provided. normalize, when non-nil, runs on the parsed input
+// before the merge (so patch entries take their canonical shape and merge
+// correctly) and again on the final body (so fields echoed back by the
+// fetch but rejected by the update model are stripped). It must therefore
+// be idempotent.
 func resolveUpdateBody(ctx context.Context, client *api.Client, fetchPath string, jsonPayload string, mergeJSON string, normalize func(map[string]any)) (map[string]any, error) {
 	hasJSON := strings.TrimSpace(jsonPayload) != ""
 	hasMerge := strings.TrimSpace(mergeJSON) != ""
@@ -271,7 +281,11 @@ func resolveUpdateBody(ctx context.Context, client *api.Client, fetchPath string
 	if err != nil {
 		return nil, err
 	}
-	return mergeAliasPayload(current, patch), nil
+	merged := mergeAliasPayload(current, patch)
+	if normalize != nil {
+		normalize(merged)
+	}
+	return merged, nil
 }
 
 type updateSpec struct {

@@ -40,6 +40,10 @@ func buildRootWithCollections(t *testing.T, deps Dependencies) *cobra.Command {
 	RegisterModelsBuilder(root, deps)
 	RegisterMember(root, deps)
 	RegisterMemberGroup(root, deps)
+	RegisterWebhook(root, deps)
+	RegisterLanguage(root, deps)
+	RegisterUser(root, deps)
+	RegisterUserGroup(root, deps)
 	RegisterLogs(root, deps)
 	RegisterServer(root, deps)
 	RegisterHealth(root, deps)
@@ -80,8 +84,8 @@ func TestCommandCountsMatchMVP(t *testing.T) {
 		total += len(found.Commands())
 	}
 
-	if total != 110 {
-		t.Fatalf("expected 110 collection commands, got %d", total)
+	if total != 151 {
+		t.Fatalf("expected 151 collection commands, got %d", total)
 	}
 }
 
@@ -150,6 +154,10 @@ func TestRegisteredAPICommandsHaveSchemas(t *testing.T) {
 		"models-builder": {},
 		"member":         {},
 		"member-group":   {},
+		"webhook":        {},
+		"language":       {},
+		"user":           {},
+		"user-group":     {},
 	}
 	convenienceCommands := map[string]string{
 		"document.bulk-update":      "batch convenience command",
@@ -166,6 +174,10 @@ func TestRegisteredAPICommandsHaveSchemas(t *testing.T) {
 		"member.update-properties":  "payload mutation convenience command (shares the values[] parser with document update-properties)",
 		"member.set-groups":         "idempotent convenience over PUT /member/{id} mutating the groups[] array",
 		"logs.levels":               "hidden compatibility stub for removed v17 endpoint",
+		"document.version":          "version history subgroup (list/get/rollback/prevent-cleanup)",
+		"document.domains":          "culture domains subgroup (get/set)",
+		"document.public-access":    "member protection subgroup (get/set/remove)",
+		"user.client-credentials":   "OAuth credential subgroup (list/create/delete)",
 	}
 
 	missing := make([]string, 0)

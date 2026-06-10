@@ -24,12 +24,17 @@ umbraco document <command> [flags]
 |---------|-------------|
 | `document ancestors <id>` | Get ancestor documents |
 | `document are-referenced` | Bulk check: which of these document IDs are referenced by something |
+| `document audit-log <id>` | List the audit trail for a document (who did what, when) |
 | `document children <id>` | Get child documents (paginated; --skip/--take/--all) |
+| `document domains` | Culture domains (hostname → language routing) on a document |
 | `document get <id>` | Get a document by ID |
+| `document public-access` | Member protection (login-required access) on a document |
+| `document publish-descendants-result <id> <task-id>` | Check the progress of an asynchronous publish-descendants run |
 | `document referenced-descendants <id>` | List items that reference this document or any of its descendants |
 | `document references <id>` | List items that reference this document (paginated; --skip/--take/--all) |
 | `document root` | Get root documents (paginated; --skip/--take/--all) |
 | `document search` | Search documents |
+| `document version` | Document version history: list, inspect, roll back |
 
 ### ancestors
 
@@ -46,6 +51,25 @@ umbraco document are-referenced
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--ids` | string | — | Comma-separated document GUIDs to check (required) |
+
+### audit-log
+
+```bash
+umbraco document audit-log <id>
+```
+
+GET /document/{id}/audit-log. Pass --params for orderDirection or sinceDate filters, e.g. --params '{"sinceDate":"2026-01-01T00:00:00Z"}'.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--all` | bool | false | Walk every page until exhausted (auto-paginates with --take as the page size, default 500; combine with --skip to start partway through). Bounded by an internal 100k-item ceiling. |
+| `--fields` | string | — | Limit response fields (comma-separated top-level keys) |
+| `--first-n` | int | 0 | Return only the first N items from item collections |
+| `--ids-only` | bool | false | Return only item IDs for item collections |
+| `--params` | string | — | Query parameters as JSON |
+| `--skip` | int | -1 | Skip count (passes through as ?skip=N; lets you walk past the server page size on large children/root collections) |
+| `--summarize` | bool | false | Return only id/name/alias fields for item collections |
+| `--take` | int | -1 | Take count (passes through as ?take=N; combine with --skip to page) |
 
 ### children
 
@@ -64,6 +88,12 @@ umbraco document children <id>
 | `--summarize` | bool | false | Return only id/name/alias fields for item collections |
 | `--take` | int | -1 | Take count (passes through as ?take=N; combine with --skip to page) |
 
+### domains
+
+```bash
+umbraco document domains
+```
+
 ### get
 
 ```bash
@@ -73,6 +103,18 @@ umbraco document get <id>
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--fields` | string | — | Limit response fields (comma-separated top-level keys) |
+
+### public-access
+
+```bash
+umbraco document public-access
+```
+
+### publish-descendants-result
+
+```bash
+umbraco document publish-descendants-result <id> <task-id>
+```
 
 ### referenced-descendants
 
@@ -141,6 +183,12 @@ umbraco document search
 | `--take` | int | -1 | Take count (passes through as ?take=N; combine with --skip to page) |
 | `--under` | string | — | Limit search to documents under the given parent ID |
 
+### version
+
+```bash
+umbraco document version
+```
+
 ## Mutation Commands
 
 > **Safety:** Always use `--dry-run` first. Remove the flag only after verifying the dry-run output.
@@ -153,7 +201,9 @@ umbraco document search
 | `document csv-update` | Update multiple documents from a CSV file |
 | `document move <id>` | Move a document |
 | `document publish <id>` | Publish a document |
+| `document publish-descendants <id>` | Publish a document and its entire subtree |
 | `document restore <id>` | Restore a document |
+| `document sort` | Reorder sibling documents |
 | `document trash <id>` | Move a document to recycle bin |
 | `document unpublish <id>` | Unpublish a document |
 | `document update <id>` | Update a document |
@@ -299,6 +349,33 @@ umbraco document publish <id> --dry-run
 umbraco document publish <id>
 ```
 
+### publish-descendants
+
+```bash
+umbraco document publish-descendants <id>
+```
+
+PUT /document/{id}/publish-with-descendants. Publishes the node and every published-state descendant; pass --include-unpublished to also publish drafts.
+
+On variant content pass --culture per culture to publish; with no --culture the invariant default is used. The operation is asynchronous server-side — the response carries a taskId, and 'document publish-descendants-result <id> <task-id>' reports completion.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--culture` | stringArray | [] | Culture to publish; repeat for multiple (omit for invariant content) |
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--include-unpublished` | bool | false | Also publish descendants that have never been published |
+| `--json` | string | — | Publish payload as JSON |
+
+**Safe pattern:**
+
+```bash
+# 1. Dry run first
+umbraco document publish-descendants <id> --dry-run
+
+# 2. Execute
+umbraco document publish-descendants <id>
+```
+
 ### restore
 
 ```bash
@@ -317,6 +394,31 @@ umbraco document restore <id> --dry-run
 
 # 2. Execute
 umbraco document restore <id>
+```
+
+### sort
+
+```bash
+umbraco document sort
+```
+
+PUT /document/sort. Pass --ids with the desired order (sortOrder is assigned from position) and --parent for the common parent; omit --parent when sorting root-level documents. IDs not listed keep their relative order after the sorted ones.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--ids` | string | — | Comma-separated document GUIDs in the desired order |
+| `--json` | string | — | Sort payload as JSON |
+| `--parent` | string | — | Parent document ID (omit for root-level documents) |
+
+**Safe pattern:**
+
+```bash
+# 1. Dry run first
+umbraco document sort --dry-run
+
+# 2. Execute
+umbraco document sort
 ```
 
 ### trash

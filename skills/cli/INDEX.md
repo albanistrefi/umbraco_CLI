@@ -23,6 +23,7 @@ Per-resource CLI command skills.
 | [umbraco-document](umbraco-document/SKILL.md) | Document and content management operations |
 | [umbraco-forms](umbraco-forms/SKILL.md) | Umbraco Forms operations (read-only) |
 | [umbraco-health](umbraco-health/SKILL.md) | Health check operations |
+| [umbraco-language](umbraco-language/SKILL.md) | Language and culture management for variant content |
 | [umbraco-logs](umbraco-logs/SKILL.md) | Log and diagnostics operations |
 | [umbraco-media](umbraco-media/SKILL.md) | Media asset operations |
 | [umbraco-member](umbraco-member/SKILL.md) | Front-office member operations (login, profile, groups) |
@@ -31,6 +32,9 @@ Per-resource CLI command skills.
 | [umbraco-server](umbraco-server/SKILL.md) | Server information and diagnostics |
 | [umbraco-template](umbraco-template/SKILL.md) | Template operations |
 | [umbraco-tree](umbraco-tree/SKILL.md) | Tree navigation helpers |
+| [umbraco-user](umbraco-user/SKILL.md) | Backoffice user management (accounts, state, groups, API credentials) |
+| [umbraco-user-group](umbraco-user-group/SKILL.md) | Backoffice user group management (permission sets) |
+| [umbraco-webhook](umbraco-webhook/SKILL.md) | Webhook management (the Management API's outbound event notifications) |
 
 ## Recipes
 
