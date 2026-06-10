@@ -554,8 +554,12 @@ func mediaMove(deps Dependencies) *cobra.Command {
 }
 
 func mediaDelete(deps Dependencies) *cobra.Command {
-	return deleteCommand(deps, "delete <id>", "Permanently delete a media item (use 'trash' for the recycle bin)", func(args []string) string {
-		return api.JoinPath("/media/%s", args[0])
+	return deleteCommand(deps, deleteSpec{
+		Use:   "delete <id>",
+		Short: "Permanently delete a media item (use 'trash' for the recycle bin)",
+		Path: func(args []string) string {
+			return api.JoinPath("/media/%s", args[0])
+		},
 	})
 }
 

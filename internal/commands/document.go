@@ -199,13 +199,13 @@ func documentUpdate(deps Dependencies) *cobra.Command {
 				if err != nil {
 					return err
 				}
-				current, err := fetchObject(ctx, deps.Client, path)
+				current, err := fetchObject(ctx, deps.Client, path, api.RequestOptions{})
 				if err != nil {
 					return err
 				}
 				body = mergeAliasPayload(current, patch)
 			} else {
-				body, err = resolveUpdateBody(ctx, deps.Client, path, jsonPayload, mergeJSON, nil)
+				body, err = resolveUpdateBody(ctx, deps.Client, path, "", jsonPayload, mergeJSON, nil)
 				if err != nil {
 					return err
 				}
@@ -388,7 +388,7 @@ In all shapes the resulting values[] is merged by alias into the current documen
 
 			ctx := cmd.Context()
 			path := api.JoinPath("/document/%s", args[0])
-			current, err := fetchObject(ctx, deps.Client, path)
+			current, err := fetchObject(ctx, deps.Client, path, api.RequestOptions{})
 			if err != nil {
 				return err
 			}
@@ -610,8 +610,12 @@ func documentMove(deps Dependencies) *cobra.Command {
 }
 
 func documentDelete(deps Dependencies) *cobra.Command {
-	return deleteCommand(deps, "delete <id>", "Permanently delete a document (use 'trash' for the recycle bin)", func(args []string) string {
-		return api.JoinPath("/document/%s", args[0])
+	return deleteCommand(deps, deleteSpec{
+		Use:   "delete <id>",
+		Short: "Permanently delete a document (use 'trash' for the recycle bin)",
+		Path: func(args []string) string {
+			return api.JoinPath("/document/%s", args[0])
+		},
 	})
 }
 

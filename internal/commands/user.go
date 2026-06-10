@@ -133,8 +133,12 @@ func userUpdate(deps Dependencies) *cobra.Command {
 }
 
 func userDelete(deps Dependencies) *cobra.Command {
-	return deleteCommand(deps, "delete <id>", "Permanently delete a backoffice user", func(args []string) string {
-		return api.JoinPath("/user/%s", args[0])
+	return deleteCommand(deps, deleteSpec{
+		Use:   "delete <id>",
+		Short: "Permanently delete a backoffice user",
+		Path: func(args []string) string {
+			return api.JoinPath("/user/%s", args[0])
+		},
 	})
 }
 

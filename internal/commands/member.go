@@ -204,7 +204,7 @@ These are managed by the auth subsystem (login flow / backoffice action), not by
 
 			ctx := cmd.Context()
 			path := api.JoinPath(memberPath+"/%s", args[0])
-			body, err := resolveUpdateBody(ctx, deps.Client, path, jsonPayload, mergeJSON, nil)
+			body, err := resolveUpdateBody(ctx, deps.Client, path, "", jsonPayload, mergeJSON, nil)
 			if err != nil {
 				return err
 			}
@@ -256,8 +256,12 @@ func memberUpdateProperties(deps Dependencies) *cobra.Command {
 }
 
 func memberDelete(deps Dependencies) *cobra.Command {
-	return deleteCommand(deps, "delete <id>", "Permanently delete a member", func(args []string) string {
-		return api.JoinPath(memberPath+"/%s", args[0])
+	return deleteCommand(deps, deleteSpec{
+		Use:   "delete <id>",
+		Short: "Permanently delete a member",
+		Path: func(args []string) string {
+			return api.JoinPath(memberPath+"/%s", args[0])
+		},
 	})
 }
 

@@ -331,7 +331,11 @@ func doctypeMove(deps Dependencies) *cobra.Command {
 }
 
 func doctypeDelete(deps Dependencies) *cobra.Command {
-	return deleteCommand(deps, "delete <id>", "Permanently delete a document type (content of this type loses its definition)", func(args []string) string {
-		return api.JoinPath("/document-type/%s", args[0])
+	return deleteCommand(deps, deleteSpec{
+		Use:   "delete <id>",
+		Short: "Permanently delete a document type (content of this type loses its definition)",
+		Path: func(args []string) string {
+			return api.JoinPath("/document-type/%s", args[0])
+		},
 	})
 }

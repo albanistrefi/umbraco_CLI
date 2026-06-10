@@ -41,8 +41,8 @@ func printMutationResult(cmd *cobra.Command, deps Dependencies, verb string, res
 
 // fetchObject retrieves a resource as a generic object, for merge flows
 // that need the current server-side state.
-func fetchObject(ctx context.Context, client *api.Client, path string) (map[string]any, error) {
-	result, err := client.Get(ctx, path, api.RequestOptions{})
+func fetchObject(ctx context.Context, client *api.Client, path string, opts api.RequestOptions) (map[string]any, error) {
+	result, err := client.Get(ctx, path, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -73,6 +73,8 @@ type getSpec struct {
 	Long  string
 	// Path maps the positional args to the resource path.
 	Path func(args []string) string
+	// APIPrefix overrides the default core Management API mount.
+	APIPrefix string
 }
 
 // getCommand builds a get-by-ID read: --fields wiring plus client-side
@@ -85,7 +87,7 @@ func getCommand(deps Dependencies, spec getSpec) *cobra.Command {
 		Long:  spec.Long,
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			result, err := deps.Client.Get(cmd.Context(), spec.Path(args), api.RequestOptions{Fields: fields})
+			result, err := deps.Client.Get(cmd.Context(), spec.Path(args), api.RequestOptions{Fields: fields, APIPrefix: spec.APIPrefix})
 			if err != nil {
 				return err
 			}
@@ -254,7 +256,7 @@ func searchCommand(deps Dependencies, spec searchSpec) *cobra.Command {
 // correctly) and again on the final body (so fields echoed back by the
 // fetch but rejected by the update model are stripped). It must therefore
 // be idempotent.
-func resolveUpdateBody(ctx context.Context, client *api.Client, fetchPath string, jsonPayload string, mergeJSON string, normalize func(map[string]any)) (map[string]any, error) {
+func resolveUpdateBody(ctx context.Context, client *api.Client, fetchPath string, apiPrefix string, jsonPayload string, mergeJSON string, normalize func(map[string]any)) (map[string]any, error) {
 	hasJSON := strings.TrimSpace(jsonPayload) != ""
 	hasMerge := strings.TrimSpace(mergeJSON) != ""
 	if hasJSON == hasMerge {
@@ -279,7 +281,7 @@ func resolveUpdateBody(ctx context.Context, client *api.Client, fetchPath string
 	if normalize != nil {
 		normalize(patch)
 	}
-	current, err := fetchObject(ctx, client, fetchPath)
+	current, err := fetchObject(ctx, client, fetchPath, api.RequestOptions{APIPrefix: apiPrefix})
 	if err != nil {
 		return nil, err
 	}
@@ -299,6 +301,8 @@ type updateSpec struct {
 	Path func(args []string) string
 	// Normalize, when non-nil, adjusts the parsed payload or patch before use.
 	Normalize func(map[string]any)
+	// APIPrefix overrides the default core Management API mount.
+	APIPrefix string
 }
 
 // updateCommand builds an update mutation with the uniform contract:
@@ -316,11 +320,11 @@ func updateCommand(deps Dependencies, spec updateSpec) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			path := spec.Path(args)
-			body, err := resolveUpdateBody(ctx, deps.Client, path, jsonPayload, mergeJSON, spec.Normalize)
+			body, err := resolveUpdateBody(ctx, deps.Client, path, spec.APIPrefix, jsonPayload, mergeJSON, spec.Normalize)
 			if err != nil {
 				return err
 			}
-			result, err := deps.Client.Put(ctx, path, body, api.RequestOptions{DryRun: dryRun})
+			result, err := deps.Client.Put(ctx, path, body, api.RequestOptions{DryRun: dryRun, APIPrefix: spec.APIPrefix})
 			if err != nil {
 				return err
 			}
@@ -373,6 +377,8 @@ type targetActionSpec struct {
 	Candidates func(args []string) []mutationCandidate
 	// Verb names the action in empty-success output (e.g. "moved").
 	Verb string
+	// APIPrefix overrides the default core Management API mount.
+	APIPrefix string
 }
 
 // targetActionCommand builds a move/copy-style mutation with either a raw
@@ -391,7 +397,7 @@ func targetActionCommand(deps Dependencies, spec targetActionSpec) *cobra.Comman
 			if err != nil {
 				return err
 			}
-			result, err := mutateWithFallback(cmd.Context(), deps.Client, body, api.RequestOptions{DryRun: dryRun}, spec.Candidates(args)...)
+			result, err := mutateWithFallback(cmd.Context(), deps.Client, body, api.RequestOptions{DryRun: dryRun, APIPrefix: spec.APIPrefix}, spec.Candidates(args)...)
 			if err != nil {
 				return err
 			}
@@ -417,22 +423,31 @@ func targetActionBody(jsonPayload string, to string) (map[string]any, error) {
 	return map[string]any{"target": map[string]any{"id": to}}, nil
 }
 
+type deleteSpec struct {
+	Use   string
+	Short string
+	// Path maps the positional args to the resource path.
+	Path func(args []string) string
+	// APIPrefix overrides the default core Management API mount.
+	APIPrefix string
+}
+
 // deleteCommand builds a hard-delete mutation. Hard deletes require --force
 // or --dry-run, matching the gate on bulk updates: an agent must rehearse
 // or explicitly confirm before destroying data. Recycle-bin moves (trash)
 // are reversible and intentionally not gated.
-func deleteCommand(deps Dependencies, use string, short string, path func(args []string) string) *cobra.Command {
+func deleteCommand(deps Dependencies, spec deleteSpec) *cobra.Command {
 	var force bool
 	var dryRun bool
 	cmd := &cobra.Command{
-		Use:   use,
-		Short: short,
+		Use:   spec.Use,
+		Short: spec.Short,
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !force && !dryRun {
 				return fmt.Errorf("%s permanently deletes; pass --force to confirm or --dry-run to rehearse", cmd.CommandPath())
 			}
-			result, err := deps.Client.Delete(cmd.Context(), path(args), api.RequestOptions{DryRun: dryRun})
+			result, err := deps.Client.Delete(cmd.Context(), spec.Path(args), api.RequestOptions{DryRun: dryRun, APIPrefix: spec.APIPrefix})
 			if err != nil {
 				return err
 			}

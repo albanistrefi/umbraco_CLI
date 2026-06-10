@@ -91,7 +91,11 @@ func templateUpdate(deps Dependencies) *cobra.Command {
 }
 
 func templateDelete(deps Dependencies) *cobra.Command {
-	return deleteCommand(deps, "delete <id>", "Permanently delete a template", func(args []string) string {
-		return api.JoinPath("/template/%s", args[0])
+	return deleteCommand(deps, deleteSpec{
+		Use:   "delete <id>",
+		Short: "Permanently delete a template",
+		Path: func(args []string) string {
+			return api.JoinPath("/template/%s", args[0])
+		},
 	})
 }
