@@ -22,6 +22,7 @@ type ObjectSchema struct {
 type Schema struct {
 	Endpoint    string                 `json:"endpoint"`
 	Method      string                 `json:"method"`
+	APIRoot     string                 `json:"apiRoot,omitempty"`
 	Path        string                 `json:"path"`
 	PathParams  map[string]ParamSchema `json:"pathParams,omitempty"`
 	QueryParams map[string]ParamSchema `json:"queryParams,omitempty"`
@@ -30,7 +31,10 @@ type Schema struct {
 }
 
 type rawSchema struct {
-	Method      string
+	Method string
+	// APIRoot is the API mount when it differs from the default core
+	// Management API (e.g. the Automate Management API).
+	APIRoot     string
 	Path        string
 	PathParams  map[string]ParamSchema
 	QueryParams map[string]ParamSchema
@@ -263,6 +267,7 @@ func buildSchemas() map[string]Schema {
 		result[endpoint] = Schema{
 			Endpoint:    endpoint,
 			Method:      raw.Method,
+			APIRoot:     raw.APIRoot,
 			Path:        raw.Path,
 			PathParams:  raw.PathParams,
 			QueryParams: raw.QueryParams,
