@@ -1,6 +1,6 @@
 # Umbraco CLI (Agent-First)
 
-A Go-based CLI for the Umbraco Management API, designed for **agents first, humans second**.
+A Go-based CLI for the Umbraco Management API, designed for **agents first**.
 
 Core behavior:
 - `--json` and `--params` are primary machine inputs
