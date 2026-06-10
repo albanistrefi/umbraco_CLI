@@ -223,15 +223,15 @@ umbraco datatype add-value <id> --alias extensions --value Custom.Extension --dr
 Version history, webhooks, languages, and users (added in v0.4.0):
 
 ```bash
-umbraco document version list <document-id>
+umbraco document version list <document-id> --fields id,versionDate --take 10
 umbraco document version rollback <version-id> --dry-run
-umbraco document audit-log <id> --take 20
-umbraco webhook events
+umbraco document audit-log <id> --fields timestamp,logType --take 20
+umbraco webhook events --fields alias,eventName
 umbraco webhook create --print-template
-umbraco webhook logs
-umbraco language list
+umbraco webhook logs --fields date,eventAlias,statusCode,retryCount --take 20
+umbraco language list --fields isoCode,name,isDefault
 umbraco language create --iso-code da-DK --name "Danish" --dry-run
-umbraco user current
+umbraco user current --fields name,userName
 umbraco user permissions --ids <node-id> --type document
 umbraco user client-credentials create <user-id> --client-id umbraco-back-office-ci --client-secret <secret> --dry-run
 ```
