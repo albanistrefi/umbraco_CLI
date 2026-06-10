@@ -37,7 +37,7 @@ func RegisterMedia(root *cobra.Command, deps Dependencies) {
 func mediaGet(deps Dependencies) *cobra.Command {
 	var fields string
 	cmd := &cobra.Command{Use: "get <id>", Short: "Get media by ID", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		result, err := deps.Client.Get(context.Background(), fmt.Sprintf("/media/%s", args[0]), api.RequestOptions{Fields: fields})
+		result, err := deps.Client.Get(context.Background(), api.JoinPath("/media/%s", args[0]), api.RequestOptions{Fields: fields})
 		if err != nil {
 			return err
 		}
@@ -89,7 +89,7 @@ func mediaChildren(deps Dependencies) *cobra.Command {
 			opts: api.RequestOptions{Fields: fields, Params: applyPaginationParams(map[string]any{"parentId": args[0]}, skip, take)},
 		}
 		legacy := getRequestCandidate{
-			path: fmt.Sprintf("/media/%s/children", args[0]),
+			path: api.JoinPath("/media/%s/children", args[0]),
 			opts: api.RequestOptions{Fields: fields, Params: applyPaginationParams(nil, skip, take)},
 		}
 
@@ -157,7 +157,7 @@ func mediaSearch(deps Dependencies) *cobra.Command {
 
 func mediaURLs(deps Dependencies) *cobra.Command {
 	return &cobra.Command{Use: "urls <id>", Short: "Get media URLs", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		result, err := deps.Client.Get(context.Background(), fmt.Sprintf("/media/%s/urls", args[0]), api.RequestOptions{})
+		result, err := deps.Client.Get(context.Background(), api.JoinPath("/media/%s/urls", args[0]), api.RequestOptions{})
 		if err != nil {
 			return err
 		}
@@ -408,7 +408,7 @@ func mediaTypeIDsFromResult(result any) []string {
 }
 
 func fetchMediaTypeDetail(ctx context.Context, client *api.Client, id string, originalValue string) (mediaTypeInfo, error) {
-	detail, err := client.Get(ctx, fmt.Sprintf("/media-type/%s", id), api.RequestOptions{})
+	detail, err := client.Get(ctx, api.JoinPath("/media-type/%s", id), api.RequestOptions{})
 	if err != nil {
 		return mediaTypeInfo{}, fmt.Errorf("failed to inspect media type %q (%s): %w", originalValue, id, err)
 	}
@@ -563,7 +563,7 @@ func mediaUpdate(deps Dependencies) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		result, err := deps.Client.Put(context.Background(), fmt.Sprintf("/media/%s", args[0]), body, api.RequestOptions{DryRun: dryRun})
+		result, err := deps.Client.Put(context.Background(), api.JoinPath("/media/%s", args[0]), body, api.RequestOptions{DryRun: dryRun})
 		if err != nil {
 			return err
 		}
@@ -592,7 +592,7 @@ func mediaMove(deps Dependencies) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		result, err := deps.Client.Post(context.Background(), fmt.Sprintf("/media/%s/move", args[0]), body, api.RequestOptions{DryRun: dryRun})
+		result, err := deps.Client.Post(context.Background(), api.JoinPath("/media/%s/move", args[0]), body, api.RequestOptions{DryRun: dryRun})
 		if err != nil {
 			return err
 		}
@@ -607,7 +607,7 @@ func mediaMove(deps Dependencies) *cobra.Command {
 func mediaDelete(deps Dependencies) *cobra.Command {
 	var dryRun bool
 	cmd := &cobra.Command{Use: "delete <id>", Short: "Delete media item", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		result, err := deps.Client.Delete(context.Background(), fmt.Sprintf("/media/%s", args[0]), api.RequestOptions{DryRun: dryRun})
+		result, err := deps.Client.Delete(context.Background(), api.JoinPath("/media/%s", args[0]), api.RequestOptions{DryRun: dryRun})
 		if err != nil {
 			return err
 		}
@@ -620,7 +620,7 @@ func mediaDelete(deps Dependencies) *cobra.Command {
 func mediaTrash(deps Dependencies) *cobra.Command {
 	var dryRun bool
 	cmd := &cobra.Command{Use: "trash <id>", Short: "Move media item to recycle bin", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		result, err := deps.Client.Post(context.Background(), fmt.Sprintf("/media/%s/move-to-recycle-bin", args[0]), map[string]any{}, api.RequestOptions{DryRun: dryRun})
+		result, err := deps.Client.Post(context.Background(), api.JoinPath("/media/%s/move-to-recycle-bin", args[0]), map[string]any{}, api.RequestOptions{DryRun: dryRun})
 		if err != nil {
 			return err
 		}
@@ -647,7 +647,7 @@ func mediaReferences(deps Dependencies) *cobra.Command {
 		Long:  "Wraps GET /media/{id}/referenced-by. Same content-audit role as 'document references' for media assets.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runReferencesQuery(cmd, deps, fmt.Sprintf("/media/%s/referenced-by", args[0]), fields, skip, take, all, triage)
+			return runReferencesQuery(cmd, deps, api.JoinPath("/media/%s/referenced-by", args[0]), fields, skip, take, all, triage)
 		},
 	}
 	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
@@ -667,7 +667,7 @@ func mediaReferencedDescendants(deps Dependencies) *cobra.Command {
 		Short: "List items that reference this media item or any of its descendants",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runReferencesQuery(cmd, deps, fmt.Sprintf("/media/%s/referenced-descendants", args[0]), fields, skip, take, all, triage)
+			return runReferencesQuery(cmd, deps, api.JoinPath("/media/%s/referenced-descendants", args[0]), fields, skip, take, all, triage)
 		},
 	}
 	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")

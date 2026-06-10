@@ -251,7 +251,7 @@ func processDictionaryImportItem(ctx context.Context, client *api.Client, item d
 		Parent:       current.Parent,
 		Translations: mergedTranslations,
 	}
-	if _, err := client.Put(ctx, fmt.Sprintf("/dictionary/%s", existing.ID), payload, api.RequestOptions{DryRun: opts.DryRun}); err != nil {
+	if _, err := client.Put(ctx, api.JoinPath("/dictionary/%s", existing.ID), payload, api.RequestOptions{DryRun: opts.DryRun}); err != nil {
 		return dictionaryImportItemResult{
 			Key:    item.Key,
 			Action: "fail",
@@ -309,9 +309,6 @@ func loadDictionaryImportItems(path string) ([]dictionaryImportFileItem, error) 
 				return nil, fmt.Errorf("import item %q contains an empty isoCode", item.Key)
 			}
 			if err := validate.String(isoCode); err != nil {
-				return nil, err
-			}
-			if err := validate.String(translation); err != nil {
 				return nil, err
 			}
 

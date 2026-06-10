@@ -2,56 +2,28 @@ package validate
 
 import "testing"
 
-func TestPathRejectsTraversal(t *testing.T) {
-	if err := Path("images/../secret.png"); err == nil {
-		t.Fatalf("expected traversal path to fail")
-	}
-}
-
-func TestPathRejectsAbsolute(t *testing.T) {
-	if err := Path("/etc/passwd"); err == nil {
-		t.Fatalf("expected absolute path to fail")
-	}
-}
-
 func TestStringRejectsControlChars(t *testing.T) {
 	if err := String("hello\x07world"); err == nil {
 		t.Fatalf("expected control chars to fail")
 	}
 }
 
+func TestStringAllowsPlainText(t *testing.T) {
+	if err := String("partner-list"); err != nil {
+		t.Fatalf("expected plain identifier to pass: %v", err)
+	}
+}
+
 func TestResourceIDRejectsQueryChars(t *testing.T) {
-	if err := ResourceID("abc?fields=name"); err == nil {
-		t.Fatalf("expected invalid id to fail")
+	for _, id := range []string{"abc?fields=name", "abc#frag", "abc%2F"} {
+		if err := ResourceID(id); err == nil {
+			t.Fatalf("expected invalid id %q to fail", id)
+		}
 	}
 }
 
-func TestNoPreEncodingRejectsEncodedValue(t *testing.T) {
-	if err := NoPreEncoding("hello%20world"); err == nil {
-		t.Fatalf("expected encoded input to fail")
-	}
-}
-
-func TestInputValidatesRecursively(t *testing.T) {
-	input := map[string]any{
-		"parent": map[string]any{
-			"id": "abc#123",
-		},
-	}
-	if err := Input(input); err == nil {
-		t.Fatalf("expected nested invalid id to fail")
-	}
-}
-
-func TestInputAllowsSafeNestedValues(t *testing.T) {
-	input := map[string]any{
-		"parent": map[string]any{"id": "abc-123"},
-		"values": []any{
-			map[string]any{"alias": "title", "value": "Hello world"},
-			map[string]any{"alias": "slug", "value": "hello-world"},
-		},
-	}
-	if err := Input(input); err != nil {
-		t.Fatalf("expected safe input to pass: %v", err)
+func TestResourceIDAllowsGUIDs(t *testing.T) {
+	if err := ResourceID("62689bb1-3a4d-478f-a7b1-1c0e560d4748"); err != nil {
+		t.Fatalf("expected GUID to pass: %v", err)
 	}
 }

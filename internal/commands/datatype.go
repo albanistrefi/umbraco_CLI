@@ -49,7 +49,7 @@ func RegisterDatatype(root *cobra.Command, deps Dependencies) {
 func datatypeGet(deps Dependencies) *cobra.Command {
 	var fields string
 	cmd := &cobra.Command{Use: "get <id>", Short: "Get data type by ID", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		result, err := deps.Client.Get(context.Background(), fmt.Sprintf("%s/%s", dataTypeLegacyCollectionPath, args[0]), api.RequestOptions{Fields: fields})
+		result, err := deps.Client.Get(context.Background(), api.JoinPath(dataTypeLegacyCollectionPath+"/%s", args[0]), api.RequestOptions{Fields: fields})
 		if err != nil {
 			return err
 		}
@@ -384,7 +384,7 @@ func minInt(left int, right int) int {
 
 func datatypeIsUsed(deps Dependencies) *cobra.Command {
 	return &cobra.Command{Use: "is-used <id>", Short: "Check whether a data type is in use", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		result, err := deps.Client.Get(context.Background(), fmt.Sprintf("%s/%s/is-used", dataTypeLegacyCollectionPath, args[0]), api.RequestOptions{})
+		result, err := deps.Client.Get(context.Background(), api.JoinPath(dataTypeLegacyCollectionPath+"/%s/is-used", args[0]), api.RequestOptions{})
 		if err != nil {
 			return err
 		}
@@ -457,7 +457,7 @@ func datatypeUpdate(deps Dependencies) *cobra.Command {
 		}
 
 		merged := mergeAliasPayload(current, patch)
-		result, err := deps.Client.Put(context.Background(), fmt.Sprintf("%s/%s", dataTypeLegacyCollectionPath, args[0]), merged, api.RequestOptions{DryRun: dryRun, SkipValidation: true})
+		result, err := deps.Client.Put(context.Background(), api.JoinPath(dataTypeLegacyCollectionPath+"/%s", args[0]), merged, api.RequestOptions{DryRun: dryRun})
 		if err != nil {
 			return err
 		}
@@ -472,7 +472,7 @@ func datatypeUpdate(deps Dependencies) *cobra.Command {
 func datatypeDelete(deps Dependencies) *cobra.Command {
 	var dryRun bool
 	cmd := &cobra.Command{Use: "delete <id>", Short: "Delete data type", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		result, err := deps.Client.Delete(context.Background(), fmt.Sprintf("%s/%s", dataTypeLegacyCollectionPath, args[0]), api.RequestOptions{DryRun: dryRun})
+		result, err := deps.Client.Delete(context.Background(), api.JoinPath(dataTypeLegacyCollectionPath+"/%s", args[0]), api.RequestOptions{DryRun: dryRun})
 		if err != nil {
 			return err
 		}
@@ -495,9 +495,6 @@ func datatypeAddValue(deps Dependencies) *cobra.Command {
 			return err
 		}
 		if err := validate.String(alias); err != nil {
-			return err
-		}
-		if err := validate.String(value); err != nil {
 			return err
 		}
 
@@ -543,9 +540,6 @@ func datatypeRemoveValue(deps Dependencies) *cobra.Command {
 			return err
 		}
 		if err := validate.String(alias); err != nil {
-			return err
-		}
-		if err := validate.String(value); err != nil {
 			return err
 		}
 

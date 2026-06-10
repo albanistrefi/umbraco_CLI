@@ -133,7 +133,7 @@ func dictionaryGet(deps Dependencies) *cobra.Command {
 				return err
 			}
 
-			result, err := deps.Client.Get(context.Background(), fmt.Sprintf("/dictionary/%s", id), api.RequestOptions{})
+			result, err := deps.Client.Get(context.Background(), api.JoinPath("/dictionary/%s", id), api.RequestOptions{})
 			if err != nil {
 				return err
 			}
@@ -230,7 +230,7 @@ func dictionaryDelete(deps Dependencies) *cobra.Command {
 				return err
 			}
 
-			result, err := deps.Client.Delete(context.Background(), fmt.Sprintf("/dictionary/%s", id), api.RequestOptions{DryRun: dryRun})
+			result, err := deps.Client.Delete(context.Background(), api.JoinPath("/dictionary/%s", id), api.RequestOptions{DryRun: dryRun})
 			if err != nil {
 				return err
 			}
@@ -380,7 +380,7 @@ func findDictionaryByKey(ctx context.Context, client *api.Client, key string) (d
 }
 
 func getDictionaryByID(ctx context.Context, client *api.Client, id string) (dictionaryItem, error) {
-	result, err := client.Get(ctx, fmt.Sprintf("/dictionary/%s", id), api.RequestOptions{})
+	result, err := client.Get(ctx, api.JoinPath("/dictionary/%s", id), api.RequestOptions{})
 	if err != nil {
 		return dictionaryItem{}, err
 	}
@@ -414,9 +414,6 @@ func parseDictionaryTranslations(raw []string) ([]dictionaryTranslation, error) 
 			return nil, fmt.Errorf("translation isoCode cannot be empty")
 		}
 		if err := validate.String(isoCode); err != nil {
-			return nil, err
-		}
-		if err := validate.String(parts[1]); err != nil {
 			return nil, err
 		}
 

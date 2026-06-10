@@ -302,7 +302,7 @@ func TestRequestRefreshesTokenAfter401(t *testing.T) {
 	}
 }
 
-func TestRequestSkipValidationAllowsMergedBodiesWithControlCharacters(t *testing.T) {
+func TestRequestAllowsArbitraryContentInBodies(t *testing.T) {
 	httpClient := newTestHTTPClient(func(r *http.Request) (*http.Response, error) {
 		switch r.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
@@ -317,15 +317,62 @@ func TestRequestSkipValidationAllowsMergedBodiesWithControlCharacters(t *testing
 	cfg := config.Config{BaseURL: "https://example.test", ClientID: "client-id", ClientSecret: "client-secret"}
 	client := NewClient(cfg, httpClient, auth.New(cfg, httpClient))
 
+	// Real CMS payloads contain multiline text, encoded URLs, and property
+	// aliases like "video"/"width" that earlier heuristics misread as IDs.
 	body := map[string]any{
 		"name": "Partner A",
 		"values": []any{
-			map[string]any{"alias": "bodyText", "value": "line1\nline2"},
+			map[string]any{"alias": "bodyText", "value": "line1\nline2\tindented"},
+			map[string]any{"alias": "video", "value": "https://youtube.com/watch?v=abc#t=10"},
+			map[string]any{"alias": "width", "value": "50% off %20"},
 			map[string]any{"alias": "skills", "value": []any{map[string]any{"type": "document", "unique": "62689bb1-3a4d-478f-a7b1-1c0e560d4748"}}},
 		},
 	}
 
-	if _, err := client.Put(context.Background(), "/document/doc-1", body, RequestOptions{SkipValidation: true}); err != nil {
-		t.Fatalf("expected skip validation request to succeed, got %v", err)
+	if _, err := client.Put(context.Background(), "/document/doc-1", body, RequestOptions{}); err != nil {
+		t.Fatalf("expected request with real-world content to succeed, got %v", err)
+	}
+}
+
+func TestJoinPathEscapesArguments(t *testing.T) {
+	cases := []struct {
+		format string
+		args   []string
+		want   string
+	}{
+		{"/document/%s", []string{"abc-123"}, "/document/abc-123"},
+		{"/document/%s/copy", []string{"../server/status"}, "/document/..%2Fserver%2Fstatus/copy"},
+		{"/document/%s", []string{"id?x=1#y"}, "/document/id%3Fx=1%23y"},
+		{"/health-check-group/%s", []string{"Data Integrity"}, "/health-check-group/Data%20Integrity"},
+	}
+	for _, tc := range cases {
+		if got := JoinPath(tc.format, tc.args...); got != tc.want {
+			t.Fatalf("JoinPath(%q, %v) = %q, want %q", tc.format, tc.args, got, tc.want)
+		}
+	}
+}
+
+func TestRequestPreservesEscapedPathSegments(t *testing.T) {
+	var observedURI string
+	httpClient := newTestHTTPClient(func(r *http.Request) (*http.Response, error) {
+		switch {
+		case r.URL.Path == "/umbraco/management/api/v1/security/back-office/token":
+			return jsonResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`, nil), nil
+		default:
+			observedURI = r.URL.RequestURI()
+			return jsonResponse(http.StatusOK, `{"ok":true}`, nil), nil
+		}
+	})
+
+	cfg := config.Config{BaseURL: "https://example.test", ClientID: "client-id", ClientSecret: "client-secret"}
+	client := NewClient(cfg, httpClient, auth.New(cfg, httpClient))
+
+	// A traversal attempt escaped by JoinPath must reach the server as one
+	// literal segment, not rewrite the route.
+	if _, err := client.Get(context.Background(), JoinPath("/document/%s", "../user-group/admin"), RequestOptions{}); err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	if observedURI != "/umbraco/management/api/v1/document/..%2Fuser-group%2Fadmin" {
+		t.Fatalf("expected escaped segment to survive into the request URI, got %q", observedURI)
 	}
 }
