@@ -17,7 +17,7 @@ type datatypeMutationSummary struct {
 }
 
 func fetchDatatypeObject(ctx context.Context, client *api.Client, id string) (map[string]any, error) {
-	result, err := client.Get(ctx, fmt.Sprintf("%s/%s", dataTypeLegacyCollectionPath, id), api.RequestOptions{})
+	result, err := client.Get(ctx, api.JoinPath(dataTypeLegacyCollectionPath+"/%s", id), api.RequestOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -336,7 +336,7 @@ func mutateDatatypeStringArray(ctx context.Context, client *api.Client, id strin
 		}
 
 		next := datatypeAddStringArrayValue(payload, alias, value)
-		return client.Put(ctx, fmt.Sprintf("%s/%s", dataTypeLegacyCollectionPath, id), next, api.RequestOptions{DryRun: dryRun, SkipValidation: true})
+		return client.Put(ctx, api.JoinPath(dataTypeLegacyCollectionPath+"/%s", id), next, api.RequestOptions{DryRun: dryRun})
 	case "remove":
 		if !slices.Contains(currentValues, value) {
 			return datatypeMutationSummary{
@@ -349,7 +349,7 @@ func mutateDatatypeStringArray(ctx context.Context, client *api.Client, id strin
 		}
 
 		next := datatypeRemoveStringArrayValue(payload, alias, value)
-		return client.Put(ctx, fmt.Sprintf("%s/%s", dataTypeLegacyCollectionPath, id), next, api.RequestOptions{DryRun: dryRun, SkipValidation: true})
+		return client.Put(ctx, api.JoinPath(dataTypeLegacyCollectionPath+"/%s", id), next, api.RequestOptions{DryRun: dryRun})
 	default:
 		return nil, fmt.Errorf("unsupported datatype mutation action: %s", action)
 	}

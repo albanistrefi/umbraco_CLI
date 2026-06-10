@@ -105,7 +105,7 @@ func memberGet(deps Dependencies) *cobra.Command {
 		Short: "Get a member by ID",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			result, err := deps.Client.Get(context.Background(), fmt.Sprintf("%s/%s", memberPath, args[0]), api.RequestOptions{Fields: fields})
+			result, err := deps.Client.Get(context.Background(), api.JoinPath(memberPath+"/%s", args[0]), api.RequestOptions{Fields: fields})
 			if err != nil {
 				return err
 			}
@@ -201,7 +201,7 @@ These are managed by the auth subsystem (login flow / backoffice action), not by
 				return err
 			}
 			merged := mergeAliasPayload(current, patch)
-			result, err := deps.Client.Put(context.Background(), fmt.Sprintf("%s/%s", memberPath, args[0]), merged, api.RequestOptions{DryRun: dryRun, SkipValidation: true})
+			result, err := deps.Client.Put(context.Background(), api.JoinPath(memberPath+"/%s", args[0]), merged, api.RequestOptions{DryRun: dryRun})
 			if err != nil {
 				return err
 			}
@@ -238,7 +238,7 @@ func memberUpdateProperties(deps Dependencies) *cobra.Command {
 				return err
 			}
 			merged := mergeAliasPayload(current, patch)
-			result, err := deps.Client.Put(context.Background(), fmt.Sprintf("%s/%s", memberPath, args[0]), merged, api.RequestOptions{DryRun: dryRun, SkipValidation: true})
+			result, err := deps.Client.Put(context.Background(), api.JoinPath(memberPath+"/%s", args[0]), merged, api.RequestOptions{DryRun: dryRun})
 			if err != nil {
 				return err
 			}
@@ -260,7 +260,7 @@ func memberDelete(deps Dependencies) *cobra.Command {
 		Short: "Delete a member",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			result, err := deps.Client.Delete(context.Background(), fmt.Sprintf("%s/%s", memberPath, args[0]), api.RequestOptions{DryRun: dryRun})
+			result, err := deps.Client.Delete(context.Background(), api.JoinPath(memberPath+"/%s", args[0]), api.RequestOptions{DryRun: dryRun})
 			if err != nil {
 				return err
 			}
@@ -343,7 +343,7 @@ Group GUIDs come from 'member-group list'. The PUT preserves every other field o
 			}
 
 			merged := mergeAliasPayload(current, map[string]any{"groups": stringsToAny(next)})
-			result, err := deps.Client.Put(context.Background(), fmt.Sprintf("%s/%s", memberPath, args[0]), merged, api.RequestOptions{DryRun: dryRun, SkipValidation: true})
+			result, err := deps.Client.Put(context.Background(), api.JoinPath(memberPath+"/%s", args[0]), merged, api.RequestOptions{DryRun: dryRun})
 			if err != nil {
 				return err
 			}
@@ -364,7 +364,7 @@ Group GUIDs come from 'member-group list'. The PUT preserves every other field o
 }
 
 func fetchMemberObject(ctx context.Context, client *api.Client, id string) (map[string]any, error) {
-	result, err := client.Get(ctx, fmt.Sprintf("%s/%s", memberPath, id), api.RequestOptions{})
+	result, err := client.Get(ctx, api.JoinPath(memberPath+"/%s", id), api.RequestOptions{})
 	if err != nil {
 		return nil, err
 	}

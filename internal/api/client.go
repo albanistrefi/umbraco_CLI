@@ -17,7 +17,6 @@ import (
 
 	"umbraco-cli/internal/auth"
 	"umbraco-cli/internal/config"
-	"umbraco-cli/internal/validate"
 )
 
 type RequestOptions struct {
@@ -25,10 +24,9 @@ type RequestOptions struct {
 	// It is intentionally not sent as a query parameter because some
 	// Management API endpoints reject otherwise valid requests when fields is
 	// present.
-	Fields         string
-	Params         map[string]any
-	DryRun         bool
-	SkipValidation bool
+	Fields string
+	Params map[string]any
+	DryRun bool
 	// APIPrefix overrides the default "/umbraco/management/api/v1" base path
 	// when non-empty. Used by command surfaces that target a different
 	// Management API mount (e.g. Umbraco Forms at
@@ -37,6 +35,17 @@ type RequestOptions struct {
 }
 
 const defaultAPIPrefix = "/umbraco/management/api/v1"
+
+// JoinPath builds a request path from a format string and arguments, escaping
+// each argument so user-supplied values cannot introduce path segments or
+// traversal ("../id" becomes a single literal segment, not a route rewrite).
+func JoinPath(format string, args ...string) string {
+	escaped := make([]any, len(args))
+	for i, arg := range args {
+		escaped[i] = url.PathEscape(arg)
+	}
+	return fmt.Sprintf(format, escaped...)
+}
 
 type DryRunResult struct {
 	DryRun bool   `json:"dryRun"`
@@ -96,13 +105,20 @@ func (c *Client) buildURL(path string, opts RequestOptions) (string, error) {
 		prefix = "/" + prefix
 	}
 	prefix = strings.TrimRight(prefix, "/")
-	base.Path = strings.TrimRight(base.Path, "/") + prefix + normalizedPath
+
+	// Track the escaped form alongside the decoded form so percent-escapes
+	// produced by JoinPath survive into the request URI instead of being
+	// re-encoded or collapsed back into path separators.
+	rawPath := strings.TrimRight(base.EscapedPath(), "/") + prefix + normalizedPath
+	decodedPath, err := url.PathUnescape(rawPath)
+	if err != nil {
+		return "", fmt.Errorf("invalid request path %q: %w", rawPath, err)
+	}
+	base.Path = decodedPath
+	base.RawPath = rawPath
 
 	query := base.Query()
 	if opts.Params != nil {
-		if err := validate.Input(opts.Params); err != nil {
-			return "", err
-		}
 		for key, raw := range opts.Params {
 			if raw == nil {
 				continue
@@ -148,12 +164,6 @@ func parseResponse(resp *http.Response) (any, error) {
 }
 
 func (c *Client) Request(ctx context.Context, method string, path string, body any, opts RequestOptions) (any, error) {
-	if raw, ok := body.(map[string]any); ok && !opts.SkipValidation {
-		if err := validate.Input(raw); err != nil {
-			return nil, err
-		}
-	}
-
 	fullURL, err := c.buildURL(path, opts)
 	if err != nil {
 		return nil, err

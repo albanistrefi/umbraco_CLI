@@ -161,7 +161,7 @@ func formsGet(deps Dependencies) *cobra.Command {
 		Short: "Get form definition by ID (includes fields, pages, workflows)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			result, err := deps.Client.Get(context.Background(), fmt.Sprintf("/form/%s", args[0]), formsRequestOpts(fields, nil))
+			result, err := deps.Client.Get(context.Background(), api.JoinPath("/form/%s", args[0]), formsRequestOpts(fields, nil))
 			if err != nil {
 				return err
 			}
@@ -224,7 +224,7 @@ func formsRecords(deps Dependencies) *cobra.Command {
 
 			result, err := deps.Client.Get(
 				context.Background(),
-				fmt.Sprintf("/form/%s/record", args[0]),
+				api.JoinPath("/form/%s/record", args[0]),
 				formsRequestOpts(fields, params),
 			)
 			if err != nil {
@@ -261,7 +261,7 @@ func formsRecord(deps Dependencies) *cobra.Command {
 			formID, recordID := args[0], args[1]
 			result, err := deps.Client.Get(
 				context.Background(),
-				fmt.Sprintf("/form/%s/record", formID),
+				api.JoinPath("/form/%s/record", formID),
 				formsRequestOpts("", map[string]any{"take": scan}),
 			)
 			if err != nil {
@@ -292,7 +292,7 @@ func formsRecordWorkflowLog(deps Dependencies) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			result, err := deps.Client.Get(
 				context.Background(),
-				fmt.Sprintf("/form/%s/record/%s/workflow-audit-trail", args[0], args[1]),
+				api.JoinPath("/form/%s/record/%s/workflow-audit-trail", args[0], args[1]),
 				formsRequestOpts(fields, nil),
 			)
 			if err != nil {

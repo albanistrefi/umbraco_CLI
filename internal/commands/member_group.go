@@ -2,7 +2,6 @@ package commands
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/spf13/cobra"
 
@@ -53,7 +52,7 @@ func memberGroupGet(deps Dependencies) *cobra.Command {
 		Short: "Get a member group by ID",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			result, err := deps.Client.Get(context.Background(), fmt.Sprintf("%s/%s", memberGroupPath, args[0]), api.RequestOptions{Fields: fields})
+			result, err := deps.Client.Get(context.Background(), api.JoinPath(memberGroupPath+"/%s", args[0]), api.RequestOptions{Fields: fields})
 			if err != nil {
 				return err
 			}

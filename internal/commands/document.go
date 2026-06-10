@@ -51,7 +51,7 @@ func documentGet(deps Dependencies) *cobra.Command {
 		Short: "Get a document by ID",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			result, err := deps.Client.Get(context.Background(), fmt.Sprintf("/document/%s", args[0]), api.RequestOptions{Fields: fields})
+			result, err := deps.Client.Get(context.Background(), api.JoinPath("/document/%s", args[0]), api.RequestOptions{Fields: fields})
 			if err != nil {
 				return err
 			}
@@ -117,7 +117,7 @@ func documentChildren(deps Dependencies) *cobra.Command {
 				opts: api.RequestOptions{Fields: fields, Params: applyPaginationParams(map[string]any{"parentId": args[0]}, skip, take)},
 			}
 			legacyCandidate := getRequestCandidate{
-				path: fmt.Sprintf("/document/%s/children", args[0]),
+				path: api.JoinPath("/document/%s/children", args[0]),
 				opts: api.RequestOptions{Fields: fields, Params: applyPaginationParams(nil, skip, take)},
 			}
 
@@ -155,7 +155,7 @@ func documentAncestors(deps Dependencies) *cobra.Command {
 					opts: api.RequestOptions{Params: map[string]any{"descendantId": args[0]}},
 				},
 				getRequestCandidate{
-					path: fmt.Sprintf("/document/%s/ancestors", args[0]),
+					path: api.JoinPath("/document/%s/ancestors", args[0]),
 					opts: api.RequestOptions{},
 				},
 			)
@@ -325,11 +325,7 @@ func documentUpdate(deps Dependencies) *cobra.Command {
 				}
 			}
 
-			requestOptions := api.RequestOptions{DryRun: dryRun}
-			if hasProperty || hasMergeJSON {
-				requestOptions.SkipValidation = true
-			}
-			result, err := deps.Client.Put(context.Background(), fmt.Sprintf("/document/%s", args[0]), body, requestOptions)
+			result, err := deps.Client.Put(context.Background(), api.JoinPath("/document/%s", args[0]), body, api.RequestOptions{DryRun: dryRun})
 			if err != nil {
 				return err
 			}
@@ -512,7 +508,7 @@ In all shapes the resulting values[] is merged by alias into the current documen
 				return err
 			}
 			merged := mergeAliasPayload(current, patch)
-			result, err := deps.Client.Put(context.Background(), fmt.Sprintf("/document/%s", args[0]), merged, api.RequestOptions{DryRun: dryRun, SkipValidation: true})
+			result, err := deps.Client.Put(context.Background(), api.JoinPath("/document/%s", args[0]), merged, api.RequestOptions{DryRun: dryRun})
 			if err != nil {
 				return err
 			}
@@ -540,7 +536,7 @@ func documentPublish(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			result, err := deps.Client.Put(context.Background(), fmt.Sprintf("/document/%s/publish", args[0]), body, api.RequestOptions{DryRun: dryRun})
+			result, err := deps.Client.Put(context.Background(), api.JoinPath("/document/%s/publish", args[0]), body, api.RequestOptions{DryRun: dryRun})
 			if err != nil {
 				return err
 			}
@@ -569,7 +565,7 @@ var invariantRaceBackoffs = []time.Duration{200 * time.Millisecond, 500 * time.M
 // request succeeds on retry, so the retry is the right correctness-preserving
 // workaround at the CLI layer. Other 400s are surfaced immediately.
 func publishWithInvariantRaceRetry(ctx context.Context, client *api.Client, id string, body map[string]any, opts api.RequestOptions) (any, error) {
-	path := fmt.Sprintf("/document/%s/publish", id)
+	path := api.JoinPath("/document/%s/publish", id)
 	var lastErr error
 	for attempt := 0; attempt < invariantRaceMaxAttempts; attempt++ {
 		result, err := client.Put(ctx, path, body, opts)
@@ -640,7 +636,7 @@ func documentUnpublish(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			result, err := deps.Client.Put(context.Background(), fmt.Sprintf("/document/%s/unpublish", args[0]), body, api.RequestOptions{DryRun: dryRun})
+			result, err := deps.Client.Put(context.Background(), api.JoinPath("/document/%s/unpublish", args[0]), body, api.RequestOptions{DryRun: dryRun})
 			if err != nil {
 				return err
 			}
@@ -677,7 +673,7 @@ func documentCopy(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			result, err := deps.Client.Post(context.Background(), fmt.Sprintf("/document/%s/copy", args[0]), body, api.RequestOptions{DryRun: dryRun})
+			result, err := deps.Client.Post(context.Background(), api.JoinPath("/document/%s/copy", args[0]), body, api.RequestOptions{DryRun: dryRun})
 			if err != nil {
 				return err
 			}
@@ -698,7 +694,7 @@ func documentCopy(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			publishResult, err := deps.Client.Put(context.Background(), fmt.Sprintf("/document/%s/publish", copiedID), publishBody, api.RequestOptions{DryRun: dryRun})
+			publishResult, err := deps.Client.Put(context.Background(), api.JoinPath("/document/%s/publish", copiedID), publishBody, api.RequestOptions{DryRun: dryRun})
 			if err != nil {
 				return err
 			}
@@ -749,7 +745,7 @@ func documentMove(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			result, err := deps.Client.Post(context.Background(), fmt.Sprintf("/document/%s/move", args[0]), body, api.RequestOptions{DryRun: dryRun})
+			result, err := deps.Client.Post(context.Background(), api.JoinPath("/document/%s/move", args[0]), body, api.RequestOptions{DryRun: dryRun})
 			if err != nil {
 				return err
 			}
@@ -769,7 +765,7 @@ func documentDelete(deps Dependencies) *cobra.Command {
 		Short: "Delete a document",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			result, err := deps.Client.Delete(context.Background(), fmt.Sprintf("/document/%s", args[0]), api.RequestOptions{DryRun: dryRun})
+			result, err := deps.Client.Delete(context.Background(), api.JoinPath("/document/%s", args[0]), api.RequestOptions{DryRun: dryRun})
 			if err != nil {
 				return err
 			}
@@ -787,7 +783,7 @@ func documentTrash(deps Dependencies) *cobra.Command {
 		Short: "Move a document to recycle bin",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			result, err := deps.Client.Post(context.Background(), fmt.Sprintf("/document/%s/move-to-recycle-bin", args[0]), map[string]any{}, api.RequestOptions{DryRun: dryRun})
+			result, err := deps.Client.Post(context.Background(), api.JoinPath("/document/%s/move-to-recycle-bin", args[0]), map[string]any{}, api.RequestOptions{DryRun: dryRun})
 			if err != nil {
 				return err
 			}
@@ -805,7 +801,7 @@ func documentRestore(deps Dependencies) *cobra.Command {
 		Short: "Restore a document",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			result, err := deps.Client.Post(context.Background(), fmt.Sprintf("/document/%s/restore", args[0]), map[string]any{}, api.RequestOptions{DryRun: dryRun})
+			result, err := deps.Client.Post(context.Background(), api.JoinPath("/document/%s/restore", args[0]), map[string]any{}, api.RequestOptions{DryRun: dryRun})
 			if err != nil {
 				return err
 			}
@@ -833,7 +829,7 @@ func documentReferences(deps Dependencies) *cobra.Command {
 		Long:  "Wraps GET /document/{id}/referenced-by. Used to answer 'what uses this node' for orphan checks, safe-delete verification, and taxonomy usage audits.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runReferencesQuery(cmd, deps, fmt.Sprintf("/document/%s/referenced-by", args[0]), fields, skip, take, all, triage)
+			return runReferencesQuery(cmd, deps, api.JoinPath("/document/%s/referenced-by", args[0]), fields, skip, take, all, triage)
 		},
 	}
 	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
@@ -857,7 +853,7 @@ func documentReferencedDescendants(deps Dependencies) *cobra.Command {
 		Short: "List items that reference this document or any of its descendants",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runReferencesQuery(cmd, deps, fmt.Sprintf("/document/%s/referenced-descendants", args[0]), fields, skip, take, all, triage)
+			return runReferencesQuery(cmd, deps, api.JoinPath("/document/%s/referenced-descendants", args[0]), fields, skip, take, all, triage)
 		},
 	}
 	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")

@@ -61,7 +61,7 @@ type documentCSVUpdateResult struct {
 }
 
 func fetchDocumentObject(ctx context.Context, client *api.Client, id string) (map[string]any, error) {
-	result, err := client.Get(ctx, fmt.Sprintf("/document/%s", id), api.RequestOptions{})
+	result, err := client.Get(ctx, api.JoinPath("/document/%s", id), api.RequestOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -89,9 +89,6 @@ func documentPropertyPatch(alias string, rawValue string, rawValueJSON string) (
 			return nil, fmt.Errorf("invalid --value-json JSON: %w", err)
 		}
 	} else {
-		if err := validate.String(rawValue); err != nil {
-			return nil, err
-		}
 		value = rawValue
 	}
 
@@ -229,11 +226,7 @@ func executeDocumentBulkUpdate(ctx context.Context, client *api.Client, ids []st
 			body = merged
 		}
 
-		requestOptions := api.RequestOptions{DryRun: dryRun}
-		if mergePatch != nil {
-			requestOptions.SkipValidation = true
-		}
-		if _, err := client.Put(ctx, fmt.Sprintf("/document/%s", id), body, requestOptions); err != nil {
+		if _, err := client.Put(ctx, api.JoinPath("/document/%s", id), body, api.RequestOptions{DryRun: dryRun}); err != nil {
 			item.Action = "fail"
 			item.Error = err.Error()
 			result.Failed++
@@ -379,7 +372,7 @@ func executeDocumentCSVUpdate(ctx context.Context, client *api.Client, opts docu
 			continue
 		}
 
-		if _, err := client.Put(ctx, fmt.Sprintf("/document/%s", id), merged, api.RequestOptions{DryRun: opts.DryRun, SkipValidation: true}); err != nil {
+		if _, err := client.Put(ctx, api.JoinPath("/document/%s", id), merged, api.RequestOptions{DryRun: opts.DryRun}); err != nil {
 			resultItem.Action = "fail"
 			resultItem.Error = err.Error()
 			result.Failed++

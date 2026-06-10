@@ -180,9 +180,9 @@ func datatypeBlockAdd(deps Dependencies) *cobra.Command {
 
 			result, err := deps.Client.Put(
 				ctx,
-				fmt.Sprintf("%s/%s", dataTypeLegacyCollectionPath, args[0]),
+				api.JoinPath(dataTypeLegacyCollectionPath+"/%s", args[0]),
 				nextPayload,
-				api.RequestOptions{DryRun: dryRun, SkipValidation: true},
+				api.RequestOptions{DryRun: dryRun},
 			)
 			if err != nil {
 				return err
@@ -336,9 +336,9 @@ BlockGrid: --allow-at-root and --allow-in-areas are honored when explicitly pass
 
 			result, err := deps.Client.Put(
 				ctx,
-				fmt.Sprintf("%s/%s", dataTypeLegacyCollectionPath, args[0]),
+				api.JoinPath(dataTypeLegacyCollectionPath+"/%s", args[0]),
 				nextPayload,
-				api.RequestOptions{DryRun: dryRun, SkipValidation: true},
+				api.RequestOptions{DryRun: dryRun},
 			)
 			if err != nil {
 				return err
@@ -416,9 +416,9 @@ func datatypeBlockRemove(deps Dependencies) *cobra.Command {
 
 			result, err := deps.Client.Put(
 				ctx,
-				fmt.Sprintf("%s/%s", dataTypeLegacyCollectionPath, args[0]),
+				api.JoinPath(dataTypeLegacyCollectionPath+"/%s", args[0]),
 				nextPayload,
-				api.RequestOptions{DryRun: dryRun, SkipValidation: true},
+				api.RequestOptions{DryRun: dryRun},
 			)
 			if err != nil {
 				return err

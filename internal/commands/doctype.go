@@ -36,7 +36,7 @@ func RegisterDoctype(root *cobra.Command, deps Dependencies) {
 func doctypeGet(deps Dependencies) *cobra.Command {
 	var fields string
 	cmd := &cobra.Command{Use: "get <id>", Short: "Get document type by ID", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		result, err := deps.Client.Get(context.Background(), fmt.Sprintf("/document-type/%s", args[0]), api.RequestOptions{Fields: fields})
+		result, err := deps.Client.Get(context.Background(), api.JoinPath("/document-type/%s", args[0]), api.RequestOptions{Fields: fields})
 		if err != nil {
 			return err
 		}
@@ -109,7 +109,7 @@ func doctypeChildren(deps Dependencies) *cobra.Command {
 			opts: api.RequestOptions{Fields: fields, Params: applyPaginationParams(map[string]any{"parentId": args[0]}, skip, take)},
 		}
 		legacy := getRequestCandidate{
-			path: fmt.Sprintf("/document-type/%s/children", args[0]),
+			path: api.JoinPath("/document-type/%s/children", args[0]),
 			opts: api.RequestOptions{Fields: fields, Params: applyPaginationParams(nil, skip, take)},
 		}
 
@@ -222,7 +222,7 @@ func doctypeUpdate(deps Dependencies) *cobra.Command {
 			}
 
 			merged := mergeAliasPayload(current, patch)
-			result, err := deps.Client.Put(context.Background(), fmt.Sprintf("/document-type/%s", args[0]), merged, api.RequestOptions{DryRun: dryRun, SkipValidation: true})
+			result, err := deps.Client.Put(context.Background(), api.JoinPath("/document-type/%s", args[0]), merged, api.RequestOptions{DryRun: dryRun})
 			if err != nil {
 				return err
 			}
@@ -234,7 +234,7 @@ func doctypeUpdate(deps Dependencies) *cobra.Command {
 			return err
 		}
 		normalizeDoctypePayload(body)
-		result, err := deps.Client.Put(context.Background(), fmt.Sprintf("/document-type/%s", args[0]), body, api.RequestOptions{DryRun: dryRun})
+		result, err := deps.Client.Put(context.Background(), api.JoinPath("/document-type/%s", args[0]), body, api.RequestOptions{DryRun: dryRun})
 		if err != nil {
 			return err
 		}
@@ -304,9 +304,9 @@ func doctypeAddProperty(deps Dependencies) *cobra.Command {
 			})
 			result, err := deps.Client.Put(
 				context.Background(),
-				fmt.Sprintf("/document-type/%s", args[0]),
+				api.JoinPath("/document-type/%s", args[0]),
 				merged,
-				api.RequestOptions{DryRun: dryRun, SkipValidation: true},
+				api.RequestOptions{DryRun: dryRun},
 			)
 			if err != nil {
 				return err
@@ -395,9 +395,9 @@ func doctypeAddContainer(deps Dependencies) *cobra.Command {
 			merged := mergeAliasPayload(current, map[string]any{"containers": nextContainers})
 			result, err := deps.Client.Put(
 				context.Background(),
-				fmt.Sprintf("/document-type/%s", args[0]),
+				api.JoinPath("/document-type/%s", args[0]),
 				merged,
-				api.RequestOptions{DryRun: dryRun, SkipValidation: true},
+				api.RequestOptions{DryRun: dryRun},
 			)
 			if err != nil {
 				return err
@@ -431,7 +431,7 @@ func doctypeCopy(deps Dependencies) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		result, err := deps.Client.Post(context.Background(), fmt.Sprintf("/document-type/%s/copy", args[0]), body, api.RequestOptions{DryRun: dryRun})
+		result, err := deps.Client.Post(context.Background(), api.JoinPath("/document-type/%s/copy", args[0]), body, api.RequestOptions{DryRun: dryRun})
 		if err != nil {
 			return err
 		}
@@ -461,7 +461,7 @@ func doctypeMove(deps Dependencies) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		result, err := deps.Client.Post(context.Background(), fmt.Sprintf("/document-type/%s/move", args[0]), body, api.RequestOptions{DryRun: dryRun})
+		result, err := deps.Client.Post(context.Background(), api.JoinPath("/document-type/%s/move", args[0]), body, api.RequestOptions{DryRun: dryRun})
 		if err != nil {
 			return err
 		}
@@ -476,7 +476,7 @@ func doctypeMove(deps Dependencies) *cobra.Command {
 func doctypeDelete(deps Dependencies) *cobra.Command {
 	var dryRun bool
 	cmd := &cobra.Command{Use: "delete <id>", Short: "Delete document type", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		result, err := deps.Client.Delete(context.Background(), fmt.Sprintf("/document-type/%s", args[0]), api.RequestOptions{DryRun: dryRun})
+		result, err := deps.Client.Delete(context.Background(), api.JoinPath("/document-type/%s", args[0]), api.RequestOptions{DryRun: dryRun})
 		if err != nil {
 			return err
 		}

@@ -90,7 +90,7 @@ func findDocumentChildByName(ctx context.Context, deps Dependencies, parentID st
 		ctx,
 		deps.Client,
 		getRequestCandidate{path: "/tree/document/children", opts: api.RequestOptions{Params: map[string]any{"parentId": parentID}}},
-		getRequestCandidate{path: fmt.Sprintf("/document/%s/children", parentID), opts: api.RequestOptions{}},
+		getRequestCandidate{path: api.JoinPath("/document/%s/children", parentID), opts: api.RequestOptions{}},
 	)
 	if err != nil {
 		return treeNodeRef{}, err
