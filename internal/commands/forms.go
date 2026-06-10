@@ -112,16 +112,16 @@ func formsList(deps Dependencies) *cobra.Command {
 		Short: "List forms (tree root: returns folders and root-level forms)",
 		Long:  "Returns the Forms tree root. On real installs this is mostly folders — use 'forms children <folderId>' to drill into a folder returned with isFolder=true.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-		result, err := getWithFallback(
-			context.Background(),
-			deps.Client,
-			getRequestCandidate{path: "/tree/form/root", opts: formsRequestOpts(fields, nil)},
-			getRequestCandidate{path: "/form", opts: formsRequestOpts(fields, nil)},
-		)
-		if err != nil {
-			return err
-		}
-		return printResult(cmd, deps, applyReadTriage(applyFieldsProjection(result, fields), triage))
+			result, err := getWithFallback(
+				context.Background(),
+				deps.Client,
+				getRequestCandidate{path: "/tree/form/root", opts: formsRequestOpts(fields, nil)},
+				getRequestCandidate{path: "/form", opts: formsRequestOpts(fields, nil)},
+			)
+			if err != nil {
+				return err
+			}
+			return printResult(cmd, deps, applyReadTriage(applyFieldsProjection(result, fields), triage))
 		},
 	}
 	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")

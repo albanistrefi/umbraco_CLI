@@ -411,4 +411,3 @@ func TestFormsRecordWorkflowLogHitsAuditTrail(t *testing.T) {
 		t.Fatalf("expected workflow id in response, got %q", output)
 	}
 }
-

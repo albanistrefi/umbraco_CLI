@@ -934,13 +934,13 @@ func TestDocumentUpdatePropertiesRejectsMalformedPayloads(t *testing.T) {
 		return endpointJSONResponse(http.StatusNotFound, `null`), nil
 	})
 	for label, json := range map[string]string{
-		"array entry missing alias":           `[{"value":"x"}]`,
-		"array entry missing value":           `[{"alias":"x"}]`,
-		"envelope entry missing value":        `{"values":[{"alias":"x"}]}`,
-		"envelope entry missing alias":        `{"values":[{"value":"x"}]}`,
-		"non-object array entry":              `["string-not-object"]`,
-		"top-level string":                    `"just a string"`,
-		"top-level number":                    `42`,
+		"array entry missing alias":    `[{"value":"x"}]`,
+		"array entry missing value":    `[{"alias":"x"}]`,
+		"envelope entry missing value": `{"values":[{"alias":"x"}]}`,
+		"envelope entry missing alias": `{"values":[{"value":"x"}]}`,
+		"non-object array entry":       `["string-not-object"]`,
+		"top-level string":             `"just a string"`,
+		"top-level number":             `42`,
 	} {
 		_, err := execute(buildRootWithCollections(t, deps), "document", "update-properties", "doc-1", "--json", json)
 		if err == nil {
