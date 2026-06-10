@@ -258,7 +258,7 @@ func documentCreate(deps Dependencies) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Full JSON payload")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
 	cmd.Flags().BoolVar(&printTemplate, "print-template", false, "Print an annotated JSON skeleton; substitute placeholders before passing to --json")
 	return cmd
 }
@@ -364,7 +364,7 @@ func documentUpdate(deps Dependencies) *cobra.Command {
 	cmd.Flags().StringVar(&valueJSON, "value-json", "", "JSON value used with --property")
 	cmd.Flags().BoolVar(&saveAndPublish, "save-and-publish", false, "Publish the document after a successful update")
 	cmd.Flags().StringVar(&culture, "culture", "", "Culture shortcut for --save-and-publish")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
 	return cmd
 }
 
@@ -421,7 +421,7 @@ func documentBulkUpdate(deps Dependencies) *cobra.Command {
 	cmd.Flags().StringVar(&idFile, "id-file", "", "Path to a file containing document IDs, one per line")
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Full JSON payload applied to every document")
 	cmd.Flags().StringVar(&mergeJSON, "merge-json", "", "Partial JSON payload merged into each current document before update")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate requests without executing")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned requests without executing")
 	cmd.Flags().BoolVar(&force, "force", false, "Confirm the bulk update when not using --dry-run")
 	return cmd
 }
@@ -470,7 +470,7 @@ func documentCSVUpdate(deps Dependencies) *cobra.Command {
 	cmd.Flags().StringVar(&idColumn, "id-column", "id", "CSV column containing document IDs")
 	cmd.Flags().StringArrayVar(&properties, "property", nil, "Property alias to update from a CSV column with the same name; repeat for multiple properties")
 	cmd.Flags().StringArrayVar(&fieldMappings, "field", nil, "Explicit alias=column CSV mapping; repeat for multiple properties")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate the CSV-driven updates without executing them")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned CSV-driven updates without executing them")
 	cmd.Flags().BoolVar(&force, "force", false, "Confirm the CSV-driven updates when not using --dry-run")
 	return cmd
 }
@@ -523,7 +523,7 @@ In all shapes the resulting values[] is merged by alias into the current documen
 		},
 	}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Properties payload as JSON; accepts object {alias: value}, array [{alias, value, culture?, segment?}], or envelope {\"values\":[...]}")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
 	return cmd
 }
 
@@ -549,7 +549,7 @@ func documentPublish(deps Dependencies) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Publish payload as JSON")
 	cmd.Flags().StringVar(&culture, "culture", "", "Culture shortcut")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
 	return cmd
 }
 
@@ -649,7 +649,7 @@ func documentUnpublish(deps Dependencies) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Unpublish payload as JSON")
 	cmd.Flags().StringVar(&culture, "culture", "", "Culture shortcut")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
 	return cmd
 }
 
@@ -685,9 +685,14 @@ func documentCopy(deps Dependencies) *cobra.Command {
 				return printResult(cmd, deps, result)
 			}
 
-			copiedID := extractResultID(result)
-			if copiedID == "" {
-				return fmt.Errorf("document copy --publish requires the copy response to include the new document id")
+			// On dry-run no copy happens, so there is no real ID to chain;
+			// the publish step is planned against a placeholder instead.
+			copiedID := "copied-document-id"
+			if !dryRun {
+				copiedID = extractResultID(result)
+				if copiedID == "" {
+					return fmt.Errorf("document copy --publish requires the copy response to include the new document id")
+				}
 			}
 			publishBody, err := documentPublishBody("", culture)
 			if err != nil {
@@ -707,7 +712,7 @@ func documentCopy(deps Dependencies) *cobra.Command {
 	cmd.Flags().StringVar(&to, "to", "", "Target parent ID shortcut")
 	cmd.Flags().BoolVar(&publish, "publish", false, "Publish the copied document after a successful copy")
 	cmd.Flags().StringVar(&culture, "culture", "", "Culture shortcut for --publish")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
 	return cmd
 }
 
@@ -753,7 +758,7 @@ func documentMove(deps Dependencies) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Move payload as JSON")
 	cmd.Flags().StringVar(&to, "to", "", "Target parent ID shortcut")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
 	return cmd
 }
 
@@ -771,7 +776,7 @@ func documentDelete(deps Dependencies) *cobra.Command {
 			return printResult(cmd, deps, result)
 		},
 	}
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
 	return cmd
 }
 
@@ -789,7 +794,7 @@ func documentTrash(deps Dependencies) *cobra.Command {
 			return printResult(cmd, deps, result)
 		},
 	}
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
 	return cmd
 }
 
@@ -807,7 +812,7 @@ func documentRestore(deps Dependencies) *cobra.Command {
 			return printResult(cmd, deps, result)
 		},
 	}
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
 	return cmd
 }
 

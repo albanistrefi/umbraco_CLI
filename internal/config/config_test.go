@@ -309,6 +309,97 @@ UNRELATED_KEY=ignored
 	}
 }
 
+func TestLoadDotEnvConfigToleratesMalformedForeignLines(t *testing.T) {
+	workingDir := t.TempDir()
+	path := filepath.Join(workingDir, ".env")
+	if err := os.WriteFile(path, []byte(`
+SOME_BARE_FLAG
+NOT_OURS
+UMBRACO_CLIENT_ID=dotenv-client
+`), 0o644); err != nil {
+		t.Fatalf("failed to write .env: %v", err)
+	}
+
+	cfg, err := loadDotEnvConfig(path)
+	if err != nil {
+		t.Fatalf("expected foreign malformed lines to be skipped, got: %v", err)
+	}
+	if cfg.ClientID != "dotenv-client" {
+		t.Fatalf("unexpected dotenv config: %+v", cfg)
+	}
+}
+
+func TestLoadDotEnvConfigRejectsMalformedUmbracoLines(t *testing.T) {
+	workingDir := t.TempDir()
+	path := filepath.Join(workingDir, ".env")
+	if err := os.WriteFile(path, []byte("UMBRACO_CLIENT_ID\n"), 0o644); err != nil {
+		t.Fatalf("failed to write .env: %v", err)
+	}
+
+	if _, err := loadDotEnvConfig(path); err == nil {
+		t.Fatalf("expected malformed UMBRACO_ line to fail")
+	}
+}
+
+func TestLoadResolvedConfigSkipsDiscoveryWhenBaseURLConfigured(t *testing.T) {
+	workingDir := t.TempDir()
+	// A malformed appsettings.json next to the working directory must not
+	// matter when the base URL is already configured.
+	if err := os.WriteFile(filepath.Join(workingDir, "appsettings.json"), []byte("{not json"), 0o644); err != nil {
+		t.Fatalf("failed to write appsettings.json: %v", err)
+	}
+
+	cfg, err := loadResolvedConfig(workingDir, "", map[string]string{
+		"UMBRACO_BASE_URL": "https://localhost:44314",
+	})
+	if err != nil {
+		t.Fatalf("loadResolvedConfig failed: %v", err)
+	}
+	if cfg.BaseURL != "https://localhost:44314" {
+		t.Fatalf("expected configured base URL, got %q", cfg.BaseURL)
+	}
+}
+
+func TestLoadResolvedConfigTreatsUnreadableDiscoveryFilesAsAbsent(t *testing.T) {
+	workingDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workingDir, "appsettings.json"), []byte("{not json"), 0o644); err != nil {
+		t.Fatalf("failed to write appsettings.json: %v", err)
+	}
+
+	cfg, err := loadResolvedConfig(workingDir, "", map[string]string{})
+	if err != nil {
+		t.Fatalf("expected discovery to be best-effort, got: %v", err)
+	}
+	if cfg.BaseURL != defaultBaseURL {
+		t.Fatalf("expected default base URL fallback, got %q", cfg.BaseURL)
+	}
+}
+
+func TestFindNearestFileFromCandidatesPrefersCloserDirectory(t *testing.T) {
+	parentDir := t.TempDir()
+	workingDir := filepath.Join(parentDir, "nested")
+	if err := os.MkdirAll(workingDir, 0o755); err != nil {
+		t.Fatalf("failed to create nested dir: %v", err)
+	}
+
+	// The lower-priority candidate sits closer to the working directory and
+	// must win over a higher-priority candidate further up the tree.
+	if err := os.WriteFile(filepath.Join(parentDir, ".umbracorc.json"), []byte("{}"), 0o644); err != nil {
+		t.Fatalf("failed to write distant config: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(workingDir, ".umbracorc"), []byte("{}"), 0o644); err != nil {
+		t.Fatalf("failed to write nearby config: %v", err)
+	}
+
+	path, ok := findNearestFileFromCandidates(workingDir, ".umbracorc.json", ".umbracorc")
+	if !ok {
+		t.Fatalf("expected a config file to be found")
+	}
+	if path != filepath.Join(workingDir, ".umbracorc") {
+		t.Fatalf("expected nearby .umbracorc to win, got %q", path)
+	}
+}
+
 func TestLoadResolvedConfigRejectsInvalidOutputFormat(t *testing.T) {
 	workingDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(workingDir, ".umbracorc.json"), []byte(`{

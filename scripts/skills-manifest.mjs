@@ -1,3 +1,5 @@
+export const EXPECTED_SKILL_COUNT = 67;
+
 export const EXCLUDED_SKILLS = new Set([
   'umbraco-add-extension-reference',
   'umbraco-backoffice',

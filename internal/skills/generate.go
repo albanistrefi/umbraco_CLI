@@ -13,11 +13,11 @@ import (
 
 // blockedMethods lists destructive operations excluded from generated skills.
 var blockedMethods = map[string]bool{
-	"document.delete": true,
-	"doctype.delete":  true,
-	"datatype.delete": true,
-	"template.delete": true,
-	"media.delete":    true,
+	"document.delete":   true,
+	"doctype.delete":    true,
+	"datatype.delete":   true,
+	"template.delete":   true,
+	"media.delete":      true,
 	"dictionary.delete": true,
 }
 

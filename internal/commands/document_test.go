@@ -153,6 +153,32 @@ func TestDocumentCopyPublishPublishesCopiedDocument(t *testing.T) {
 	}
 }
 
+func TestDocumentCopyPublishDryRunPlansBothRequests(t *testing.T) {
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		t.Fatalf("dry-run must not reach the server, got %s %s", req.Method, req.URL.Path)
+		return nil, nil
+	})
+
+	output, err := execute(buildRootWithCollections(t, deps), "document", "copy", "source-1", "--to", "parent-1", "--publish", "--dry-run")
+	if err != nil {
+		t.Fatalf("document copy --publish --dry-run failed: %v", err)
+	}
+
+	var result struct {
+		Copied    map[string]any `json:"copied"`
+		Published map[string]any `json:"published"`
+	}
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		t.Fatalf("failed to decode dry-run result: %v", err)
+	}
+	if result.Copied["path"] != "/umbraco/management/api/v1/document/source-1/copy" {
+		t.Fatalf("unexpected copy plan: %+v", result.Copied)
+	}
+	if result.Published["path"] != "/umbraco/management/api/v1/document/copied-document-id/publish" {
+		t.Fatalf("unexpected publish plan: %+v", result.Published)
+	}
+}
+
 func allJSONControlCharacters() string {
 	runes := make([]rune, 0, 32)
 	for value := rune(0); value <= 0x1f; value++ {
@@ -934,13 +960,13 @@ func TestDocumentUpdatePropertiesRejectsMalformedPayloads(t *testing.T) {
 		return endpointJSONResponse(http.StatusNotFound, `null`), nil
 	})
 	for label, json := range map[string]string{
-		"array entry missing alias":           `[{"value":"x"}]`,
-		"array entry missing value":           `[{"alias":"x"}]`,
-		"envelope entry missing value":        `{"values":[{"alias":"x"}]}`,
-		"envelope entry missing alias":        `{"values":[{"value":"x"}]}`,
-		"non-object array entry":              `["string-not-object"]`,
-		"top-level string":                    `"just a string"`,
-		"top-level number":                    `42`,
+		"array entry missing alias":    `[{"value":"x"}]`,
+		"array entry missing value":    `[{"alias":"x"}]`,
+		"envelope entry missing value": `{"values":[{"alias":"x"}]}`,
+		"envelope entry missing alias": `{"values":[{"value":"x"}]}`,
+		"non-object array entry":       `["string-not-object"]`,
+		"top-level string":             `"just a string"`,
+		"top-level number":             `42`,
 	} {
 		_, err := execute(buildRootWithCollections(t, deps), "document", "update-properties", "doc-1", "--json", json)
 		if err == nil {

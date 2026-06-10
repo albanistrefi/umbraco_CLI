@@ -207,7 +207,7 @@ func dictionaryCreate(deps Dependencies) *cobra.Command {
 	cmd.Flags().StringVar(&parentID, "parent-id", "", "Optional parent dictionary item ID")
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Full JSON payload")
 	cmd.Flags().StringArrayVar(&translations, "translation", nil, "Translation in isoCode=value format; repeat for multiple locales")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
 	return cmd
 }
 
@@ -241,7 +241,7 @@ func dictionaryDelete(deps Dependencies) *cobra.Command {
 
 	cmd.Flags().StringVar(&key, "key", "", "Dictionary key name")
 	cmd.Flags().BoolVar(&force, "force", false, "Confirm deletion")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
 	return cmd
 }
 

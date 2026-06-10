@@ -65,13 +65,7 @@ type jsonConfigFile struct {
 }
 
 func loadResolvedConfig(workingDir string, homeDir string, env map[string]string) (Config, error) {
-	resolved := rawConfig{BaseURL: defaultBaseURL}
-
-	if discoveredBaseURL, ok, err := discoverBaseURL(workingDir); err != nil {
-		return Config{}, err
-	} else if ok {
-		resolved.BaseURL = discoveredBaseURL
-	}
+	resolved := rawConfig{}
 
 	if homeDir != "" {
 		userConfig, ok, err := loadJSONConfig(filepath.Join(homeDir, ".umbraco", "config.json"))
@@ -108,6 +102,17 @@ func loadResolvedConfig(workingDir string, homeDir string, env map[string]string
 	}
 
 	mergeRawConfig(&resolved, rawConfigFromEnv(env))
+
+	// Crawling the working tree for a .NET host project is expensive, so it
+	// only runs when no explicit source supplied a base URL. Discovery is
+	// best-effort: an unreadable or malformed file nearby must never make
+	// the CLI unusable.
+	if strings.TrimSpace(resolved.BaseURL) == "" {
+		if discoveredBaseURL, ok := discoverBaseURL(workingDir); ok {
+			resolved.BaseURL = discoveredBaseURL
+		}
+	}
+
 	return finalizeRawConfig(resolved)
 }
 
@@ -235,7 +240,12 @@ func WriteUserConfig(cfg Config) error {
 		return err
 	}
 	encoded = append(encoded, '\n')
-	return os.WriteFile(path, encoded, 0o600)
+	if err := os.WriteFile(path, encoded, 0o600); err != nil {
+		return err
+	}
+	// WriteFile's mode only applies to newly created files; tighten
+	// pre-existing config files that may have looser permissions.
+	return os.Chmod(path, 0o600)
 }
 
 func ClearUserAuth() error {
@@ -276,14 +286,15 @@ func parseDotEnv(reader io.Reader) (map[string]string, error) {
 		}
 		line = strings.TrimPrefix(line, "export ")
 
+		// Dotenv files are shared with other tools, so only UMBRACO_ lines
+		// are ours to judge; anything else is skipped, malformed or not.
 		key, value, ok := strings.Cut(line, "=")
-		if !ok {
-			return nil, fmt.Errorf("invalid line %q", line)
-		}
-
 		key = strings.TrimSpace(key)
 		if !strings.HasPrefix(key, "UMBRACO_") {
 			continue
+		}
+		if !ok {
+			return nil, fmt.Errorf("invalid line %q", line)
 		}
 
 		value = strings.TrimSpace(value)
@@ -318,29 +329,40 @@ func findNearestFile(workingDir string, relativePath string) (string, bool) {
 	}
 }
 
+// findNearestFileFromCandidates checks all candidates per directory before
+// moving up, so a nearby .umbracorc is not shadowed by a distant .umbracorc.json.
 func findNearestFileFromCandidates(workingDir string, candidates ...string) (string, bool) {
-	for _, candidate := range candidates {
-		if path, ok := findNearestFile(workingDir, candidate); ok {
-			return path, true
-		}
+	if strings.TrimSpace(workingDir) == "" {
+		return "", false
 	}
-	return "", false
+
+	dir := workingDir
+	for {
+		for _, candidate := range candidates {
+			path := filepath.Join(dir, candidate)
+			if info, err := os.Stat(path); err == nil && !info.IsDir() {
+				return path, true
+			}
+		}
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", false
+		}
+		dir = parent
+	}
 }
 
-func discoverBaseURL(workingDir string) (string, bool, error) {
-	if chosen, ok, err := discoverBaseURLFromSearchRoots(searchRootsForCurrentTree(workingDir)); err != nil {
-		return "", false, err
-	} else if ok {
-		return chosen, true, nil
+func discoverBaseURL(workingDir string) (string, bool) {
+	if chosen, ok := discoverBaseURLFromSearchRoots(searchRootsForCurrentTree(workingDir)); ok {
+		return chosen, true
 	}
 
-	if chosen, ok, err := discoverBaseURLFromSearchRoots(searchRootsForSiblingProjects(workingDir)); err != nil {
-		return "", false, err
-	} else if ok {
-		return chosen, true, nil
+	if chosen, ok := discoverBaseURLFromSearchRoots(searchRootsForSiblingProjects(workingDir)); ok {
+		return chosen, true
 	}
 
-	return "", false, nil
+	return "", false
 }
 
 func searchRootsForCurrentTree(workingDir string) []string {
@@ -445,27 +467,19 @@ func isLikelyUmbracoHostProject(root string) bool {
 	return hostProjects == 1
 }
 
-func discoverBaseURLFromSearchRoots(roots []string) (string, bool, error) {
+func discoverBaseURLFromSearchRoots(roots []string) (string, bool) {
 	urls := make([]string, 0)
 
 	for _, root := range roots {
-		rootURLs, err := collectBaseURLsFromRoot(root)
-		if err != nil {
-			return "", false, err
-		}
-		urls = append(urls, rootURLs...)
+		urls = append(urls, collectBaseURLsFromRoot(root)...)
 	}
 
-	if chosen, ok := choosePreferredURL(urls); ok {
-		return chosen, true, nil
-	}
-
-	return "", false, nil
+	return choosePreferredURL(urls)
 }
 
-func collectBaseURLsFromRoot(root string) ([]string, error) {
+func collectBaseURLsFromRoot(root string) []string {
 	if strings.TrimSpace(root) == "" {
-		return nil, nil
+		return nil
 	}
 
 	urls := make([]string, 0)
@@ -474,43 +488,29 @@ func collectBaseURLsFromRoot(root string) ([]string, error) {
 		filepath.Join(root, "appsettings.Development.json"),
 		filepath.Join(root, "appsettings.json"),
 	} {
-		collected, ok, err := collectJSONConfigURLs(candidate)
-		if err != nil {
-			return nil, err
-		}
-		if ok {
-			urls = append(urls, collected...)
-		}
+		urls = append(urls, collectJSONConfigURLs(candidate)...)
 	}
 
-	return urls, nil
+	return urls
 }
 
-func collectJSONConfigURLs(path string) ([]string, bool, error) {
+func collectJSONConfigURLs(path string) []string {
 	payload, err := os.ReadFile(path)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, false, nil
-		}
-		return nil, false, err
+		return nil
 	}
 
+	var urls []string
 	switch filepath.Base(path) {
 	case "launchSettings.json":
-		urls, err := collectLaunchSettingsURLs(payload)
-		if err != nil {
-			return nil, false, fmt.Errorf("invalid config file %s: %w", path, err)
-		}
-		return urls, true, nil
+		urls, err = collectLaunchSettingsURLs(payload)
 	case "appsettings.Development.json", "appsettings.json":
-		urls, err := collectAppSettingsURLs(payload)
-		if err != nil {
-			return nil, false, fmt.Errorf("invalid config file %s: %w", path, err)
-		}
-		return urls, true, nil
-	default:
-		return nil, true, nil
+		urls, err = collectAppSettingsURLs(payload)
 	}
+	if err != nil {
+		return nil
+	}
+	return urls
 }
 
 func collectLaunchSettingsURLs(payload []byte) ([]string, error) {

@@ -157,7 +157,7 @@ These are managed by the auth subsystem (login flow / backoffice action), not by
 		},
 	}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Create payload as JSON")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
 	cmd.Flags().BoolVar(&printTemplate, "print-template", false, "Print an annotated JSON skeleton; substitute placeholders before passing to --json")
 	return cmd
 }
@@ -213,7 +213,7 @@ These are managed by the auth subsystem (login flow / backoffice action), not by
 	}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Update payload as JSON; merged into the current member so fields not mentioned are preserved")
 	cmd.Flags().StringVar(&mergeJSON, "merge-json", "", "Alias for --json")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
 	return cmd
 }
 
@@ -249,7 +249,7 @@ func memberUpdateProperties(deps Dependencies) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Properties payload as JSON (object / array / envelope)")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
 	return cmd
 }
 
@@ -270,7 +270,7 @@ func memberDelete(deps Dependencies) *cobra.Command {
 			return printResult(cmd, deps, result)
 		},
 	}
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
 	return cmd
 }
 
@@ -359,7 +359,7 @@ Group GUIDs come from 'member-group list'. The PUT preserves every other field o
 	cmd.Flags().StringVar(&setCSV, "groups", "", "Comma-separated group GUIDs; replaces the member's groups[] with this exact set")
 	cmd.Flags().StringVar(&addCSV, "add-groups", "", "Comma-separated group GUIDs to add (idempotent)")
 	cmd.Flags().StringVar(&removeCSV, "remove-groups", "", "Comma-separated group GUIDs to remove (idempotent)")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
 	return cmd
 }
 

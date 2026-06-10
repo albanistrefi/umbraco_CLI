@@ -104,7 +104,7 @@ func templateCreate(deps Dependencies) *cobra.Command {
 		return printResult(cmd, deps, createResult(result, body))
 	}}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Create payload as JSON")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
 	cmd.Flags().BoolVar(&printTemplate, "print-template", false, "Print an annotated JSON skeleton; substitute placeholders before passing to --json")
 	return cmd
 }
@@ -127,7 +127,7 @@ func templateUpdate(deps Dependencies) *cobra.Command {
 		return printResult(cmd, deps, result)
 	}}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Update payload as JSON")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
 	return cmd
 }
 
@@ -140,6 +140,6 @@ func templateDelete(deps Dependencies) *cobra.Command {
 		}
 		return printResult(cmd, deps, result)
 	}}
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
 	return cmd
 }
