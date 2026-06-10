@@ -832,7 +832,7 @@ func TestDoctypeUpdateRejectsJSONAndMergeJSONTogether(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected doctype update to reject simultaneous --json and --merge-json")
 	}
-	if !strings.Contains(err.Error(), "exactly one of --json or --merge-json") {
+	if !strings.Contains(err.Error(), "exactly one of --json (full replacement) or --merge-json (fetch and merge)") {
 		t.Fatalf("unexpected merge-json validation error: %v", err)
 	}
 }

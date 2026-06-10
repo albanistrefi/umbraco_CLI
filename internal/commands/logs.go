@@ -1,7 +1,7 @@
 package commands
 
 import (
-	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -51,7 +51,7 @@ func logsList(deps Dependencies) *cobra.Command {
 			return err
 		}
 		result, err := getWithFallback(
-			context.Background(),
+			cmd.Context(),
 			deps.Client,
 			getRequestCandidate{path: logViewerLogPath, opts: api.RequestOptions{Params: params}},
 			getRequestCandidate{path: logViewerLegacyListPath, opts: api.RequestOptions{Params: params}},
@@ -96,7 +96,7 @@ func logsLevelCount(deps Dependencies) *cobra.Command {
 				params["endDate"] = to
 			}
 		}
-		result, err := deps.Client.Get(context.Background(), "/log-viewer/level-count", api.RequestOptions{Params: params})
+		result, err := deps.Client.Get(cmd.Context(), "/log-viewer/level-count", api.RequestOptions{Params: params})
 		if err != nil {
 			return friendlyLogViewerError(err)
 		}
@@ -116,7 +116,7 @@ func logsTemplates(deps Dependencies) *cobra.Command {
 	cmd := &cobra.Command{Use: "templates", Short: "List paginated log message templates", RunE: func(cmd *cobra.Command, args []string) error {
 		params := logDateRangePagingParams(from, to, skip, take)
 		result, err := getWithFallback(
-			context.Background(),
+			cmd.Context(),
 			deps.Client,
 			getRequestCandidate{path: logViewerMessageTemplatePath, opts: api.RequestOptions{Params: params}},
 			getRequestCandidate{path: logViewerLegacyMessageTemplatesPath, opts: api.RequestOptions{Params: params}},
@@ -154,7 +154,7 @@ func logsSearch(deps Dependencies) *cobra.Command {
 			return err
 		}
 		result, err := getWithFallback(
-			context.Background(),
+			cmd.Context(),
 			deps.Client,
 			getRequestCandidate{path: logViewerLogPath, opts: api.RequestOptions{Params: params}},
 			getRequestCandidate{path: logViewerLegacySearchPath, opts: api.RequestOptions{Params: params}},
@@ -253,8 +253,8 @@ func logDateRangePagingParams(from string, to string, skip int, take int) map[st
 }
 
 func friendlyLogViewerError(err error) error {
-	apiErr, ok := err.(*api.APIError)
-	if !ok || apiErr.StatusCode != http.StatusBadRequest {
+	var apiErr *api.APIError
+	if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusBadRequest {
 		return err
 	}
 	if !strings.Contains(fmt.Sprint(apiErr.Payload), "CancelledByLogsSizeValidation") {

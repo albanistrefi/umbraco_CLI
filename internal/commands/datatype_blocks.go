@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"context"
 	"fmt"
 	"reflect"
 	"regexp"
@@ -76,7 +75,7 @@ func datatypeBlockList(deps Dependencies) *cobra.Command {
 		Short: "List allowed blocks on a Block List / Block Grid datatype",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			payload, err := fetchDatatypeObject(context.Background(), deps.Client, args[0])
+			payload, err := fetchDatatypeObject(cmd.Context(), deps.Client, args[0])
 			if err != nil {
 				return err
 			}
@@ -126,7 +125,7 @@ func datatypeBlockAdd(deps Dependencies) *cobra.Command {
 				return fmt.Errorf("--editor-size must be one of small, medium, large (got %q)", editorSize)
 			}
 
-			ctx := context.Background()
+			ctx := cmd.Context()
 			payload, err := fetchDatatypeObject(ctx, deps.Client, args[0])
 			if err != nil {
 				return err
@@ -255,7 +254,7 @@ BlockGrid: --allow-at-root and --allow-in-areas are honored when explicitly pass
 				return fmt.Errorf("--editor-size must be one of small, medium, large (got %q)", editorSize)
 			}
 
-			ctx := context.Background()
+			ctx := cmd.Context()
 			payload, err := fetchDatatypeObject(ctx, deps.Client, args[0])
 			if err != nil {
 				return err
@@ -386,7 +385,7 @@ func datatypeBlockRemove(deps Dependencies) *cobra.Command {
 				return err
 			}
 
-			ctx := context.Background()
+			ctx := cmd.Context()
 			payload, err := fetchDatatypeObject(ctx, deps.Client, args[0])
 			if err != nil {
 				return err

@@ -45,110 +45,48 @@ func RegisterDocument(root *cobra.Command, deps Dependencies) {
 }
 
 func documentGet(deps Dependencies) *cobra.Command {
-	var fields string
-	cmd := &cobra.Command{
+	return getCommand(deps, getSpec{
 		Use:   "get <id>",
 		Short: "Get a document by ID",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			result, err := deps.Client.Get(context.Background(), api.JoinPath("/document/%s", args[0]), api.RequestOptions{Fields: fields})
-			if err != nil {
-				return err
-			}
-			return printResult(cmd, deps, applyFieldsProjection(result, fields))
-		},
-	}
-	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
-	return cmd
+		Path:  func(args []string) string { return api.JoinPath("/document/%s", args[0]) },
+	})
 }
 
 func documentRoot(deps Dependencies) *cobra.Command {
-	var fields string
-	var paramsRaw string
-	var skip, take int
-	var all bool
-	var triage readTriageOptions
-	cmd := &cobra.Command{
+	return collectionCommand(deps, collectionSpec{
 		Use:   "root",
 		Short: "Get root documents (paginated; --skip/--take/--all)",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := context.Background()
-			params, err := parseParams(paramsRaw)
-			if err != nil {
-				return err
+		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
+			return []getRequestCandidate{
+				{path: "/tree/document/root", opts: api.RequestOptions{Params: params}},
+				{path: "/document/root", opts: api.RequestOptions{Params: params}},
 			}
-			params = applyPaginationParams(params, skip, take)
-			tree := getRequestCandidate{path: "/tree/document/root", opts: api.RequestOptions{Fields: fields, Params: params}}
-			legacy := getRequestCandidate{path: "/document/root", opts: api.RequestOptions{Fields: fields, Params: params}}
-
-			var result any
-			if all {
-				result, err = getAllPagesWithFallback(ctx, deps.Client, take, skip, triage.FirstN, tree, legacy)
-			} else {
-				result, err = getWithFallback(ctx, deps.Client, tree, legacy)
-			}
-			if err != nil {
-				return err
-			}
-			return printResult(cmd, deps, applyReadTriage(applyFieldsProjection(result, fields), triage))
 		},
-	}
-	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
-	cmd.Flags().StringVar(&paramsRaw, "params", "", "Query parameters as JSON")
-	addPaginationFlags(cmd, &skip, &take)
-	addAutoPaginationFlag(cmd, &all)
-	addReadTriageFlags(cmd, &triage)
-	return cmd
+	})
 }
 
 func documentChildren(deps Dependencies) *cobra.Command {
-	var fields string
-	var skip, take int
-	var all bool
-	var triage readTriageOptions
-	cmd := &cobra.Command{
+	return collectionCommand(deps, collectionSpec{
 		Use:   "children <id>",
 		Short: "Get child documents (paginated; --skip/--take/--all)",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := context.Background()
-			treeCandidate := getRequestCandidate{
-				path: "/tree/document/children",
-				opts: api.RequestOptions{Fields: fields, Params: applyPaginationParams(map[string]any{"parentId": args[0]}, skip, take)},
+		NArgs: 1,
+		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
+			return []getRequestCandidate{
+				{path: "/tree/document/children", opts: api.RequestOptions{Params: withParam(params, "parentId", args[0])}},
+				{path: api.JoinPath("/document/%s/children", args[0]), opts: api.RequestOptions{Params: params}},
 			}
-			legacyCandidate := getRequestCandidate{
-				path: api.JoinPath("/document/%s/children", args[0]),
-				opts: api.RequestOptions{Fields: fields, Params: applyPaginationParams(nil, skip, take)},
-			}
-
-			var result any
-			var err error
-			if all {
-				result, err = getAllPagesWithFallback(ctx, deps.Client, take, skip, triage.FirstN, treeCandidate, legacyCandidate)
-			} else {
-				result, err = getWithFallback(ctx, deps.Client, treeCandidate, legacyCandidate)
-			}
-			if err != nil {
-				return err
-			}
-			return printResult(cmd, deps, applyReadTriage(applyFieldsProjection(result, fields), triage))
 		},
-	}
-	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
-	addPaginationFlags(cmd, &skip, &take)
-	addAutoPaginationFlag(cmd, &all)
-	addReadTriageFlags(cmd, &triage)
-	return cmd
+	})
 }
 
 func documentAncestors(deps Dependencies) *cobra.Command {
-	cmd := &cobra.Command{
+	return &cobra.Command{
 		Use:   "ancestors <id>",
 		Short: "Get ancestor documents",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			result, err := getWithFallback(
-				context.Background(),
+				cmd.Context(),
 				deps.Client,
 				getRequestCandidate{
 					path: "/tree/document/ancestors",
@@ -165,68 +103,22 @@ func documentAncestors(deps Dependencies) *cobra.Command {
 			return printResult(cmd, deps, result)
 		},
 	}
-	return cmd
 }
 
 func documentSearch(deps Dependencies) *cobra.Command {
-	var paramsRaw string
-	var query string
-	var under string
-	var skip int
-	var take int
-
-	cmd := &cobra.Command{
+	return searchCommand(deps, searchSpec{
 		Use:   "search",
 		Short: "Search documents",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			params, err := parseParams(paramsRaw)
-			if err != nil {
-				return err
-			}
-			if params == nil {
-				params = map[string]any{}
-				if query != "" {
-					params["query"] = query
-				}
-				if under != "" {
-					params["parentId"] = under
-				}
-				if skip >= 0 {
-					params["skip"] = skip
-				}
-				if take >= 0 {
-					params["take"] = take
-				}
-			} else if under != "" {
-				if _, exists := params["parentId"]; exists {
-					return fmt.Errorf("--under cannot be combined with --params containing parentId")
-				}
-				params = cloneParams(params)
-				params["parentId"] = under
-			}
-			if len(params) == 0 {
-				return fmt.Errorf("document search requires either --params or --query")
-			}
-
-			result, err := getWithFallback(
-				context.Background(),
-				deps.Client,
-				getRequestCandidate{path: "/item/document/search", opts: api.RequestOptions{Params: params}},
-				getRequestCandidate{path: "/document/search", opts: api.RequestOptions{Params: params}},
-			)
-			if err != nil {
-				return err
-			}
-			return printResult(cmd, deps, result)
+		Extra: []paramFlag{
+			{Flag: "under", Param: "parentId", Usage: "Limit search to documents under the given parent ID"},
 		},
-	}
-
-	cmd.Flags().StringVar(&paramsRaw, "params", "", "Search parameters as JSON")
-	cmd.Flags().StringVar(&query, "query", "", "Search query (convenience)")
-	cmd.Flags().StringVar(&under, "under", "", "Limit search to documents under the given parent ID")
-	cmd.Flags().IntVar(&skip, "skip", -1, "Skip count")
-	cmd.Flags().IntVar(&take, "take", -1, "Take count")
-	return cmd
+		Endpoints: func(params map[string]any) []getRequestCandidate {
+			return []getRequestCandidate{
+				{path: "/item/document/search", opts: api.RequestOptions{Params: params}},
+				{path: "/document/search", opts: api.RequestOptions{Params: params}},
+			}
+		},
+	})
 }
 
 func documentCreate(deps Dependencies) *cobra.Command {
@@ -250,7 +142,7 @@ func documentCreate(deps Dependencies) *cobra.Command {
 			if _, err := ensurePayloadID(body); err != nil {
 				return err
 			}
-			result, err := deps.Client.Post(context.Background(), "/document", body, api.RequestOptions{DryRun: dryRun})
+			result, err := deps.Client.Post(cmd.Context(), "/document", body, api.RequestOptions{DryRun: dryRun})
 			if err != nil {
 				return err
 			}
@@ -258,7 +150,7 @@ func documentCreate(deps Dependencies) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Full JSON payload")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
+	addDryRunFlag(cmd, &dryRun)
 	cmd.Flags().BoolVar(&printTemplate, "print-template", false, "Print an annotated JSON skeleton; substitute placeholders before passing to --json")
 	return cmd
 }
@@ -277,20 +169,12 @@ func documentUpdate(deps Dependencies) *cobra.Command {
 		Short: "Update a document",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+			path := api.JoinPath("/document/%s", args[0])
+			hasProperty := strings.TrimSpace(property) != ""
 			hasJSON := strings.TrimSpace(jsonPayload) != ""
 			hasMergeJSON := strings.TrimSpace(mergeJSON) != ""
-			hasProperty := strings.TrimSpace(property) != ""
-			modeCount := 0
-			if hasJSON {
-				modeCount++
-			}
-			if hasMergeJSON {
-				modeCount++
-			}
-			if hasProperty {
-				modeCount++
-			}
-			if modeCount != 1 {
+			if hasProperty && (hasJSON || hasMergeJSON) {
 				return fmt.Errorf("document update requires exactly one of --json, --merge-json, or --property")
 			}
 
@@ -301,47 +185,32 @@ func documentUpdate(deps Dependencies) *cobra.Command {
 				if err != nil {
 					return err
 				}
-
-				current, err := fetchDocumentObject(context.Background(), deps.Client, args[0])
-				if err != nil {
-					return err
-				}
-				body = mergeAliasPayload(current, patch)
-			} else if hasMergeJSON {
-				patch, err := parsePayload(mergeJSON)
-				if err != nil {
-					return err
-				}
-
-				current, err := fetchDocumentObject(context.Background(), deps.Client, args[0])
+				current, err := fetchObject(ctx, deps.Client, path)
 				if err != nil {
 					return err
 				}
 				body = mergeAliasPayload(current, patch)
 			} else {
-				body, err = parsePayload(jsonPayload)
+				body, err = resolveUpdateBody(ctx, deps.Client, path, jsonPayload, mergeJSON, nil)
 				if err != nil {
-					return err
+					return fmt.Errorf("document update requires exactly one of --json, --merge-json, or --property")
 				}
 			}
 
-			result, err := deps.Client.Put(context.Background(), api.JoinPath("/document/%s", args[0]), body, api.RequestOptions{DryRun: dryRun})
+			result, err := deps.Client.Put(ctx, path, body, api.RequestOptions{DryRun: dryRun})
 			if err != nil {
 				return err
 			}
 
 			if !saveAndPublish {
-				if !dryRun && result == nil {
-					return printResult(cmd, deps, map[string]any{"updated": true})
-				}
-				return printResult(cmd, deps, result)
+				return printMutationResult(cmd, deps, "updated", result, dryRun)
 			}
 
 			publishBody, err := documentPublishBody("", culture)
 			if err != nil {
 				return err
 			}
-			publishResult, err := publishWithInvariantRaceRetry(context.Background(), deps.Client, args[0], publishBody, api.RequestOptions{DryRun: dryRun})
+			publishResult, err := publishWithInvariantRaceRetry(ctx, deps.Client, args[0], publishBody, api.RequestOptions{DryRun: dryRun})
 			if err != nil {
 				return err
 			}
@@ -353,14 +222,14 @@ func documentUpdate(deps Dependencies) *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().StringVar(&jsonPayload, "json", "", "Update payload as JSON")
-	cmd.Flags().StringVar(&mergeJSON, "merge-json", "", "Partial JSON payload merged into the current document before update")
+	cmd.Flags().StringVar(&jsonPayload, "json", "", "Full replacement payload as JSON (fields not mentioned are reset by the server)")
+	cmd.Flags().StringVar(&mergeJSON, "merge-json", "", "Partial JSON deep-merged into the current document before update (fields not mentioned are preserved)")
 	cmd.Flags().StringVar(&property, "property", "", "Update a single property alias without constructing the full payload")
 	cmd.Flags().StringVar(&value, "value", "", "String value used with --property")
 	cmd.Flags().StringVar(&valueJSON, "value-json", "", "JSON value used with --property")
 	cmd.Flags().BoolVar(&saveAndPublish, "save-and-publish", false, "Publish the document after a successful update")
 	cmd.Flags().StringVar(&culture, "culture", "", "Culture shortcut for --save-and-publish")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
+	addDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
@@ -408,7 +277,7 @@ func documentBulkUpdate(deps Dependencies) *cobra.Command {
 				}
 			}
 
-			result := executeDocumentBulkUpdate(context.Background(), deps.Client, resolvedIDs, fullBody, mergePatch, dryRun)
+			result := executeDocumentBulkUpdate(cmd.Context(), deps.Client, resolvedIDs, fullBody, mergePatch, dryRun)
 			return printResult(cmd, deps, result)
 		},
 	}
@@ -449,7 +318,7 @@ func documentCSVUpdate(deps Dependencies) *cobra.Command {
 				return fmt.Errorf("document csv-update requires at least one --property or --field mapping")
 			}
 
-			result, err := executeDocumentCSVUpdate(context.Background(), deps.Client, documentCSVUpdateOptions{
+			result, err := executeDocumentCSVUpdate(cmd.Context(), deps.Client, documentCSVUpdateOptions{
 				File:     file,
 				IDColumn: idColumn,
 				Mappings: mappings,
@@ -503,23 +372,22 @@ In all shapes the resulting values[] is merged by alias into the current documen
 				return err
 			}
 
-			current, err := fetchDocumentObject(context.Background(), deps.Client, args[0])
+			ctx := cmd.Context()
+			path := api.JoinPath("/document/%s", args[0])
+			current, err := fetchObject(ctx, deps.Client, path)
 			if err != nil {
 				return err
 			}
 			merged := mergeAliasPayload(current, patch)
-			result, err := deps.Client.Put(context.Background(), api.JoinPath("/document/%s", args[0]), merged, api.RequestOptions{DryRun: dryRun})
+			result, err := deps.Client.Put(ctx, path, merged, api.RequestOptions{DryRun: dryRun})
 			if err != nil {
 				return err
 			}
-			if !dryRun && result == nil {
-				return printResult(cmd, deps, map[string]any{"updated": true})
-			}
-			return printResult(cmd, deps, result)
+			return printMutationResult(cmd, deps, "updated", result, dryRun)
 		},
 	}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Properties payload as JSON; accepts object {alias: value}, array [{alias, value, culture?, segment?}], or envelope {\"values\":[...]}")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
+	addDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
@@ -536,16 +404,16 @@ func documentPublish(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			result, err := deps.Client.Put(context.Background(), api.JoinPath("/document/%s/publish", args[0]), body, api.RequestOptions{DryRun: dryRun})
+			result, err := deps.Client.Put(cmd.Context(), api.JoinPath("/document/%s/publish", args[0]), body, api.RequestOptions{DryRun: dryRun})
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, deps, result)
+			return printMutationResult(cmd, deps, "published", result, dryRun)
 		},
 	}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Publish payload as JSON")
 	cmd.Flags().StringVar(&culture, "culture", "", "Culture shortcut")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
+	addDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
@@ -636,16 +504,16 @@ func documentUnpublish(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			result, err := deps.Client.Put(context.Background(), api.JoinPath("/document/%s/unpublish", args[0]), body, api.RequestOptions{DryRun: dryRun})
+			result, err := deps.Client.Put(cmd.Context(), api.JoinPath("/document/%s/unpublish", args[0]), body, api.RequestOptions{DryRun: dryRun})
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, deps, result)
+			return printMutationResult(cmd, deps, "unpublished", result, dryRun)
 		},
 	}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Unpublish payload as JSON")
 	cmd.Flags().StringVar(&culture, "culture", "", "Culture shortcut")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
+	addDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
@@ -660,25 +528,17 @@ func documentCopy(deps Dependencies) *cobra.Command {
 		Short: "Copy a document",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			var body map[string]any
-			var err error
-			if jsonPayload != "" {
-				body, err = parsePayload(jsonPayload)
-			} else {
-				if err := requireValue("--to", to); err != nil {
-					return err
-				}
-				body = map[string]any{"target": map[string]any{"id": to}}
-			}
+			ctx := cmd.Context()
+			body, err := targetActionBody(jsonPayload, to)
 			if err != nil {
 				return err
 			}
-			result, err := deps.Client.Post(context.Background(), api.JoinPath("/document/%s/copy", args[0]), body, api.RequestOptions{DryRun: dryRun})
+			result, err := deps.Client.Post(ctx, api.JoinPath("/document/%s/copy", args[0]), body, api.RequestOptions{DryRun: dryRun})
 			if err != nil {
 				return err
 			}
 			if !publish {
-				return printResult(cmd, deps, result)
+				return printMutationResult(cmd, deps, "copied", result, dryRun)
 			}
 
 			// On dry-run no copy happens, so there is no real ID to chain;
@@ -694,13 +554,13 @@ func documentCopy(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			publishResult, err := deps.Client.Put(context.Background(), api.JoinPath("/document/%s/publish", copiedID), publishBody, api.RequestOptions{DryRun: dryRun})
+			publishResult, err := deps.Client.Put(ctx, api.JoinPath("/document/%s/publish", copiedID), publishBody, api.RequestOptions{DryRun: dryRun})
 			if err != nil {
 				return err
 			}
 			return printResult(cmd, deps, map[string]any{
 				"copied":    result,
-				"published": publishResult,
+				"published": coalescePutResult(publishResult, dryRun),
 			})
 		},
 	}
@@ -708,7 +568,7 @@ func documentCopy(deps Dependencies) *cobra.Command {
 	cmd.Flags().StringVar(&to, "to", "", "Target parent ID shortcut")
 	cmd.Flags().BoolVar(&publish, "publish", false, "Publish the copied document after a successful copy")
 	cmd.Flags().StringVar(&culture, "culture", "", "Culture shortcut for --publish")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
+	addDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
@@ -724,56 +584,18 @@ func extractResultID(result any) string {
 }
 
 func documentMove(deps Dependencies) *cobra.Command {
-	var jsonPayload string
-	var to string
-	var dryRun bool
-	cmd := &cobra.Command{
+	return targetActionCommand(deps, targetActionSpec{
 		Use:   "move <id>",
 		Short: "Move a document",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			var body map[string]any
-			var err error
-			if jsonPayload != "" {
-				body, err = parsePayload(jsonPayload)
-			} else {
-				if err := requireValue("--to", to); err != nil {
-					return err
-				}
-				body = map[string]any{"target": map[string]any{"id": to}}
-			}
-			if err != nil {
-				return err
-			}
-			result, err := deps.Client.Post(context.Background(), api.JoinPath("/document/%s/move", args[0]), body, api.RequestOptions{DryRun: dryRun})
-			if err != nil {
-				return err
-			}
-			return printResult(cmd, deps, result)
-		},
-	}
-	cmd.Flags().StringVar(&jsonPayload, "json", "", "Move payload as JSON")
-	cmd.Flags().StringVar(&to, "to", "", "Target parent ID shortcut")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
-	return cmd
+		Path:  func(args []string) string { return api.JoinPath("/document/%s/move", args[0]) },
+		Verb:  "moved",
+	})
 }
 
 func documentDelete(deps Dependencies) *cobra.Command {
-	var dryRun bool
-	cmd := &cobra.Command{
-		Use:   "delete <id>",
-		Short: "Delete a document",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			result, err := deps.Client.Delete(context.Background(), api.JoinPath("/document/%s", args[0]), api.RequestOptions{DryRun: dryRun})
-			if err != nil {
-				return err
-			}
-			return printResult(cmd, deps, result)
-		},
-	}
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
-	return cmd
+	return deleteCommand(deps, "delete <id>", "Permanently delete a document (use 'trash' for the recycle bin)", func(args []string) string {
+		return api.JoinPath("/document/%s", args[0])
+	})
 }
 
 func documentTrash(deps Dependencies) *cobra.Command {
@@ -783,14 +605,14 @@ func documentTrash(deps Dependencies) *cobra.Command {
 		Short: "Move a document to recycle bin",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			result, err := deps.Client.Post(context.Background(), api.JoinPath("/document/%s/move-to-recycle-bin", args[0]), map[string]any{}, api.RequestOptions{DryRun: dryRun})
+			result, err := deps.Client.Post(cmd.Context(), api.JoinPath("/document/%s/move-to-recycle-bin", args[0]), map[string]any{}, api.RequestOptions{DryRun: dryRun})
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, deps, result)
+			return printMutationResult(cmd, deps, "trashed", result, dryRun)
 		},
 	}
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
+	addDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
@@ -801,119 +623,34 @@ func documentRestore(deps Dependencies) *cobra.Command {
 		Short: "Restore a document",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			result, err := deps.Client.Post(context.Background(), api.JoinPath("/document/%s/restore", args[0]), map[string]any{}, api.RequestOptions{DryRun: dryRun})
+			result, err := deps.Client.Post(cmd.Context(), api.JoinPath("/document/%s/restore", args[0]), map[string]any{}, api.RequestOptions{DryRun: dryRun})
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, deps, result)
+			return printMutationResult(cmd, deps, "restored", result, dryRun)
 		},
 	}
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
+	addDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
-// documentReferences wraps GET /document/{id}/referenced-by — "what other
-// items reference this document." Headline use case from the bug report:
-// content-audit questions like "which case studies reference the Media
-// sector node?" (orphan checks, safe-delete checks, taxonomy usage). The
-// endpoint returns the standard {items, total} envelope, so pagination
-// flags compose with it the same way they do on children/root.
 func documentReferences(deps Dependencies) *cobra.Command {
-	var fields string
-	var skip, take int
-	var all bool
-	var triage readTriageOptions
-	cmd := &cobra.Command{
+	return referencesCommand(deps, referencesSpec{
 		Use:   "references <id>",
 		Short: "List items that reference this document (paginated; --skip/--take/--all)",
 		Long:  "Wraps GET /document/{id}/referenced-by. Used to answer 'what uses this node' for orphan checks, safe-delete verification, and taxonomy usage audits.",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runReferencesQuery(cmd, deps, api.JoinPath("/document/%s/referenced-by", args[0]), fields, skip, take, all, triage)
-		},
-	}
-	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
-	addPaginationFlags(cmd, &skip, &take)
-	addAutoPaginationFlag(cmd, &all)
-	addReadTriageFlags(cmd, &triage)
-	return cmd
+		Path:  func(args []string) string { return api.JoinPath("/document/%s/referenced-by", args[0]) },
+	})
 }
 
-// documentReferencedDescendants wraps GET /document/{id}/referenced-descendants
-// — like 'references' but also includes references to any descendant of the
-// given node. Useful for 'is this whole subtree referenced anywhere outside
-// itself' checks before bulk-deleting or moving sections.
 func documentReferencedDescendants(deps Dependencies) *cobra.Command {
-	var fields string
-	var skip, take int
-	var all bool
-	var triage readTriageOptions
-	cmd := &cobra.Command{
+	return referencesCommand(deps, referencesSpec{
 		Use:   "referenced-descendants <id>",
 		Short: "List items that reference this document or any of its descendants",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runReferencesQuery(cmd, deps, api.JoinPath("/document/%s/referenced-descendants", args[0]), fields, skip, take, all, triage)
-		},
-	}
-	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
-	addPaginationFlags(cmd, &skip, &take)
-	addAutoPaginationFlag(cmd, &all)
-	addReadTriageFlags(cmd, &triage)
-	return cmd
+		Path:  func(args []string) string { return api.JoinPath("/document/%s/referenced-descendants", args[0]) },
+	})
 }
 
-// documentAreReferenced wraps GET /document/are-referenced?id=... — a bulk
-// 'is anything referencing any of these?' check. Returns the subset of the
-// supplied ids that have references. Useful when iterating a candidate list
-// for deletion: filter to safe-to-delete before issuing the deletes.
 func documentAreReferenced(deps Dependencies) *cobra.Command {
-	var idsCSV string
-	cmd := &cobra.Command{
-		Use:   "are-referenced",
-		Short: "Bulk check: which of these document IDs are referenced by something",
-		Long:  "GET /document/are-referenced?id=<csv>. Returns the ids that have at least one inbound reference; safe-to-delete candidates are the complement.",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			ids := uniqueCSV(idsCSV)
-			if len(ids) == 0 {
-				return fmt.Errorf("document are-referenced requires --ids <comma-separated guids>")
-			}
-			anyIDs := make([]any, len(ids))
-			for i, v := range ids {
-				anyIDs[i] = v
-			}
-			result, err := deps.Client.Get(context.Background(), "/document/are-referenced", api.RequestOptions{Params: map[string]any{"id": anyIDs}})
-			if err != nil {
-				return err
-			}
-			return printResult(cmd, deps, result)
-		},
-	}
-	cmd.Flags().StringVar(&idsCSV, "ids", "", "Comma-separated document GUIDs to check (required)")
-	return cmd
-}
-
-// runReferencesQuery is the shared body for 'references' and
-// 'referenced-descendants'. The two endpoints have identical request/response
-// shapes, so the only thing that differs at the command layer is the path.
-// Threading the path through here keeps the pagination/triage plumbing in
-// one place instead of duplicated per-command.
-func runReferencesQuery(cmd *cobra.Command, deps Dependencies, path string, fields string, skip int, take int, all bool, triage readTriageOptions) error {
-	ctx := context.Background()
-	candidate := getRequestCandidate{
-		path: path,
-		opts: api.RequestOptions{Fields: fields, Params: applyPaginationParams(nil, skip, take)},
-	}
-
-	var result any
-	var err error
-	if all {
-		result, err = getAllPagesWithFallback(ctx, deps.Client, take, skip, triage.FirstN, candidate)
-	} else {
-		result, err = getWithFallback(ctx, deps.Client, candidate)
-	}
-	if err != nil {
-		return err
-	}
-	return printResult(cmd, deps, applyReadTriage(applyFieldsProjection(result, fields), triage))
+	return areReferencedCommand(deps, "document")
 }

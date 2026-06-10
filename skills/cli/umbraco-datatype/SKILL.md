@@ -26,8 +26,8 @@ umbraco datatype <command> [flags]
 | `datatype extensions <id>` | List enabled data type extension aliases |
 | `datatype get <id>` | Get data type by ID |
 | `datatype is-used <id>` | Check whether a data type is in use |
-| `datatype list` | List data types |
-| `datatype root` | Get root data types |
+| `datatype list` | List data types (paginated; --skip/--take/--all) |
+| `datatype root` | Get root data types (paginated; --skip/--take/--all) |
 | `datatype search` | Search data types |
 
 ### block
@@ -52,7 +52,7 @@ umbraco datatype get <id>
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--fields` | string | — | Limit response fields |
+| `--fields` | string | — | Limit response fields (comma-separated top-level keys) |
 
 ### is-used
 
@@ -68,13 +68,14 @@ umbraco datatype list
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--fields` | string | — | Limit response fields |
+| `--all` | bool | false | Walk every page until exhausted (auto-paginates with --take as the page size, default 500; combine with --skip to start partway through). Bounded by an internal 100k-item ceiling. |
+| `--fields` | string | — | Limit response fields (comma-separated top-level keys) |
 | `--first-n` | int | 0 | Return only the first N items from item collections |
 | `--ids-only` | bool | false | Return only item IDs for item collections |
 | `--params` | string | — | Query parameters as JSON |
-| `--skip` | int | 0 | Pagination offset |
+| `--skip` | int | -1 | Skip count (passes through as ?skip=N; lets you walk past the server page size on large children/root collections) |
 | `--summarize` | bool | false | Return only id/name/alias fields for item collections |
-| `--take` | int | 100 | Pagination page size |
+| `--take` | int | -1 | Take count (passes through as ?take=N; combine with --skip to page) |
 
 ### root
 
@@ -84,13 +85,14 @@ umbraco datatype root
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--fields` | string | — | Limit response fields |
+| `--all` | bool | false | Walk every page until exhausted (auto-paginates with --take as the page size, default 500; combine with --skip to start partway through). Bounded by an internal 100k-item ceiling. |
+| `--fields` | string | — | Limit response fields (comma-separated top-level keys) |
 | `--first-n` | int | 0 | Return only the first N items from item collections |
 | `--ids-only` | bool | false | Return only item IDs for item collections |
 | `--params` | string | — | Query parameters as JSON |
-| `--skip` | int | 0 | Pagination offset |
+| `--skip` | int | -1 | Skip count (passes through as ?skip=N; lets you walk past the server page size on large children/root collections) |
 | `--summarize` | bool | false | Return only id/name/alias fields for item collections |
-| `--take` | int | 100 | Pagination page size |
+| `--take` | int | -1 | Take count (passes through as ?take=N; combine with --skip to page) |
 
 ### search
 
@@ -127,7 +129,7 @@ umbraco datatype add-extension <id> <extension-alias>
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--dry-run` | bool | false | Validate request without executing |
+| `--dry-run` | bool | false | Print the planned request without executing |
 
 **Safe pattern:**
 
@@ -148,7 +150,7 @@ umbraco datatype add-value <id>
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--alias` | string | — | Datatype array alias to update |
-| `--dry-run` | bool | false | Validate request without executing |
+| `--dry-run` | bool | false | Print the planned request without executing |
 | `--value` | string | — | String value to append |
 
 **Safe pattern:**
@@ -169,7 +171,7 @@ umbraco datatype create
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--dry-run` | bool | false | Validate request without executing |
+| `--dry-run` | bool | false | Print the planned request without executing |
 | `--json` | string | — | Create payload as JSON |
 | `--print-template` | bool | false | Print an annotated JSON skeleton; substitute placeholders before passing to --json |
 
@@ -191,7 +193,7 @@ umbraco datatype remove-extension <id> <extension-alias>
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--dry-run` | bool | false | Validate request without executing |
+| `--dry-run` | bool | false | Print the planned request without executing |
 
 **Safe pattern:**
 
@@ -212,7 +214,7 @@ umbraco datatype remove-value <id>
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--alias` | string | — | Datatype array alias to update |
-| `--dry-run` | bool | false | Validate request without executing |
+| `--dry-run` | bool | false | Print the planned request without executing |
 | `--value` | string | — | String value to remove |
 
 **Safe pattern:**
@@ -231,11 +233,21 @@ umbraco datatype remove-value <id>
 umbraco datatype update <id>
 ```
 
+Updates a data type with the uniform CLI update contract:
+
+  --json        full replacement; the server resets any field not mentioned
+                (including editorUiAlias, items, multiple)
+  --merge-json  fetches the current data type, deep-merges the patch, and
+                PUTs the result; fields not mentioned are preserved
+
+Before v0.4.0 --json silently behaved like --merge-json on this resource.
+Pass --merge-json for partial edits.
+
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--dry-run` | bool | false | Validate request without executing |
-| `--json` | string | — | Update payload as JSON; merged into the current data type so fields not mentioned (e.g. editorUiAlias) are preserved |
-| `--merge-json` | string | — | Partial JSON payload merged into the current data type before update (alias for --json) |
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--json` | string | — | Full replacement payload as JSON (fields not mentioned are reset by the server) |
+| `--merge-json` | string | — | Partial JSON deep-merged into the current resource before update (fields not mentioned are preserved) |
 
 **Safe pattern:**
 

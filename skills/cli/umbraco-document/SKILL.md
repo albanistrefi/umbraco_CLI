@@ -43,8 +43,6 @@ umbraco document ancestors <id>
 umbraco document are-referenced
 ```
 
-GET /document/are-referenced?id=<csv>. Returns the ids that have at least one inbound reference; safe-to-delete candidates are the complement.
-
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--ids` | string | — | Comma-separated document GUIDs to check (required) |
@@ -58,9 +56,10 @@ umbraco document children <id>
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--all` | bool | false | Walk every page until exhausted (auto-paginates with --take as the page size, default 500; combine with --skip to start partway through). Bounded by an internal 100k-item ceiling. |
-| `--fields` | string | — | Limit response fields |
+| `--fields` | string | — | Limit response fields (comma-separated top-level keys) |
 | `--first-n` | int | 0 | Return only the first N items from item collections |
 | `--ids-only` | bool | false | Return only item IDs for item collections |
+| `--params` | string | — | Query parameters as JSON |
 | `--skip` | int | -1 | Skip count (passes through as ?skip=N; lets you walk past the server page size on large children/root collections) |
 | `--summarize` | bool | false | Return only id/name/alias fields for item collections |
 | `--take` | int | -1 | Take count (passes through as ?take=N; combine with --skip to page) |
@@ -73,7 +72,7 @@ umbraco document get <id>
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--fields` | string | — | Limit response fields |
+| `--fields` | string | — | Limit response fields (comma-separated top-level keys) |
 
 ### referenced-descendants
 
@@ -84,9 +83,10 @@ umbraco document referenced-descendants <id>
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--all` | bool | false | Walk every page until exhausted (auto-paginates with --take as the page size, default 500; combine with --skip to start partway through). Bounded by an internal 100k-item ceiling. |
-| `--fields` | string | — | Limit response fields |
+| `--fields` | string | — | Limit response fields (comma-separated top-level keys) |
 | `--first-n` | int | 0 | Return only the first N items from item collections |
 | `--ids-only` | bool | false | Return only item IDs for item collections |
+| `--params` | string | — | Query parameters as JSON |
 | `--skip` | int | -1 | Skip count (passes through as ?skip=N; lets you walk past the server page size on large children/root collections) |
 | `--summarize` | bool | false | Return only id/name/alias fields for item collections |
 | `--take` | int | -1 | Take count (passes through as ?take=N; combine with --skip to page) |
@@ -102,9 +102,10 @@ Wraps GET /document/{id}/referenced-by. Used to answer 'what uses this node' for
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--all` | bool | false | Walk every page until exhausted (auto-paginates with --take as the page size, default 500; combine with --skip to start partway through). Bounded by an internal 100k-item ceiling. |
-| `--fields` | string | — | Limit response fields |
+| `--fields` | string | — | Limit response fields (comma-separated top-level keys) |
 | `--first-n` | int | 0 | Return only the first N items from item collections |
 | `--ids-only` | bool | false | Return only item IDs for item collections |
+| `--params` | string | — | Query parameters as JSON |
 | `--skip` | int | -1 | Skip count (passes through as ?skip=N; lets you walk past the server page size on large children/root collections) |
 | `--summarize` | bool | false | Return only id/name/alias fields for item collections |
 | `--take` | int | -1 | Take count (passes through as ?take=N; combine with --skip to page) |
@@ -118,7 +119,7 @@ umbraco document root
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--all` | bool | false | Walk every page until exhausted (auto-paginates with --take as the page size, default 500; combine with --skip to start partway through). Bounded by an internal 100k-item ceiling. |
-| `--fields` | string | — | Limit response fields |
+| `--fields` | string | — | Limit response fields (comma-separated top-level keys) |
 | `--first-n` | int | 0 | Return only the first N items from item collections |
 | `--ids-only` | bool | false | Return only item IDs for item collections |
 | `--params` | string | — | Query parameters as JSON |
@@ -134,10 +135,10 @@ umbraco document search
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--params` | string | — | Search parameters as JSON |
-| `--query` | string | — | Search query (convenience) |
-| `--skip` | int | -1 | Skip count |
-| `--take` | int | -1 | Take count |
+| `--params` | string | — | Search parameters as JSON; convenience flags fill in missing keys, --params wins on collisions |
+| `--query` | string | — | Search query |
+| `--skip` | int | -1 | Skip count (passes through as ?skip=N; lets you walk past the server page size on large children/root collections) |
+| `--take` | int | -1 | Take count (passes through as ?take=N; combine with --skip to page) |
 | `--under` | string | — | Limit search to documents under the given parent ID |
 
 ## Mutation Commands
@@ -166,7 +167,7 @@ umbraco document bulk-update
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--dry-run` | bool | false | Validate requests without executing |
+| `--dry-run` | bool | false | Print the planned requests without executing |
 | `--force` | bool | false | Confirm the bulk update when not using --dry-run |
 | `--id` | stringArray | [] | Document ID to update; repeat for multiple documents |
 | `--id-file` | string | — | Path to a file containing document IDs, one per line |
@@ -192,7 +193,7 @@ umbraco document copy <id>
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--culture` | string | — | Culture shortcut for --publish |
-| `--dry-run` | bool | false | Validate request without executing |
+| `--dry-run` | bool | false | Print the planned request without executing |
 | `--json` | string | — | Copy payload as JSON |
 | `--publish` | bool | false | Publish the copied document after a successful copy |
 | `--to` | string | — | Target parent ID shortcut |
@@ -215,7 +216,7 @@ umbraco document create
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--dry-run` | bool | false | Validate request without executing |
+| `--dry-run` | bool | false | Print the planned request without executing |
 | `--json` | string | — | Full JSON payload |
 | `--print-template` | bool | false | Print an annotated JSON skeleton; substitute placeholders before passing to --json |
 
@@ -237,7 +238,7 @@ umbraco document csv-update
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--dry-run` | bool | false | Validate the CSV-driven updates without executing them |
+| `--dry-run` | bool | false | Print the planned CSV-driven updates without executing them |
 | `--field` | stringArray | [] | Explicit alias=column CSV mapping; repeat for multiple properties |
 | `--file` | string | — | Path to the CSV file |
 | `--force` | bool | false | Confirm the CSV-driven updates when not using --dry-run |
@@ -262,9 +263,9 @@ umbraco document move <id>
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--dry-run` | bool | false | Validate request without executing |
-| `--json` | string | — | Move payload as JSON |
-| `--to` | string | — | Target parent ID shortcut |
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--json` | string | — | Action payload as JSON |
+| `--to` | string | — | Target parent ID shortcut for {"target":{"id":...}} |
 
 **Safe pattern:**
 
@@ -285,7 +286,7 @@ umbraco document publish <id>
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--culture` | string | — | Culture shortcut |
-| `--dry-run` | bool | false | Validate request without executing |
+| `--dry-run` | bool | false | Print the planned request without executing |
 | `--json` | string | — | Publish payload as JSON |
 
 **Safe pattern:**
@@ -306,7 +307,7 @@ umbraco document restore <id>
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--dry-run` | bool | false | Validate request without executing |
+| `--dry-run` | bool | false | Print the planned request without executing |
 
 **Safe pattern:**
 
@@ -326,7 +327,7 @@ umbraco document trash <id>
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--dry-run` | bool | false | Validate request without executing |
+| `--dry-run` | bool | false | Print the planned request without executing |
 
 **Safe pattern:**
 
@@ -347,7 +348,7 @@ umbraco document unpublish <id>
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--culture` | string | — | Culture shortcut |
-| `--dry-run` | bool | false | Validate request without executing |
+| `--dry-run` | bool | false | Print the planned request without executing |
 | `--json` | string | — | Unpublish payload as JSON |
 
 **Safe pattern:**
@@ -369,9 +370,9 @@ umbraco document update <id>
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--culture` | string | — | Culture shortcut for --save-and-publish |
-| `--dry-run` | bool | false | Validate request without executing |
-| `--json` | string | — | Update payload as JSON |
-| `--merge-json` | string | — | Partial JSON payload merged into the current document before update |
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--json` | string | — | Full replacement payload as JSON (fields not mentioned are reset by the server) |
+| `--merge-json` | string | — | Partial JSON deep-merged into the current document before update (fields not mentioned are preserved) |
 | `--property` | string | — | Update a single property alias without constructing the full payload |
 | `--save-and-publish` | bool | false | Publish the document after a successful update |
 | `--value` | string | — | String value used with --property |
@@ -412,7 +413,7 @@ In all shapes the resulting values[] is merged by alias into the current documen
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--dry-run` | bool | false | Validate request without executing |
+| `--dry-run` | bool | false | Print the planned request without executing |
 | `--json` | string | — | Properties payload as JSON; accepts object {alias: value}, array [{alias, value, culture?, segment?}], or envelope {"values":[...]} |
 
 **Safe pattern:**

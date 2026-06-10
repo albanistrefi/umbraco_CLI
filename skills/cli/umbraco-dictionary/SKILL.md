@@ -79,7 +79,7 @@ umbraco dictionary create
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--dry-run` | bool | false | Validate request without executing |
+| `--dry-run` | bool | false | Print the planned request without executing |
 | `--json` | string | — | Full JSON payload |
 | `--key` | string | — | Dictionary key name |
 | `--parent-id` | string | — | Optional parent dictionary item ID |

@@ -59,6 +59,16 @@ type Client struct {
 	cfg           config.Config
 	httpClient    *http.Client
 	tokenProvider *auth.Provider
+	// initErr, when non-nil, fails every request with the startup problem
+	// (e.g. config resolution). Carrying it here keeps informational
+	// commands (--help, --version, schema) working on a broken setup while
+	// any command that actually needs the API surfaces the real cause.
+	initErr error
+}
+
+// NewUnavailableClient returns a client whose every request fails with err.
+func NewUnavailableClient(err error) *Client {
+	return &Client{initErr: err}
 }
 
 type APIError struct {
@@ -164,6 +174,10 @@ func parseResponse(resp *http.Response) (any, error) {
 }
 
 func (c *Client) Request(ctx context.Context, method string, path string, body any, opts RequestOptions) (any, error) {
+	if c.initErr != nil {
+		return nil, c.initErr
+	}
+
 	fullURL, err := c.buildURL(path, opts)
 	if err != nil {
 		return nil, err
@@ -318,6 +332,10 @@ func (c *Client) Post(ctx context.Context, path string, body any, opts RequestOp
 }
 
 func (c *Client) MultipartPost(ctx context.Context, path string, fields map[string]string, fileField string, filePath string, opts RequestOptions) (any, error) {
+	if c.initErr != nil {
+		return nil, c.initErr
+	}
+
 	fullURL, err := c.buildURL(path, opts)
 	if err != nil {
 		return nil, err

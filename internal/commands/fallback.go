@@ -2,6 +2,7 @@ package commands
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -27,9 +28,9 @@ const autoPaginateMaxPages = 200
 
 // getAllPagesWithFallback walks the paginated endpoint behind the candidate
 // list and accumulates every item into a single {items, total} envelope.
-// Used by commands that pass --all. Each iteration re-runs getWithFallback,
-// which is fine because the first successful candidate remains successful
-// on subsequent pages — no extra round-trips in steady state.
+// Used by commands that pass --all. After the first page resolves, only the
+// winning candidate is queried — re-running the full fallback chain would
+// re-issue the 404ing candidates once per page.
 //
 // pageSize ≤ 0 falls back to autoPaginateDefaultPageSize. baseSkip < 0
 // is treated as 0. limit > 0 stops the loop once `limit` items have been
@@ -69,9 +70,12 @@ func getAllPagesWithFallback(
 			paged[i] = getRequestCandidate{path: c.path, opts: opts}
 		}
 
-		result, err := getWithFallback(ctx, client, paged...)
+		result, winner, err := getWithFallbackIndex(ctx, client, paged...)
 		if err != nil {
 			return nil, err
+		}
+		if winner > 0 {
+			candidates = candidates[winner:]
 		}
 		envelope, ok := result.(map[string]any)
 		if !ok {
@@ -116,26 +120,34 @@ func getAllPagesWithFallback(
 }
 
 func getWithFallback(ctx context.Context, client *api.Client, candidates ...getRequestCandidate) (any, error) {
+	result, _, err := getWithFallbackIndex(ctx, client, candidates...)
+	return result, err
+}
+
+// getWithFallbackIndex tries each candidate in order, skipping past 404s
+// (endpoint not present on this Umbraco version) and returning the index of
+// the candidate that answered so paged callers can stop re-probing.
+func getWithFallbackIndex(ctx context.Context, client *api.Client, candidates ...getRequestCandidate) (any, int, error) {
 	var lastNotFound error
 
-	for _, candidate := range candidates {
+	for index, candidate := range candidates {
 		result, err := client.Get(ctx, candidate.path, candidate.opts)
 		if err == nil {
-			return result, nil
+			return result, index, nil
 		}
 
-		apiErr, ok := err.(*api.APIError)
-		if ok && apiErr.StatusCode == http.StatusNotFound {
+		var apiErr *api.APIError
+		if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusNotFound {
 			lastNotFound = err
 			continue
 		}
 
-		return nil, err
+		return nil, 0, err
 	}
 
 	if lastNotFound != nil {
-		return nil, lastNotFound
+		return nil, 0, lastNotFound
 	}
 
-	return nil, fmt.Errorf("no endpoint candidates were configured")
+	return nil, 0, fmt.Errorf("no endpoint candidates were configured")
 }

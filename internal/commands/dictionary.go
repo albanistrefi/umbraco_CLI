@@ -103,7 +103,7 @@ func dictionaryList(deps Dependencies) *cobra.Command {
 				params["filter"] = filter
 			}
 
-			result, err := deps.Client.Get(context.Background(), "/dictionary", api.RequestOptions{Fields: fields, Params: params})
+			result, err := deps.Client.Get(cmd.Context(), "/dictionary", api.RequestOptions{Fields: fields, Params: params})
 			if err != nil {
 				return err
 			}
@@ -128,12 +128,12 @@ func dictionaryGet(deps Dependencies) *cobra.Command {
 		Short: "Get a dictionary item by ID or key",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			id, err := dictionaryResolveID(context.Background(), deps.Client, args, key)
+			id, err := dictionaryResolveID(cmd.Context(), deps.Client, args, key)
 			if err != nil {
 				return err
 			}
 
-			result, err := deps.Client.Get(context.Background(), api.JoinPath("/dictionary/%s", id), api.RequestOptions{})
+			result, err := deps.Client.Get(cmd.Context(), api.JoinPath("/dictionary/%s", id), api.RequestOptions{})
 			if err != nil {
 				return err
 			}
@@ -162,6 +162,9 @@ func dictionaryCreate(deps Dependencies) *cobra.Command {
 			if strings.TrimSpace(jsonPayload) != "" {
 				payload, err := parsePayload(jsonPayload)
 				if err != nil {
+					return err
+				}
+				if _, err := ensurePayloadID(payload); err != nil {
 					return err
 				}
 				body = payload
@@ -194,7 +197,7 @@ func dictionaryCreate(deps Dependencies) *cobra.Command {
 				}
 			}
 
-			result, err := deps.Client.Post(context.Background(), "/dictionary", body, api.RequestOptions{DryRun: dryRun})
+			result, err := deps.Client.Post(cmd.Context(), "/dictionary", body, api.RequestOptions{DryRun: dryRun})
 			if err != nil {
 				return err
 			}
@@ -225,12 +228,12 @@ func dictionaryDelete(deps Dependencies) *cobra.Command {
 				return fmt.Errorf("dictionary delete requires --force or --dry-run")
 			}
 
-			id, err := dictionaryResolveID(context.Background(), deps.Client, args, key)
+			id, err := dictionaryResolveID(cmd.Context(), deps.Client, args, key)
 			if err != nil {
 				return err
 			}
 
-			result, err := deps.Client.Delete(context.Background(), api.JoinPath("/dictionary/%s", id), api.RequestOptions{DryRun: dryRun})
+			result, err := deps.Client.Delete(cmd.Context(), api.JoinPath("/dictionary/%s", id), api.RequestOptions{DryRun: dryRun})
 			if err != nil {
 				return err
 			}
@@ -252,7 +255,7 @@ func dictionaryExport(deps Dependencies) *cobra.Command {
 		Use:   "export",
 		Short: "Export all dictionary items to JSON",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := context.Background()
+			ctx := cmd.Context()
 			items, err := listAllDictionaryItems(ctx, deps.Client, "", 9999)
 			if err != nil {
 				return err

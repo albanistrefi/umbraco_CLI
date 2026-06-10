@@ -6,11 +6,8 @@ import (
 	"umbraco-cli/internal/commands"
 )
 
-func NewRootCommand() (*cobra.Command, error) {
-	runtime, err := NewRuntime()
-	if err != nil {
-		return nil, err
-	}
+func NewRootCommand() *cobra.Command {
+	runtime := NewRuntime()
 
 	var outputFormat string
 
@@ -51,5 +48,5 @@ func NewRootCommand() (*cobra.Command, error) {
 	commands.RegisterSchema(root, deps)
 	commands.RegisterGenerateSkills(root, deps)
 
-	return root, nil
+	return root
 }

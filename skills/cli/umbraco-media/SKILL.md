@@ -50,9 +50,10 @@ umbraco media children <id>
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--all` | bool | false | Walk every page until exhausted (auto-paginates with --take as the page size, default 500; combine with --skip to start partway through). Bounded by an internal 100k-item ceiling. |
-| `--fields` | string | — | Limit response fields |
+| `--fields` | string | — | Limit response fields (comma-separated top-level keys) |
 | `--first-n` | int | 0 | Return only the first N items from item collections |
 | `--ids-only` | bool | false | Return only item IDs for item collections |
+| `--params` | string | — | Query parameters as JSON |
 | `--skip` | int | -1 | Skip count (passes through as ?skip=N; lets you walk past the server page size on large children/root collections) |
 | `--summarize` | bool | false | Return only id/name/alias fields for item collections |
 | `--take` | int | -1 | Take count (passes through as ?take=N; combine with --skip to page) |
@@ -65,7 +66,7 @@ umbraco media get <id>
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--fields` | string | — | Limit response fields |
+| `--fields` | string | — | Limit response fields (comma-separated top-level keys) |
 
 ### referenced-descendants
 
@@ -76,9 +77,10 @@ umbraco media referenced-descendants <id>
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--all` | bool | false | Walk every page until exhausted (auto-paginates with --take as the page size, default 500; combine with --skip to start partway through). Bounded by an internal 100k-item ceiling. |
-| `--fields` | string | — | Limit response fields |
+| `--fields` | string | — | Limit response fields (comma-separated top-level keys) |
 | `--first-n` | int | 0 | Return only the first N items from item collections |
 | `--ids-only` | bool | false | Return only item IDs for item collections |
+| `--params` | string | — | Query parameters as JSON |
 | `--skip` | int | -1 | Skip count (passes through as ?skip=N; lets you walk past the server page size on large children/root collections) |
 | `--summarize` | bool | false | Return only id/name/alias fields for item collections |
 | `--take` | int | -1 | Take count (passes through as ?take=N; combine with --skip to page) |
@@ -94,9 +96,10 @@ Wraps GET /media/{id}/referenced-by. Same content-audit role as 'document refere
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--all` | bool | false | Walk every page until exhausted (auto-paginates with --take as the page size, default 500; combine with --skip to start partway through). Bounded by an internal 100k-item ceiling. |
-| `--fields` | string | — | Limit response fields |
+| `--fields` | string | — | Limit response fields (comma-separated top-level keys) |
 | `--first-n` | int | 0 | Return only the first N items from item collections |
 | `--ids-only` | bool | false | Return only item IDs for item collections |
+| `--params` | string | — | Query parameters as JSON |
 | `--skip` | int | -1 | Skip count (passes through as ?skip=N; lets you walk past the server page size on large children/root collections) |
 | `--summarize` | bool | false | Return only id/name/alias fields for item collections |
 | `--take` | int | -1 | Take count (passes through as ?take=N; combine with --skip to page) |
@@ -110,9 +113,10 @@ umbraco media root
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--all` | bool | false | Walk every page until exhausted (auto-paginates with --take as the page size, default 500; combine with --skip to start partway through). Bounded by an internal 100k-item ceiling. |
-| `--fields` | string | — | Limit response fields |
+| `--fields` | string | — | Limit response fields (comma-separated top-level keys) |
 | `--first-n` | int | 0 | Return only the first N items from item collections |
 | `--ids-only` | bool | false | Return only item IDs for item collections |
+| `--params` | string | — | Query parameters as JSON |
 | `--skip` | int | -1 | Skip count (passes through as ?skip=N; lets you walk past the server page size on large children/root collections) |
 | `--summarize` | bool | false | Return only id/name/alias fields for item collections |
 | `--take` | int | -1 | Take count (passes through as ?take=N; combine with --skip to page) |
@@ -125,10 +129,10 @@ umbraco media search
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--params` | string | — | Search parameters as JSON |
+| `--params` | string | — | Search parameters as JSON; convenience flags fill in missing keys, --params wins on collisions |
 | `--query` | string | — | Search query |
-| `--skip` | int | -1 | Skip count |
-| `--take` | int | -1 | Take count |
+| `--skip` | int | -1 | Skip count (passes through as ?skip=N; lets you walk past the server page size on large children/root collections) |
+| `--take` | int | -1 | Take count (passes through as ?take=N; combine with --skip to page) |
 
 ### urls
 
@@ -157,7 +161,7 @@ umbraco media create
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--dry-run` | bool | false | Validate request without executing |
+| `--dry-run` | bool | false | Print the planned request without executing |
 | `--json` | string | — | Create payload as JSON |
 | `--print-template` | bool | false | Print an annotated JSON skeleton; substitute placeholders before passing to --json |
 
@@ -179,7 +183,7 @@ umbraco media create-folder [name]
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--dry-run` | bool | false | Validate request without executing |
+| `--dry-run` | bool | false | Print the planned request without executing |
 | `--json` | string | — | Create-folder payload as JSON |
 | `--parent` | string | — | Target parent ID |
 
@@ -201,9 +205,9 @@ umbraco media move <id>
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--dry-run` | bool | false | Validate request without executing |
-| `--json` | string | — | Move payload as JSON |
-| `--to` | string | — | Target parent ID |
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--json` | string | — | Action payload as JSON |
+| `--to` | string | — | Target parent ID shortcut for {"target":{"id":...}} |
 
 **Safe pattern:**
 
@@ -223,7 +227,7 @@ umbraco media trash <id>
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--dry-run` | bool | false | Validate request without executing |
+| `--dry-run` | bool | false | Print the planned request without executing |
 
 **Safe pattern:**
 
@@ -243,8 +247,9 @@ umbraco media update <id>
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--dry-run` | bool | false | Validate request without executing |
-| `--json` | string | — | Update payload as JSON |
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--json` | string | — | Full replacement payload as JSON (fields not mentioned are reset by the server) |
+| `--merge-json` | string | — | Partial JSON deep-merged into the current resource before update (fields not mentioned are preserved) |
 
 **Safe pattern:**
 
@@ -265,7 +270,7 @@ umbraco media upload <file>
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--culture` | string | — | Culture code for culture-varying media types |
-| `--dry-run` | bool | false | Validate request without executing |
+| `--dry-run` | bool | false | Print the planned request without executing |
 | `--name` | string | — | Media item name (defaults to file name without extension) |
 | `--parent` | string | — | Target parent media ID |
 | `--property` | string | umbracoFile | File property alias |
