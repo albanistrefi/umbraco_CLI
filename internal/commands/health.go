@@ -64,6 +64,6 @@ func healthAction(deps Dependencies) *cobra.Command {
 		return printResult(cmd, deps, result)
 	}}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Action payload as JSON")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
 	return cmd
 }

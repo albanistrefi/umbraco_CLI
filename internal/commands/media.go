@@ -190,7 +190,7 @@ func mediaCreate(deps Dependencies) *cobra.Command {
 		return printResult(cmd, deps, createResult(result, body))
 	}}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Create payload as JSON")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
 	cmd.Flags().BoolVar(&printTemplate, "print-template", false, "Print an annotated JSON skeleton; substitute placeholders before passing to --json")
 	return cmd
 }
@@ -299,7 +299,7 @@ func mediaUpload(deps Dependencies) *cobra.Command {
 	cmd.Flags().StringVar(&culture, "culture", "", "Culture code for culture-varying media types")
 	cmd.Flags().StringVar(&parent, "parent", "", "Target parent media ID")
 	cmd.Flags().StringVar(&propertyAlias, "property", "umbracoFile", "File property alias")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
 	return cmd
 }
 
@@ -416,27 +416,6 @@ func fetchMediaTypeDetail(ctx context.Context, client *api.Client, id string, or
 		return info, nil
 	}
 	return mediaTypeInfo{ID: id}, nil
-}
-
-func findMediaTypeInfo(result any, query string) mediaTypeInfo {
-	var nameMatch mediaTypeInfo
-	for _, item := range resultItems(result) {
-		entry, ok := item.(map[string]any)
-		if !ok {
-			continue
-		}
-		info := mediaTypeInfoFromMap(entry)
-		if info.ID == "" {
-			continue
-		}
-		if strings.EqualFold(info.Alias, query) {
-			return info
-		}
-		if nameMatch.ID == "" && strings.EqualFold(info.Name, query) {
-			nameMatch = info
-		}
-	}
-	return nameMatch
 }
 
 func mediaTypeInfoFromAny(value any) mediaTypeInfo {
@@ -569,7 +548,7 @@ func mediaCreateFolder(deps Dependencies) *cobra.Command {
 	}}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Create-folder payload as JSON")
 	cmd.Flags().StringVar(&parent, "parent", "", "Target parent ID")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
 	return cmd
 }
 
@@ -591,7 +570,7 @@ func mediaUpdate(deps Dependencies) *cobra.Command {
 		return printResult(cmd, deps, result)
 	}}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Update payload as JSON")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
 	return cmd
 }
 
@@ -621,7 +600,7 @@ func mediaMove(deps Dependencies) *cobra.Command {
 	}}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Move payload as JSON")
 	cmd.Flags().StringVar(&to, "to", "", "Target parent ID")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
 	return cmd
 }
 
@@ -634,7 +613,7 @@ func mediaDelete(deps Dependencies) *cobra.Command {
 		}
 		return printResult(cmd, deps, result)
 	}}
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
 	return cmd
 }
 
@@ -647,7 +626,7 @@ func mediaTrash(deps Dependencies) *cobra.Command {
 		}
 		return printResult(cmd, deps, result)
 	}}
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
 	return cmd
 }
 

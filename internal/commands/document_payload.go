@@ -243,7 +243,7 @@ func executeDocumentBulkUpdate(ctx context.Context, client *api.Client, ids []st
 
 		item.Action = "update"
 		if dryRun {
-			item.Message = "validated"
+			item.Message = "planned"
 		} else {
 			item.Message = "updated"
 		}
@@ -310,12 +310,9 @@ func executeDocumentCSVUpdate(ctx context.Context, client *api.Client, opts docu
 	seenIDs := map[string]int{}
 	for rowIndex, record := range records[1:] {
 		resultItem := documentCSVUpdateItemResult{Row: rowIndex + 2}
-		if len(record) < len(headers) {
-			padded := make([]string, len(headers))
-			copy(padded, record)
-			record = padded
-		}
-
+		// csv.ReadAll enforces uniform field counts, so every record here
+		// has exactly len(headers) fields; ragged files fail the whole
+		// import up front rather than silently writing partial rows.
 		id := strings.TrimSpace(record[idIndex])
 		resultItem.ID = id
 		if id == "" {
@@ -392,7 +389,7 @@ func executeDocumentCSVUpdate(ctx context.Context, client *api.Client, opts docu
 
 		resultItem.Action = "update"
 		if opts.DryRun {
-			resultItem.Message = "validated"
+			resultItem.Message = "planned"
 		} else {
 			resultItem.Message = "updated"
 		}

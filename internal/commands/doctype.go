@@ -192,7 +192,7 @@ func doctypeCreate(deps Dependencies) *cobra.Command {
 		return printResult(cmd, deps, createResult(result, body, "icon"))
 	}}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Create payload as JSON")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
 	cmd.Flags().BoolVar(&printTemplate, "print-template", false, "Print an annotated JSON skeleton; substitute placeholders before passing to --json")
 	cmd.Flags().BoolVar(&element, "element", false, "Convenience flag for --json '{...,\"isElement\":true}'; overrides any isElement set in --json")
 	return cmd
@@ -242,7 +242,7 @@ func doctypeUpdate(deps Dependencies) *cobra.Command {
 	}}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Update payload as JSON")
 	cmd.Flags().StringVar(&mergeJSON, "merge-json", "", "Partial JSON payload merged into the current document type before update")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
 	return cmd
 }
 
@@ -321,7 +321,7 @@ func doctypeAddProperty(deps Dependencies) *cobra.Command {
 	cmd.Flags().StringVar(&container, "container", "", "Name of the existing tab/group container that should hold the property (case-insensitive match)")
 	cmd.Flags().StringVar(&description, "description", "", "Optional property description")
 	cmd.Flags().BoolVar(&mandatory, "mandatory", false, "Mark the property as mandatory")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
 	return cmd
 }
 
@@ -409,7 +409,7 @@ func doctypeAddContainer(deps Dependencies) *cobra.Command {
 	cmd.Flags().StringVar(&name, "name", "", "Display name for the new container")
 	cmd.Flags().StringVar(&containerType, "type", "", "Container type: Tab or Group")
 	cmd.Flags().StringVar(&parent, "parent", "", "Optional name of an existing parent container (typically a Tab when adding a Group)")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
 	return cmd
 }
 
@@ -439,7 +439,7 @@ func doctypeCopy(deps Dependencies) *cobra.Command {
 	}}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Copy payload as JSON")
 	cmd.Flags().StringVar(&to, "to", "", "Target parent ID")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
 	return cmd
 }
 
@@ -469,7 +469,7 @@ func doctypeMove(deps Dependencies) *cobra.Command {
 	}}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Move payload as JSON")
 	cmd.Flags().StringVar(&to, "to", "", "Target parent ID")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
 	return cmd
 }
 
@@ -482,6 +482,6 @@ func doctypeDelete(deps Dependencies) *cobra.Command {
 		}
 		return printResult(cmd, deps, result)
 	}}
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate request without executing")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
 	return cmd
 }
