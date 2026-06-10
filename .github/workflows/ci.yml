@@ -39,6 +39,17 @@ jobs:
       - name: Run tests
         run: go test -race ./...
 
+      - name: Check generated OpenAPI schemas are fresh
+        run: |
+          go generate ./internal/schema
+          gofmt -w internal/schema/openapi_generated.go
+          git diff --exit-code internal/schema/openapi_generated.go
+
+      - name: Check generated CLI skills are fresh
+        run: |
+          go run ./cmd/umbraco generate-skills --output-dir skills/cli
+          git diff --exit-code skills/cli
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:

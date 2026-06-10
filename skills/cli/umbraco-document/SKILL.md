@@ -202,7 +202,7 @@ umbraco document version
 | `document move <id>` | Move a document |
 | `document publish <id>` | Publish a document |
 | `document publish-descendants <id>` | Publish a document and its entire subtree |
-| `document restore <id>` | Restore a document |
+| `document restore <id>` | Restore a document from the recycle bin |
 | `document sort` | Reorder sibling documents |
 | `document trash <id>` | Move a document to recycle bin |
 | `document unpublish <id>` | Unpublish a document |
@@ -382,9 +382,12 @@ umbraco document publish-descendants <id>
 umbraco document restore <id>
 ```
 
+PUT /recycle-bin/document/{id}/restore. The restore target defaults to the document's original parent (looked up via the recycle-bin API); pass --to for a different parent, or --to root to restore at the content root.
+
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--dry-run` | bool | false | Print the planned request without executing |
+| `--to` | string | — | Restore target parent ID, or 'root' (defaults to the original parent) |
 
 **Safe pattern:**
 

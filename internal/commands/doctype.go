@@ -311,8 +311,10 @@ func doctypeCopy(deps Dependencies) *cobra.Command {
 	return targetActionCommand(deps, targetActionSpec{
 		Use:   "copy <id>",
 		Short: "Copy document type",
-		Path:  func(args []string) string { return api.JoinPath("/document-type/%s/copy", args[0]) },
-		Verb:  "copied",
+		Candidates: func(args []string) []mutationCandidate {
+			return []mutationCandidate{{method: "POST", path: api.JoinPath("/document-type/%s/copy", args[0])}}
+		},
+		Verb: "copied",
 	})
 }
 
@@ -320,8 +322,11 @@ func doctypeMove(deps Dependencies) *cobra.Command {
 	return targetActionCommand(deps, targetActionSpec{
 		Use:   "move <id>",
 		Short: "Move document type",
-		Path:  func(args []string) string { return api.JoinPath("/document-type/%s/move", args[0]) },
-		Verb:  "moved",
+		Candidates: func(args []string) []mutationCandidate {
+			path := api.JoinPath("/document-type/%s/move", args[0])
+			return []mutationCandidate{{method: "PUT", path: path}, {method: "POST", path: path}}
+		},
+		Verb: "moved",
 	})
 }
 
