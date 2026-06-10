@@ -685,9 +685,14 @@ func documentCopy(deps Dependencies) *cobra.Command {
 				return printResult(cmd, deps, result)
 			}
 
-			copiedID := extractResultID(result)
-			if copiedID == "" {
-				return fmt.Errorf("document copy --publish requires the copy response to include the new document id")
+			// On dry-run no copy happens, so there is no real ID to chain;
+			// the publish step is planned against a placeholder instead.
+			copiedID := "copied-document-id"
+			if !dryRun {
+				copiedID = extractResultID(result)
+				if copiedID == "" {
+					return fmt.Errorf("document copy --publish requires the copy response to include the new document id")
+				}
 			}
 			publishBody, err := documentPublishBody("", culture)
 			if err != nil {
