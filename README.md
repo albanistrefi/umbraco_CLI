@@ -5,7 +5,7 @@ A Go-based CLI for the Umbraco Management API, designed for **agents first, huma
 Core behavior:
 - `--json` and `--params` are primary machine inputs
 - `--fields` keeps responses small for context window discipline
-- `--dry-run` validates mutating operations before execution
+- `--dry-run` previews the planned request for mutating operations before execution
 - `umbraco schema ...` provides runtime schema introspection
 - JSON output is default when output is piped
 

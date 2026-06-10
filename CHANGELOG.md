@@ -1,5 +1,51 @@
 # Changelog
 
+## v0.4.0 - 2026-06-10
+
+### Breaking changes
+
+- **`--json` is now a full replacement and `--merge-json` a fetch-and-merge on every update command.** `datatype update --json` and `member update --json` previously fetch-and-merged; pass `--merge-json` for partial edits there now. `media update` and `template update` gain `--merge-json`. The uniform contract: `--json` = the complete intended state (the server resets unmentioned fields), `--merge-json` = a patch (unmentioned fields preserved)
+- **hard deletes require `--force` or `--dry-run`** on `document/media/doctype/datatype/member/template delete` and `user client-credentials delete`, matching the existing gate on `dictionary delete` and `bulk-update`. `trash` stays ungated — the recycle bin is reversible
+- **search convenience flags now merge into `--params`** (with `--params` winning key collisions) instead of being silently ignored when `--params` is set
+- **empty 204 successes print `{"<verb>": true}`** (`updated` / `deleted` / `published` / `moved` / `trashed` / …) instead of `null` on every mutation, so scripts can distinguish success from failure. `datatype add-value` / `remove-value` report the same mutation summary as the block commands in all three cases (no-op / dry-run / applied)
+- `--dry-run` help text no longer claims server-side validation: it prints the planned request without executing (it never reached the server). `bulk-update`/`csv-update` per-item messages say `planned` instead of `validated`
+
+### Fixed: mutations broken on modern Umbraco (verified live)
+
+- `document/media/doctype move` and `document/media trash` used POST where modern servers serve PUT — `document trash` 404'd on every modern server. Mutations whose method or route moved between API versions now try the modern form first and fall back on 404/405
+- `document restore` now uses PUT `/recycle-bin/document/{id}/restore` and resolves the document's original parent as the restore target (`--to <parent-id>` or `--to root` to override); the old POST route never worked on modern servers
+- `media urls` moved to `GET /media/urls?id=`; `media create-folder` now creates a media item of the built-in Folder type (`POST /media/folder` does not exist on modern servers)
+- `document copy --publish --dry-run` no longer errors — the publish step is planned against a placeholder ID
+- `tree walk` pages through all children per segment instead of silently missing nodes beyond the first server page
+
+### New command surfaces (41 commands)
+
+- `document version list/get/rollback/prevent-cleanup` and `document audit-log` — version history, rollback (the undo path for bulk edits), and the change trail
+- `webhook list/get/create/update/delete/events/logs` — full webhook management including the delivery log
+- `language list/get/create/update/delete/default/cultures` — language CRUD plus ISO-culture discovery for variant content
+- `user list/get/create/invite/update/delete/enable/disable/unlock/set-groups/current/permissions` and `user client-credentials list/create/delete` — backoffice user management including the OAuth credentials API users authenticate with; `user permissions` lets an agent check write access before mutating
+- `user-group list/get/create/update/delete/add-users/remove-users`
+- `document publish-descendants` (+ `publish-descendants-result` for the async task), `document sort`, `document domains get/set`, `document public-access get/set/remove` — `public-access set` resolves create-vs-replace itself
+
+### Input validation inverted
+
+- removed the heuristic body validation that rejected legitimate CMS content: multiline Razor in `template create/update` (impossible before — newlines were "control characters"), values containing `?`/`#`/`%` under property aliases like `video`/`width`, and `%20` anywhere ("pre-encoded"). Request bodies pass through untouched — the Management API is the authority
+- the actual injection surface is now covered: every user-supplied path argument is escaped, so `umbraco document get "../server/status"` reaches the server as one literal segment instead of rewriting the route
+
+### Schema introspection generated from the OpenAPI document
+
+- `internal/schema` operation detail is generated from the vendored Management API OpenAPI document (456 operations). `umbraco schema document.update` now reports the real request model (required `values`+`variants`, property types) instead of "Raw JSON payload accepted by the endpoint". CI regenerates and diffs both the schemas and the bundled CLI skills; a test fails any binding that points at an operation the spec doesn't declare — which is how the broken mutations above were found
+
+### Reliability and hygiene
+
+- a malformed line in an unrelated `.env` up the directory tree no longer bricks every invocation; .NET host discovery runs only when no other source supplies a base URL and is best-effort
+- `--help`/`--version`/`schema`/`generate-skills` keep working when config resolution fails; the first command that reaches the API reports the real cause
+- Ctrl+C cancels in-flight requests, retry sleeps, and the models-builder `--wait` poll loop (`signal.NotifyContext` + per-command contexts)
+- `--all` auto-pagination stops re-probing 404ing endpoint fallbacks on every page; fallback chains use `errors.As` so future error wrapping can't break them
+- media-type resolution distinguishes "lookup failed" (server down, auth expired) from "no match"
+- `datatype list/root`, `doctype list`, `template root` gain `--skip/--take/--all/--params`; `template get` gains client-side `--fields` projection; `dictionary create --json` injects a CLI-generated id like every other create
+- `skills-lock.json` hashes are now verified (they were write-only); `bundle:skills` no longer deletes the generated `skills/cli` output; CI runs `gofmt`, `go vet`, `-race`, and `verify:skills`
+
 ## v0.3.17 - 2026-06-08
 
 - added `datatype block update <datatypeId> --content-element-type <guid> [flags]` for partial edits to an existing block on a Block List / Block Grid datatype. Only flags whose `cmd.Flags().Changed()` is true mutate their property, so `--editor-size large` alone won't wipe the label. Missing target block errors with `not found; use 'datatype block add'` (deliberate difference from `add`). Idempotent via `reflect.DeepEqual` — no PUT when the resulting block is byte-identical to the current one. `--label ""` / `--thumbnail ""` / `--settings-element-type ""` clear those optional fields. `editorUiAlias` and every other top-level value / sibling block survive the round-trip
