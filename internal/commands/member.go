@@ -57,7 +57,7 @@ func memberList(deps Dependencies) *cobra.Command {
 			if cmd.Flags().Changed("take") {
 				params["take"] = take
 			}
-			result, err := deps.Client.Get(context.Background(), "/filter/member", api.RequestOptions{Fields: fields, Params: params})
+			result, err := deps.Client.Get(cmd.Context(), "/filter/member", api.RequestOptions{Fields: fields, Params: params})
 			if err != nil {
 				return err
 			}
@@ -85,7 +85,7 @@ func memberSearch(deps Dependencies) *cobra.Command {
 			if cmd.Flags().Changed("take") {
 				params["take"] = take
 			}
-			result, err := deps.Client.Get(context.Background(), "/filter/member", api.RequestOptions{Fields: fields, Params: params})
+			result, err := deps.Client.Get(cmd.Context(), "/filter/member", api.RequestOptions{Fields: fields, Params: params})
 			if err != nil {
 				return err
 			}
@@ -105,7 +105,7 @@ func memberGet(deps Dependencies) *cobra.Command {
 		Short: "Get a member by ID",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			result, err := deps.Client.Get(context.Background(), api.JoinPath(memberPath+"/%s", args[0]), api.RequestOptions{Fields: fields})
+			result, err := deps.Client.Get(cmd.Context(), api.JoinPath(memberPath+"/%s", args[0]), api.RequestOptions{Fields: fields})
 			if err != nil {
 				return err
 			}
@@ -149,7 +149,7 @@ These are managed by the auth subsystem (login flow / backoffice action), not by
 			if _, err := ensurePayloadID(body); err != nil {
 				return err
 			}
-			result, err := deps.Client.Post(context.Background(), memberPath, body, api.RequestOptions{DryRun: dryRun})
+			result, err := deps.Client.Post(cmd.Context(), memberPath, body, api.RequestOptions{DryRun: dryRun})
 			if err != nil {
 				return err
 			}
@@ -168,10 +168,17 @@ func memberUpdate(deps Dependencies) *cobra.Command {
 	var dryRun bool
 	cmd := &cobra.Command{
 		Use:   "update <id>",
-		Short: "Update a member (fetch-and-merge)",
-		Long: `Both --json and --merge-json fetch the current member, deep-merge the patch, and PUT the merged result. This matches the datatype/document fix: an unmentioned field is never silently dropped.
+		Short: "Update a member",
+		Long: `Updates a member with the uniform CLI update contract:
 
-Known API limitation (Umbraco 17.x): the Management API's UpdateMemberRequestModel does NOT accept the following fields, even though they appear on the read model. The CLI rejects any patch that includes them up front — letting the request through would silently return 204 with the server value unchanged, producing a false-positive {"updated": true}:
+  --json        full replacement; the server resets any field not mentioned
+  --merge-json  fetches the current member, deep-merges the patch, and PUTs
+                the result; fields not mentioned are preserved
+
+Before v0.4.0 --json silently behaved like --merge-json on this resource.
+Pass --merge-json for partial edits.
+
+Known API limitation (Umbraco 17.x): the Management API's UpdateMemberRequestModel does NOT accept the following fields, even though they appear on the read model. The CLI rejects input that includes them up front — letting the request through would silently return 204 with the server value unchanged, producing a false-positive {"updated": true}:
   - isApproved
   - isLockedOut
   - failedPasswordAttempts
@@ -180,40 +187,37 @@ Known API limitation (Umbraco 17.x): the Management API's UpdateMemberRequestMod
 These are managed by the auth subsystem (login flow / backoffice action), not by PUT /member/{id}.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			hasJSON := strings.TrimSpace(jsonPayload) != ""
-			hasMergeJSON := strings.TrimSpace(mergeJSON) != ""
-			if hasJSON == hasMergeJSON {
-				return fmt.Errorf("member update requires exactly one of --json or --merge-json")
+			// Reject read-only keys in whichever input was supplied, before
+			// any merge can bury them inside an otherwise valid payload.
+			for _, raw := range []string{jsonPayload, mergeJSON} {
+				if strings.TrimSpace(raw) == "" {
+					continue
+				}
+				input, err := parsePayload(raw)
+				if err != nil {
+					return err
+				}
+				if blocked := readOnlyMemberKeysIn(input); len(blocked) > 0 {
+					return fmt.Errorf("the Management API silently ignores these fields on PUT /member/{id} — including them would surface as {\"updated\": true} while the server value never changes: %s", strings.Join(blocked, ", "))
+				}
 			}
-			raw := jsonPayload
-			if hasMergeJSON {
-				raw = mergeJSON
-			}
-			patch, err := parsePayload(raw)
+
+			ctx := cmd.Context()
+			path := api.JoinPath(memberPath+"/%s", args[0])
+			body, err := resolveUpdateBody(ctx, deps.Client, path, jsonPayload, mergeJSON, nil)
 			if err != nil {
 				return err
 			}
-			if blocked := readOnlyMemberKeysIn(patch); len(blocked) > 0 {
-				return fmt.Errorf("the Management API silently ignores these fields on PUT /member/{id} — including them would surface as {\"updated\": true} while the server value never changes: %s", strings.Join(blocked, ", "))
-			}
-			current, err := fetchMemberObject(context.Background(), deps.Client, args[0])
+			result, err := deps.Client.Put(ctx, path, body, api.RequestOptions{DryRun: dryRun})
 			if err != nil {
 				return err
 			}
-			merged := mergeAliasPayload(current, patch)
-			result, err := deps.Client.Put(context.Background(), api.JoinPath(memberPath+"/%s", args[0]), merged, api.RequestOptions{DryRun: dryRun})
-			if err != nil {
-				return err
-			}
-			if !dryRun && result == nil {
-				return printResult(cmd, deps, map[string]any{"updated": true})
-			}
-			return printResult(cmd, deps, result)
+			return printMutationResult(cmd, deps, "updated", result, dryRun)
 		},
 	}
-	cmd.Flags().StringVar(&jsonPayload, "json", "", "Update payload as JSON; merged into the current member so fields not mentioned are preserved")
-	cmd.Flags().StringVar(&mergeJSON, "merge-json", "", "Alias for --json")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
+	cmd.Flags().StringVar(&jsonPayload, "json", "", "Full replacement payload as JSON (fields not mentioned are reset by the server)")
+	cmd.Flags().StringVar(&mergeJSON, "merge-json", "", "Partial JSON deep-merged into the current member before update (fields not mentioned are preserved)")
+	addDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
@@ -233,45 +237,28 @@ func memberUpdateProperties(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			current, err := fetchMemberObject(context.Background(), deps.Client, args[0])
+			ctx := cmd.Context()
+			current, err := fetchMemberObject(ctx, deps.Client, args[0])
 			if err != nil {
 				return err
 			}
 			merged := mergeAliasPayload(current, patch)
-			result, err := deps.Client.Put(context.Background(), api.JoinPath(memberPath+"/%s", args[0]), merged, api.RequestOptions{DryRun: dryRun})
+			result, err := deps.Client.Put(ctx, api.JoinPath(memberPath+"/%s", args[0]), merged, api.RequestOptions{DryRun: dryRun})
 			if err != nil {
 				return err
 			}
-			if !dryRun && result == nil {
-				return printResult(cmd, deps, map[string]any{"updated": true})
-			}
-			return printResult(cmd, deps, result)
+			return printMutationResult(cmd, deps, "updated", result, dryRun)
 		},
 	}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Properties payload as JSON (object / array / envelope)")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
+	addDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
 func memberDelete(deps Dependencies) *cobra.Command {
-	var dryRun bool
-	cmd := &cobra.Command{
-		Use:   "delete <id>",
-		Short: "Delete a member",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			result, err := deps.Client.Delete(context.Background(), api.JoinPath(memberPath+"/%s", args[0]), api.RequestOptions{DryRun: dryRun})
-			if err != nil {
-				return err
-			}
-			if !dryRun && result == nil {
-				return printResult(cmd, deps, map[string]any{"deleted": true})
-			}
-			return printResult(cmd, deps, result)
-		},
-	}
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
-	return cmd
+	return deleteCommand(deps, "delete <id>", "Permanently delete a member", func(args []string) string {
+		return api.JoinPath(memberPath+"/%s", args[0])
+	})
 }
 
 // memberMutationSummary describes a member convenience mutation (currently
@@ -314,7 +301,8 @@ Group GUIDs come from 'member-group list'. The PUT preserves every other field o
 				return fmt.Errorf("member set-groups requires exactly one of --groups, --add-groups, or --remove-groups")
 			}
 
-			current, err := fetchMemberObject(context.Background(), deps.Client, args[0])
+			ctx := cmd.Context()
+			current, err := fetchMemberObject(ctx, deps.Client, args[0])
 			if err != nil {
 				return err
 			}
@@ -343,7 +331,7 @@ Group GUIDs come from 'member-group list'. The PUT preserves every other field o
 			}
 
 			merged := mergeAliasPayload(current, map[string]any{"groups": stringsToAny(next)})
-			result, err := deps.Client.Put(context.Background(), api.JoinPath(memberPath+"/%s", args[0]), merged, api.RequestOptions{DryRun: dryRun})
+			result, err := deps.Client.Put(ctx, api.JoinPath(memberPath+"/%s", args[0]), merged, api.RequestOptions{DryRun: dryRun})
 			if err != nil {
 				return err
 			}

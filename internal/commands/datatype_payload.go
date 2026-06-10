@@ -322,35 +322,36 @@ func mutateDatatypeStringArray(ctx context.Context, client *api.Client, id strin
 		return nil, err
 	}
 
+	summary := datatypeMutationSummary{Action: action, Alias: alias, Value: value}
 	currentValues := datatypeStringArrayValue(payload, alias)
+
+	var next map[string]any
 	switch action {
 	case "add":
 		if slices.Contains(currentValues, value) {
-			return datatypeMutationSummary{
-				Action:  action,
-				Alias:   alias,
-				Value:   value,
-				Changed: false,
-				Message: "value already present",
-			}, nil
+			summary.Message = "value already present"
+			return summary, nil
 		}
-
-		next := datatypeAddStringArrayValue(payload, alias, value)
-		return client.Put(ctx, api.JoinPath(dataTypeLegacyCollectionPath+"/%s", id), next, api.RequestOptions{DryRun: dryRun})
+		next = datatypeAddStringArrayValue(payload, alias, value)
 	case "remove":
 		if !slices.Contains(currentValues, value) {
-			return datatypeMutationSummary{
-				Action:  action,
-				Alias:   alias,
-				Value:   value,
-				Changed: false,
-				Message: "value not present",
-			}, nil
+			summary.Message = "value not present"
+			return summary, nil
 		}
-
-		next := datatypeRemoveStringArrayValue(payload, alias, value)
-		return client.Put(ctx, api.JoinPath(dataTypeLegacyCollectionPath+"/%s", id), next, api.RequestOptions{DryRun: dryRun})
+		next = datatypeRemoveStringArrayValue(payload, alias, value)
 	default:
 		return nil, fmt.Errorf("unsupported datatype mutation action: %s", action)
 	}
+
+	result, err := client.Put(ctx, api.JoinPath(dataTypeLegacyCollectionPath+"/%s", id), next, api.RequestOptions{DryRun: dryRun})
+	if err != nil {
+		return nil, err
+	}
+	if dryRun {
+		return result, nil
+	}
+	// A real PUT answers 204; report the mutation summary instead of nil so
+	// the no-op, dry-run, and applied cases all have a deliberate shape.
+	summary.Changed = true
+	return summary, nil
 }

@@ -3,7 +3,6 @@ package commands
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -21,11 +20,6 @@ const (
 	dataTypeItemSearchPath       = "/item/data-type/search"
 	dataTypeTreeRootPath         = "/tree/data-type/root"
 )
-
-type dataTypeRequestCandidate struct {
-	path string
-	opts api.RequestOptions
-}
 
 func RegisterDatatype(root *cobra.Command, deps Dependencies) {
 	datatype := &cobra.Command{Use: "datatype", Short: "Data type operations"}
@@ -47,94 +41,38 @@ func RegisterDatatype(root *cobra.Command, deps Dependencies) {
 }
 
 func datatypeGet(deps Dependencies) *cobra.Command {
-	var fields string
-	cmd := &cobra.Command{Use: "get <id>", Short: "Get data type by ID", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		result, err := deps.Client.Get(context.Background(), api.JoinPath(dataTypeLegacyCollectionPath+"/%s", args[0]), api.RequestOptions{Fields: fields})
-		if err != nil {
-			return err
-		}
-		return printResult(cmd, deps, applyFieldsProjection(result, fields))
-	}}
-	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
-	return cmd
+	return getCommand(deps, getSpec{
+		Use:   "get <id>",
+		Short: "Get data type by ID",
+		Path:  func(args []string) string { return api.JoinPath(dataTypeLegacyCollectionPath+"/%s", args[0]) },
+	})
 }
 
 func datatypeList(deps Dependencies) *cobra.Command {
-	var fields string
-	var paramsRaw string
-	var skip int
-	var take int
-	var triage readTriageOptions
-
-	cmd := &cobra.Command{Use: "list", Short: "List data types", RunE: func(cmd *cobra.Command, args []string) error {
-		params, err := parseParams(paramsRaw)
-		if err != nil {
-			return err
-		}
-		if params == nil {
-			params = map[string]any{}
-			if skip >= 0 {
-				params["skip"] = skip
+	return collectionCommand(deps, collectionSpec{
+		Use:   "list",
+		Short: "List data types (paginated; --skip/--take/--all)",
+		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
+			return []getRequestCandidate{
+				{path: dataTypeFilterPath, opts: api.RequestOptions{Params: params}},
+				{path: dataTypeTreeRootPath, opts: api.RequestOptions{Params: params}},
+				{path: dataTypeLegacyCollectionPath, opts: api.RequestOptions{}},
 			}
-			if take > 0 {
-				params["take"] = take
-			}
-		}
-
-		result, err := datatypeGetWithFallback(context.Background(), deps.Client,
-			dataTypeRequestCandidate{path: dataTypeFilterPath, opts: api.RequestOptions{Params: params}},
-			dataTypeRequestCandidate{path: dataTypeTreeRootPath, opts: api.RequestOptions{Params: params}},
-			dataTypeRequestCandidate{path: dataTypeLegacyCollectionPath, opts: api.RequestOptions{}},
-		)
-		if err != nil {
-			return err
-		}
-		return printResult(cmd, deps, applyReadTriage(applyFieldsProjection(result, fields), triage))
-	}}
-	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
-	cmd.Flags().StringVar(&paramsRaw, "params", "", "Query parameters as JSON")
-	cmd.Flags().IntVar(&skip, "skip", 0, "Pagination offset")
-	cmd.Flags().IntVar(&take, "take", 100, "Pagination page size")
-	addReadTriageFlags(cmd, &triage)
-	return cmd
+		},
+	})
 }
 
 func datatypeRoot(deps Dependencies) *cobra.Command {
-	var fields string
-	var paramsRaw string
-	var skip int
-	var take int
-	var triage readTriageOptions
-	cmd := &cobra.Command{Use: "root", Short: "Get root data types", RunE: func(cmd *cobra.Command, args []string) error {
-		params, err := parseParams(paramsRaw)
-		if err != nil {
-			return err
-		}
-		if params == nil {
-			params = map[string]any{}
-			if skip >= 0 {
-				params["skip"] = skip
+	return collectionCommand(deps, collectionSpec{
+		Use:   "root",
+		Short: "Get root data types (paginated; --skip/--take/--all)",
+		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
+			return []getRequestCandidate{
+				{path: dataTypeTreeRootPath, opts: api.RequestOptions{Params: params}},
+				{path: dataTypeLegacyRootPath, opts: api.RequestOptions{}},
 			}
-			if take > 0 {
-				params["take"] = take
-			}
-		}
-
-		result, err := datatypeGetWithFallback(context.Background(), deps.Client,
-			dataTypeRequestCandidate{path: dataTypeTreeRootPath, opts: api.RequestOptions{Fields: fields, Params: params}},
-			dataTypeRequestCandidate{path: dataTypeLegacyRootPath, opts: api.RequestOptions{Fields: fields}},
-		)
-		if err != nil {
-			return err
-		}
-		return printResult(cmd, deps, applyReadTriage(applyFieldsProjection(result, fields), triage))
-	}}
-	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
-	cmd.Flags().StringVar(&paramsRaw, "params", "", "Query parameters as JSON")
-	cmd.Flags().IntVar(&skip, "skip", 0, "Pagination offset")
-	cmd.Flags().IntVar(&take, "take", 100, "Pagination page size")
-	addReadTriageFlags(cmd, &triage)
-	return cmd
+		},
+	})
 }
 
 func datatypeSearch(deps Dependencies) *cobra.Command {
@@ -144,6 +82,7 @@ func datatypeSearch(deps Dependencies) *cobra.Command {
 	var skip int
 	var take int
 	cmd := &cobra.Command{Use: "search", Short: "Search data types", RunE: func(cmd *cobra.Command, args []string) error {
+		ctx := cmd.Context()
 		userTakeSet := cmd.Flags().Changed("take")
 		params, err := parseParams(paramsRaw)
 		if err != nil {
@@ -182,7 +121,7 @@ func datatypeSearch(deps Dependencies) *cobra.Command {
 				userSkip = intParam(params, "skip", userSkip)
 				userTake = intParam(params, "take", userTake)
 			}
-			result, err := searchDataTypesByEditorAlias(context.Background(), deps.Client, params, editorAlias, userSkip, userTake)
+			result, err := searchDataTypesByEditorAlias(ctx, deps.Client, params, editorAlias, userSkip, userTake)
 			if err != nil {
 				return err
 			}
@@ -202,18 +141,18 @@ func datatypeSearch(deps Dependencies) *cobra.Command {
 			}
 		}
 
-		candidates := []dataTypeRequestCandidate{
+		candidates := []getRequestCandidate{
 			{path: dataTypeFilterPath, opts: api.RequestOptions{Params: filterParams}},
 		}
 		if _, hasQuery := searchParams["query"]; hasQuery {
-			candidates = []dataTypeRequestCandidate{
+			candidates = []getRequestCandidate{
 				{path: dataTypeItemSearchPath, opts: api.RequestOptions{Params: searchParams}},
 				{path: dataTypeFilterPath, opts: api.RequestOptions{Params: filterParams}},
 				{path: dataTypeLegacySearchPath, opts: api.RequestOptions{Params: searchParams}},
 			}
 		}
 
-		result, err := datatypeGetWithFallback(context.Background(), deps.Client, candidates...)
+		result, err := getWithFallback(ctx, deps.Client, candidates...)
 		if err != nil {
 			return err
 		}
@@ -312,14 +251,14 @@ func datatypeSearchPage(ctx context.Context, client *api.Client, params map[stri
 		}
 	}
 	if _, hasQuery := searchParams["query"]; hasQuery {
-		return datatypeGetWithFallback(ctx, client,
-			dataTypeRequestCandidate{path: dataTypeItemSearchPath, opts: api.RequestOptions{Params: searchParams}},
-			dataTypeRequestCandidate{path: dataTypeFilterPath, opts: api.RequestOptions{Params: filterParams}},
-			dataTypeRequestCandidate{path: dataTypeLegacySearchPath, opts: api.RequestOptions{Params: searchParams}},
+		return getWithFallback(ctx, client,
+			getRequestCandidate{path: dataTypeItemSearchPath, opts: api.RequestOptions{Params: searchParams}},
+			getRequestCandidate{path: dataTypeFilterPath, opts: api.RequestOptions{Params: filterParams}},
+			getRequestCandidate{path: dataTypeLegacySearchPath, opts: api.RequestOptions{Params: searchParams}},
 		)
 	}
-	return datatypeGetWithFallback(ctx, client,
-		dataTypeRequestCandidate{path: dataTypeFilterPath, opts: api.RequestOptions{Params: filterParams}},
+	return getWithFallback(ctx, client,
+		getRequestCandidate{path: dataTypeFilterPath, opts: api.RequestOptions{Params: filterParams}},
 	)
 }
 
@@ -384,7 +323,7 @@ func minInt(left int, right int) int {
 
 func datatypeIsUsed(deps Dependencies) *cobra.Command {
 	return &cobra.Command{Use: "is-used <id>", Short: "Check whether a data type is in use", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		result, err := deps.Client.Get(context.Background(), api.JoinPath(dataTypeLegacyCollectionPath+"/%s/is-used", args[0]), api.RequestOptions{})
+		result, err := deps.Client.Get(cmd.Context(), api.JoinPath(dataTypeLegacyCollectionPath+"/%s/is-used", args[0]), api.RequestOptions{})
 		if err != nil {
 			return err
 		}
@@ -410,76 +349,39 @@ func datatypeCreate(deps Dependencies) *cobra.Command {
 		if _, err := ensurePayloadID(body); err != nil {
 			return err
 		}
-		result, err := deps.Client.Post(context.Background(), dataTypeLegacyCollectionPath, body, api.RequestOptions{DryRun: dryRun})
+		result, err := deps.Client.Post(cmd.Context(), dataTypeLegacyCollectionPath, body, api.RequestOptions{DryRun: dryRun})
 		if err != nil {
 			return err
 		}
 		return printResult(cmd, deps, createResult(result, body, "editorAlias"))
 	}}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Create payload as JSON")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
+	addDryRunFlag(cmd, &dryRun)
 	cmd.Flags().BoolVar(&printTemplate, "print-template", false, "Print an annotated JSON skeleton; substitute placeholders before passing to --json")
 	return cmd
 }
 
 func datatypeUpdate(deps Dependencies) *cobra.Command {
-	var jsonPayload string
-	var mergeJSON string
-	var dryRun bool
-	cmd := &cobra.Command{Use: "update <id>", Short: "Update data type", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		hasJSON := strings.TrimSpace(jsonPayload) != ""
-		hasMergeJSON := strings.TrimSpace(mergeJSON) != ""
-		if hasJSON == hasMergeJSON {
-			return fmt.Errorf("datatype update requires exactly one of --json or --merge-json")
-		}
+	return updateCommand(deps, updateSpec{
+		Use:   "update <id>",
+		Short: "Update data type",
+		Long: `Updates a data type with the uniform CLI update contract:
 
-		// Both --json and --merge-json now go through the same fetch-and-merge
-		// path. The previous --json implementation PUT only what the caller
-		// passed, which the Management API treats as a complete replacement —
-		// silently dropping any field not explicitly included (e.g.
-		// editorUiAlias, items, multiple). That made --json a footgun for
-		// agents partially-updating a datatype. Both flags are kept for
-		// backward compatibility but are now equivalent in behavior; --json
-		// reads more naturally when supplying the full intended state, and
-		// --merge-json reads more naturally when supplying a small patch.
-		raw := jsonPayload
-		if hasMergeJSON {
-			raw = mergeJSON
-		}
-		patch, err := parsePayload(raw)
-		if err != nil {
-			return err
-		}
+  --json        full replacement; the server resets any field not mentioned
+                (including editorUiAlias, items, multiple)
+  --merge-json  fetches the current data type, deep-merges the patch, and
+                PUTs the result; fields not mentioned are preserved
 
-		current, err := fetchDatatypeObject(context.Background(), deps.Client, args[0])
-		if err != nil {
-			return err
-		}
-
-		merged := mergeAliasPayload(current, patch)
-		result, err := deps.Client.Put(context.Background(), api.JoinPath(dataTypeLegacyCollectionPath+"/%s", args[0]), merged, api.RequestOptions{DryRun: dryRun})
-		if err != nil {
-			return err
-		}
-		return printResult(cmd, deps, result)
-	}}
-	cmd.Flags().StringVar(&jsonPayload, "json", "", "Update payload as JSON; merged into the current data type so fields not mentioned (e.g. editorUiAlias) are preserved")
-	cmd.Flags().StringVar(&mergeJSON, "merge-json", "", "Partial JSON payload merged into the current data type before update (alias for --json)")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
-	return cmd
+Before v0.4.0 --json silently behaved like --merge-json on this resource.
+Pass --merge-json for partial edits.`,
+		Path: func(args []string) string { return api.JoinPath(dataTypeLegacyCollectionPath+"/%s", args[0]) },
+	})
 }
 
 func datatypeDelete(deps Dependencies) *cobra.Command {
-	var dryRun bool
-	cmd := &cobra.Command{Use: "delete <id>", Short: "Delete data type", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		result, err := deps.Client.Delete(context.Background(), api.JoinPath(dataTypeLegacyCollectionPath+"/%s", args[0]), api.RequestOptions{DryRun: dryRun})
-		if err != nil {
-			return err
-		}
-		return printResult(cmd, deps, result)
-	}}
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
-	return cmd
+	return deleteCommand(deps, "delete <id>", "Permanently delete a data type", func(args []string) string {
+		return api.JoinPath(dataTypeLegacyCollectionPath+"/%s", args[0])
+	})
 }
 
 func datatypeAddValue(deps Dependencies) *cobra.Command {
@@ -498,7 +400,7 @@ func datatypeAddValue(deps Dependencies) *cobra.Command {
 			return err
 		}
 
-		result, err := mutateDatatypeStringArray(context.Background(), deps.Client, args[0], alias, value, dryRun, "add")
+		result, err := mutateDatatypeStringArray(cmd.Context(), deps.Client, args[0], alias, value, dryRun, "add")
 		if err != nil {
 			return err
 		}
@@ -507,13 +409,13 @@ func datatypeAddValue(deps Dependencies) *cobra.Command {
 
 	cmd.Flags().StringVar(&alias, "alias", "", "Datatype array alias to update")
 	cmd.Flags().StringVar(&value, "value", "", "String value to append")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
+	addDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
 func datatypeExtensions(deps Dependencies) *cobra.Command {
 	return &cobra.Command{Use: "extensions <id>", Short: "List enabled data type extension aliases", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		payload, err := fetchDatatypeObject(context.Background(), deps.Client, args[0])
+		payload, err := fetchDatatypeObject(cmd.Context(), deps.Client, args[0])
 		if err != nil {
 			return err
 		}
@@ -543,7 +445,7 @@ func datatypeRemoveValue(deps Dependencies) *cobra.Command {
 			return err
 		}
 
-		result, err := mutateDatatypeStringArray(context.Background(), deps.Client, args[0], alias, value, dryRun, "remove")
+		result, err := mutateDatatypeStringArray(cmd.Context(), deps.Client, args[0], alias, value, dryRun, "remove")
 		if err != nil {
 			return err
 		}
@@ -552,7 +454,7 @@ func datatypeRemoveValue(deps Dependencies) *cobra.Command {
 
 	cmd.Flags().StringVar(&alias, "alias", "", "Datatype array alias to update")
 	cmd.Flags().StringVar(&value, "value", "", "String value to remove")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
+	addDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
@@ -563,13 +465,13 @@ func datatypeAddExtension(deps Dependencies) *cobra.Command {
 			return err
 		}
 
-		result, err := mutateDatatypeStringArray(context.Background(), deps.Client, args[0], "extensions", args[1], dryRun, "add")
+		result, err := mutateDatatypeStringArray(cmd.Context(), deps.Client, args[0], "extensions", args[1], dryRun, "add")
 		if err != nil {
 			return err
 		}
 		return printResult(cmd, deps, result)
 	}}
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
+	addDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
@@ -580,39 +482,14 @@ func datatypeRemoveExtension(deps Dependencies) *cobra.Command {
 			return err
 		}
 
-		result, err := mutateDatatypeStringArray(context.Background(), deps.Client, args[0], "extensions", args[1], dryRun, "remove")
+		result, err := mutateDatatypeStringArray(cmd.Context(), deps.Client, args[0], "extensions", args[1], dryRun, "remove")
 		if err != nil {
 			return err
 		}
 		return printResult(cmd, deps, result)
 	}}
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
+	addDryRunFlag(cmd, &dryRun)
 	return cmd
-}
-
-func datatypeGetWithFallback(ctx context.Context, client *api.Client, candidates ...dataTypeRequestCandidate) (any, error) {
-	var lastNotFound error
-
-	for _, candidate := range candidates {
-		result, err := client.Get(ctx, candidate.path, candidate.opts)
-		if err == nil {
-			return result, nil
-		}
-
-		apiErr, ok := err.(*api.APIError)
-		if ok && apiErr.StatusCode == http.StatusNotFound {
-			lastNotFound = err
-			continue
-		}
-
-		return nil, err
-	}
-
-	if lastNotFound != nil {
-		return nil, lastNotFound
-	}
-
-	return nil, fmt.Errorf("no datatype endpoint candidates were configured")
 }
 
 func cloneParams(input map[string]any) map[string]any {

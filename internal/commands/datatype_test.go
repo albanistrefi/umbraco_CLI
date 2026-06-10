@@ -429,7 +429,7 @@ func TestDatatypeAddValueAppendsAliasArrayValueWithoutDroppingRequiredFields(t *
 	if err := json.Unmarshal([]byte(output), &payload); err != nil {
 		t.Fatalf("failed to decode datatype add-value result: %v", err)
 	}
-	if payload["ok"] != true {
+	if payload["action"] != "add" || payload["changed"] != true || payload["value"] != "New.Extension" {
 		t.Fatalf("unexpected datatype add-value result: %+v", payload)
 	}
 }
@@ -587,7 +587,7 @@ func TestDatatypeRemoveValueRemovesAliasArrayValueWithoutDroppingRequiredFields(
 	if err := json.Unmarshal([]byte(output), &payload); err != nil {
 		t.Fatalf("failed to decode datatype remove-value result: %v", err)
 	}
-	if payload["ok"] != true {
+	if payload["action"] != "remove" || payload["changed"] != true || payload["value"] != "Remove.Me" {
 		t.Fatalf("unexpected datatype remove-value result: %+v", payload)
 	}
 }
@@ -908,7 +908,7 @@ func TestDatatypeUpdateMergeJSONSupportsDryRunForNestedObjectConfig(t *testing.T
 	}
 }
 
-func TestDatatypeUpdateJSONPreservesEditorUiAliasAndOtherUnmentionedFields(t *testing.T) {
+func TestDatatypeUpdateMergeJSONPreservesEditorUiAliasAndOtherUnmentionedFields(t *testing.T) {
 	// Regression: --json used to PUT only what the caller passed, which the
 	// Management API treats as a full replacement — silently dropping
 	// editorUiAlias, items, multiple, and anything else not in the payload.
@@ -942,13 +942,13 @@ func TestDatatypeUpdateJSONPreservesEditorUiAliasAndOtherUnmentionedFields(t *te
 		return datatypeJSONResponse(http.StatusNotFound, `null`), nil
 	})
 
-	// Caller passes a minimal --json with just the field they want to change.
-	// Prior to the fix this would have nuked editorUiAlias, both values
-	// entries, and editorAlias on the server side.
+	// Caller passes a minimal --merge-json with just the field they want to
+	// change. Pre-v0.4.0 this protection lived on --json; it now belongs to
+	// --merge-json under the uniform update contract.
 	_, err := execute(
 		buildRootWithCollections(t, deps),
 		"datatype", "update", "dt-1",
-		"--json", `{"name":"Renamed Tags"}`,
+		"--merge-json", `{"name":"Renamed Tags"}`,
 	)
 	if err != nil {
 		t.Fatalf("update failed: %v", err)
@@ -982,8 +982,55 @@ func TestDatatypeUpdateRejectsJSONAndMergeJSONTogether(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected datatype update to reject simultaneous --json and --merge-json")
 	}
-	if !strings.Contains(err.Error(), "exactly one of --json or --merge-json") {
+	if !strings.Contains(err.Error(), "exactly one of --json (full replacement) or --merge-json (fetch and merge)") {
 		t.Fatalf("unexpected merge-json validation error: %v", err)
+	}
+}
+
+func TestDatatypeUpdateJSONReplacesWithoutFetching(t *testing.T) {
+	var observedPutBody map[string]any
+	var observedGets int
+
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/data-type/dt-1":
+			if req.Method == http.MethodGet {
+				observedGets++
+				return datatypeJSONResponse(http.StatusOK, `{"id":"dt-1","name":"Old"}`), nil
+			}
+			if req.Method == http.MethodPut {
+				if err := json.NewDecoder(req.Body).Decode(&observedPutBody); err != nil {
+					t.Fatalf("decode PUT: %v", err)
+				}
+				return datatypeJSONResponse(http.StatusOK, ``), nil
+			}
+		}
+		return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+	})
+
+	output, err := execute(
+		buildRootWithCollections(t, deps),
+		"datatype", "update", "dt-1",
+		"--json", `{"name":"Full Replacement","editorAlias":"Umbraco.Tags"}`,
+	)
+	if err != nil {
+		t.Fatalf("update failed: %v", err)
+	}
+	// --json is a wholesale replacement: no fetch, body sent verbatim.
+	if observedGets != 0 {
+		t.Fatalf("expected no fetch for --json replacement, got %d GETs", observedGets)
+	}
+	if observedPutBody["name"] != "Full Replacement" || len(observedPutBody) != 2 {
+		t.Fatalf("expected verbatim replacement body, got %+v", observedPutBody)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("decode output: %v", err)
+	}
+	if payload["updated"] != true {
+		t.Fatalf("expected empty 204 success to coalesce to {updated:true}, got %+v", payload)
 	}
 }
 

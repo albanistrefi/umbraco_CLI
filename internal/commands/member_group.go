@@ -1,8 +1,6 @@
 package commands
 
 import (
-	"context"
-
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
@@ -29,7 +27,7 @@ func memberGroupList(deps Dependencies) *cobra.Command {
 		Short: "List all member groups",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			result, err := getWithFallback(
-				context.Background(),
+				cmd.Context(),
 				deps.Client,
 				getRequestCandidate{path: memberGroupPath, opts: api.RequestOptions{Fields: fields}},
 				getRequestCandidate{path: "/tree/member-group/root", opts: api.RequestOptions{Fields: fields}},
@@ -52,7 +50,7 @@ func memberGroupGet(deps Dependencies) *cobra.Command {
 		Short: "Get a member group by ID",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			result, err := deps.Client.Get(context.Background(), api.JoinPath(memberGroupPath+"/%s", args[0]), api.RequestOptions{Fields: fields})
+			result, err := deps.Client.Get(cmd.Context(), api.JoinPath(memberGroupPath+"/%s", args[0]), api.RequestOptions{Fields: fields})
 			if err != nil {
 				return err
 			}

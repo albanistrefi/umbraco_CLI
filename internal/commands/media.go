@@ -2,7 +2,9 @@ package commands
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"path/filepath"
 	"strings"
 
@@ -35,129 +37,56 @@ func RegisterMedia(root *cobra.Command, deps Dependencies) {
 }
 
 func mediaGet(deps Dependencies) *cobra.Command {
-	var fields string
-	cmd := &cobra.Command{Use: "get <id>", Short: "Get media by ID", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		result, err := deps.Client.Get(context.Background(), api.JoinPath("/media/%s", args[0]), api.RequestOptions{Fields: fields})
-		if err != nil {
-			return err
-		}
-		return printResult(cmd, deps, applyFieldsProjection(result, fields))
-	}}
-	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
-	return cmd
+	return getCommand(deps, getSpec{
+		Use:   "get <id>",
+		Short: "Get media by ID",
+		Path:  func(args []string) string { return api.JoinPath("/media/%s", args[0]) },
+	})
 }
 
 func mediaRoot(deps Dependencies) *cobra.Command {
-	var fields string
-	var skip, take int
-	var all bool
-	var triage readTriageOptions
-	cmd := &cobra.Command{Use: "root", Short: "Get root media items (paginated; --skip/--take/--all)", RunE: func(cmd *cobra.Command, args []string) error {
-		ctx := context.Background()
-		params := applyPaginationParams(nil, skip, take)
-		tree := getRequestCandidate{path: "/tree/media/root", opts: api.RequestOptions{Fields: fields, Params: params}}
-		legacy := getRequestCandidate{path: "/media/root", opts: api.RequestOptions{Fields: fields, Params: params}}
-
-		var result any
-		var err error
-		if all {
-			result, err = getAllPagesWithFallback(ctx, deps.Client, take, skip, triage.FirstN, tree, legacy)
-		} else {
-			result, err = getWithFallback(ctx, deps.Client, tree, legacy)
-		}
-		if err != nil {
-			return err
-		}
-		return printResult(cmd, deps, applyReadTriage(applyFieldsProjection(result, fields), triage))
-	}}
-	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
-	addPaginationFlags(cmd, &skip, &take)
-	addAutoPaginationFlag(cmd, &all)
-	addReadTriageFlags(cmd, &triage)
-	return cmd
+	return collectionCommand(deps, collectionSpec{
+		Use:   "root",
+		Short: "Get root media items (paginated; --skip/--take/--all)",
+		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
+			return []getRequestCandidate{
+				{path: "/tree/media/root", opts: api.RequestOptions{Params: params}},
+				{path: "/media/root", opts: api.RequestOptions{Params: params}},
+			}
+		},
+	})
 }
 
 func mediaChildren(deps Dependencies) *cobra.Command {
-	var fields string
-	var skip, take int
-	var all bool
-	var triage readTriageOptions
-	cmd := &cobra.Command{Use: "children <id>", Short: "Get child media items (paginated; --skip/--take/--all)", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		ctx := context.Background()
-		tree := getRequestCandidate{
-			path: "/tree/media/children",
-			opts: api.RequestOptions{Fields: fields, Params: applyPaginationParams(map[string]any{"parentId": args[0]}, skip, take)},
-		}
-		legacy := getRequestCandidate{
-			path: api.JoinPath("/media/%s/children", args[0]),
-			opts: api.RequestOptions{Fields: fields, Params: applyPaginationParams(nil, skip, take)},
-		}
-
-		var result any
-		var err error
-		if all {
-			result, err = getAllPagesWithFallback(ctx, deps.Client, take, skip, triage.FirstN, tree, legacy)
-		} else {
-			result, err = getWithFallback(ctx, deps.Client, tree, legacy)
-		}
-		if err != nil {
-			return err
-		}
-		return printResult(cmd, deps, applyReadTriage(applyFieldsProjection(result, fields), triage))
-	}}
-	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
-	addPaginationFlags(cmd, &skip, &take)
-	addAutoPaginationFlag(cmd, &all)
-	addReadTriageFlags(cmd, &triage)
-	return cmd
+	return collectionCommand(deps, collectionSpec{
+		Use:   "children <id>",
+		Short: "Get child media items (paginated; --skip/--take/--all)",
+		NArgs: 1,
+		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
+			return []getRequestCandidate{
+				{path: "/tree/media/children", opts: api.RequestOptions{Params: withParam(params, "parentId", args[0])}},
+				{path: api.JoinPath("/media/%s/children", args[0]), opts: api.RequestOptions{Params: params}},
+			}
+		},
+	})
 }
 
 func mediaSearch(deps Dependencies) *cobra.Command {
-	var paramsRaw string
-	var query string
-	var skip int
-	var take int
-
-	cmd := &cobra.Command{Use: "search", Short: "Search media items", RunE: func(cmd *cobra.Command, args []string) error {
-		params, err := parseParams(paramsRaw)
-		if err != nil {
-			return err
-		}
-		if params == nil {
-			if query == "" {
-				return fmt.Errorf("media search requires either --params or --query")
+	return searchCommand(deps, searchSpec{
+		Use:   "search",
+		Short: "Search media items",
+		Endpoints: func(params map[string]any) []getRequestCandidate {
+			return []getRequestCandidate{
+				{path: "/item/media/search", opts: api.RequestOptions{Params: params}},
+				{path: "/media/search", opts: api.RequestOptions{Params: params}},
 			}
-			params = map[string]any{"query": query}
-			if skip >= 0 {
-				params["skip"] = skip
-			}
-			if take >= 0 {
-				params["take"] = take
-			}
-		}
-
-		result, err := getWithFallback(
-			context.Background(),
-			deps.Client,
-			getRequestCandidate{path: "/item/media/search", opts: api.RequestOptions{Params: params}},
-			getRequestCandidate{path: "/media/search", opts: api.RequestOptions{Params: params}},
-		)
-		if err != nil {
-			return err
-		}
-		return printResult(cmd, deps, result)
-	}}
-
-	cmd.Flags().StringVar(&paramsRaw, "params", "", "Search parameters as JSON")
-	cmd.Flags().StringVar(&query, "query", "", "Search query")
-	cmd.Flags().IntVar(&skip, "skip", -1, "Skip count")
-	cmd.Flags().IntVar(&take, "take", -1, "Take count")
-	return cmd
+		},
+	})
 }
 
 func mediaURLs(deps Dependencies) *cobra.Command {
 	return &cobra.Command{Use: "urls <id>", Short: "Get media URLs", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		result, err := deps.Client.Get(context.Background(), api.JoinPath("/media/%s/urls", args[0]), api.RequestOptions{})
+		result, err := deps.Client.Get(cmd.Context(), api.JoinPath("/media/%s/urls", args[0]), api.RequestOptions{})
 		if err != nil {
 			return err
 		}
@@ -183,14 +112,14 @@ func mediaCreate(deps Dependencies) *cobra.Command {
 		if _, err := ensurePayloadID(body); err != nil {
 			return err
 		}
-		result, err := deps.Client.Post(context.Background(), "/media", body, api.RequestOptions{DryRun: dryRun})
+		result, err := deps.Client.Post(cmd.Context(), "/media", body, api.RequestOptions{DryRun: dryRun})
 		if err != nil {
 			return err
 		}
 		return printResult(cmd, deps, createResult(result, body))
 	}}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Create payload as JSON")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
+	addDryRunFlag(cmd, &dryRun)
 	cmd.Flags().BoolVar(&printTemplate, "print-template", false, "Print an annotated JSON skeleton; substitute placeholders before passing to --json")
 	return cmd
 }
@@ -204,6 +133,7 @@ func mediaUpload(deps Dependencies) *cobra.Command {
 	var dryRun bool
 
 	cmd := &cobra.Command{Use: "upload <file>", Short: "Upload a file and create a media item", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		ctx := cmd.Context()
 		filePath := args[0]
 		if err := requireValue("--type", mediaType); err != nil {
 			return err
@@ -223,7 +153,7 @@ func mediaUpload(deps Dependencies) *cobra.Command {
 		if err != nil {
 			return fmt.Errorf("failed to generate media id: %w", err)
 		}
-		mediaTypeInfo, err := resolveMediaTypeInfo(context.Background(), deps.Client, mediaType)
+		mediaTypeInfo, err := resolveMediaTypeInfo(ctx, deps.Client, mediaType)
 		if err != nil {
 			return err
 		}
@@ -242,14 +172,14 @@ func mediaUpload(deps Dependencies) *cobra.Command {
 		case cultureExplicit:
 			resolvedCulture = strings.TrimSpace(culture)
 		default:
-			resolvedCulture, err = resolveDefaultCulture(context.Background(), deps.Client)
+			resolvedCulture, err = resolveDefaultCulture(ctx, deps.Client)
 			if err != nil {
 				return fmt.Errorf("media type %q varies by culture; pass --culture <code>", mediaType)
 			}
 		}
 
 		uploadResult, err := deps.Client.MultipartPost(
-			context.Background(),
+			ctx,
 			"/temporary-file",
 			map[string]string{"id": tempID},
 			"file",
@@ -281,7 +211,7 @@ func mediaUpload(deps Dependencies) *cobra.Command {
 			body["parent"] = map[string]any{"id": parent}
 		}
 
-		createResultRaw, err := deps.Client.Post(context.Background(), "/media", body, api.RequestOptions{DryRun: dryRun})
+		createResultRaw, err := deps.Client.Post(ctx, "/media", body, api.RequestOptions{DryRun: dryRun})
 		if err != nil {
 			return err
 		}
@@ -299,7 +229,7 @@ func mediaUpload(deps Dependencies) *cobra.Command {
 	cmd.Flags().StringVar(&culture, "culture", "", "Culture code for culture-varying media types")
 	cmd.Flags().StringVar(&parent, "parent", "", "Target parent media ID")
 	cmd.Flags().StringVar(&propertyAlias, "property", "umbracoFile", "File property alias")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
+	addDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
@@ -343,7 +273,7 @@ func resolveMediaTypeInfo(ctx context.Context, client *api.Client, value string)
 	// Lightweight endpoints (search, tree, item) return models without an alias field; only
 	// /media-type/{id} carries it. Collect candidate IDs from the cheap endpoints and verify
 	// each against its full detail until we find a case-insensitive alias or name match.
-	candidateIDs := collectMediaTypeCandidateIDs(ctx, client, normalized)
+	candidateIDs, lookupErr := collectMediaTypeCandidateIDs(ctx, client, normalized)
 	var nameMatch mediaTypeInfo
 	visited := make(map[string]struct{}, len(candidateIDs))
 	for _, id := range candidateIDs {
@@ -367,30 +297,56 @@ func resolveMediaTypeInfo(ctx context.Context, client *api.Client, value string)
 		return nameMatch, nil
 	}
 
+	// A failed lookup is a very different situation from a successful lookup
+	// with no match — reporting "not found" while the server was down or auth
+	// expired sends the caller chasing the wrong problem.
+	if lookupErr != nil {
+		return mediaTypeInfo{}, fmt.Errorf("could not resolve media type %q: %w", value, lookupErr)
+	}
 	return mediaTypeInfo{}, fmt.Errorf("media type %q was not found; pass a media type ID with --type or ensure the alias/name exists", value)
 }
 
 // collectMediaTypeCandidateIDs gathers media type IDs to inspect for alias/name matching.
 // Search results come first (Examine matches both name and alias index, so the SVG type can
 // surface from a query like "umbracoMediaVectorGraphics"), followed by the full tree-root
-// listing as a fallback for installs where search misses or returns nothing.
-func collectMediaTypeCandidateIDs(ctx context.Context, client *api.Client, query string) []string {
+// listing as a fallback for installs where search misses or returns nothing. 404s mean the
+// endpoint variant doesn't exist on this Umbraco version and are skipped; any other error is
+// returned alongside whatever IDs were collected so the caller can distinguish "no match"
+// from "lookup failed".
+func collectMediaTypeCandidateIDs(ctx context.Context, client *api.Client, query string) ([]string, error) {
 	var ids []string
+	var lookupErr error
 
-	if searchResult, err := getWithFallback(
+	noteErr := func(err error) {
+		var apiErr *api.APIError
+		if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusNotFound {
+			return
+		}
+		if lookupErr == nil {
+			lookupErr = err
+		}
+	}
+
+	searchResult, err := getWithFallback(
 		ctx,
 		client,
 		getRequestCandidate{path: "/item/media-type/search", opts: api.RequestOptions{Params: map[string]any{"query": query, "skip": 0, "take": 50}}},
 		getRequestCandidate{path: "/media-type/search", opts: api.RequestOptions{Params: map[string]any{"query": query, "skip": 0, "take": 50}}},
-	); err == nil {
+	)
+	if err == nil {
 		ids = append(ids, mediaTypeIDsFromResult(searchResult)...)
+	} else {
+		noteErr(err)
 	}
 
-	if treeResult, err := client.Get(ctx, "/tree/media-type/root", api.RequestOptions{Params: map[string]any{"skip": 0, "take": 500}}); err == nil {
+	treeResult, err := client.Get(ctx, "/tree/media-type/root", api.RequestOptions{Params: map[string]any{"skip": 0, "take": 500}})
+	if err == nil {
 		ids = append(ids, mediaTypeIDsFromResult(treeResult)...)
+	} else {
+		noteErr(err)
 	}
 
-	return ids
+	return ids, lookupErr
 }
 
 func mediaTypeIDsFromResult(result any) []string {
@@ -540,164 +496,71 @@ func mediaCreateFolder(deps Dependencies) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		result, err := deps.Client.Post(context.Background(), "/media/folder", body, api.RequestOptions{DryRun: dryRun})
+		result, err := deps.Client.Post(cmd.Context(), "/media/folder", body, api.RequestOptions{DryRun: dryRun})
 		if err != nil {
 			return err
 		}
-		return printResult(cmd, deps, result)
+		return printMutationResult(cmd, deps, "created", result, dryRun)
 	}}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Create-folder payload as JSON")
 	cmd.Flags().StringVar(&parent, "parent", "", "Target parent ID")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
+	addDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
 func mediaUpdate(deps Dependencies) *cobra.Command {
-	var jsonPayload string
-	var dryRun bool
-	cmd := &cobra.Command{Use: "update <id>", Short: "Update media item", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		if err := requireValue("--json", jsonPayload); err != nil {
-			return err
-		}
-		body, err := parsePayload(jsonPayload)
-		if err != nil {
-			return err
-		}
-		result, err := deps.Client.Put(context.Background(), api.JoinPath("/media/%s", args[0]), body, api.RequestOptions{DryRun: dryRun})
-		if err != nil {
-			return err
-		}
-		return printResult(cmd, deps, result)
-	}}
-	cmd.Flags().StringVar(&jsonPayload, "json", "", "Update payload as JSON")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
-	return cmd
+	return updateCommand(deps, updateSpec{
+		Use:   "update <id>",
+		Short: "Update media item",
+		Path:  func(args []string) string { return api.JoinPath("/media/%s", args[0]) },
+	})
 }
 
 func mediaMove(deps Dependencies) *cobra.Command {
-	var jsonPayload string
-	var to string
-	var dryRun bool
-	cmd := &cobra.Command{Use: "move <id>", Short: "Move media item", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		var body map[string]any
-		var err error
-		if jsonPayload != "" {
-			body, err = parsePayload(jsonPayload)
-		} else {
-			if err := requireValue("--to", to); err != nil {
-				return err
-			}
-			body = map[string]any{"target": map[string]any{"id": to}}
-		}
-		if err != nil {
-			return err
-		}
-		result, err := deps.Client.Post(context.Background(), api.JoinPath("/media/%s/move", args[0]), body, api.RequestOptions{DryRun: dryRun})
-		if err != nil {
-			return err
-		}
-		return printResult(cmd, deps, result)
-	}}
-	cmd.Flags().StringVar(&jsonPayload, "json", "", "Move payload as JSON")
-	cmd.Flags().StringVar(&to, "to", "", "Target parent ID")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
-	return cmd
+	return targetActionCommand(deps, targetActionSpec{
+		Use:   "move <id>",
+		Short: "Move media item",
+		Path:  func(args []string) string { return api.JoinPath("/media/%s/move", args[0]) },
+		Verb:  "moved",
+	})
 }
 
 func mediaDelete(deps Dependencies) *cobra.Command {
-	var dryRun bool
-	cmd := &cobra.Command{Use: "delete <id>", Short: "Delete media item", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		result, err := deps.Client.Delete(context.Background(), api.JoinPath("/media/%s", args[0]), api.RequestOptions{DryRun: dryRun})
-		if err != nil {
-			return err
-		}
-		return printResult(cmd, deps, result)
-	}}
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
-	return cmd
+	return deleteCommand(deps, "delete <id>", "Permanently delete a media item (use 'trash' for the recycle bin)", func(args []string) string {
+		return api.JoinPath("/media/%s", args[0])
+	})
 }
 
 func mediaTrash(deps Dependencies) *cobra.Command {
 	var dryRun bool
 	cmd := &cobra.Command{Use: "trash <id>", Short: "Move media item to recycle bin", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		result, err := deps.Client.Post(context.Background(), api.JoinPath("/media/%s/move-to-recycle-bin", args[0]), map[string]any{}, api.RequestOptions{DryRun: dryRun})
+		result, err := deps.Client.Post(cmd.Context(), api.JoinPath("/media/%s/move-to-recycle-bin", args[0]), map[string]any{}, api.RequestOptions{DryRun: dryRun})
 		if err != nil {
 			return err
 		}
-		return printResult(cmd, deps, result)
+		return printMutationResult(cmd, deps, "trashed", result, dryRun)
 	}}
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
+	addDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
-// Media references commands mirror their document equivalents: same
-// endpoint shape, same pagination plumbing. Common use case from the bug
-// report — "which content references this media item" before deleting an
-// image asset, or "is this whole media folder referenced by anything"
-// before archiving.
-
 func mediaReferences(deps Dependencies) *cobra.Command {
-	var fields string
-	var skip, take int
-	var all bool
-	var triage readTriageOptions
-	cmd := &cobra.Command{
+	return referencesCommand(deps, referencesSpec{
 		Use:   "references <id>",
 		Short: "List items that reference this media item (paginated; --skip/--take/--all)",
 		Long:  "Wraps GET /media/{id}/referenced-by. Same content-audit role as 'document references' for media assets.",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runReferencesQuery(cmd, deps, api.JoinPath("/media/%s/referenced-by", args[0]), fields, skip, take, all, triage)
-		},
-	}
-	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
-	addPaginationFlags(cmd, &skip, &take)
-	addAutoPaginationFlag(cmd, &all)
-	addReadTriageFlags(cmd, &triage)
-	return cmd
+		Path:  func(args []string) string { return api.JoinPath("/media/%s/referenced-by", args[0]) },
+	})
 }
 
 func mediaReferencedDescendants(deps Dependencies) *cobra.Command {
-	var fields string
-	var skip, take int
-	var all bool
-	var triage readTriageOptions
-	cmd := &cobra.Command{
+	return referencesCommand(deps, referencesSpec{
 		Use:   "referenced-descendants <id>",
 		Short: "List items that reference this media item or any of its descendants",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runReferencesQuery(cmd, deps, api.JoinPath("/media/%s/referenced-descendants", args[0]), fields, skip, take, all, triage)
-		},
-	}
-	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
-	addPaginationFlags(cmd, &skip, &take)
-	addAutoPaginationFlag(cmd, &all)
-	addReadTriageFlags(cmd, &triage)
-	return cmd
+		Path:  func(args []string) string { return api.JoinPath("/media/%s/referenced-descendants", args[0]) },
+	})
 }
 
 func mediaAreReferenced(deps Dependencies) *cobra.Command {
-	var idsCSV string
-	cmd := &cobra.Command{
-		Use:   "are-referenced",
-		Short: "Bulk check: which of these media IDs are referenced by something",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			ids := uniqueCSV(idsCSV)
-			if len(ids) == 0 {
-				return fmt.Errorf("media are-referenced requires --ids <comma-separated guids>")
-			}
-			anyIDs := make([]any, len(ids))
-			for i, v := range ids {
-				anyIDs[i] = v
-			}
-			result, err := deps.Client.Get(context.Background(), "/media/are-referenced", api.RequestOptions{Params: map[string]any{"id": anyIDs}})
-			if err != nil {
-				return err
-			}
-			return printResult(cmd, deps, result)
-		},
-	}
-	cmd.Flags().StringVar(&idsCSV, "ids", "", "Comma-separated media GUIDs to check (required)")
-	return cmd
+	return areReferencedCommand(deps, "media")
 }

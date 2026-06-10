@@ -1,9 +1,7 @@
 package commands
 
 import (
-	"context"
 	"fmt"
-	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -34,132 +32,65 @@ func RegisterDoctype(root *cobra.Command, deps Dependencies) {
 }
 
 func doctypeGet(deps Dependencies) *cobra.Command {
-	var fields string
-	cmd := &cobra.Command{Use: "get <id>", Short: "Get document type by ID", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		result, err := deps.Client.Get(context.Background(), api.JoinPath("/document-type/%s", args[0]), api.RequestOptions{Fields: fields})
-		if err != nil {
-			return err
-		}
-		return printResult(cmd, deps, applyFieldsProjection(result, fields))
-	}}
-	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
-	return cmd
+	return getCommand(deps, getSpec{
+		Use:   "get <id>",
+		Short: "Get document type by ID",
+		Path:  func(args []string) string { return api.JoinPath("/document-type/%s", args[0]) },
+	})
 }
 
 func doctypeList(deps Dependencies) *cobra.Command {
-	var fields string
-	var triage readTriageOptions
-	cmd := &cobra.Command{Use: "list", Short: "List document types", RunE: func(cmd *cobra.Command, args []string) error {
-		result, err := getWithFallback(
-			context.Background(),
-			deps.Client,
-			getRequestCandidate{path: "/tree/document-type/root", opts: api.RequestOptions{Fields: fields}},
-			getRequestCandidate{path: "/document-type/root", opts: api.RequestOptions{Fields: fields}},
-			getRequestCandidate{path: "/document-type", opts: api.RequestOptions{Fields: fields}},
-		)
-		if err != nil {
-			return err
-		}
-		return printResult(cmd, deps, applyReadTriage(applyFieldsProjection(result, fields), triage))
-	}}
-	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
-	addReadTriageFlags(cmd, &triage)
-	return cmd
+	return collectionCommand(deps, collectionSpec{
+		Use:   "list",
+		Short: "List document types (paginated; --skip/--take/--all)",
+		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
+			return []getRequestCandidate{
+				{path: "/tree/document-type/root", opts: api.RequestOptions{Params: params}},
+				{path: "/document-type/root", opts: api.RequestOptions{Params: params}},
+				{path: "/document-type", opts: api.RequestOptions{Params: params}},
+			}
+		},
+	})
 }
 
 func doctypeRoot(deps Dependencies) *cobra.Command {
-	var fields string
-	var skip, take int
-	var all bool
-	var triage readTriageOptions
-	cmd := &cobra.Command{Use: "root", Short: "Get root document types (paginated; --skip/--take/--all)", RunE: func(cmd *cobra.Command, args []string) error {
-		ctx := context.Background()
-		params := applyPaginationParams(nil, skip, take)
-		tree := getRequestCandidate{path: "/tree/document-type/root", opts: api.RequestOptions{Fields: fields, Params: params}}
-		legacy := getRequestCandidate{path: "/document-type/root", opts: api.RequestOptions{Fields: fields, Params: params}}
-
-		var result any
-		var err error
-		if all {
-			result, err = getAllPagesWithFallback(ctx, deps.Client, take, skip, triage.FirstN, tree, legacy)
-		} else {
-			result, err = getWithFallback(ctx, deps.Client, tree, legacy)
-		}
-		if err != nil {
-			return err
-		}
-		return printResult(cmd, deps, applyReadTriage(applyFieldsProjection(result, fields), triage))
-	}}
-	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
-	addPaginationFlags(cmd, &skip, &take)
-	addAutoPaginationFlag(cmd, &all)
-	addReadTriageFlags(cmd, &triage)
-	return cmd
+	return collectionCommand(deps, collectionSpec{
+		Use:   "root",
+		Short: "Get root document types (paginated; --skip/--take/--all)",
+		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
+			return []getRequestCandidate{
+				{path: "/tree/document-type/root", opts: api.RequestOptions{Params: params}},
+				{path: "/document-type/root", opts: api.RequestOptions{Params: params}},
+			}
+		},
+	})
 }
 
 func doctypeChildren(deps Dependencies) *cobra.Command {
-	var fields string
-	var skip, take int
-	var all bool
-	var triage readTriageOptions
-	cmd := &cobra.Command{Use: "children <id>", Short: "Get child document types (paginated; --skip/--take/--all)", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		ctx := context.Background()
-		tree := getRequestCandidate{
-			path: "/tree/document-type/children",
-			opts: api.RequestOptions{Fields: fields, Params: applyPaginationParams(map[string]any{"parentId": args[0]}, skip, take)},
-		}
-		legacy := getRequestCandidate{
-			path: api.JoinPath("/document-type/%s/children", args[0]),
-			opts: api.RequestOptions{Fields: fields, Params: applyPaginationParams(nil, skip, take)},
-		}
-
-		var result any
-		var err error
-		if all {
-			result, err = getAllPagesWithFallback(ctx, deps.Client, take, skip, triage.FirstN, tree, legacy)
-		} else {
-			result, err = getWithFallback(ctx, deps.Client, tree, legacy)
-		}
-		if err != nil {
-			return err
-		}
-		return printResult(cmd, deps, applyReadTriage(applyFieldsProjection(result, fields), triage))
-	}}
-	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
-	addPaginationFlags(cmd, &skip, &take)
-	addAutoPaginationFlag(cmd, &all)
-	addReadTriageFlags(cmd, &triage)
-	return cmd
+	return collectionCommand(deps, collectionSpec{
+		Use:   "children <id>",
+		Short: "Get child document types (paginated; --skip/--take/--all)",
+		NArgs: 1,
+		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
+			return []getRequestCandidate{
+				{path: "/tree/document-type/children", opts: api.RequestOptions{Params: withParam(params, "parentId", args[0])}},
+				{path: api.JoinPath("/document-type/%s/children", args[0]), opts: api.RequestOptions{Params: params}},
+			}
+		},
+	})
 }
 
 func doctypeSearch(deps Dependencies) *cobra.Command {
-	var paramsRaw string
-	var query string
-	cmd := &cobra.Command{Use: "search", Short: "Search document types", RunE: func(cmd *cobra.Command, args []string) error {
-		params, err := parseParams(paramsRaw)
-		if err != nil {
-			return err
-		}
-		if params == nil {
-			if query == "" {
-				return fmt.Errorf("doctype search requires either --params or --query")
+	return searchCommand(deps, searchSpec{
+		Use:   "search",
+		Short: "Search document types",
+		Endpoints: func(params map[string]any) []getRequestCandidate {
+			return []getRequestCandidate{
+				{path: "/item/document-type/search", opts: api.RequestOptions{Params: params}},
+				{path: "/document-type/search", opts: api.RequestOptions{Params: params}},
 			}
-			params = map[string]any{"query": query}
-		}
-		result, err := getWithFallback(
-			context.Background(),
-			deps.Client,
-			getRequestCandidate{path: "/item/document-type/search", opts: api.RequestOptions{Params: params}},
-			getRequestCandidate{path: "/document-type/search", opts: api.RequestOptions{Params: params}},
-		)
-		if err != nil {
-			return err
-		}
-		return printResult(cmd, deps, result)
-	}}
-	cmd.Flags().StringVar(&paramsRaw, "params", "", "Query parameters as JSON")
-	cmd.Flags().StringVar(&query, "query", "", "Search query")
-	return cmd
+		},
+	})
 }
 
 func doctypeCreate(deps Dependencies) *cobra.Command {
@@ -185,65 +116,26 @@ func doctypeCreate(deps Dependencies) *cobra.Command {
 		if element {
 			body["isElement"] = true
 		}
-		result, err := deps.Client.Post(context.Background(), "/document-type", body, api.RequestOptions{DryRun: dryRun})
+		result, err := deps.Client.Post(cmd.Context(), "/document-type", body, api.RequestOptions{DryRun: dryRun})
 		if err != nil {
 			return err
 		}
 		return printResult(cmd, deps, createResult(result, body, "icon"))
 	}}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Create payload as JSON")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
+	addDryRunFlag(cmd, &dryRun)
 	cmd.Flags().BoolVar(&printTemplate, "print-template", false, "Print an annotated JSON skeleton; substitute placeholders before passing to --json")
 	cmd.Flags().BoolVar(&element, "element", false, "Convenience flag for --json '{...,\"isElement\":true}'; overrides any isElement set in --json")
 	return cmd
 }
 
 func doctypeUpdate(deps Dependencies) *cobra.Command {
-	var jsonPayload string
-	var mergeJSON string
-	var dryRun bool
-	cmd := &cobra.Command{Use: "update <id>", Short: "Update document type", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		hasJSON := strings.TrimSpace(jsonPayload) != ""
-		hasMergeJSON := strings.TrimSpace(mergeJSON) != ""
-		if hasJSON == hasMergeJSON {
-			return fmt.Errorf("doctype update requires exactly one of --json or --merge-json")
-		}
-
-		if hasMergeJSON {
-			patch, err := parsePayload(mergeJSON)
-			if err != nil {
-				return err
-			}
-			normalizeDoctypePayload(patch)
-
-			current, err := fetchDoctypeObject(context.Background(), deps.Client, args[0])
-			if err != nil {
-				return err
-			}
-
-			merged := mergeAliasPayload(current, patch)
-			result, err := deps.Client.Put(context.Background(), api.JoinPath("/document-type/%s", args[0]), merged, api.RequestOptions{DryRun: dryRun})
-			if err != nil {
-				return err
-			}
-			return printResult(cmd, deps, result)
-		}
-
-		body, err := parsePayload(jsonPayload)
-		if err != nil {
-			return err
-		}
-		normalizeDoctypePayload(body)
-		result, err := deps.Client.Put(context.Background(), api.JoinPath("/document-type/%s", args[0]), body, api.RequestOptions{DryRun: dryRun})
-		if err != nil {
-			return err
-		}
-		return printResult(cmd, deps, result)
-	}}
-	cmd.Flags().StringVar(&jsonPayload, "json", "", "Update payload as JSON")
-	cmd.Flags().StringVar(&mergeJSON, "merge-json", "", "Partial JSON payload merged into the current document type before update")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
-	return cmd
+	return updateCommand(deps, updateSpec{
+		Use:       "update <id>",
+		Short:     "Update document type",
+		Path:      func(args []string) string { return api.JoinPath("/document-type/%s", args[0]) },
+		Normalize: normalizeDoctypePayload,
+	})
 }
 
 func doctypeAddProperty(deps Dependencies) *cobra.Command {
@@ -276,7 +168,8 @@ func doctypeAddProperty(deps Dependencies) *cobra.Command {
 				}
 			}
 
-			current, err := fetchDoctypeObject(context.Background(), deps.Client, args[0])
+			ctx := cmd.Context()
+			current, err := fetchDoctypeObject(ctx, deps.Client, args[0])
 			if err != nil {
 				return err
 			}
@@ -303,7 +196,7 @@ func doctypeAddProperty(deps Dependencies) *cobra.Command {
 				"properties": []any{property},
 			})
 			result, err := deps.Client.Put(
-				context.Background(),
+				ctx,
 				api.JoinPath("/document-type/%s", args[0]),
 				merged,
 				api.RequestOptions{DryRun: dryRun},
@@ -311,7 +204,7 @@ func doctypeAddProperty(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, deps, result)
+			return printMutationResult(cmd, deps, "updated", result, dryRun)
 		},
 	}
 
@@ -321,7 +214,7 @@ func doctypeAddProperty(deps Dependencies) *cobra.Command {
 	cmd.Flags().StringVar(&container, "container", "", "Name of the existing tab/group container that should hold the property (case-insensitive match)")
 	cmd.Flags().StringVar(&description, "description", "", "Optional property description")
 	cmd.Flags().BoolVar(&mandatory, "mandatory", false, "Mark the property as mandatory")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
+	addDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
@@ -358,7 +251,8 @@ func doctypeAddContainer(deps Dependencies) *cobra.Command {
 				return fmt.Errorf("--type must be Tab or Group, got %q", containerType)
 			}
 
-			current, err := fetchDoctypeObject(context.Background(), deps.Client, args[0])
+			ctx := cmd.Context()
+			current, err := fetchDoctypeObject(ctx, deps.Client, args[0])
 			if err != nil {
 				return err
 			}
@@ -394,7 +288,7 @@ func doctypeAddContainer(deps Dependencies) *cobra.Command {
 			nextContainers = append(nextContainers, container)
 			merged := mergeAliasPayload(current, map[string]any{"containers": nextContainers})
 			result, err := deps.Client.Put(
-				context.Background(),
+				ctx,
 				api.JoinPath("/document-type/%s", args[0]),
 				merged,
 				api.RequestOptions{DryRun: dryRun},
@@ -402,86 +296,37 @@ func doctypeAddContainer(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, deps, result)
+			return printMutationResult(cmd, deps, "updated", result, dryRun)
 		},
 	}
 
 	cmd.Flags().StringVar(&name, "name", "", "Display name for the new container")
 	cmd.Flags().StringVar(&containerType, "type", "", "Container type: Tab or Group")
 	cmd.Flags().StringVar(&parent, "parent", "", "Optional name of an existing parent container (typically a Tab when adding a Group)")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
+	addDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
 func doctypeCopy(deps Dependencies) *cobra.Command {
-	var jsonPayload string
-	var to string
-	var dryRun bool
-	cmd := &cobra.Command{Use: "copy <id>", Short: "Copy document type", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		var body map[string]any
-		var err error
-		if jsonPayload != "" {
-			body, err = parsePayload(jsonPayload)
-		} else {
-			if err := requireValue("--to", to); err != nil {
-				return err
-			}
-			body = map[string]any{"target": map[string]any{"id": to}}
-		}
-		if err != nil {
-			return err
-		}
-		result, err := deps.Client.Post(context.Background(), api.JoinPath("/document-type/%s/copy", args[0]), body, api.RequestOptions{DryRun: dryRun})
-		if err != nil {
-			return err
-		}
-		return printResult(cmd, deps, result)
-	}}
-	cmd.Flags().StringVar(&jsonPayload, "json", "", "Copy payload as JSON")
-	cmd.Flags().StringVar(&to, "to", "", "Target parent ID")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
-	return cmd
+	return targetActionCommand(deps, targetActionSpec{
+		Use:   "copy <id>",
+		Short: "Copy document type",
+		Path:  func(args []string) string { return api.JoinPath("/document-type/%s/copy", args[0]) },
+		Verb:  "copied",
+	})
 }
 
 func doctypeMove(deps Dependencies) *cobra.Command {
-	var jsonPayload string
-	var to string
-	var dryRun bool
-	cmd := &cobra.Command{Use: "move <id>", Short: "Move document type", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		var body map[string]any
-		var err error
-		if jsonPayload != "" {
-			body, err = parsePayload(jsonPayload)
-		} else {
-			if err := requireValue("--to", to); err != nil {
-				return err
-			}
-			body = map[string]any{"target": map[string]any{"id": to}}
-		}
-		if err != nil {
-			return err
-		}
-		result, err := deps.Client.Post(context.Background(), api.JoinPath("/document-type/%s/move", args[0]), body, api.RequestOptions{DryRun: dryRun})
-		if err != nil {
-			return err
-		}
-		return printResult(cmd, deps, result)
-	}}
-	cmd.Flags().StringVar(&jsonPayload, "json", "", "Move payload as JSON")
-	cmd.Flags().StringVar(&to, "to", "", "Target parent ID")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
-	return cmd
+	return targetActionCommand(deps, targetActionSpec{
+		Use:   "move <id>",
+		Short: "Move document type",
+		Path:  func(args []string) string { return api.JoinPath("/document-type/%s/move", args[0]) },
+		Verb:  "moved",
+	})
 }
 
 func doctypeDelete(deps Dependencies) *cobra.Command {
-	var dryRun bool
-	cmd := &cobra.Command{Use: "delete <id>", Short: "Delete document type", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		result, err := deps.Client.Delete(context.Background(), api.JoinPath("/document-type/%s", args[0]), api.RequestOptions{DryRun: dryRun})
-		if err != nil {
-			return err
-		}
-		return printResult(cmd, deps, result)
-	}}
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned request without executing")
-	return cmd
+	return deleteCommand(deps, "delete <id>", "Permanently delete a document type (content of this type loses its definition)", func(args []string) string {
+		return api.JoinPath("/document-type/%s", args[0])
+	})
 }
