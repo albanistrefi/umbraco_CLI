@@ -313,6 +313,56 @@ func TestDocumentRestoreUsesRecycleBinRouteFirst(t *testing.T) {
 	}
 }
 
+func TestDocumentRestoreFallsBackToLegacyWhenRecycleBinAPIAbsent(t *testing.T) {
+	// Older servers have neither the original-parent lookup nor the modern
+	// restore route; the command must still reach the legacy POST.
+	var observed []string
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		return tokenOr404(t, req, func(req *http.Request) (*http.Response, error) {
+			observed = append(observed, req.Method+" "+req.URL.Path)
+			if req.URL.Path == "/umbraco/management/api/v1/document/doc-1/restore" && req.Method == http.MethodPost {
+				return endpointJSONResponse(http.StatusOK, ``), nil
+			}
+			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		})
+	})
+
+	output, err := execute(buildRootWithCollections(t, deps), "document", "restore", "doc-1")
+	if err != nil {
+		t.Fatalf("document restore failed on legacy server: %v", err)
+	}
+	want := []string{
+		"GET /umbraco/management/api/v1/recycle-bin/document/doc-1/original-parent",
+		"PUT /umbraco/management/api/v1/recycle-bin/document/doc-1/restore",
+		"POST /umbraco/management/api/v1/document/doc-1/restore",
+	}
+	if len(observed) != 3 || observed[0] != want[0] || observed[1] != want[1] || observed[2] != want[2] {
+		t.Fatalf("expected lookup then modern-then-legacy restore, got %v", observed)
+	}
+	if !strings.Contains(output, `"restored": true`) {
+		t.Fatalf("expected restored coalescing, got %s", output)
+	}
+}
+
+func TestDocumentUpdateSurfacesFetchErrorsUnmasked(t *testing.T) {
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		return tokenOr404(t, req, func(req *http.Request) (*http.Response, error) {
+			return endpointJSONResponse(http.StatusInternalServerError, `{"title":"boom"}`), nil
+		})
+	})
+
+	_, err := execute(buildRootWithCollections(t, deps), "document", "update", "doc-1", "--merge-json", `{"values":[]}`)
+	if err == nil {
+		t.Fatalf("expected fetch failure to propagate")
+	}
+	if strings.Contains(err.Error(), "requires exactly one of") {
+		t.Fatalf("fetch failure must not be masked as a flag-validation error, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "API 500") {
+		t.Fatalf("expected the real API error, got: %v", err)
+	}
+}
+
 func TestUserPermissionsSelectsSurfaceByType(t *testing.T) {
 	var observedPath string
 	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
