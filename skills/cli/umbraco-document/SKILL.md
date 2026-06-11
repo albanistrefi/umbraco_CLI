@@ -85,6 +85,7 @@ umbraco document children <id>
 | `--first-n` | int | 0 | Return only the first N items from item collections |
 | `--ids-only` | bool | false | Return only item IDs for item collections |
 | `--params` | string | — | Query parameters as JSON |
+| `--resolve-doctype` | bool | false | Annotate each item's documentType with its alias (tree responses carry only the id; this fetches each distinct document type once) |
 | `--skip` | int | -1 | Skip count (passes through as ?skip=N; lets you walk past the server page size on large children/root collections) |
 | `--summarize` | bool | false | Return only id/name/alias fields for item collections |
 | `--take` | int | -1 | Take count (passes through as ?take=N; combine with --skip to page) |
@@ -166,6 +167,7 @@ umbraco document root
 | `--first-n` | int | 0 | Return only the first N items from item collections |
 | `--ids-only` | bool | false | Return only item IDs for item collections |
 | `--params` | string | — | Query parameters as JSON |
+| `--resolve-doctype` | bool | false | Annotate each item's documentType with its alias (tree responses carry only the id; this fetches each distinct document type once) |
 | `--skip` | int | -1 | Skip count (passes through as ?skip=N; lets you walk past the server page size on large children/root collections) |
 | `--summarize` | bool | false | Return only id/name/alias fields for item collections |
 | `--take` | int | -1 | Take count (passes through as ?take=N; combine with --skip to page) |
