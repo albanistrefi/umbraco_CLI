@@ -292,8 +292,9 @@ skills into whichever harness directory you point it at is on the roadmap.
 - `health` (4)
 - `tree` (1)
 - `auth` (3)
+- `automate` (53, experimental — gated behind `UMBRACO_CLI_ENABLE_AUTOMATE=1`; see below)
 
-Total: **151 commands**
+Total: **216 runnable commands** counting every nested subcommand (163 in the always-visible CLI + 53 in the gated `automate` group). Group counts above are direct subcommands; nested subgroups like `document version` and `automate workspace group` add the rest.
 
 ## Umbraco Automate (experimental)
 
