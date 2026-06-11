@@ -266,6 +266,13 @@ var endpointBindings = map[string]endpointBinding{
 	"automate.connection.update":                {Method: "PUT", Path: "/connections/{id}"},
 	"automate.connection.delete":                {Method: "DELETE", Path: "/connections/{id}"},
 	"automate.connection.test":                  {Method: "POST", Path: "/connections/{id}/test"},
+	"automate.automation.create":                {Method: "POST", Path: "/automations"},
+	"automate.automation.update":                {Method: "PUT", Path: "/automations/{id}"},
+	"automate.automation.delete":                {Method: "DELETE", Path: "/automations/{id}"},
+	"automate.automation.publish":               {Method: "POST", Path: "/automations/{id}/publish"},
+	"automate.automation.unpublish":             {Method: "POST", Path: "/automations/{id}/unpublish"},
+	"automate.automation.re-enable":             {Method: "POST", Path: "/automations/{id}/re-enable"},
+	"automate.automation.ancestors":             {Method: "GET", Path: "/automations/{id}/ancestors"},
 
 	// user-group
 	"user-group.list":         {Method: "GET", Path: "/user-group"},

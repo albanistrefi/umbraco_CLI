@@ -149,6 +149,13 @@ func automateAutomation(deps Dependencies) *cobra.Command {
 	cmd := &cobra.Command{Use: "automation", Short: "Automation operations"}
 	cmd.AddCommand(automateAutomationList(deps))
 	cmd.AddCommand(automateAutomationGet(deps))
+	cmd.AddCommand(automateAutomationCreate(deps))
+	cmd.AddCommand(automateAutomationUpdate(deps))
+	cmd.AddCommand(automateAutomationDelete(deps))
+	cmd.AddCommand(automateAutomationLifecycle(deps, "publish", "Publish the automation's current draft so it goes live", "published"))
+	cmd.AddCommand(automateAutomationLifecycle(deps, "unpublish", "Unpublish the automation so it stops triggering", "unpublished"))
+	cmd.AddCommand(automateAutomationLifecycle(deps, "re-enable", "Re-enable an automation disabled after repeated failures", "re-enabled"))
+	cmd.AddCommand(automateAutomationAncestors(deps))
 	cmd.AddCommand(automateAutomationRuns(deps))
 	cmd.AddCommand(automateAutomationTrigger(deps))
 	cmd.AddCommand(automateAutomationExport(deps))

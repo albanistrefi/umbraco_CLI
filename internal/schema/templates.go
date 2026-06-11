@@ -128,6 +128,16 @@ var Templates = map[string]any{
 		"userGroups":         []any{"<user group GUID allowed to edit automations here>"},
 		"allowedConnections": []any{"<connection GUID automations here may use; pass [] for none>"},
 	},
+	"automate.automation.create": map[string]any{
+		"alias":       "<camelCase string, required>",
+		"name":        "<display name, required>",
+		"description": "<string, optional>",
+		"workspaceId": "<workspace GUID from 'automate workspace list', required>",
+		"groupId":     "<automation group GUID, optional>",
+		"trigger":     map[string]any{"alias": "<trigger alias from 'automate catalogue triggers'>", "settings": map[string]any{}},
+		"steps":       []any{map[string]any{"alias": "<action alias from 'automate catalogue actions'>", "settings": map[string]any{"<settingAlias>": "<value; bind earlier outputs with ${...}>"}}},
+		"connections": []any{"<connection GUID used by the steps; pass [] for none>"},
+	},
 	"automate.connection.create": map[string]any{
 		"alias":    "<camelCase string, required>",
 		"name":     "<display name, required>",
