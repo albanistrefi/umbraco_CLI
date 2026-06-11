@@ -61,7 +61,8 @@ func documentGet(deps Dependencies) *cobra.Command {
 }
 
 func documentRoot(deps Dependencies) *cobra.Command {
-	return collectionCommand(deps, collectionSpec{
+	var resolveDoctype bool
+	cmd := collectionCommand(deps, collectionSpec{
 		Use:   "root",
 		Short: "Get root documents (paginated; --skip/--take/--all)",
 		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
@@ -70,11 +71,20 @@ func documentRoot(deps Dependencies) *cobra.Command {
 				{path: "/document/root", opts: api.RequestOptions{Params: params}},
 			}
 		},
+		Enrich: func(ctx context.Context, result any) (any, error) {
+			if !resolveDoctype {
+				return result, nil
+			}
+			return resolveDocumentTypeAliases(ctx, deps, result)
+		},
 	})
+	addResolveDoctypeFlag(cmd, &resolveDoctype)
+	return cmd
 }
 
 func documentChildren(deps Dependencies) *cobra.Command {
-	return collectionCommand(deps, collectionSpec{
+	var resolveDoctype bool
+	cmd := collectionCommand(deps, collectionSpec{
 		Use:   "children <id>",
 		Short: "Get child documents (paginated; --skip/--take/--all)",
 		NArgs: 1,
@@ -84,7 +94,54 @@ func documentChildren(deps Dependencies) *cobra.Command {
 				{path: api.JoinPath("/document/%s/children", args[0]), opts: api.RequestOptions{Params: params}},
 			}
 		},
+		Enrich: func(ctx context.Context, result any) (any, error) {
+			if !resolveDoctype {
+				return result, nil
+			}
+			return resolveDocumentTypeAliases(ctx, deps, result)
+		},
 	})
+	addResolveDoctypeFlag(cmd, &resolveDoctype)
+	return cmd
+}
+
+func addResolveDoctypeFlag(cmd *cobra.Command, value *bool) {
+	cmd.Flags().BoolVar(value, "resolve-doctype", false, "Annotate each item's documentType with its alias (tree responses carry only the id; this fetches each distinct document type once)")
+}
+
+// resolveDocumentTypeAliases annotates the documentType reference on each
+// item with the type's alias. Tree responses carry only {id, icon} for the
+// document type, which leaves agents unable to reason about content types
+// without per-item lookups; this resolves each distinct type exactly once.
+func resolveDocumentTypeAliases(ctx context.Context, deps Dependencies, result any) (any, error) {
+	aliases := map[string]string{}
+	for _, item := range resultItems(result) {
+		entry, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		docType, ok := entry["documentType"].(map[string]any)
+		if !ok {
+			continue
+		}
+		id, _ := docType["id"].(string)
+		if id == "" {
+			continue
+		}
+		alias, known := aliases[id]
+		if !known {
+			detail, err := fetchObject(ctx, deps.Client, api.JoinPath("/document-type/%s", id), api.RequestOptions{})
+			if err != nil {
+				return nil, fmt.Errorf("could not resolve document type %s: %w", id, err)
+			}
+			alias, _ = detail["alias"].(string)
+			aliases[id] = alias
+		}
+		if alias != "" {
+			docType["alias"] = alias
+		}
+	}
+	return result, nil
 }
 
 func documentAncestors(deps Dependencies) *cobra.Command {

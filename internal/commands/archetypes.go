@@ -110,6 +110,9 @@ type collectionSpec struct {
 	// candidate endpoints in fallback order. Params must not be mutated;
 	// candidates that need extra keys clone via withParam.
 	Endpoints func(args []string, params map[string]any) []getRequestCandidate
+	// Enrich, when non-nil, post-processes the fetched result before
+	// projection and triage (e.g. resolving referenced entity names).
+	Enrich func(ctx context.Context, result any) (any, error)
 }
 
 // collectionCommand builds a paginated collection read (root/children/list):
@@ -150,6 +153,12 @@ func collectionCommand(deps Dependencies, spec collectionSpec) *cobra.Command {
 			}
 			if err != nil {
 				return err
+			}
+			if spec.Enrich != nil {
+				result, err = spec.Enrich(ctx, result)
+				if err != nil {
+					return err
+				}
 			}
 			return printResult(cmd, deps, applyReadTriage(applyFieldsProjection(result, fields), triage))
 		},

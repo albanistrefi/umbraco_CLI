@@ -121,10 +121,15 @@ func selectTreeNodeByName(raw any, name string, location string) (treeNodeRef, e
 		if !ok {
 			continue
 		}
-		itemName, _ := itemMap["name"].(string)
 		itemID, _ := itemMap["id"].(string)
-		if itemName == name && itemID != "" {
-			matches = append(matches, treeNodeRef{ID: itemID, Name: itemName})
+		if itemID == "" {
+			continue
+		}
+		for _, itemName := range treeItemNames(itemMap) {
+			if itemName == name {
+				matches = append(matches, treeNodeRef{ID: itemID, Name: itemName})
+				break
+			}
 		}
 	}
 
@@ -136,4 +141,26 @@ func selectTreeNodeByName(raw any, name string, location string) (treeNodeRef, e
 	default:
 		return treeNodeRef{}, fmt.Errorf("tree walk found multiple matches for %q under %s", name, location)
 	}
+}
+
+// treeItemNames returns every name a tree item is known by. Older
+// Management APIs put a top-level name on tree items; modern ones carry
+// per-culture names inside variants[] with no top-level field, which made
+// matching on item["name"] silently find nothing.
+func treeItemNames(item map[string]any) []string {
+	names := make([]string, 0, 2)
+	if name, ok := item["name"].(string); ok && name != "" {
+		names = append(names, name)
+	}
+	variants, _ := item["variants"].([]any)
+	for _, raw := range variants {
+		variant, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		if name, ok := variant["name"].(string); ok && name != "" {
+			names = append(names, name)
+		}
+	}
+	return names
 }

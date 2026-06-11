@@ -383,3 +383,64 @@ func TestUserPermissionsSelectsSurfaceByType(t *testing.T) {
 		t.Fatalf("expected invalid --type to fail")
 	}
 }
+
+func TestTreeWalkMatchesVariantNames(t *testing.T) {
+	// Modern tree items carry names inside variants[] with no top-level
+	// name field; matching used to silently find nothing.
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		return tokenOr404(t, req, func(req *http.Request) (*http.Response, error) {
+			switch {
+			case req.URL.Path == "/umbraco/management/api/v1/tree/document/root":
+				return endpointJSONResponse(http.StatusOK, `{"total":1,"items":[{"id":"home-1","variants":[{"culture":null,"name":"Home"}]}]}`), nil
+			case req.URL.Path == "/umbraco/management/api/v1/tree/document/children" && req.URL.Query().Get("parentId") == "home-1":
+				return endpointJSONResponse(http.StatusOK, `{"total":1,"items":[{"id":"blog-1","variants":[{"culture":null,"name":"Blog"}]}]}`), nil
+			default:
+				return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			}
+		})
+	})
+
+	output, err := execute(buildRootWithCollections(t, deps), "tree", "walk", "Home/Blog")
+	if err != nil {
+		t.Fatalf("tree walk failed: %v", err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("decode output: %v", err)
+	}
+	if payload["id"] != "blog-1" || payload["name"] != "Blog" {
+		t.Fatalf("unexpected walk result: %+v", payload)
+	}
+}
+
+func TestDocumentChildrenResolveDoctypeFetchesEachTypeOnce(t *testing.T) {
+	doctypeFetches := 0
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		return tokenOr404(t, req, func(req *http.Request) (*http.Response, error) {
+			switch {
+			case req.URL.Path == "/umbraco/management/api/v1/tree/document/children":
+				return endpointJSONResponse(http.StatusOK, `{"total":2,"items":[
+					{"id":"a","documentType":{"id":"dt-1","icon":"icon-doc"},"variants":[{"name":"A"}]},
+					{"id":"b","documentType":{"id":"dt-1","icon":"icon-doc"},"variants":[{"name":"B"}]}
+				]}`), nil
+			case req.URL.Path == "/umbraco/management/api/v1/document-type/dt-1":
+				doctypeFetches++
+				return endpointJSONResponse(http.StatusOK, `{"id":"dt-1","alias":"contentPage"}`), nil
+			default:
+				return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			}
+		})
+	})
+
+	output, err := execute(buildRootWithCollections(t, deps),
+		"document", "children", "home-1", "--resolve-doctype")
+	if err != nil {
+		t.Fatalf("document children --resolve-doctype failed: %v", err)
+	}
+	if doctypeFetches != 1 {
+		t.Fatalf("expected one fetch for one distinct type, got %d", doctypeFetches)
+	}
+	if !strings.Contains(output, `"alias": "contentPage"`) {
+		t.Fatalf("expected annotated alias, got %s", output)
+	}
+}
