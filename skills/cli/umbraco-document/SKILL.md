@@ -26,15 +26,16 @@ umbraco document <command> [flags]
 | `document are-referenced` | Bulk check: which of these document IDs are referenced by something |
 | `document audit-log <id>` | List the audit trail for a document (who did what, when) |
 | `document children <id>` | Get child documents (paginated; --skip/--take/--all) |
-| `document domains` | Culture domains (hostname → language routing) on a document |
+| `document domains get <id>` | Get the domains assigned to a document |
 | `document get <id>` | Get a document by ID |
-| `document public-access` | Member protection (login-required access) on a document |
+| `document public-access get <id>` | Get the public-access (member protection) rules on a document |
 | `document publish-descendants-result <id> <task-id>` | Check the progress of an asynchronous publish-descendants run |
 | `document referenced-descendants <id>` | List items that reference this document or any of its descendants |
 | `document references <id>` | List items that reference this document (paginated; --skip/--take/--all) |
 | `document root` | Get root documents (paginated; --skip/--take/--all) |
 | `document search` | Search documents |
-| `document version` | Document version history: list, inspect, roll back |
+| `document version get <version-id>` | Get a stored document version (the full payload as it was) |
+| `document version list <document-id>` | List stored versions of a document (paginated; --skip/--take/--all) |
 
 ### ancestors
 
@@ -88,10 +89,10 @@ umbraco document children <id>
 | `--summarize` | bool | false | Return only id/name/alias fields for item collections |
 | `--take` | int | -1 | Take count (passes through as ?take=N; combine with --skip to page) |
 
-### domains
+### domains get
 
 ```bash
-umbraco document domains
+umbraco document domains get <id>
 ```
 
 ### get
@@ -104,10 +105,10 @@ umbraco document get <id>
 |------|------|---------|-------------|
 | `--fields` | string | — | Limit response fields (comma-separated top-level keys) |
 
-### public-access
+### public-access get
 
 ```bash
-umbraco document public-access
+umbraco document public-access get <id>
 ```
 
 ### publish-descendants-result
@@ -183,11 +184,33 @@ umbraco document search
 | `--take` | int | -1 | Take count (passes through as ?take=N; combine with --skip to page) |
 | `--under` | string | — | Limit search to documents under the given parent ID |
 
-### version
+### version get
 
 ```bash
-umbraco document version
+umbraco document version get <version-id>
 ```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--fields` | string | — | Limit response fields (comma-separated top-level keys) |
+
+### version list
+
+```bash
+umbraco document version list <document-id>
+```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--all` | bool | false | Walk every page until exhausted (auto-paginates with --take as the page size, default 500; combine with --skip to start partway through). Bounded by an internal 100k-item ceiling. |
+| `--culture` | string | — | Limit versions to one culture on variant content |
+| `--fields` | string | — | Limit response fields (comma-separated top-level keys) |
+| `--first-n` | int | 0 | Return only the first N items from item collections |
+| `--ids-only` | bool | false | Return only item IDs for item collections |
+| `--params` | string | — | Query parameters as JSON |
+| `--skip` | int | -1 | Skip count (passes through as ?skip=N; lets you walk past the server page size on large children/root collections) |
+| `--summarize` | bool | false | Return only id/name/alias fields for item collections |
+| `--take` | int | -1 | Take count (passes through as ?take=N; combine with --skip to page) |
 
 ## Mutation Commands
 
@@ -199,7 +222,10 @@ umbraco document version
 | `document copy <id>` | Copy a document |
 | `document create` | Create a document |
 | `document csv-update` | Update multiple documents from a CSV file |
+| `document domains set <id>` | Replace the domains assigned to a document |
 | `document move <id>` | Move a document |
+| `document public-access remove <id>` | Remove the public-access rules from a document (makes it publicly visible again) |
+| `document public-access set <id>` | Create or replace the public-access rules on a document |
 | `document publish <id>` | Publish a document |
 | `document publish-descendants <id>` | Publish a document and its entire subtree |
 | `document restore <id>` | Restore a document from the recycle bin |
@@ -208,6 +234,8 @@ umbraco document version
 | `document unpublish <id>` | Unpublish a document |
 | `document update <id>` | Update a document |
 | `document update-properties <id>` | Update document properties (merges into values[] by alias) |
+| `document version prevent-cleanup <version-id>` | Pin a version so scheduled history cleanup never deletes it |
+| `document version rollback <version-id>` | Roll the document back to this version |
 
 ### bulk-update
 
@@ -305,6 +333,31 @@ umbraco document csv-update --dry-run
 umbraco document csv-update
 ```
 
+### domains set
+
+```bash
+umbraco document domains set <id>
+```
+
+PUT /document/{id}/domains. The PUT replaces the full set: pass every domain that should remain via repeated --domain host=isoCode flags (e.g. --domain example.dk=da-DK), or the raw payload via --json.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--default-iso-code` | string | — | Default culture for unmatched hosts |
+| `--domain` | stringArray | [] | Domain assignment as host=isoCode; repeat for multiple |
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--json` | string | — | Domains payload as JSON |
+
+**Safe pattern:**
+
+```bash
+# 1. Dry run first
+umbraco document domains set <id> --dry-run
+
+# 2. Execute
+umbraco document domains set <id>
+```
+
 ### move
 
 ```bash
@@ -325,6 +378,54 @@ umbraco document move <id> --dry-run
 
 # 2. Execute
 umbraco document move <id>
+```
+
+### public-access remove
+
+```bash
+umbraco document public-access remove <id>
+```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--force` | bool | false | Confirm removing member protection |
+
+**Safe pattern:**
+
+```bash
+# 1. Dry run first
+umbraco document public-access remove <id> --dry-run
+
+# 2. Execute
+umbraco document public-access remove <id>
+```
+
+### public-access set
+
+```bash
+umbraco document public-access set <id>
+```
+
+Sets member protection: which member groups (or named members) may view the document, plus the login and error pages. Payload shape:
+
+  {"loginDocument":{"id":"<guid>"},"errorDocument":{"id":"<guid>"},"memberGroupNames":["Members"],"memberUserNames":[]}
+
+The CLI checks whether rules already exist and issues POST (create) or PUT (replace) accordingly.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--json` | string | — | Public-access payload as JSON |
+
+**Safe pattern:**
+
+```bash
+# 1. Dry run first
+umbraco document public-access set <id> --dry-run
+
+# 2. Execute
+umbraco document public-access set <id>
 ```
 
 ### publish
@@ -529,6 +630,52 @@ umbraco document update-properties <id> --dry-run
 
 # 2. Execute
 umbraco document update-properties <id>
+```
+
+### version prevent-cleanup
+
+```bash
+umbraco document version prevent-cleanup <version-id>
+```
+
+PUT /document-version/{id}/prevent-cleanup. Pins the version by default; pass --disable to unpin it again.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--disable` | bool | false | Allow cleanup to delete this version again |
+| `--dry-run` | bool | false | Print the planned request without executing |
+
+**Safe pattern:**
+
+```bash
+# 1. Dry run first
+umbraco document version prevent-cleanup <version-id> --dry-run
+
+# 2. Execute
+umbraco document version prevent-cleanup <version-id>
+```
+
+### version rollback
+
+```bash
+umbraco document version rollback <version-id>
+```
+
+POST /document-version/{id}/rollback. Version IDs come from 'document version list'. On variant content pass --culture to roll back a single culture; omitting it rolls back the invariant data.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--culture` | string | — | Culture to roll back on variant content |
+| `--dry-run` | bool | false | Print the planned request without executing |
+
+**Safe pattern:**
+
+```bash
+# 1. Dry run first
+umbraco document version rollback <version-id> --dry-run
+
+# 2. Execute
+umbraco document version rollback <version-id>
 ```
 
 ## Discovering Commands

@@ -18,6 +18,7 @@ var CLIVersion = version.Current()
 func RegisterGenerateSkills(root *cobra.Command, deps Dependencies) {
 	var outputDir string
 	var filter string
+	var includeHidden bool
 
 	cmd := &cobra.Command{
 		Use:   "generate-skills",
@@ -26,8 +27,16 @@ func RegisterGenerateSkills(root *cobra.Command, deps Dependencies) {
 			if err := validate.String(outputDir); err != nil {
 				return fmt.Errorf("invalid output directory: %w", err)
 			}
+			if includeHidden && filter == "" {
+				return fmt.Errorf("--include-hidden requires --filter to avoid generating hidden commands into the public bundle unintentionally")
+			}
 
-			if err := skills.Generate(root.Root(), outputDir, filter, CLIVersion); err != nil {
+			opts := skills.GenerateOptions{
+				Filter:        filter,
+				Version:       CLIVersion,
+				IncludeHidden: includeHidden,
+			}
+			if err := skills.GenerateWithOptions(root.Root(), outputDir, opts); err != nil {
 				return err
 			}
 
@@ -38,5 +47,6 @@ func RegisterGenerateSkills(root *cobra.Command, deps Dependencies) {
 
 	cmd.Flags().StringVar(&outputDir, "output-dir", "skills/cli", "Directory to write generated skills")
 	cmd.Flags().StringVar(&filter, "filter", "", "Only generate skills matching this substring")
+	cmd.Flags().BoolVar(&includeHidden, "include-hidden", false, "Include hidden (feature-gated) commands; for private docs, requires --filter")
 	root.AddCommand(cmd)
 }

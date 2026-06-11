@@ -87,8 +87,12 @@ func webhookUpdate(deps Dependencies) *cobra.Command {
 }
 
 func webhookDelete(deps Dependencies) *cobra.Command {
-	return deleteCommand(deps, "delete <id>", "Permanently delete a webhook", func(args []string) string {
-		return api.JoinPath("/webhook/%s", args[0])
+	return deleteCommand(deps, deleteSpec{
+		Use:   "delete <id>",
+		Short: "Permanently delete a webhook",
+		Path: func(args []string) string {
+			return api.JoinPath("/webhook/%s", args[0])
+		},
 	})
 }
 

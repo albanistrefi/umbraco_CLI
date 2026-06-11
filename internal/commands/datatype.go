@@ -379,8 +379,12 @@ Pass --merge-json for partial edits.`,
 }
 
 func datatypeDelete(deps Dependencies) *cobra.Command {
-	return deleteCommand(deps, "delete <id>", "Permanently delete a data type", func(args []string) string {
-		return api.JoinPath(dataTypeLegacyCollectionPath+"/%s", args[0])
+	return deleteCommand(deps, deleteSpec{
+		Use:   "delete <id>",
+		Short: "Permanently delete a data type",
+		Path: func(args []string) string {
+			return api.JoinPath(dataTypeLegacyCollectionPath+"/%s", args[0])
+		},
 	})
 }
 

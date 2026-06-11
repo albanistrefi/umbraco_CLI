@@ -1,11 +1,13 @@
-// Command gen generates openapi_generated.go from the vendored Management
-// API OpenAPI document (openapi.json). Refresh the document from a running
+// Command gen generates openapi_generated.go from the vendored OpenAPI
+// documents (openapi.json for the core Management API, openapi-automate.json
+// for the Umbraco Automate Management API). Refresh them from a running
 // instance with:
 //
 //	curl -sk https://localhost:44314/umbraco/swagger/management/swagger.json -o internal/schema/gen/openapi.json
+//	curl -sk https://localhost:44314/umbraco/swagger/automate-management/swagger.json -o internal/schema/gen/openapi-automate.json
 //
 // then run `go generate ./internal/schema`. CI fails when the generated
-// file drifts from the vendored document.
+// file drifts from the vendored documents.
 package main
 
 import (
@@ -168,64 +170,121 @@ func quote(s string) string {
 	return fmt.Sprintf("%q", s)
 }
 
-func main() {
-	payload, err := os.ReadFile("gen/openapi.json")
-	if err != nil {
-		log.Fatalf("read openapi document: %v", err)
-	}
-	var doc document
-	if err := json.Unmarshal(payload, &doc); err != nil {
-		log.Fatalf("parse openapi document: %v", err)
-	}
-	g := &generator{schemas: doc.Components.Schemas}
+// sources lists the vendored OpenAPI documents and the API mount each one
+// describes. The core mount is the default and omits APIRoot in generated
+// entries; additional mounts (Automate) carry theirs explicitly.
+var sources = []struct {
+	file  string
+	mount string
+}{
+	{file: "gen/openapi.json", mount: apiPrefix},
+	{file: "gen/openapi-automate.json", mount: "/umbraco/automate/management/api/v1"},
+}
 
+func main() {
 	type entry struct {
 		key  string
 		code string
 	}
-	entries := make([]entry, 0, len(doc.Paths)*2)
+	var entries []entry
+	seen := map[string]string{}
 
-	for fullPath, ops := range doc.Paths {
-		relative := strings.TrimPrefix(fullPath, apiPrefix)
-		if relative == fullPath {
-			continue // outside the management mount
+	for _, source := range sources {
+		payload, err := os.ReadFile(source.file)
+		if err != nil {
+			log.Fatalf("read openapi document %s: %v", source.file, err)
 		}
-		for method, op := range ops {
-			upper := strings.ToUpper(method)
-			if upper != "GET" && upper != "POST" && upper != "PUT" && upper != "DELETE" && upper != "PATCH" {
-				continue
-			}
+		var doc document
+		if err := json.Unmarshal(payload, &doc); err != nil {
+			log.Fatalf("parse openapi document %s: %v", source.file, err)
+		}
+		g := &generator{schemas: doc.Components.Schemas}
 
-			var b strings.Builder
-			fmt.Fprintf(&b, "{Method: %s, Path: %s", quote(upper), quote(relative))
-
-			pathParams := make([]parameter, 0)
-			queryParams := make([]parameter, 0)
-			for _, p := range op.Parameters {
-				switch p.In {
-				case "path":
-					pathParams = append(pathParams, p)
-				case "query":
-					queryParams = append(queryParams, p)
-				}
+		for fullPath, ops := range doc.Paths {
+			relative := strings.TrimPrefix(fullPath, source.mount)
+			if relative == fullPath {
+				continue // outside this document's mount
 			}
-			writeParams := func(label string, params []parameter) {
-				if len(params) == 0 {
-					return
+			for method, op := range ops {
+				upper := strings.ToUpper(method)
+				if upper != "GET" && upper != "POST" && upper != "PUT" && upper != "DELETE" && upper != "PATCH" {
+					continue
 				}
-				sort.Slice(params, func(i, j int) bool { return params[i].Name < params[j].Name })
-				fmt.Fprintf(&b, ", %s: map[string]ParamSchema{", label)
-				for i, p := range params {
-					if i > 0 {
-						b.WriteString(", ")
+
+				key := upper + " " + relative
+				if previous, exists := seen[key]; exists {
+					log.Fatalf("operation %q is declared by both %s and %s; bindings key on method+path, so mounts must not overlap", key, previous, source.file)
+				}
+				seen[key] = source.file
+
+				var b strings.Builder
+				fmt.Fprintf(&b, "{Method: %s, Path: %s", quote(upper), quote(relative))
+				if source.mount != apiPrefix {
+					fmt.Fprintf(&b, ", APIRoot: %s", quote(source.mount))
+				}
+
+				pathParams := make([]parameter, 0)
+				queryParams := make([]parameter, 0)
+				for _, p := range op.Parameters {
+					switch p.In {
+					case "path":
+						pathParams = append(pathParams, p)
+					case "query":
+						queryParams = append(queryParams, p)
 					}
-					typ, format, description := g.paramSchema(p)
-					fmt.Fprintf(&b, "%s: {Type: %s", quote(p.Name), quote(typ))
-					if format != "" {
-						fmt.Fprintf(&b, ", Format: %s", quote(format))
+				}
+				writeParams := func(label string, params []parameter) {
+					if len(params) == 0 {
+						return
 					}
-					if p.Required {
-						b.WriteString(", Required: true")
+					sort.Slice(params, func(i, j int) bool { return params[i].Name < params[j].Name })
+					fmt.Fprintf(&b, ", %s: map[string]ParamSchema{", label)
+					for i, p := range params {
+						if i > 0 {
+							b.WriteString(", ")
+						}
+						typ, format, description := g.paramSchema(p)
+						fmt.Fprintf(&b, "%s: {Type: %s", quote(p.Name), quote(typ))
+						if format != "" {
+							fmt.Fprintf(&b, ", Format: %s", quote(format))
+						}
+						if p.Required {
+							b.WriteString(", Required: true")
+						}
+						if description != "" {
+							fmt.Fprintf(&b, ", Description: %s", quote(description))
+						}
+						b.WriteString("}")
+					}
+					b.WriteString("}")
+				}
+				writeParams("PathParams", pathParams)
+				writeParams("QueryParams", queryParams)
+
+				if bodyType, required, props, description := g.requestBodySchema(op.RequestBody); bodyType != "" {
+					fmt.Fprintf(&b, ", RequestBody: &ObjectSchema{Type: %s", quote(bodyType))
+					if len(required) > 0 {
+						sort.Strings(required)
+						quoted := make([]string, len(required))
+						for i, r := range required {
+							quoted[i] = quote(r)
+						}
+						fmt.Fprintf(&b, ", Required: []string{%s}", strings.Join(quoted, ", "))
+					}
+					if len(props) > 0 {
+						keys := make([]string, 0, len(props))
+						for k := range props {
+							keys = append(keys, k)
+						}
+						sort.Strings(keys)
+						b.WriteString(", Properties: map[string]any{")
+						for i, k := range keys {
+							if i > 0 {
+								b.WriteString(", ")
+							}
+							fmt.Fprintf(&b, "%s: %s", quote(k), quote(props[k]))
+						}
+						b.WriteString("}")
 					}
 					if description != "" {
 						fmt.Fprintf(&b, ", Description: %s", quote(description))
@@ -233,43 +292,9 @@ func main() {
 					b.WriteString("}")
 				}
 				b.WriteString("}")
-			}
-			writeParams("PathParams", pathParams)
-			writeParams("QueryParams", queryParams)
 
-			if bodyType, required, props, description := g.requestBodySchema(op.RequestBody); bodyType != "" {
-				fmt.Fprintf(&b, ", RequestBody: &ObjectSchema{Type: %s", quote(bodyType))
-				if len(required) > 0 {
-					sort.Strings(required)
-					quoted := make([]string, len(required))
-					for i, r := range required {
-						quoted[i] = quote(r)
-					}
-					fmt.Fprintf(&b, ", Required: []string{%s}", strings.Join(quoted, ", "))
-				}
-				if len(props) > 0 {
-					keys := make([]string, 0, len(props))
-					for k := range props {
-						keys = append(keys, k)
-					}
-					sort.Strings(keys)
-					b.WriteString(", Properties: map[string]any{")
-					for i, k := range keys {
-						if i > 0 {
-							b.WriteString(", ")
-						}
-						fmt.Fprintf(&b, "%s: %s", quote(k), quote(props[k]))
-					}
-					b.WriteString("}")
-				}
-				if description != "" {
-					fmt.Fprintf(&b, ", Description: %s", quote(description))
-				}
-				b.WriteString("}")
+				entries = append(entries, entry{key: key, code: b.String()})
 			}
-			b.WriteString("}")
-
-			entries = append(entries, entry{key: upper + " " + relative, code: b.String()})
 		}
 	}
 
@@ -277,7 +302,7 @@ func main() {
 
 	var out strings.Builder
 	out.WriteString("// Code generated by go generate ./internal/schema; DO NOT EDIT.\n")
-	out.WriteString("// Source: gen/openapi.json (Umbraco Management API OpenAPI document).\n\n")
+	out.WriteString("// Sources: gen/openapi.json, gen/openapi-automate.json (Umbraco Management API OpenAPI documents).\n\n")
 	out.WriteString("package schema\n\n")
 	out.WriteString("// openAPIOperations maps \"METHOD /path\" (relative to the API mount) to\n")
 	out.WriteString("// the operation detail published in the Management API OpenAPI document.\n")

@@ -22,6 +22,7 @@ type ObjectSchema struct {
 type Schema struct {
 	Endpoint    string                 `json:"endpoint"`
 	Method      string                 `json:"method"`
+	APIRoot     string                 `json:"apiRoot,omitempty"`
 	Path        string                 `json:"path"`
 	PathParams  map[string]ParamSchema `json:"pathParams,omitempty"`
 	QueryParams map[string]ParamSchema `json:"queryParams,omitempty"`
@@ -30,7 +31,10 @@ type Schema struct {
 }
 
 type rawSchema struct {
-	Method      string
+	Method string
+	// APIRoot is the API mount when it differs from the default core
+	// Management API (e.g. the Automate Management API).
+	APIRoot     string
 	Path        string
 	PathParams  map[string]ParamSchema
 	QueryParams map[string]ParamSchema
@@ -222,6 +226,62 @@ var endpointBindings = map[string]endpointBinding{
 	"user.current":     {Method: "GET", Path: "/user/current", ExtraQuery: withFields},
 	"user.permissions": {Method: "GET", Path: "/user/current/permissions"},
 
+	// automate (gated behind UMBRACO_CLI_ENABLE_AUTOMATE; served from the
+	// Automate Management API mount, which generated entries carry as APIRoot)
+	"automate.catalogue.actions":                {Method: "GET", Path: "/catalogue/actions"},
+	"automate.catalogue.triggers":               {Method: "GET", Path: "/catalogue/triggers"},
+	"automate.catalogue.connection-types":       {Method: "GET", Path: "/catalogue/connection-types"},
+	"automate.catalogue.control-flows":          {Method: "GET", Path: "/catalogue/control-flows"},
+	"automate.catalogue.notification-channels":  {Method: "GET", Path: "/catalogue/notification-channels"},
+	"automate.catalogue.webhook-authenticators": {Method: "GET", Path: "/catalogue/webhook-authenticators"},
+	"automate.catalogue.step-types":             {Method: "GET", Path: "/catalogue/step-types"},
+	"automate.catalogue.output-schema":          {Method: "POST", Path: "/catalogue/step-types/{alias}/output-schema"},
+	"automate.automation.list":                  {Method: "GET", Path: "/automations"},
+	"automate.automation.get":                   {Method: "GET", Path: "/automations/{id}"},
+	"automate.automation.runs":                  {Method: "GET", Path: "/automations/{id}/runs"},
+	"automate.automation.trigger":               {Method: "POST", Path: "/automations/{id}/trigger"},
+	"automate.automation.export":                {Method: "GET", Path: "/automations/{id}/export"},
+	"automate.run.get":                          {Method: "GET", Path: "/runs/{id}"},
+	"automate.run.replay":                       {Method: "POST", Path: "/runs/{id}/replay"},
+	"automate.run.resume":                       {Method: "POST", Path: "/runs/{id}/resume"},
+	"automate.run.suspend":                      {Method: "POST", Path: "/runs/{id}/suspend"},
+	"automate.run.terminate":                    {Method: "POST", Path: "/runs/{id}/terminate"},
+	"automate.approvals.pending":                {Method: "GET", Path: "/approvals/pending"},
+	"automate.approvals.decide":                 {Method: "POST", Path: "/approvals/{runId}/steps/{stepId}/decision"},
+	"automate.metrics.summary":                  {Method: "GET", Path: "/metrics"},
+	"automate.metrics.by-automation":            {Method: "GET", Path: "/metrics/by-automation"},
+	"automate.workspace.list":                   {Method: "GET", Path: "/workspaces"},
+	"automate.workspace.get":                    {Method: "GET", Path: "/workspaces/{id}"},
+	"automate.workspace.create":                 {Method: "POST", Path: "/workspaces"},
+	"automate.workspace.update":                 {Method: "PUT", Path: "/workspaces/{id}"},
+	"automate.workspace.delete":                 {Method: "DELETE", Path: "/workspaces/{id}"},
+	"automate.workspace.group.list":             {Method: "GET", Path: "/workspaces/{id}/groups"},
+	"automate.workspace.group.get":              {Method: "GET", Path: "/workspaces/{id}/groups/{groupId}"},
+	"automate.workspace.group.add":              {Method: "POST", Path: "/workspaces/{id}/groups"},
+	"automate.workspace.group.update":           {Method: "PUT", Path: "/workspaces/{id}/groups/{groupId}"},
+	"automate.workspace.group.remove":           {Method: "DELETE", Path: "/workspaces/{id}/groups/{groupId}"},
+	"automate.connection.list":                  {Method: "GET", Path: "/connections"},
+	"automate.connection.get":                   {Method: "GET", Path: "/connections/{id}"},
+	"automate.connection.create":                {Method: "POST", Path: "/connections"},
+	"automate.connection.update":                {Method: "PUT", Path: "/connections/{id}"},
+	"automate.connection.delete":                {Method: "DELETE", Path: "/connections/{id}"},
+	"automate.connection.test":                  {Method: "POST", Path: "/connections/{id}/test"},
+	"automate.automation.create":                {Method: "POST", Path: "/automations"},
+	"automate.automation.update":                {Method: "PUT", Path: "/automations/{id}"},
+	"automate.automation.delete":                {Method: "DELETE", Path: "/automations/{id}"},
+	"automate.automation.publish":               {Method: "POST", Path: "/automations/{id}/publish"},
+	"automate.automation.unpublish":             {Method: "POST", Path: "/automations/{id}/unpublish"},
+	"automate.automation.re-enable":             {Method: "POST", Path: "/automations/{id}/re-enable"},
+	"automate.automation.ancestors":             {Method: "GET", Path: "/automations/{id}/ancestors"},
+	"automate.automation.validate":              {Method: "POST", Path: "/automations/import/validate"},
+	"automate.automation.import":                {Method: "POST", Path: "/automations/import"},
+	"automate.automation.import-update":         {Method: "PUT", Path: "/automations/{id}/import"},
+	"automate.version-history.types":            {Method: "GET", Path: "/version-history/supported-types"},
+	"automate.version-history.list":             {Method: "GET", Path: "/version-history/{entityType}/{entityId}"},
+	"automate.version-history.get":              {Method: "GET", Path: "/version-history/{entityType}/{entityId}/{entityVersion}"},
+	"automate.version-history.compare":          {Method: "GET", Path: "/version-history/{entityType}/{entityId}/{fromEntityVersion}/compare/{toEntityVersion}"},
+	"automate.version-history.rollback":         {Method: "POST", Path: "/version-history/{entityType}/{entityId}/{entityVersion}/rollback"},
+
 	// user-group
 	"user-group.list":         {Method: "GET", Path: "/user-group"},
 	"user-group.get":          {Method: "GET", Path: "/user-group/{id}", ExtraQuery: withFields},
@@ -263,6 +323,7 @@ func buildSchemas() map[string]Schema {
 		result[endpoint] = Schema{
 			Endpoint:    endpoint,
 			Method:      raw.Method,
+			APIRoot:     raw.APIRoot,
 			Path:        raw.Path,
 			PathParams:  raw.PathParams,
 			QueryParams: raw.QueryParams,

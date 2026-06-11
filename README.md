@@ -295,6 +295,25 @@ skills into whichever harness directory you point it at is on the roadmap.
 
 Total: **151 commands**
 
+## Umbraco Automate (experimental)
+
+The CLI ships a gated `automate` command group for [Umbraco Automate](https://docs.umbraco.com/umbraco-automate):
+catalogue discovery, automation authoring (create/update/publish, plus an
+export → validate → import round-trip), run control, approvals, workspaces,
+connections, version history with rollback, and metrics. The Automate
+Management API surface is still settling post-launch, so the group is opt-in
+and hidden from `--help` and the public skills bundle:
+
+```bash
+export UMBRACO_CLI_ENABLE_AUTOMATE=1
+umbraco automate workspace list
+umbraco automate automation list --fields id,name
+umbraco automate automation export <id> > automation.json
+umbraco automate automation validate --workspace-id <ws> --file automation.json
+```
+
+Private docs for the gated group: `umbraco generate-skills --include-hidden --filter automate --output-dir <dir>`.
+
 ## Agent Safety Rules
 
 - Use `--dry-run` first for all mutating commands; it prints the planned request without executing.

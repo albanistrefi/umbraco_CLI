@@ -110,8 +110,12 @@ func languageUpdate(deps Dependencies) *cobra.Command {
 }
 
 func languageDelete(deps Dependencies) *cobra.Command {
-	return deleteCommand(deps, "delete <iso-code>", "Permanently delete a language (content variants for it become unreachable)", func(args []string) string {
-		return api.JoinPath("/language/%s", args[0])
+	return deleteCommand(deps, deleteSpec{
+		Use:   "delete <iso-code>",
+		Short: "Permanently delete a language (content variants for it become unreachable)",
+		Path: func(args []string) string {
+			return api.JoinPath("/language/%s", args[0])
+		},
 	})
 }
 

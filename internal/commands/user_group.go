@@ -96,8 +96,12 @@ func userGroupUpdate(deps Dependencies) *cobra.Command {
 }
 
 func userGroupDelete(deps Dependencies) *cobra.Command {
-	return deleteCommand(deps, "delete <id>", "Permanently delete a user group", func(args []string) string {
-		return api.JoinPath("/user-group/%s", args[0])
+	return deleteCommand(deps, deleteSpec{
+		Use:   "delete <id>",
+		Short: "Permanently delete a user group",
+		Path: func(args []string) string {
+			return api.JoinPath("/user-group/%s", args[0])
+		},
 	})
 }
 
