@@ -22,7 +22,7 @@ umbraco datatype <command> [flags]
 
 | Command | Description |
 |---------|-------------|
-| `datatype block` | Manage allowed blocks on a Block List / Block Grid datatype |
+| `datatype block list <datatypeId>` | List allowed blocks on a Block List / Block Grid datatype |
 | `datatype extensions <id>` | List enabled data type extension aliases |
 | `datatype get <id>` | Get data type by ID |
 | `datatype is-used <id>` | Check whether a data type is in use |
@@ -30,13 +30,11 @@ umbraco datatype <command> [flags]
 | `datatype root` | Get root data types (paginated; --skip/--take/--all) |
 | `datatype search` | Search data types |
 
-### block
+### block list
 
 ```bash
-umbraco datatype block
+umbraco datatype block list <datatypeId>
 ```
-
-Read-modify-write helpers that mutate the 'blocks' value entry on Umbraco.BlockList and Umbraco.BlockGrid datatypes without clobbering the rest of the configuration. Idempotent: 'add' is a no-op if the element type is already an allowed block; 'remove' is a no-op if it isn't; 'update' is a no-op if the resulting block is byte-identical to the current one.
 
 ### extensions
 
@@ -116,6 +114,9 @@ umbraco datatype search
 |---------|-------------|
 | `datatype add-extension <id> <extension-alias>` | Add an extension alias to the datatype extensions array |
 | `datatype add-value <id>` | Append a string value to a datatype array setting |
+| `datatype block add <datatypeId>` | Register an element type as an allowed block |
+| `datatype block remove <datatypeId>` | Unregister an element type from a Block List / Block Grid |
+| `datatype block update <datatypeId>` | Update an existing block's properties (partial; flags only mutate what you pass) |
 | `datatype create` | Create data type |
 | `datatype remove-extension <id> <extension-alias>` | Remove an extension alias from the datatype extensions array |
 | `datatype remove-value <id>` | Remove a string value from a datatype array setting |
@@ -161,6 +162,101 @@ umbraco datatype add-value <id> --dry-run
 
 # 2. Execute
 umbraco datatype add-value <id>
+```
+
+### block add
+
+```bash
+umbraco datatype block add <datatypeId>
+```
+
+Appends a block to the datatype's blocks array. Idempotent: if a block with the same --content-element-type is already present, no PUT is sent.
+
+BlockGrid: --allow-at-root and --allow-in-areas default to true so the block is actually placeable after registration (server-side both default to false when omitted, which would register a block that's invisible to editors). Pass --allow-at-root=false or --allow-in-areas=false to override. --group support over BlockGrid's blockGroups array is a deferred follow-up.
+
+BlockList: --allow-at-root and --allow-in-areas are ignored (those flags only apply to Block Grid).
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--allow-at-root` | bool | true | BlockGrid only: allow placing the block at the grid's root level (default true). Ignored for BlockList. |
+| `--allow-in-areas` | bool | true | BlockGrid only: allow placing the block inside areas of other blocks (default true). Ignored for BlockList. |
+| `--content-element-type` | string | — | GUID of the element type to register as a block (required) |
+| `--dry-run` | bool | false | Validate the resulting payload without writing it |
+| `--editor-size` | string | — | Overlay size: small | medium | large |
+| `--force-hide-content-editor` | bool | false | Hide the content editor in the overlay (settings-only blocks) |
+| `--label` | string | — | Optional label shown in the block picker; defaults to the element type's name |
+| `--settings-element-type` | string | — | GUID of the element type to use for the block's settings overlay (optional) |
+| `--thumbnail` | string | — | Optional path/URL to a thumbnail image |
+
+**Safe pattern:**
+
+```bash
+# 1. Dry run first
+umbraco datatype block add <datatypeId> --dry-run
+
+# 2. Execute
+umbraco datatype block add <datatypeId>
+```
+
+### block remove
+
+```bash
+umbraco datatype block remove <datatypeId>
+```
+
+Idempotent: if no block with --content-element-type is registered, no PUT is sent.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--content-element-type` | string | — | GUID of the element type to unregister (required) |
+| `--dry-run` | bool | false | Validate the resulting payload without writing it |
+
+**Safe pattern:**
+
+```bash
+# 1. Dry run first
+umbraco datatype block remove <datatypeId> --dry-run
+
+# 2. Execute
+umbraco datatype block remove <datatypeId>
+```
+
+### block update
+
+```bash
+umbraco datatype block update <datatypeId>
+```
+
+Mutates a single existing block on a Block List / Block Grid datatype. The deliberate difference from 'block add': if no block with --content-element-type is present, this errors instead of creating one.
+
+Partial-update semantics: only flags you pass on the command line are applied. Unpassed flags leave that property untouched, so 'block update <dt> --content-element-type <guid> --editor-size large' will not wipe the label.
+
+Clearing optional fields: pass an empty string. --thumbnail "" and --settings-element-type "" remove those fields entirely. --label "" is also accepted and removes the override label (the editor falls back to the element type's name).
+
+Idempotent: if the resulting block is byte-identical to the current one, no PUT is sent.
+
+BlockGrid: --allow-at-root and --allow-in-areas are honored when explicitly passed. Both are ignored for BlockList (mirror of 'block add').
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--allow-at-root` | bool | true | BlockGrid only: allow placing the block at the grid's root level. Ignored for BlockList. |
+| `--allow-in-areas` | bool | true | BlockGrid only: allow placing the block inside areas of other blocks. Ignored for BlockList. |
+| `--content-element-type` | string | — | GUID of the block to update (required; identity key — same as 'block add' / 'block remove') |
+| `--dry-run` | bool | false | Validate the resulting payload without writing it |
+| `--editor-size` | string | — | Overlay size: small | medium | large. Pass empty string to clear. |
+| `--force-hide-content-editor` | bool | false | Hide the content editor in the overlay (settings-only blocks) |
+| `--label` | string | — | New block label. Pass empty string to clear (editor falls back to element type name). |
+| `--settings-element-type` | string | — | Set the settings overlay element type. Pass empty string to clear. |
+| `--thumbnail` | string | — | Path/URL to a thumbnail image. Pass empty string to clear. |
+
+**Safe pattern:**
+
+```bash
+# 1. Dry run first
+umbraco datatype block update <datatypeId> --dry-run
+
+# 2. Execute
+umbraco datatype block update <datatypeId>
 ```
 
 ### create

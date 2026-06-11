@@ -22,16 +22,16 @@ umbraco user <command> [flags]
 
 | Command | Description |
 |---------|-------------|
-| `user client-credentials` | OAuth client credentials for API users (what this CLI logs in with) |
+| `user client-credentials list <user-id>` | List the client IDs registered for an API user |
 | `user current` | Get the user the CLI is authenticated as |
 | `user get <id>` | Get a backoffice user by ID |
 | `user list` | List backoffice users (paginated; --skip/--take/--all, --filter for substring search) |
 | `user permissions --ids <id,...>` | Check the current user's permissions on specific items |
 
-### client-credentials
+### client-credentials list
 
 ```bash
-umbraco user client-credentials
+umbraco user client-credentials list <user-id>
 ```
 
 ### current
@@ -91,6 +91,8 @@ GET /user/current/permissions[/document|/media]. Lets an agent verify it may wri
 
 | Command | Description |
 |---------|-------------|
+| `user client-credentials create <user-id>` | Register a client ID/secret pair on an API user |
+| `user client-credentials delete <user-id> <client-id>` | Remove a client ID from an API user (revokes its access) |
 | `user create` | Create a backoffice user |
 | `user delete <id>` | Permanently delete a backoffice user |
 | `user disable --ids <id,...>` | Disable user accounts (they keep existing but cannot log in) |
@@ -99,6 +101,51 @@ GET /user/current/permissions[/document|/media]. Lets an agent verify it may wri
 | `user set-groups` | Replace the group memberships of one or more users |
 | `user unlock --ids <id,...>` | Unlock user accounts locked out by failed logins |
 | `user update <id>` | Update a backoffice user |
+
+### client-credentials create
+
+```bash
+umbraco user client-credentials create <user-id>
+```
+
+POST /user/{id}/client-credentials. The user must be of kind Api ('user create' with "kind":"Api"). Client IDs are conventionally prefixed umbraco-back-office-.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--client-id` | string | — | OAuth client ID (required) |
+| `--client-secret` | string | — | OAuth client secret (required) |
+| `--dry-run` | bool | false | Print the planned request without executing |
+
+**Safe pattern:**
+
+```bash
+# 1. Dry run first
+umbraco user client-credentials create <user-id> --dry-run
+
+# 2. Execute
+umbraco user client-credentials create <user-id>
+```
+
+### client-credentials delete
+
+```bash
+umbraco user client-credentials delete <user-id> <client-id>
+```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--force` | bool | false | Confirm revoking the credential |
+
+**Safe pattern:**
+
+```bash
+# 1. Dry run first
+umbraco user client-credentials delete <user-id> <client-id> --dry-run
+
+# 2. Execute
+umbraco user client-credentials delete <user-id> <client-id>
+```
 
 ### create
 

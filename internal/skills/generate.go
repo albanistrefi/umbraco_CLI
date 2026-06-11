@@ -21,12 +21,28 @@ var blockedMethods = map[string]bool{
 	"dictionary.delete": true,
 }
 
+type GenerateOptions struct {
+	Filter  string
+	Version string
+	// IncludeHidden includes feature-gated hidden command groups, for
+	// generating private docs that must not land in the public bundle.
+	IncludeHidden bool
+}
+
 // Generate walks the cobra command tree and writes SKILL.md files to outputDir.
 func Generate(root *cobra.Command, outputDir string, filter string, version string) error {
+	return GenerateWithOptions(root, outputDir, GenerateOptions{Filter: filter, Version: version})
+}
+
+// GenerateWithOptions walks the cobra command tree and writes SKILL.md files
+// to outputDir.
+func GenerateWithOptions(root *cobra.Command, outputDir string, opts GenerateOptions) error {
 	if err := os.MkdirAll(outputDir, 0o755); err != nil {
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
 
+	filter := opts.Filter
+	version := opts.Version
 	index := make([]indexEntry, 0)
 
 	// Generate shared skill
@@ -41,8 +57,9 @@ func Generate(root *cobra.Command, outputDir string, filter string, version stri
 	for _, sub := range root.Commands() {
 		name := sub.Name()
 
-		// Skip non-API commands and hidden commands
-		if isMetaCommand(name) || sub.Hidden {
+		// Skip non-API commands and hidden commands unless explicitly
+		// requested for private docs.
+		if isMetaCommand(name) || (sub.Hidden && !opts.IncludeHidden) {
 			continue
 		}
 
@@ -51,7 +68,7 @@ func Generate(root *cobra.Command, outputDir string, filter string, version stri
 		}
 
 		skillName := fmt.Sprintf("umbraco-%s", name)
-		md := renderCollectionSkill(name, sub, version)
+		md := renderCollectionSkill(name, sub, version, opts.IncludeHidden)
 		if err := writeSkill(outputDir, skillName, md); err != nil {
 			return err
 		}
@@ -232,7 +249,7 @@ Use `+"`umbraco schema`"+` output to build your `+"`--json`"+` and `+"`--params`
 }
 
 // renderCollectionSkill produces a SKILL.md for a top-level command group.
-func renderCollectionSkill(name string, cmd *cobra.Command, version string) string {
+func renderCollectionSkill(name string, cmd *cobra.Command, version string, includeHidden bool) string {
 	var b strings.Builder
 
 	b.WriteString(fmt.Sprintf(`---
@@ -253,24 +270,17 @@ metadata:
 	b.WriteString("> **PREREQUISITE:** Read `../umbraco-shared/SKILL.md` for auth, global flags, and security rules.\n\n")
 	b.WriteString(fmt.Sprintf("```bash\numbraco %s <command> [flags]\n```\n\n", name))
 
-	// Collect subcommands, split into reads and mutations
-	reads := make([]*cobra.Command, 0)
-	mutations := make([]*cobra.Command, 0)
+	// Collect leaf subcommands (recursing through subgroups like
+	// 'document version'), split into reads and mutations.
+	reads := make([]skillCommand, 0)
+	mutations := make([]skillCommand, 0)
 
-	subs := cmd.Commands()
-	sort.Slice(subs, func(i, j int) bool {
-		return subs[i].Name() < subs[j].Name()
-	})
-
-	for _, sub := range subs {
-		if sub.Hidden {
-			continue
-		}
-		endpointKey := fmt.Sprintf("%s.%s", name, sub.Name())
+	for _, sub := range collectSkillCommands(cmd, nil, includeHidden) {
+		endpointKey := strings.Join(append([]string{name}, sub.Path...), ".")
 		if blockedMethods[endpointKey] {
 			continue
 		}
-		if isMutationCommand(sub) {
+		if isMutationCommand(sub.Command) {
 			mutations = append(mutations, sub)
 		} else {
 			reads = append(reads, sub)
@@ -282,7 +292,7 @@ metadata:
 		b.WriteString("## Read Commands\n\n")
 		b.WriteString("| Command | Description |\n|---------|-------------|\n")
 		for _, sub := range reads {
-			b.WriteString(fmt.Sprintf("| `%s %s` | %s |\n", name, sub.Use, sub.Short))
+			b.WriteString(fmt.Sprintf("| `%s %s` | %s |\n", name, sub.FullUse, sub.Command.Short))
 		}
 		b.WriteString("\n")
 
@@ -297,7 +307,7 @@ metadata:
 		b.WriteString("> **Safety:** Always use `--dry-run` first. Remove the flag only after verifying the dry-run output.\n\n")
 		b.WriteString("| Command | Description |\n|---------|-------------|\n")
 		for _, sub := range mutations {
-			b.WriteString(fmt.Sprintf("| `%s %s` | %s |\n", name, sub.Use, sub.Short))
+			b.WriteString(fmt.Sprintf("| `%s %s` | %s |\n", name, sub.FullUse, sub.Command.Short))
 		}
 		b.WriteString("\n")
 
@@ -316,22 +326,60 @@ metadata:
 	return b.String()
 }
 
-func renderSubcommand(b *strings.Builder, collection string, sub *cobra.Command) {
-	b.WriteString(fmt.Sprintf("### %s\n\n", sub.Name()))
+// skillCommand is a leaf command with its subgroup path relative to the
+// collection (e.g. ["version", "rollback"] under document).
+type skillCommand struct {
+	Path    []string
+	FullUse string
+	Command *cobra.Command
+}
 
-	b.WriteString(fmt.Sprintf("```bash\numbraco %s %s\n```\n\n", collection, sub.Use))
+// collectSkillCommands returns the leaf commands under cmd in name order,
+// flattening subgroups so 'document version rollback' documents as a
+// command rather than the subgroup rendering as an empty stub.
+func collectSkillCommands(cmd *cobra.Command, parent []string, includeHidden bool) []skillCommand {
+	subs := cmd.Commands()
+	sort.Slice(subs, func(i, j int) bool {
+		return subs[i].Name() < subs[j].Name()
+	})
+
+	commands := make([]skillCommand, 0)
+	for _, sub := range subs {
+		if sub.Hidden && !includeHidden {
+			continue
+		}
+
+		path := append(append([]string{}, parent...), sub.Name())
+		if len(sub.Commands()) > 0 {
+			commands = append(commands, collectSkillCommands(sub, path, includeHidden)...)
+			continue
+		}
+
+		fullUse := sub.Use
+		if len(parent) > 0 {
+			fullUse = strings.Join(parent, " ") + " " + sub.Use
+		}
+		commands = append(commands, skillCommand{Path: path, FullUse: fullUse, Command: sub})
+	}
+	return commands
+}
+
+func renderSubcommand(b *strings.Builder, collection string, sub skillCommand) {
+	b.WriteString(fmt.Sprintf("### %s\n\n", strings.Join(sub.Path, " ")))
+
+	b.WriteString(fmt.Sprintf("```bash\numbraco %s %s\n```\n\n", collection, sub.FullUse))
 
 	// Long help text (caveats, API limitations, etc.) — agents reading the
 	// generated SKILL.md should see the same warnings a human gets from
 	// '<cmd> --help', otherwise they'll bypass guardrails the human author
 	// expected the help text to convey.
-	if long := strings.TrimSpace(sub.Long); long != "" && long != strings.TrimSpace(sub.Short) {
+	if long := strings.TrimSpace(sub.Command.Long); long != "" && long != strings.TrimSpace(sub.Command.Short) {
 		b.WriteString(long)
 		b.WriteString("\n\n")
 	}
 
 	// Flags table
-	flags := collectFlags(sub)
+	flags := collectFlags(sub.Command)
 	if len(flags) > 0 {
 		b.WriteString("| Flag | Type | Default | Description |\n|------|------|---------|-------------|\n")
 		for _, f := range flags {
@@ -341,10 +389,10 @@ func renderSubcommand(b *strings.Builder, collection string, sub *cobra.Command)
 	}
 
 	// Safety note for mutations
-	if isMutationCommand(sub) {
+	if isMutationCommand(sub.Command) {
 		b.WriteString("**Safe pattern:**\n\n")
-		b.WriteString(fmt.Sprintf("```bash\n# 1. Dry run first\numbraco %s %s --dry-run\n\n", collection, sub.Use))
-		b.WriteString(fmt.Sprintf("# 2. Execute\numbraco %s %s\n```\n\n", collection, sub.Use))
+		b.WriteString(fmt.Sprintf("```bash\n# 1. Dry run first\numbraco %s %s --dry-run\n\n", collection, sub.FullUse))
+		b.WriteString(fmt.Sprintf("# 2. Execute\numbraco %s %s\n```\n\n", collection, sub.FullUse))
 	}
 }
 

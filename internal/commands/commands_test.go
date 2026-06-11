@@ -51,6 +51,7 @@ func buildRootWithCollections(t *testing.T, deps Dependencies) *cobra.Command {
 	RegisterAuth(root, deps)
 	RegisterSchema(root, deps)
 	RegisterAutomate(root, deps)
+	RegisterGenerateSkills(root, deps)
 	return root
 }
 

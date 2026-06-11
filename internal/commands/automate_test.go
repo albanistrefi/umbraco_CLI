@@ -3,6 +3,8 @@ package commands
 import (
 	"encoding/json"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -482,5 +484,56 @@ func TestAutomateVersionHistoryRoutes(t *testing.T) {
 	}
 	if observed[len(observed)-1] != "POST /umbraco/automate/management/api/v1/version-history/Automation/auto-1/2/rollback" {
 		t.Fatalf("unexpected rollback request: %v", observed)
+	}
+}
+
+func TestGenerateSkillsIncludesAutomateOnlyWhenHiddenRequested(t *testing.T) {
+	t.Setenv(automateEnableEnv, "1")
+
+	_, err := execute(buildRootWithCollections(t, makeDeps()), "generate-skills", "--include-hidden", "--output-dir", t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), "--include-hidden requires --filter") {
+		t.Fatalf("expected --include-hidden without --filter to fail, got %v", err)
+	}
+
+	defaultDir := t.TempDir()
+	if _, err := execute(buildRootWithCollections(t, makeDeps()),
+		"generate-skills", "--filter", "automate", "--output-dir", defaultDir); err != nil {
+		t.Fatalf("generate-skills default failed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(defaultDir, "umbraco-automate", "SKILL.md")); err == nil {
+		t.Fatal("automate skill should not be generated without --include-hidden")
+	}
+
+	hiddenDir := t.TempDir()
+	if _, err := execute(buildRootWithCollections(t, makeDeps()),
+		"generate-skills", "--filter", "automate", "--include-hidden", "--output-dir", hiddenDir); err != nil {
+		t.Fatalf("generate-skills --include-hidden failed: %v", err)
+	}
+	content, err := os.ReadFile(filepath.Join(hiddenDir, "umbraco-automate", "SKILL.md"))
+	if err != nil {
+		t.Fatalf("expected automate skill with --include-hidden: %v", err)
+	}
+	for _, want := range []string{"automation list", "automation validate", "workspace group add", "version-history rollback"} {
+		if !strings.Contains(string(content), want) {
+			t.Fatalf("generated automate skill missing %q:\n%s", want, string(content)[:500])
+		}
+	}
+}
+
+func TestGeneratedSkillsFlattenNestedSubgroups(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := execute(buildRootWithCollections(t, makeDeps()),
+		"generate-skills", "--filter", "document", "--output-dir", dir); err != nil {
+		t.Fatalf("generate-skills failed: %v", err)
+	}
+	content, err := os.ReadFile(filepath.Join(dir, "umbraco-document", "SKILL.md"))
+	if err != nil {
+		t.Fatalf("read generated skill: %v", err)
+	}
+	if !strings.Contains(string(content), "### version rollback") {
+		t.Fatal("expected nested 'document version rollback' to document as a leaf command")
+	}
+	if strings.Contains(string(content), "```bash\numbraco document version\n```") {
+		t.Fatal("subgroup must not render as an empty stub")
 	}
 }
