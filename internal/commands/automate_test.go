@@ -448,3 +448,39 @@ func TestAutomateAutomationImportUpdateSendsBareExportModel(t *testing.T) {
 		t.Fatalf("unexpected body: %+v", observedBody)
 	}
 }
+
+func TestAutomateVersionHistoryRoutes(t *testing.T) {
+	t.Setenv(automateEnableEnv, "1")
+	var observed []string
+
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		return tokenOr404(t, req, func(req *http.Request) (*http.Response, error) {
+			observed = append(observed, req.Method+" "+req.URL.Path)
+			return endpointJSONResponse(http.StatusOK, `{"items":[],"total":0}`), nil
+		})
+	})
+
+	if _, err := execute(buildRootWithCollections(t, deps),
+		"automate", "version-history", "list", "Automation", "auto-1"); err != nil {
+		t.Fatalf("version-history list failed: %v", err)
+	}
+	if observed[0] != "GET /umbraco/automate/management/api/v1/version-history/Automation/auto-1" {
+		t.Fatalf("unexpected list request: %v", observed)
+	}
+
+	if _, err := execute(buildRootWithCollections(t, deps),
+		"automate", "version-history", "compare", "Automation", "auto-1", "2", "5"); err != nil {
+		t.Fatalf("version-history compare failed: %v", err)
+	}
+	if observed[len(observed)-1] != "GET /umbraco/automate/management/api/v1/version-history/Automation/auto-1/2/compare/5" {
+		t.Fatalf("unexpected compare request: %v", observed)
+	}
+
+	if _, err := execute(buildRootWithCollections(t, deps),
+		"automate", "version-history", "rollback", "Automation", "auto-1", "2"); err != nil {
+		t.Fatalf("version-history rollback failed: %v", err)
+	}
+	if observed[len(observed)-1] != "POST /umbraco/automate/management/api/v1/version-history/Automation/auto-1/2/rollback" {
+		t.Fatalf("unexpected rollback request: %v", observed)
+	}
+}

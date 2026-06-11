@@ -276,6 +276,11 @@ var endpointBindings = map[string]endpointBinding{
 	"automate.automation.validate":              {Method: "POST", Path: "/automations/import/validate"},
 	"automate.automation.import":                {Method: "POST", Path: "/automations/import"},
 	"automate.automation.import-update":         {Method: "PUT", Path: "/automations/{id}/import"},
+	"automate.version-history.types":            {Method: "GET", Path: "/version-history/supported-types"},
+	"automate.version-history.list":             {Method: "GET", Path: "/version-history/{entityType}/{entityId}"},
+	"automate.version-history.get":              {Method: "GET", Path: "/version-history/{entityType}/{entityId}/{entityVersion}"},
+	"automate.version-history.compare":          {Method: "GET", Path: "/version-history/{entityType}/{entityId}/{fromEntityVersion}/compare/{toEntityVersion}"},
+	"automate.version-history.rollback":         {Method: "POST", Path: "/version-history/{entityType}/{entityId}/{entityVersion}/rollback"},
 
 	// user-group
 	"user-group.list":         {Method: "GET", Path: "/user-group"},
