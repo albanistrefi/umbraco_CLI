@@ -2,32 +2,22 @@ package commands
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
 )
 
-// Umbraco Automate serves its own Management API mount. The command group
-// is gated behind an environment variable while the product's API surface
-// settles post-launch; the gate also keeps the group out of --help and
-// generated skills until it is officially supported.
-const (
-	automateEnableEnv = "UMBRACO_CLI_ENABLE_AUTOMATE"
-	automateAPIPrefix = "/umbraco/automate/management/api/v1"
-)
+// Umbraco Automate serves its own Management API mount; every command in
+// this group targets it via APIPrefix. The commands require Automate to be
+// installed on the target instance -- without it the mount 404s.
+const automateAPIPrefix = "/umbraco/automate/management/api/v1"
 
 func RegisterAutomate(root *cobra.Command, deps Dependencies) {
-	if !automateEnabled() {
-		return
-	}
-
 	automate := &cobra.Command{
-		Use:    "automate",
-		Short:  "Umbraco Automate operations (event-driven workflow automation)",
-		Long:   "Operate Umbraco Automate: discover the step catalogue, inspect and trigger automations, manage runs, and decide approvals. Targets the Automate Management API mount (" + automateAPIPrefix + ").",
-		Hidden: true,
+		Use:   "automate",
+		Short: "Umbraco Automate operations (event-driven workflow automation)",
+		Long:  "Operate Umbraco Automate: discover the step catalogue, author and trigger automations, manage runs, decide approvals, and roll back via version history. Requires Umbraco Automate on the target instance; targets its Management API mount (" + automateAPIPrefix + ").",
 	}
 	automate.AddCommand(automateCatalogue(deps))
 	automate.AddCommand(automateAutomation(deps))
@@ -38,10 +28,6 @@ func RegisterAutomate(root *cobra.Command, deps Dependencies) {
 	automate.AddCommand(automateConnection(deps))
 	automate.AddCommand(automateVersionHistory(deps))
 	root.AddCommand(automate)
-}
-
-func automateEnabled() bool {
-	return os.Getenv(automateEnableEnv) == "1"
 }
 
 func automateOpts(params map[string]any, dryRun bool) api.RequestOptions {
