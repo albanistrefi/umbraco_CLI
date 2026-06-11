@@ -298,3 +298,46 @@ func walkAutomateCommands(cmd *cobra.Command, path []string, missing *[]string) 
 		walkAutomateCommands(child, next, missing)
 	}
 }
+
+func TestAutomateWorkspaceGroupCommandsHitNestedRoutes(t *testing.T) {
+	t.Setenv(automateEnableEnv, "1")
+	var observed []string
+	var observedBody map[string]any
+
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		return tokenOr404(t, req, func(req *http.Request) (*http.Response, error) {
+			observed = append(observed, req.Method+" "+req.URL.Path)
+			if req.Body != nil && (req.Method == http.MethodPost || req.Method == http.MethodPut) {
+				_ = json.NewDecoder(req.Body).Decode(&observedBody)
+			}
+			return endpointJSONResponse(http.StatusOK, ``), nil
+		})
+	})
+
+	if _, err := execute(buildRootWithCollections(t, deps),
+		"automate", "workspace", "group", "add", "ws-1", "--name", "Content flows", "--parent-id", "parent-1"); err != nil {
+		t.Fatalf("workspace group add failed: %v", err)
+	}
+	if observed[0] != "POST /umbraco/automate/management/api/v1/workspaces/ws-1/groups" {
+		t.Fatalf("unexpected group add request: %v", observed)
+	}
+	if observedBody["name"] != "Content flows" || observedBody["parentId"] != "parent-1" {
+		t.Fatalf("unexpected group body: %+v", observedBody)
+	}
+
+	if _, err := execute(buildRootWithCollections(t, deps),
+		"automate", "workspace", "group", "remove", "ws-1", "g-1", "--force"); err != nil {
+		t.Fatalf("workspace group remove failed: %v", err)
+	}
+	if observed[len(observed)-1] != "DELETE /umbraco/automate/management/api/v1/workspaces/ws-1/groups/g-1" {
+		t.Fatalf("unexpected group remove request: %v", observed)
+	}
+}
+
+func TestAutomateWorkspaceDeleteRequiresForce(t *testing.T) {
+	t.Setenv(automateEnableEnv, "1")
+	_, err := execute(buildRootWithCollections(t, makeDeps()), "automate", "workspace", "delete", "ws-1")
+	if err == nil || !strings.Contains(err.Error(), "--force") {
+		t.Fatalf("expected workspace delete to require --force, got %v", err)
+	}
+}

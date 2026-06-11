@@ -121,6 +121,13 @@ var Templates = map[string]any{
 			"<settingAlias>": "<the settings the step would run with; shapes the dynamic output schema>",
 		},
 	},
+	"automate.workspace.create": map[string]any{
+		"alias":              "<camelCase string, required>",
+		"name":               "<display name, required>",
+		"serviceAccountKey":  "<backoffice user GUID the workspace's automations run as, required>",
+		"userGroups":         []any{"<user group GUID allowed to edit automations here>"},
+		"allowedConnections": []any{"<connection GUID automations here may use; pass [] for none>"},
+	},
 	"automate.approvals.decide": map[string]any{
 		"outcome": "<Approved or Rejected>",
 		"comment": "<optional comment shown in the run history>",

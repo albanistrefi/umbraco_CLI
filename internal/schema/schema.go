@@ -250,6 +250,16 @@ var endpointBindings = map[string]endpointBinding{
 	"automate.approvals.decide":                 {Method: "POST", Path: "/approvals/{runId}/steps/{stepId}/decision"},
 	"automate.metrics.summary":                  {Method: "GET", Path: "/metrics"},
 	"automate.metrics.by-automation":            {Method: "GET", Path: "/metrics/by-automation"},
+	"automate.workspace.list":                   {Method: "GET", Path: "/workspaces"},
+	"automate.workspace.get":                    {Method: "GET", Path: "/workspaces/{id}"},
+	"automate.workspace.create":                 {Method: "POST", Path: "/workspaces"},
+	"automate.workspace.update":                 {Method: "PUT", Path: "/workspaces/{id}"},
+	"automate.workspace.delete":                 {Method: "DELETE", Path: "/workspaces/{id}"},
+	"automate.workspace.group.list":             {Method: "GET", Path: "/workspaces/{id}/groups"},
+	"automate.workspace.group.get":              {Method: "GET", Path: "/workspaces/{id}/groups/{groupId}"},
+	"automate.workspace.group.add":              {Method: "POST", Path: "/workspaces/{id}/groups"},
+	"automate.workspace.group.update":           {Method: "PUT", Path: "/workspaces/{id}/groups/{groupId}"},
+	"automate.workspace.group.remove":           {Method: "DELETE", Path: "/workspaces/{id}/groups/{groupId}"},
 
 	// user-group
 	"user-group.list":         {Method: "GET", Path: "/user-group"},
