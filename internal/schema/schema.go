@@ -226,6 +226,31 @@ var endpointBindings = map[string]endpointBinding{
 	"user.current":     {Method: "GET", Path: "/user/current", ExtraQuery: withFields},
 	"user.permissions": {Method: "GET", Path: "/user/current/permissions"},
 
+	// automate (gated behind UMBRACO_CLI_ENABLE_AUTOMATE; served from the
+	// Automate Management API mount, which generated entries carry as APIRoot)
+	"automate.catalogue.actions":                {Method: "GET", Path: "/catalogue/actions"},
+	"automate.catalogue.triggers":               {Method: "GET", Path: "/catalogue/triggers"},
+	"automate.catalogue.connection-types":       {Method: "GET", Path: "/catalogue/connection-types"},
+	"automate.catalogue.control-flows":          {Method: "GET", Path: "/catalogue/control-flows"},
+	"automate.catalogue.notification-channels":  {Method: "GET", Path: "/catalogue/notification-channels"},
+	"automate.catalogue.webhook-authenticators": {Method: "GET", Path: "/catalogue/webhook-authenticators"},
+	"automate.catalogue.step-types":             {Method: "GET", Path: "/catalogue/step-types"},
+	"automate.catalogue.output-schema":          {Method: "POST", Path: "/catalogue/step-types/{alias}/output-schema"},
+	"automate.automation.list":                  {Method: "GET", Path: "/automations"},
+	"automate.automation.get":                   {Method: "GET", Path: "/automations/{id}"},
+	"automate.automation.runs":                  {Method: "GET", Path: "/automations/{id}/runs"},
+	"automate.automation.trigger":               {Method: "POST", Path: "/automations/{id}/trigger"},
+	"automate.automation.export":                {Method: "GET", Path: "/automations/{id}/export"},
+	"automate.run.get":                          {Method: "GET", Path: "/runs/{id}"},
+	"automate.run.replay":                       {Method: "POST", Path: "/runs/{id}/replay"},
+	"automate.run.resume":                       {Method: "POST", Path: "/runs/{id}/resume"},
+	"automate.run.suspend":                      {Method: "POST", Path: "/runs/{id}/suspend"},
+	"automate.run.terminate":                    {Method: "POST", Path: "/runs/{id}/terminate"},
+	"automate.approvals.pending":                {Method: "GET", Path: "/approvals/pending"},
+	"automate.approvals.decide":                 {Method: "POST", Path: "/approvals/{runId}/steps/{stepId}/decision"},
+	"automate.metrics.summary":                  {Method: "GET", Path: "/metrics"},
+	"automate.metrics.by-automation":            {Method: "GET", Path: "/metrics/by-automation"},
+
 	// user-group
 	"user-group.list":         {Method: "GET", Path: "/user-group"},
 	"user-group.get":          {Method: "GET", Path: "/user-group/{id}", ExtraQuery: withFields},
