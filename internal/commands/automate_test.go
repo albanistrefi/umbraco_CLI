@@ -537,3 +537,43 @@ func TestGeneratedSkillsFlattenNestedSubgroups(t *testing.T) {
 		t.Fatal("subgroup must not render as an empty stub")
 	}
 }
+
+func TestAutomateUpdateMergeStripsResponseOnlyFields(t *testing.T) {
+	t.Setenv(automateEnableEnv, "1")
+	var observedBody map[string]any
+
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		return tokenOr404(t, req, func(req *http.Request) (*http.Response, error) {
+			if req.URL.Path != "/umbraco/automate/management/api/v1/automations/auto-1" {
+				return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			}
+			if req.Method == http.MethodGet {
+				return endpointJSONResponse(http.StatusOK, `{
+					"id":"auto-1","workspaceId":"ws-1","status":"Draft","health":"Healthy",
+					"publishedVersion":null,"dateCreated":"2026-06-09T10:00:00Z","dateModified":"2026-06-09T10:00:00Z",
+					"alias":"a","name":"Old","steps":[],"connections":[],"version":3
+				}`), nil
+			}
+			if err := json.NewDecoder(req.Body).Decode(&observedBody); err != nil {
+				t.Fatalf("decode body: %v", err)
+			}
+			return endpointJSONResponse(http.StatusOK, ``), nil
+		})
+	})
+
+	if _, err := execute(buildRootWithCollections(t, deps),
+		"automate", "automation", "update", "auto-1", "--merge-json", `{"name":"New"}`); err != nil {
+		t.Fatalf("automation update failed: %v", err)
+	}
+
+	// UpdateAutomationRequestModel declares additionalProperties: false, so
+	// fields the GET echoes but the PUT rejects must be stripped.
+	for _, key := range []string{"id", "workspaceId", "status", "health", "publishedVersion", "dateCreated", "dateModified"} {
+		if _, present := observedBody[key]; present {
+			t.Fatalf("response-only field %q must be stripped from the update body, got %+v", key, observedBody)
+		}
+	}
+	if observedBody["name"] != "New" || observedBody["version"] != float64(3) {
+		t.Fatalf("expected merged name and concurrency version to survive, got %+v", observedBody)
+	}
+}
