@@ -128,6 +128,12 @@ var Templates = map[string]any{
 		"userGroups":         []any{"<user group GUID allowed to edit automations here>"},
 		"allowedConnections": []any{"<connection GUID automations here may use; pass [] for none>"},
 	},
+	"automate.connection.create": map[string]any{
+		"alias":    "<camelCase string, required>",
+		"name":     "<display name, required>",
+		"type":     "<connection type alias from 'automate catalogue connection-types', required>",
+		"settings": map[string]any{"<settingAlias>": "<credential value the connection type requires>"},
+	},
 	"automate.approvals.decide": map[string]any{
 		"outcome": "<Approved or Rejected>",
 		"comment": "<optional comment shown in the run history>",

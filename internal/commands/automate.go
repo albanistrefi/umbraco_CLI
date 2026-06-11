@@ -35,6 +35,7 @@ func RegisterAutomate(root *cobra.Command, deps Dependencies) {
 	automate.AddCommand(automateApprovals(deps))
 	automate.AddCommand(automateMetrics(deps))
 	automate.AddCommand(automateWorkspace(deps))
+	automate.AddCommand(automateConnection(deps))
 	root.AddCommand(automate)
 }
 

@@ -341,3 +341,34 @@ func TestAutomateWorkspaceDeleteRequiresForce(t *testing.T) {
 		t.Fatalf("expected workspace delete to require --force, got %v", err)
 	}
 }
+
+func TestAutomateConnectionTestHitsTestRoute(t *testing.T) {
+	t.Setenv(automateEnableEnv, "1")
+	var observed []string
+
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		return tokenOr404(t, req, func(req *http.Request) (*http.Response, error) {
+			observed = append(observed, req.Method+" "+req.URL.Path)
+			return endpointJSONResponse(http.StatusOK, `{"success":true}`), nil
+		})
+	})
+
+	output, err := execute(buildRootWithCollections(t, deps), "automate", "connection", "test", "conn-1")
+	if err != nil {
+		t.Fatalf("connection test failed: %v", err)
+	}
+	if len(observed) != 1 || observed[0] != "POST /umbraco/automate/management/api/v1/connections/conn-1/test" {
+		t.Fatalf("unexpected request: %v", observed)
+	}
+	if !strings.Contains(output, `"success": true`) {
+		t.Fatalf("expected test result passthrough, got %s", output)
+	}
+}
+
+func TestAutomateConnectionDeleteRequiresForce(t *testing.T) {
+	t.Setenv(automateEnableEnv, "1")
+	_, err := execute(buildRootWithCollections(t, makeDeps()), "automate", "connection", "delete", "conn-1")
+	if err == nil || !strings.Contains(err.Error(), "--force") {
+		t.Fatalf("expected connection delete to require --force, got %v", err)
+	}
+}

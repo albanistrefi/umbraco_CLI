@@ -260,6 +260,12 @@ var endpointBindings = map[string]endpointBinding{
 	"automate.workspace.group.add":              {Method: "POST", Path: "/workspaces/{id}/groups"},
 	"automate.workspace.group.update":           {Method: "PUT", Path: "/workspaces/{id}/groups/{groupId}"},
 	"automate.workspace.group.remove":           {Method: "DELETE", Path: "/workspaces/{id}/groups/{groupId}"},
+	"automate.connection.list":                  {Method: "GET", Path: "/connections"},
+	"automate.connection.get":                   {Method: "GET", Path: "/connections/{id}"},
+	"automate.connection.create":                {Method: "POST", Path: "/connections"},
+	"automate.connection.update":                {Method: "PUT", Path: "/connections/{id}"},
+	"automate.connection.delete":                {Method: "DELETE", Path: "/connections/{id}"},
+	"automate.connection.test":                  {Method: "POST", Path: "/connections/{id}/test"},
 
 	// user-group
 	"user-group.list":         {Method: "GET", Path: "/user-group"},
