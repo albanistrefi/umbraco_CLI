@@ -273,6 +273,9 @@ var endpointBindings = map[string]endpointBinding{
 	"automate.automation.unpublish":             {Method: "POST", Path: "/automations/{id}/unpublish"},
 	"automate.automation.re-enable":             {Method: "POST", Path: "/automations/{id}/re-enable"},
 	"automate.automation.ancestors":             {Method: "GET", Path: "/automations/{id}/ancestors"},
+	"automate.automation.validate":              {Method: "POST", Path: "/automations/import/validate"},
+	"automate.automation.import":                {Method: "POST", Path: "/automations/import"},
+	"automate.automation.import-update":         {Method: "PUT", Path: "/automations/{id}/import"},
 
 	// user-group
 	"user-group.list":         {Method: "GET", Path: "/user-group"},

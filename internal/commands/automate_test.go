@@ -372,3 +372,79 @@ func TestAutomateConnectionDeleteRequiresForce(t *testing.T) {
 		t.Fatalf("expected connection delete to require --force, got %v", err)
 	}
 }
+
+func TestAutomateAutomationValidateWrapsExportModel(t *testing.T) {
+	t.Setenv(automateEnableEnv, "1")
+	var observedPath string
+	var observedBody map[string]any
+
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		return tokenOr404(t, req, func(req *http.Request) (*http.Response, error) {
+			observedPath = req.URL.Path
+			if err := json.NewDecoder(req.Body).Decode(&observedBody); err != nil {
+				t.Fatalf("decode body: %v", err)
+			}
+			return endpointJSONResponse(http.StatusOK, `{"success":true,"errors":[],"warnings":[]}`), nil
+		})
+	})
+
+	output, err := execute(buildRootWithCollections(t, deps),
+		"automate", "automation", "validate",
+		"--workspace-id", "ws-1",
+		"--json", `{"formatVersion":1,"automation":{"alias":"a"}}`,
+	)
+	if err != nil {
+		t.Fatalf("automation validate failed: %v", err)
+	}
+	if observedPath != "/umbraco/automate/management/api/v1/automations/import/validate" {
+		t.Fatalf("unexpected path: %s", observedPath)
+	}
+	if observedBody["workspaceId"] != "ws-1" {
+		t.Fatalf("expected workspace wrapper, got %+v", observedBody)
+	}
+	exportModel, ok := observedBody["exportModel"].(map[string]any)
+	if !ok || exportModel["formatVersion"] != float64(1) {
+		t.Fatalf("expected export model passthrough, got %+v", observedBody)
+	}
+	if !strings.Contains(output, `"success": true`) {
+		t.Fatalf("expected validation result, got %s", output)
+	}
+
+	_, err = execute(buildRootWithCollections(t, deps),
+		"automate", "automation", "validate", "--workspace-id", "ws-1")
+	if err == nil || !strings.Contains(err.Error(), "exactly one of --file or --json") {
+		t.Fatalf("expected missing input to fail, got %v", err)
+	}
+}
+
+func TestAutomateAutomationImportUpdateSendsBareExportModel(t *testing.T) {
+	t.Setenv(automateEnableEnv, "1")
+	var observed string
+	var observedBody map[string]any
+
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		return tokenOr404(t, req, func(req *http.Request) (*http.Response, error) {
+			observed = req.Method + " " + req.URL.Path
+			if err := json.NewDecoder(req.Body).Decode(&observedBody); err != nil {
+				t.Fatalf("decode body: %v", err)
+			}
+			return endpointJSONResponse(http.StatusOK, ``), nil
+		})
+	})
+
+	if _, err := execute(buildRootWithCollections(t, deps),
+		"automate", "automation", "import-update", "auto-1",
+		"--json", `{"formatVersion":1,"automation":{"alias":"a"}}`,
+	); err != nil {
+		t.Fatalf("import-update failed: %v", err)
+	}
+	if observed != "PUT /umbraco/automate/management/api/v1/automations/auto-1/import" {
+		t.Fatalf("unexpected request: %s", observed)
+	}
+	if _, wrapped := observedBody["exportModel"]; wrapped {
+		t.Fatalf("import-update must send the bare export model, got wrapper: %+v", observedBody)
+	}
+	if observedBody["formatVersion"] != float64(1) {
+		t.Fatalf("unexpected body: %+v", observedBody)
+	}
+}
