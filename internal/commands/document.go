@@ -262,7 +262,7 @@ func documentUpdate(deps Dependencies) *cobra.Command {
 				}
 				body = mergeAliasPayload(current, patch)
 			} else {
-				body, err = resolveUpdateBody(ctx, deps.Client, path, "", jsonPayload, mergeJSON, nil)
+				body, err = resolveUpdateBody(ctx, deps.Client, path, "", jsonPayload, mergeJSON, nil, nil)
 				if err != nil {
 					return err
 				}

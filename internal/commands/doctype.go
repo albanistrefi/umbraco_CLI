@@ -134,7 +134,7 @@ func doctypeUpdate(deps Dependencies) *cobra.Command {
 		Use:       "update <id>",
 		Short:     "Update document type",
 		Path:      func(args []string) string { return api.JoinPath("/document-type/%s", args[0]) },
-		Normalize: normalizeDoctypePayload,
+		Normalize: normalizeDoctypePayloadHook,
 	})
 }
 

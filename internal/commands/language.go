@@ -105,7 +105,7 @@ func languageUpdate(deps Dependencies) *cobra.Command {
 		Path:  func(args []string) string { return api.JoinPath("/language/%s", args[0]) },
 		// The update model has no isoCode field (it lives in the path);
 		// a merge against the GET response would otherwise echo it back.
-		Normalize: func(body map[string]any) { delete(body, "isoCode") },
+		NormalizeMerged: stripFields("isoCode"),
 	})
 }
 

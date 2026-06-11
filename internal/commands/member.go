@@ -204,7 +204,7 @@ These are managed by the auth subsystem (login flow / backoffice action), not by
 
 			ctx := cmd.Context()
 			path := api.JoinPath(memberPath+"/%s", args[0])
-			body, err := resolveUpdateBody(ctx, deps.Client, path, "", jsonPayload, mergeJSON, nil)
+			body, err := resolveUpdateBody(ctx, deps.Client, path, "", jsonPayload, mergeJSON, nil, nil)
 			if err != nil {
 				return err
 			}

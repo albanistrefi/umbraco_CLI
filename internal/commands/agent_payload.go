@@ -54,6 +54,13 @@ func normalizeDoctypePayload(body map[string]any) {
 	normalizeDoctypeProperties(body["properties"])
 }
 
+// normalizeDoctypePayloadHook adapts normalizeDoctypePayload to the
+// error-returning Normalize contract used by update specs.
+func normalizeDoctypePayloadHook(body map[string]any) error {
+	normalizeDoctypePayload(body)
+	return nil
+}
+
 func normalizeDoctypeProperties(raw any) {
 	properties, ok := raw.([]any)
 	if !ok {

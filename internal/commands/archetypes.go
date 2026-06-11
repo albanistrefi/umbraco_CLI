@@ -260,12 +260,11 @@ func searchCommand(deps Dependencies, spec searchSpec) *cobra.Command {
 // resolveUpdateBody enforces the uniform update contract: --json replaces
 // the resource wholesale, --merge-json fetches the current resource and
 // deep-merges the patch so unmentioned fields survive. Exactly one of the
-// two must be provided. normalize, when non-nil, runs on the parsed input
-// before the merge (so patch entries take their canonical shape and merge
-// correctly) and again on the final body (so fields echoed back by the
-// fetch but rejected by the update model are stripped). It must therefore
-// be idempotent.
-func resolveUpdateBody(ctx context.Context, client *api.Client, fetchPath string, apiPrefix string, jsonPayload string, mergeJSON string, normalize func(map[string]any)) (map[string]any, error) {
+// two must be provided. normalize runs on the parsed user input before any
+// merge (input conveniences, shape rejection); normalizeMerged runs on the
+// final body (output hygiene such as stripping response-only fields) and
+// must be idempotent.
+func resolveUpdateBody(ctx context.Context, client *api.Client, fetchPath string, apiPrefix string, jsonPayload string, mergeJSON string, normalize func(map[string]any) error, normalizeMerged func(map[string]any) error) (map[string]any, error) {
 	hasJSON := strings.TrimSpace(jsonPayload) != ""
 	hasMerge := strings.TrimSpace(mergeJSON) != ""
 	if hasJSON == hasMerge {
@@ -278,7 +277,14 @@ func resolveUpdateBody(ctx context.Context, client *api.Client, fetchPath string
 			return nil, err
 		}
 		if normalize != nil {
-			normalize(body)
+			if err := normalize(body); err != nil {
+				return nil, err
+			}
+		}
+		if normalizeMerged != nil {
+			if err := normalizeMerged(body); err != nil {
+				return nil, err
+			}
 		}
 		return body, nil
 	}
@@ -288,15 +294,19 @@ func resolveUpdateBody(ctx context.Context, client *api.Client, fetchPath string
 		return nil, err
 	}
 	if normalize != nil {
-		normalize(patch)
+		if err := normalize(patch); err != nil {
+			return nil, err
+		}
 	}
 	current, err := fetchObject(ctx, client, fetchPath, api.RequestOptions{APIPrefix: apiPrefix})
 	if err != nil {
 		return nil, err
 	}
 	merged := mergeAliasPayload(current, patch)
-	if normalize != nil {
-		normalize(merged)
+	if normalizeMerged != nil {
+		if err := normalizeMerged(merged); err != nil {
+			return nil, err
+		}
 	}
 	return merged, nil
 }
@@ -304,11 +314,12 @@ func resolveUpdateBody(ctx context.Context, client *api.Client, fetchPath string
 // stripFields returns a Normalize that deletes response-only keys echoed
 // by the merge fetch which the update model rejects (update request models
 // with additionalProperties: false). Idempotent, as Normalize requires.
-func stripFields(keys ...string) func(map[string]any) {
-	return func(body map[string]any) {
+func stripFields(keys ...string) func(map[string]any) error {
+	return func(body map[string]any) error {
 		for _, key := range keys {
 			delete(body, key)
 		}
+		return nil
 	}
 }
 
@@ -319,8 +330,14 @@ type updateSpec struct {
 	// Path maps the positional args to the resource path used for both the
 	// merge fetch and the PUT.
 	Path func(args []string) string
-	// Normalize, when non-nil, adjusts the parsed payload or patch before use.
-	Normalize func(map[string]any)
+	// Normalize, when non-nil, adjusts or rejects the parsed user input
+	// (the --json body or --merge-json patch) before any merge. Use it for
+	// input conveniences like accepting alternate shapes.
+	Normalize func(map[string]any) error
+	// NormalizeMerged, when non-nil, adjusts the final body after the merge
+	// fetch. Use it for output hygiene like stripping response-only fields
+	// the update model rejects. Must be idempotent.
+	NormalizeMerged func(map[string]any) error
 	// APIPrefix overrides the default core Management API mount.
 	APIPrefix string
 }
@@ -340,7 +357,7 @@ func updateCommand(deps Dependencies, spec updateSpec) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			path := spec.Path(args)
-			body, err := resolveUpdateBody(ctx, deps.Client, path, spec.APIPrefix, jsonPayload, mergeJSON, spec.Normalize)
+			body, err := resolveUpdateBody(ctx, deps.Client, path, spec.APIPrefix, jsonPayload, mergeJSON, spec.Normalize, spec.NormalizeMerged)
 			if err != nil {
 				return err
 			}
