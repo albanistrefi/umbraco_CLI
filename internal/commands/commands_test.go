@@ -65,7 +65,6 @@ func execute(root *cobra.Command, args ...string) (string, error) {
 }
 
 func TestCommandCountsMatchMVP(t *testing.T) {
-	t.Setenv(automateEnableEnv, "1")
 	deps := makeDeps()
 	root := buildRootWithCollections(t, deps)
 

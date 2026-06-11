@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.4.2 - 2026-06-11
+
+### Umbraco Automate support (53 commands)
+
+- added the `automate` command group covering the full Automate Management API, timed with the product's public launch at Codegarden. Requires Umbraco Automate on the target instance
+- **catalogue discovery**: `actions`, `triggers`, `step-types`, `connection-types`, `control-flows`, `notification-channels`, `webhook-authenticators`, and `output-schema <alias>` for resolving dynamic step output schemas used in `${...}` bindings. Catalogue responses embed full JSON schemas, so the commands support `--fields` projection
+- **automation authoring**: `create`/`update`/`delete`, the `publish`/`unpublish`/`re-enable` lifecycle, and `ancestors`. `update --merge-json` picks up the optimistic-concurrency `version` automatically and strips the response-only fields the update model rejects
+- **export → validate → import round-trip**: `automation validate` checks a definition server-side without writing anything (the authoring dry-run); `import` creates from an export model, `import-update` overwrites an existing automation
+- **run control**: `run get/replay/resume/suspend/terminate`; **approvals**: `pending` and `decide`; **metrics**: `summary` and `by-automation`
+- **workspaces** (with nested automation `group` management) and **connections** (with `connection test` for verifying credentials against the external service)
+- **version history**: `list`/`get`/`compare`/`rollback` for automations, workspaces, and connections — the undo path for agent edits
+- the schema generator now reads multiple vendored OpenAPI documents (core + Automate); `umbraco schema automate.*` entries carry the Automate mount as `apiRoot`
+
+### Generated skills
+
+- nested subgroups now document as full commands instead of empty stubs — `document version rollback`, `document domains set`, `user client-credentials create`, and the whole `automate` tree previously rendered as bare group names in the bundled skills
+- added `generate-skills --include-hidden --filter <name>` for generating private docs of hidden command groups
+
 ## v0.4.1 - 2026-06-10
 
 Fixes for the three review findings on the v0.4.0 pull requests:

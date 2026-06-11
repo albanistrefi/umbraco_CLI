@@ -13,38 +13,14 @@ import (
 	"umbraco-cli/internal/schema"
 )
 
-func TestAutomateCommandIsGatedAndSchemaHiddenByDefault(t *testing.T) {
-	t.Setenv(automateEnableEnv, "")
-
-	root := buildRootWithCollections(t, makeDeps())
-	if findChildCommand(root, "automate") != nil {
-		t.Fatal("automate command should not be registered without the feature gate")
-	}
-
-	output, err := execute(root, "schema", "--list")
-	if err != nil {
-		t.Fatalf("schema --list failed: %v", err)
-	}
-	if strings.Contains(output, "automate.") {
-		t.Fatalf("Automate schema endpoints should be hidden without the feature gate: %s", output)
-	}
-
-	_, err = execute(buildRootWithCollections(t, makeDeps()), "schema", "automate.automation.list")
-	if err == nil {
-		t.Fatal("expected gated Automate schema lookup to fail")
-	}
-}
-
-func TestAutomateCommandRegistersHiddenWhenFeatureGateEnabled(t *testing.T) {
-	t.Setenv(automateEnableEnv, "1")
-
+func TestAutomateCommandRegistersAndSchemaResolves(t *testing.T) {
 	root := buildRootWithCollections(t, makeDeps())
 	automate := findChildCommand(root, "automate")
 	if automate == nil {
-		t.Fatal("missing automate command with feature gate enabled")
+		t.Fatal("missing automate command")
 	}
-	if !automate.Hidden {
-		t.Fatal("automate command should stay hidden while gated")
+	if automate.Hidden {
+		t.Fatal("automate command should be visible now that Automate is publicly launched")
 	}
 
 	output, err := execute(root, "schema", "automate.automation.list")
@@ -61,7 +37,6 @@ func TestAutomateCommandRegistersHiddenWhenFeatureGateEnabled(t *testing.T) {
 }
 
 func TestAutomateAutomationListUsesAutomateMountAndQueryFlags(t *testing.T) {
-	t.Setenv(automateEnableEnv, "1")
 	var observedPath string
 	observedQuery := map[string][]string{}
 
@@ -107,7 +82,6 @@ func TestAutomateAutomationListUsesAutomateMountAndQueryFlags(t *testing.T) {
 }
 
 func TestAutomateCatalogueProjectsFieldsOnArrayResponses(t *testing.T) {
-	t.Setenv(automateEnableEnv, "1")
 	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
 		return tokenOr404(t, req, func(req *http.Request) (*http.Response, error) {
 			if req.URL.Path != "/umbraco/automate/management/api/v1/catalogue/triggers" {
@@ -131,7 +105,6 @@ func TestAutomateCatalogueProjectsFieldsOnArrayResponses(t *testing.T) {
 }
 
 func TestAutomateCatalogueOutputSchemaSendsSettingsBody(t *testing.T) {
-	t.Setenv(automateEnableEnv, "1")
 	var body map[string]any
 
 	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
@@ -161,7 +134,6 @@ func TestAutomateCatalogueOutputSchemaSendsSettingsBody(t *testing.T) {
 }
 
 func TestAutomateAutomationTriggerDryRunUsesAutomatePathWithoutRequest(t *testing.T) {
-	t.Setenv(automateEnableEnv, "1")
 	requests := 0
 	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
 		requests++
@@ -187,8 +159,6 @@ func TestAutomateAutomationTriggerDryRunUsesAutomatePathWithoutRequest(t *testin
 }
 
 func TestAutomateApprovalsDecideBuildsDecisionBody(t *testing.T) {
-	t.Setenv(automateEnableEnv, "1")
-
 	output, err := execute(buildRootWithCollections(t, makeDeps()),
 		"automate", "approvals", "decide", "run-1", "step-1",
 		"--outcome", "Rejected",
@@ -215,7 +185,6 @@ func TestAutomateApprovalsDecideBuildsDecisionBody(t *testing.T) {
 }
 
 func TestAutomateMetricsByAutomationUsesQueryFlags(t *testing.T) {
-	t.Setenv(automateEnableEnv, "1")
 	observedQuery := map[string][]string{}
 
 	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
@@ -246,7 +215,6 @@ func TestAutomateMetricsByAutomationUsesQueryFlags(t *testing.T) {
 }
 
 func TestAutomateRunActionsHitRunRoutesAndCoalesce(t *testing.T) {
-	t.Setenv(automateEnableEnv, "1")
 	var observed []string
 
 	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
@@ -273,7 +241,6 @@ func TestAutomateRunActionsHitRunRoutesAndCoalesce(t *testing.T) {
 // schema coverage test only checks direct children of top-level collections,
 // which for automate are all subgroups.
 func TestAutomateCommandsHaveSchemas(t *testing.T) {
-	t.Setenv(automateEnableEnv, "1")
 	root := buildRootWithCollections(t, makeDeps())
 	automate := findChildCommand(root, "automate")
 	if automate == nil {
@@ -302,7 +269,6 @@ func walkAutomateCommands(cmd *cobra.Command, path []string, missing *[]string) 
 }
 
 func TestAutomateWorkspaceGroupCommandsHitNestedRoutes(t *testing.T) {
-	t.Setenv(automateEnableEnv, "1")
 	var observed []string
 	var observedBody map[string]any
 
@@ -337,7 +303,6 @@ func TestAutomateWorkspaceGroupCommandsHitNestedRoutes(t *testing.T) {
 }
 
 func TestAutomateWorkspaceDeleteRequiresForce(t *testing.T) {
-	t.Setenv(automateEnableEnv, "1")
 	_, err := execute(buildRootWithCollections(t, makeDeps()), "automate", "workspace", "delete", "ws-1")
 	if err == nil || !strings.Contains(err.Error(), "--force") {
 		t.Fatalf("expected workspace delete to require --force, got %v", err)
@@ -345,7 +310,6 @@ func TestAutomateWorkspaceDeleteRequiresForce(t *testing.T) {
 }
 
 func TestAutomateConnectionTestHitsTestRoute(t *testing.T) {
-	t.Setenv(automateEnableEnv, "1")
 	var observed []string
 
 	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
@@ -368,7 +332,6 @@ func TestAutomateConnectionTestHitsTestRoute(t *testing.T) {
 }
 
 func TestAutomateConnectionDeleteRequiresForce(t *testing.T) {
-	t.Setenv(automateEnableEnv, "1")
 	_, err := execute(buildRootWithCollections(t, makeDeps()), "automate", "connection", "delete", "conn-1")
 	if err == nil || !strings.Contains(err.Error(), "--force") {
 		t.Fatalf("expected connection delete to require --force, got %v", err)
@@ -376,7 +339,6 @@ func TestAutomateConnectionDeleteRequiresForce(t *testing.T) {
 }
 
 func TestAutomateAutomationValidateWrapsExportModel(t *testing.T) {
-	t.Setenv(automateEnableEnv, "1")
 	var observedPath string
 	var observedBody map[string]any
 
@@ -420,7 +382,6 @@ func TestAutomateAutomationValidateWrapsExportModel(t *testing.T) {
 }
 
 func TestAutomateAutomationImportUpdateSendsBareExportModel(t *testing.T) {
-	t.Setenv(automateEnableEnv, "1")
 	var observed string
 	var observedBody map[string]any
 
@@ -452,7 +413,6 @@ func TestAutomateAutomationImportUpdateSendsBareExportModel(t *testing.T) {
 }
 
 func TestAutomateVersionHistoryRoutes(t *testing.T) {
-	t.Setenv(automateEnableEnv, "1")
 	var observed []string
 
 	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
@@ -487,31 +447,20 @@ func TestAutomateVersionHistoryRoutes(t *testing.T) {
 	}
 }
 
-func TestGenerateSkillsIncludesAutomateOnlyWhenHiddenRequested(t *testing.T) {
-	t.Setenv(automateEnableEnv, "1")
-
+func TestGenerateSkillsIncludesAutomateByDefault(t *testing.T) {
 	_, err := execute(buildRootWithCollections(t, makeDeps()), "generate-skills", "--include-hidden", "--output-dir", t.TempDir())
 	if err == nil || !strings.Contains(err.Error(), "--include-hidden requires --filter") {
 		t.Fatalf("expected --include-hidden without --filter to fail, got %v", err)
 	}
 
-	defaultDir := t.TempDir()
+	dir := t.TempDir()
 	if _, err := execute(buildRootWithCollections(t, makeDeps()),
-		"generate-skills", "--filter", "automate", "--output-dir", defaultDir); err != nil {
-		t.Fatalf("generate-skills default failed: %v", err)
+		"generate-skills", "--filter", "automate", "--output-dir", dir); err != nil {
+		t.Fatalf("generate-skills failed: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(defaultDir, "umbraco-automate", "SKILL.md")); err == nil {
-		t.Fatal("automate skill should not be generated without --include-hidden")
-	}
-
-	hiddenDir := t.TempDir()
-	if _, err := execute(buildRootWithCollections(t, makeDeps()),
-		"generate-skills", "--filter", "automate", "--include-hidden", "--output-dir", hiddenDir); err != nil {
-		t.Fatalf("generate-skills --include-hidden failed: %v", err)
-	}
-	content, err := os.ReadFile(filepath.Join(hiddenDir, "umbraco-automate", "SKILL.md"))
+	content, err := os.ReadFile(filepath.Join(dir, "umbraco-automate", "SKILL.md"))
 	if err != nil {
-		t.Fatalf("expected automate skill with --include-hidden: %v", err)
+		t.Fatalf("expected automate skill in default generation: %v", err)
 	}
 	for _, want := range []string{"automation list", "automation validate", "workspace group add", "version-history rollback"} {
 		if !strings.Contains(string(content), want) {
@@ -539,7 +488,6 @@ func TestGeneratedSkillsFlattenNestedSubgroups(t *testing.T) {
 }
 
 func TestAutomateUpdateMergeStripsResponseOnlyFields(t *testing.T) {
-	t.Setenv(automateEnableEnv, "1")
 	var observedBody map[string]any
 
 	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
