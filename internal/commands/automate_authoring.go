@@ -56,8 +56,8 @@ Updating creates a new draft version; 'automation publish <id>' makes it live.`,
 		Path: func(args []string) string { return api.JoinPath("/automations/%s", args[0]) },
 		// UpdateAutomationRequestModel declares additionalProperties: false;
 		// strip the response-only fields the merge fetch echoes back.
-		Normalize: stripFields("id", "workspaceId", "status", "health", "publishedVersion", "dateCreated", "dateModified", "disabledUtc", "warningIssuedUtc"),
-		APIPrefix: automateAPIPrefix,
+		NormalizeMerged: stripFields("id", "workspaceId", "status", "health", "publishedVersion", "dateCreated", "dateModified", "disabledUtc", "warningIssuedUtc"),
+		APIPrefix:       automateAPIPrefix,
 	})
 }
 

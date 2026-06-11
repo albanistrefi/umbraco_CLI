@@ -335,7 +335,7 @@ func datatypeCreate(deps Dependencies) *cobra.Command {
 	var jsonPayload string
 	var dryRun bool
 	var printTemplate bool
-	cmd := &cobra.Command{Use: "create", Short: "Create data type", RunE: func(cmd *cobra.Command, args []string) error {
+	cmd := &cobra.Command{Use: "create", Short: "Create data type", Long: "POST /data-type. Editor settings go in the values array ([{alias, value}, ...]); a configuration map ({alias: value}) is accepted as a convenience and converted to values automatically.", RunE: func(cmd *cobra.Command, args []string) error {
 		if printTemplate {
 			return printResult(cmd, deps, schema.Templates["datatype.create"])
 		}
@@ -344,6 +344,9 @@ func datatypeCreate(deps Dependencies) *cobra.Command {
 		}
 		body, err := parsePayload(jsonPayload)
 		if err != nil {
+			return err
+		}
+		if err := normalizeDatatypeConfiguration(body); err != nil {
 			return err
 		}
 		if _, err := ensurePayloadID(body); err != nil {
@@ -373,8 +376,11 @@ func datatypeUpdate(deps Dependencies) *cobra.Command {
                 PUTs the result; fields not mentioned are preserved
 
 Before v0.4.0 --json silently behaved like --merge-json on this resource.
-Pass --merge-json for partial edits.`,
-		Path: func(args []string) string { return api.JoinPath(dataTypeLegacyCollectionPath+"/%s", args[0]) },
+Pass --merge-json for partial edits. A configuration map ({alias: value})
+is accepted as a convenience and converted to the values array the API
+expects.`,
+		Path:      func(args []string) string { return api.JoinPath(dataTypeLegacyCollectionPath+"/%s", args[0]) },
+		Normalize: normalizeDatatypeConfiguration,
 	})
 }
 

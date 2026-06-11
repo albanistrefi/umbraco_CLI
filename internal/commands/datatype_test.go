@@ -792,10 +792,10 @@ func TestDatatypeUpdateMergeJSONFetchesCurrentAndSendsMergedPayload(t *testing.T
   "id":"dt-1",
   "name":"Rich Text",
   "editorAlias":"Umb.PropertyEditorUi.Tiptap",
-  "configuration":{
-    "maxChars":120,
-    "toolbar":{"bold":true,"italic":true}
-  }
+  "values":[
+    {"alias":"maxChars","value":120},
+    {"alias":"toolbar","value":{"bold":true,"italic":true}}
+  ]
 }`), nil
 			}
 			if req.Method == http.MethodPut {
@@ -810,6 +810,8 @@ func TestDatatypeUpdateMergeJSONFetchesCurrentAndSendsMergedPayload(t *testing.T
 		}
 	})
 
+	// The configuration-map convenience shape converts to values entries
+	// before the merge, then merges by alias against the fetched values.
 	output, err := execute(
 		buildRootWithCollections(t, deps),
 		"datatype", "update", "dt-1",
@@ -825,17 +827,25 @@ func TestDatatypeUpdateMergeJSONFetchesCurrentAndSendsMergedPayload(t *testing.T
 	if putPayload["name"] != "Rich Text" || putPayload["editorAlias"] != "Umb.PropertyEditorUi.Tiptap" {
 		t.Fatalf("expected required fields to be preserved, got %+v", putPayload)
 	}
+	if _, leaked := putPayload["configuration"]; leaked {
+		t.Fatalf("configuration must convert to values, not reach the PUT body: %+v", putPayload)
+	}
 
-	configuration, ok := putPayload["configuration"].(map[string]any)
-	if !ok {
-		t.Fatalf("missing merged configuration payload: %+v", putPayload)
+	values, ok := putPayload["values"].([]any)
+	if !ok || len(values) != 2 {
+		t.Fatalf("expected both values entries preserved, got %+v", putPayload["values"])
 	}
-	if configuration["maxChars"] != float64(120) {
-		t.Fatalf("expected untouched config fields to be preserved, got %+v", configuration)
+	merged := map[string]any{}
+	for _, raw := range values {
+		entry := raw.(map[string]any)
+		merged[entry["alias"].(string)] = entry["value"]
 	}
-	toolbar, ok := configuration["toolbar"].(map[string]any)
+	if merged["maxChars"] != float64(120) {
+		t.Fatalf("expected untouched setting to be preserved, got %+v", merged)
+	}
+	toolbar, ok := merged["toolbar"].(map[string]any)
 	if !ok {
-		t.Fatalf("missing merged toolbar payload: %+v", configuration)
+		t.Fatalf("missing merged toolbar value: %+v", merged)
 	}
 	if toolbar["bold"] != true || toolbar["italic"] != false {
 		t.Fatalf("expected nested merge to preserve bold and update italic, got %+v", toolbar)
@@ -864,7 +874,7 @@ func TestDatatypeUpdateMergeJSONSupportsDryRunForNestedObjectConfig(t *testing.T
   "id":"dt-1",
   "name":"Rich Text",
   "editorAlias":"Umb.PropertyEditorUi.Tiptap",
-  "configuration":{"toolbar":{"bold":true,"italic":true}}
+  "values":[{"alias":"toolbar","value":{"bold":true,"italic":true}}]
 }`), nil
 			}
 			return datatypeJSONResponse(http.StatusMethodNotAllowed, `{"error":"unexpected write"}`), nil
@@ -898,13 +908,14 @@ func TestDatatypeUpdateMergeJSONSupportsDryRunForNestedObjectConfig(t *testing.T
 	if !ok {
 		t.Fatalf("missing dry-run body: %+v", payload)
 	}
-	configuration, ok := body["configuration"].(map[string]any)
-	if !ok {
-		t.Fatalf("missing dry-run merged configuration: %+v", body)
+	values, ok := body["values"].([]any)
+	if !ok || len(values) != 1 {
+		t.Fatalf("missing dry-run merged values: %+v", body)
 	}
-	toolbar, ok := configuration["toolbar"].(map[string]any)
+	entry := values[0].(map[string]any)
+	toolbar, ok := entry["value"].(map[string]any)
 	if !ok || toolbar["bold"] != true || toolbar["italic"] != false {
-		t.Fatalf("unexpected dry-run merged toolbar payload: %+v", configuration)
+		t.Fatalf("unexpected dry-run merged toolbar payload: %+v", entry)
 	}
 }
 
@@ -1150,5 +1161,41 @@ func TestDatatypeUpdateMergeJSONSupportsDryRunForAliasValues(t *testing.T) {
 	}
 	if body["name"] != "Rich Text" || body["editorAlias"] != "Umb.PropertyEditorUi.Tiptap" {
 		t.Fatalf("expected merged dry-run payload to preserve required fields, got %+v", body)
+	}
+}
+
+func TestDatatypeCreateConvertsConfigurationToValues(t *testing.T) {
+	// The API silently ignores an unknown configuration key, so settings
+	// passed that way used to vanish while creation reported success.
+	output, err := execute(buildRootWithCollections(t, makeDeps()),
+		"datatype", "create", "--dry-run",
+		"--json", `{"name":"Tags","editorAlias":"Umbraco.Tags","editorUiAlias":"Umb.PropertyEditorUi.Tags","configuration":{"storageType":"Json","group":"default"}}`,
+	)
+	if err != nil {
+		t.Fatalf("datatype create dry-run failed: %v", err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("decode dry-run payload: %v", err)
+	}
+	body := payload["body"].(map[string]any)
+	if _, leaked := body["configuration"]; leaked {
+		t.Fatalf("configuration must convert to values, got %+v", body)
+	}
+	values, ok := body["values"].([]any)
+	if !ok || len(values) != 2 {
+		t.Fatalf("expected two converted values entries, got %+v", body["values"])
+	}
+	first := values[0].(map[string]any)
+	if first["alias"] != "group" || first["value"] != "default" {
+		t.Fatalf("expected deterministic alias-sorted conversion, got %+v", values)
+	}
+
+	_, err = execute(buildRootWithCollections(t, makeDeps()),
+		"datatype", "create", "--dry-run",
+		"--json", `{"name":"Tags","editorAlias":"Umbraco.Tags","configuration":{"a":1},"values":[{"alias":"b","value":2}]}`,
+	)
+	if err == nil || !strings.Contains(err.Error(), "mixes configuration and values") {
+		t.Fatalf("expected mixed shapes to be rejected, got %v", err)
 	}
 }

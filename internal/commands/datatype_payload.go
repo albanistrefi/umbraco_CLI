@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"sort"
 
 	"umbraco-cli/internal/api"
 )
@@ -354,4 +355,38 @@ func mutateDatatypeStringArray(ctx context.Context, client *api.Client, id strin
 	// the no-op, dry-run, and applied cases all have a deliberate shape.
 	summary.Changed = true
 	return summary, nil
+}
+
+// normalizeDatatypeConfiguration converts the configuration-map convenience
+// shape ({alias: value}) into the values array the Management API actually
+// accepts ([{alias, value}]). The API silently ignores an unknown
+// configuration key, so without this conversion the settings vanished while
+// creation reported success. Rejects payloads that mix both shapes rather
+// than guessing which one wins.
+func normalizeDatatypeConfiguration(body map[string]any) error {
+	rawConfiguration, present := body["configuration"]
+	if !present {
+		return nil
+	}
+	configuration, ok := rawConfiguration.(map[string]any)
+	if !ok {
+		return fmt.Errorf("configuration must be an object of {alias: value} pairs")
+	}
+	if _, hasValues := body["values"]; hasValues {
+		return fmt.Errorf("payload mixes configuration and values; the API accepts values ([{alias, value}]) -- put every setting there")
+	}
+
+	aliases := make([]string, 0, len(configuration))
+	for alias := range configuration {
+		aliases = append(aliases, alias)
+	}
+	sort.Strings(aliases)
+
+	values := make([]any, 0, len(aliases))
+	for _, alias := range aliases {
+		values = append(values, map[string]any{"alias": alias, "value": configuration[alias]})
+	}
+	body["values"] = values
+	delete(body, "configuration")
+	return nil
 }

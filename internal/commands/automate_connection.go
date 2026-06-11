@@ -81,11 +81,11 @@ func automateConnectionCreate(deps Dependencies) *cobra.Command {
 
 func automateConnectionUpdate(deps Dependencies) *cobra.Command {
 	return updateCommand(deps, updateSpec{
-		Use:       "update <id>",
-		Short:     "Update a connection",
-		Path:      func(args []string) string { return api.JoinPath("/connections/%s", args[0]) },
-		Normalize: stripFields("id", "dateCreated", "dateModified"),
-		APIPrefix: automateAPIPrefix,
+		Use:             "update <id>",
+		Short:           "Update a connection",
+		Path:            func(args []string) string { return api.JoinPath("/connections/%s", args[0]) },
+		NormalizeMerged: stripFields("id", "dateCreated", "dateModified"),
+		APIPrefix:       automateAPIPrefix,
 	})
 }
 

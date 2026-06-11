@@ -265,6 +265,8 @@ umbraco datatype block update <datatypeId>
 umbraco datatype create
 ```
 
+POST /data-type. Editor settings go in the values array ([{alias, value}, ...]); a configuration map ({alias: value}) is accepted as a convenience and converted to values automatically.
+
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--dry-run` | bool | false | Print the planned request without executing |
@@ -337,7 +339,9 @@ Updates a data type with the uniform CLI update contract:
                 PUTs the result; fields not mentioned are preserved
 
 Before v0.4.0 --json silently behaved like --merge-json on this resource.
-Pass --merge-json for partial edits.
+Pass --merge-json for partial edits. A configuration map ({alias: value})
+is accepted as a convenience and converted to the values array the API
+expects.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
