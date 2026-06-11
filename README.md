@@ -241,7 +241,7 @@ umbraco user client-credentials create <user-id> --client-id umbraco-back-office
 This repo ships two sets of SKILL.md files under `skills/`:
 
 - **67 bundled Umbraco extension-development skills** (`skills/foundation/`, `skills/backend/`, `skills/extensions/`, `skills/property-editors/`, `skills/rich-text/`, `skills/testing/`) — copied from `.agents/skills/` by `npm run bundle:skills`.
-- **24 CLI command skills** (`skills/cli/`) — generated from the cobra command tree by `umbraco generate-skills`.
+- **25 CLI command skills** (`skills/cli/`) — generated from the cobra command tree by `umbraco generate-skills`.
 
 Verify both sets are present and consistent with the package version:
 
@@ -292,28 +292,25 @@ skills into whichever harness directory you point it at is on the roadmap.
 - `health` (4)
 - `tree` (1)
 - `auth` (3)
-- `automate` (53, experimental — gated behind `UMBRACO_CLI_ENABLE_AUTOMATE=1`; see below)
+- `automate` (53) — requires [Umbraco Automate](https://docs.umbraco.com/umbraco-automate) on the target instance; see below
 
-Total: **216 runnable commands** counting every nested subcommand (163 in the always-visible CLI + 53 in the gated `automate` group). Group counts above are direct subcommands; nested subgroups like `document version` and `automate workspace group` add the rest.
+Total: **216 runnable commands** counting every nested subcommand. Group counts above are direct subcommands; nested subgroups like `document version` and `automate workspace group` add the rest.
 
-## Umbraco Automate (experimental)
+## Umbraco Automate
 
-The CLI ships a gated `automate` command group for [Umbraco Automate](https://docs.umbraco.com/umbraco-automate):
-catalogue discovery, automation authoring (create/update/publish, plus an
-export → validate → import round-trip), run control, approvals, workspaces,
-connections, version history with rollback, and metrics. The Automate
-Management API surface is still settling post-launch, so the group is opt-in
-and hidden from `--help` and the public skills bundle:
+The `automate` command group covers the full [Umbraco Automate](https://docs.umbraco.com/umbraco-automate)
+Management API: catalogue discovery, automation authoring (create/update/publish,
+plus an export → validate → import round-trip), run control, approvals,
+workspaces, connections, version history with rollback, and metrics. It
+requires Umbraco Automate to be installed on the target instance.
 
 ```bash
-export UMBRACO_CLI_ENABLE_AUTOMATE=1
 umbraco automate workspace list
 umbraco automate automation list --fields id,name
 umbraco automate automation export <id> > automation.json
 umbraco automate automation validate --workspace-id <ws> --file automation.json
+umbraco automate automation runs <id> --take 10
 ```
-
-Private docs for the gated group: `umbraco generate-skills --include-hidden --filter automate --output-dir <dir>`.
 
 ## Agent Safety Rules
 
