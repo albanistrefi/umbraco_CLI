@@ -53,7 +53,10 @@ func automateAutomationUpdate(deps Dependencies) *cobra.Command {
 		Long: `PUT /automations/{id}. The update model requires the automation's current version field for optimistic concurrency; --merge-json picks it up from the fetch automatically, making it the safe default for partial edits (e.g. renaming, tweaking one step's settings).
 
 Updating creates a new draft version; 'automation publish <id>' makes it live.`,
-		Path:      func(args []string) string { return api.JoinPath("/automations/%s", args[0]) },
+		Path: func(args []string) string { return api.JoinPath("/automations/%s", args[0]) },
+		// UpdateAutomationRequestModel declares additionalProperties: false;
+		// strip the response-only fields the merge fetch echoes back.
+		Normalize: stripFields("id", "workspaceId", "status", "health", "publishedVersion", "dateCreated", "dateModified", "disabledUtc", "warningIssuedUtc"),
 		APIPrefix: automateAPIPrefix,
 	})
 }

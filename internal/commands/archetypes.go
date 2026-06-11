@@ -292,6 +292,17 @@ func resolveUpdateBody(ctx context.Context, client *api.Client, fetchPath string
 	return merged, nil
 }
 
+// stripFields returns a Normalize that deletes response-only keys echoed
+// by the merge fetch which the update model rejects (update request models
+// with additionalProperties: false). Idempotent, as Normalize requires.
+func stripFields(keys ...string) func(map[string]any) {
+	return func(body map[string]any) {
+		for _, key := range keys {
+			delete(body, key)
+		}
+	}
+}
+
 type updateSpec struct {
 	Use   string
 	Short string

@@ -87,6 +87,7 @@ func automateWorkspaceUpdate(deps Dependencies) *cobra.Command {
 		Short:     "Update a workspace",
 		Long:      "PUT /workspaces/{id}. The update model requires the workspace's current version field for optimistic concurrency; --merge-json picks it up from the fetch automatically.",
 		Path:      func(args []string) string { return api.JoinPath("/workspaces/%s", args[0]) },
+		Normalize: stripFields("id", "dateCreated", "dateModified"),
 		APIPrefix: automateAPIPrefix,
 	})
 }
