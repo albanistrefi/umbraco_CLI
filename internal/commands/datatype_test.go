@@ -1199,3 +1199,59 @@ func TestDatatypeCreateConvertsConfigurationToValues(t *testing.T) {
 		t.Fatalf("expected mixed shapes to be rejected, got %v", err)
 	}
 }
+
+func TestDatatypeUpdateMergeFoldsLegacyConfigurationResponses(t *testing.T) {
+	// Defense in depth: no supported Management API returns a configuration
+	// map for data types, but if a non-standard response carries one, the
+	// merged body must fold it into values (patch wins on collisions) and
+	// never PUT the configuration key.
+	var putPayload map[string]any
+
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/data-type/dt-1":
+			if req.Method == http.MethodGet {
+				return datatypeJSONResponse(http.StatusOK, `{
+  "id":"dt-1",
+  "name":"Rich Text",
+  "editorAlias":"Umb.PropertyEditorUi.Tiptap",
+  "configuration":{"maxChars":120,"toolbar":{"bold":true,"italic":true}}
+}`), nil
+			}
+			if err := json.NewDecoder(req.Body).Decode(&putPayload); err != nil {
+				t.Fatalf("decode put payload: %v", err)
+			}
+			return datatypeJSONResponse(http.StatusOK, ``), nil
+		default:
+			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	if _, err := execute(buildRootWithCollections(t, deps),
+		"datatype", "update", "dt-1",
+		"--merge-json", `{"configuration":{"toolbar":{"italic":false}}}`); err != nil {
+		t.Fatalf("datatype merge update failed: %v", err)
+	}
+
+	if _, leaked := putPayload["configuration"]; leaked {
+		t.Fatalf("configuration must never reach the PUT body, got %+v", putPayload)
+	}
+	values, ok := putPayload["values"].([]any)
+	if !ok || len(values) != 2 {
+		t.Fatalf("expected folded values entries, got %+v", putPayload["values"])
+	}
+	settings := map[string]any{}
+	for _, raw := range values {
+		entry := raw.(map[string]any)
+		settings[entry["alias"].(string)] = entry["value"]
+	}
+	if settings["maxChars"] != float64(120) {
+		t.Fatalf("expected untouched legacy setting folded into values, got %+v", settings)
+	}
+	toolbar, ok := settings["toolbar"].(map[string]any)
+	if !ok || toolbar["italic"] != false {
+		t.Fatalf("expected the patch to win the toolbar collision, got %+v", settings)
+	}
+}
