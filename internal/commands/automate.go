@@ -255,7 +255,7 @@ func automateRun(deps Dependencies) *cobra.Command {
 func automateRunGet(deps Dependencies) *cobra.Command {
 	return getCommand(deps, getSpec{
 		Use:       "get <id>",
-		Short:     "Get a run by ID (per-step inputs, outputs, errors, timing)",
+		Short:     "Get a run by ID (per-step status, errors, retries, timing -- resolved step values are not exposed by the API)",
 		Path:      func(args []string) string { return api.JoinPath("/runs/%s", args[0]) },
 		APIPrefix: automateAPIPrefix,
 	})
