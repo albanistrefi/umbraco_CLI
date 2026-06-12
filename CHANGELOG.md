@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.4.3 - 2026-06-12
+
+Fixes for three field reports from agent runs, all reproduced live before fixing:
+
+- fixed `tree walk` failing with `could not find` on paths that plainly exist: modern tree responses carry document names inside `variants[]` with no top-level `name` field, so the matcher silently found nothing. Names now match against the top-level field (older servers) and every variant name
+- added `--resolve-doctype` to `document root` and `document children`: tree responses carry only `{id, icon}` for an item's document type, so agents couldn't reason about content types without per-item lookups. The flag annotates each item's `documentType` with its alias, fetching each distinct type exactly once
+- fixed `datatype create --json` silently dropping a `configuration` map: the API accepts only a `values` array and ignores the unknown key — and the CLI's own `--print-template` taught the wrong shape. `configuration` now converts to `values` automatically (deterministic, alias-sorted) on `datatype create` and `update`, payloads mixing both shapes are rejected, and the template teaches `values` with the required `editorUiAlias`
+- hardened the datatype merge path against non-standard responses: a `configuration` map surviving into a merged update body is folded into `values` (the patch deep-merged over legacy settings per key) and the key never reaches the PUT. No supported Management API returns that shape (verified against the v14.0-era and v17 specs); this keeps the CLI's tolerance of it consistent
+- update normalization split into input hooks (may reject, e.g. the mixed-shape error) and post-merge hooks (output hygiene, e.g. the Automate response-field strips), so input conveniences never fire on server-echoed fields
+
 ## v0.4.2 - 2026-06-11
 
 ### Umbraco Automate support (53 commands)

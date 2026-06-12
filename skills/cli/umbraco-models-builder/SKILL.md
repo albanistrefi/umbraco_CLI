@@ -2,7 +2,7 @@
 name: umbraco-models-builder
 description: "Trigger and inspect ModelsBuilder source generation"
 metadata:
-  version: 0.4.2
+  version: 0.4.3
   requires:
     bins:
       - umbraco

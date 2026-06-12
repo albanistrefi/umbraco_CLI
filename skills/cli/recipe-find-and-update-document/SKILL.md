@@ -2,7 +2,7 @@
 name: recipe-find-and-update-document
 description: "Walk the content tree to find a document, update a property, and publish."
 metadata:
-  version: 0.4.2
+  version: 0.4.3
   requires:
     bins:
       - umbraco
