@@ -1251,7 +1251,7 @@ func TestDatatypeUpdateMergeFoldsLegacyConfigurationResponses(t *testing.T) {
 		t.Fatalf("expected untouched legacy setting folded into values, got %+v", settings)
 	}
 	toolbar, ok := settings["toolbar"].(map[string]any)
-	if !ok || toolbar["italic"] != false {
-		t.Fatalf("expected the patch to win the toolbar collision, got %+v", settings)
+	if !ok || toolbar["italic"] != false || toolbar["bold"] != true {
+		t.Fatalf("expected the patch deep-merged over the legacy setting (italic updated, bold preserved), got %+v", settings)
 	}
 }
