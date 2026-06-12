@@ -412,26 +412,32 @@ func foldMergedDatatypeConfiguration(body map[string]any) error {
 	}
 
 	values, _ := body["values"].([]any)
-	existing := map[string]struct{}{}
+	existing := map[string]map[string]any{}
 	for _, raw := range values {
 		entry, ok := raw.(map[string]any)
 		if !ok {
 			continue
 		}
 		if alias, ok := entry["alias"].(string); ok {
-			existing[alias] = struct{}{}
+			existing[alias] = entry
 		}
 	}
 
 	aliases := make([]string, 0, len(configuration))
 	for alias := range configuration {
-		if _, taken := existing[alias]; !taken {
-			aliases = append(aliases, alias)
-		}
+		aliases = append(aliases, alias)
 	}
 	sort.Strings(aliases)
 	for _, alias := range aliases {
-		values = append(values, map[string]any{"alias": alias, "value": configuration[alias]})
+		entry, collision := existing[alias]
+		if !collision {
+			values = append(values, map[string]any{"alias": alias, "value": configuration[alias]})
+			continue
+		}
+		// The values entry carries the user's patch; deep-merge the legacy
+		// setting underneath it so unmentioned nested fields survive, as
+		// --merge-json promises.
+		entry["value"] = mergeAliasValue(configuration[alias], entry["value"])
 	}
 
 	body["values"] = values
