@@ -390,3 +390,51 @@ func normalizeDatatypeConfiguration(body map[string]any) error {
 	delete(body, "configuration")
 	return nil
 }
+
+// foldMergedDatatypeConfiguration folds a configuration map that survived
+// into a merged update body into the values array, with existing values
+// entries winning on alias collisions (they carry the user's patch), and
+// drops the configuration key the API would reject or ignore. No supported
+// Management API version returns configuration for data types (verified
+// against the v14.0-era and v17 specs), so this is defense in depth for
+// non-standard responses rather than a live code path -- but the CLI
+// tolerates the shape elsewhere, and tolerating it inconsistently is how
+// settings get silently lost.
+func foldMergedDatatypeConfiguration(body map[string]any) error {
+	rawConfiguration, present := body["configuration"]
+	if !present {
+		return nil
+	}
+	configuration, ok := rawConfiguration.(map[string]any)
+	if !ok {
+		delete(body, "configuration")
+		return nil
+	}
+
+	values, _ := body["values"].([]any)
+	existing := map[string]struct{}{}
+	for _, raw := range values {
+		entry, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		if alias, ok := entry["alias"].(string); ok {
+			existing[alias] = struct{}{}
+		}
+	}
+
+	aliases := make([]string, 0, len(configuration))
+	for alias := range configuration {
+		if _, taken := existing[alias]; !taken {
+			aliases = append(aliases, alias)
+		}
+	}
+	sort.Strings(aliases)
+	for _, alias := range aliases {
+		values = append(values, map[string]any{"alias": alias, "value": configuration[alias]})
+	}
+
+	body["values"] = values
+	delete(body, "configuration")
+	return nil
+}

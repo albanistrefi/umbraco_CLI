@@ -379,8 +379,9 @@ Before v0.4.0 --json silently behaved like --merge-json on this resource.
 Pass --merge-json for partial edits. A configuration map ({alias: value})
 is accepted as a convenience and converted to the values array the API
 expects.`,
-		Path:      func(args []string) string { return api.JoinPath(dataTypeLegacyCollectionPath+"/%s", args[0]) },
-		Normalize: normalizeDatatypeConfiguration,
+		Path:            func(args []string) string { return api.JoinPath(dataTypeLegacyCollectionPath+"/%s", args[0]) },
+		Normalize:       normalizeDatatypeConfiguration,
+		NormalizeMerged: foldMergedDatatypeConfiguration,
 	})
 }
 
