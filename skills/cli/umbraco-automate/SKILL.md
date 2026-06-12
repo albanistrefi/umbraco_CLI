@@ -41,7 +41,7 @@ umbraco automate <command> [flags]
 | `automate connection list` | List connections (paginated; --skip/--take/--all) |
 | `automate metrics by-automation` | Get run metrics grouped by automation |
 | `automate metrics summary` | Get run summary metrics |
-| `automate run get <id>` | Get a run by ID (per-step inputs, outputs, errors, timing) |
+| `automate run get <id>` | Get a run by ID (per-step status, errors, retries, timing -- resolved step values are not exposed by the API) |
 | `automate version-history compare <entity-type> <entity-id> <from-version> <to-version>` | Compare two stored versions of an entity |
 | `automate version-history get <entity-type> <entity-id> <version>` | Get one stored version of an entity (the full payload as it was) |
 | `automate version-history list <entity-type> <entity-id>` | List stored versions of an entity (paginated; --skip/--take) |
