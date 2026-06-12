@@ -114,6 +114,26 @@ func TestTableOutputPrintsPartialPageFooter(t *testing.T) {
 	}
 }
 
+func TestTableOutputRendersFirstNTriagedEnvelopes(t *testing.T) {
+	payload := map[string]any{
+		"total":    float64(41),
+		"returned": float64(1),
+		"items":    []any{map[string]any{"id": "a1", "name": "Send Slack alert"}},
+	}
+
+	var out bytes.Buffer
+	if err := Print(payload, "table", config.OutputJSON, &out); err != nil {
+		t.Fatalf("print table failed: %v", err)
+	}
+	lines := strings.Split(strings.TrimRight(out.String(), "\n"), "\n")
+	if !strings.HasPrefix(lines[0], "id") {
+		t.Fatalf("--first-n envelope should still render as a column table: %q", out.String())
+	}
+	if !strings.Contains(out.String(), "(1 of 41)") {
+		t.Fatalf("expected partial-page footer, got %q", out.String())
+	}
+}
+
 func TestTableOutputLeavesDetailMapsWithItemsFieldAlone(t *testing.T) {
 	payload := map[string]any{
 		"id":    "run-1",

@@ -91,9 +91,10 @@ func printTable(data any, out io.Writer) error {
 	}
 }
 
-// pagedItems matches the API's collection envelope ({items, total}) and the
-// bare {items} variant. Any extra key means the map is a detail response
-// that happens to contain an items field, so it falls through untouched.
+// pagedItems matches the API's collection envelope ({items, total}), the
+// bare {items} variant, and the read-triage shape where --first-n adds a
+// returned count. Any other key means the map is a detail response that
+// happens to contain an items field, so it falls through untouched.
 func pagedItems(value map[string]any) ([]any, int, bool) {
 	items, ok := value["items"].([]any)
 	if !ok {
@@ -103,6 +104,10 @@ func pagedItems(value map[string]any) ([]any, int, bool) {
 	for key, field := range value {
 		switch key {
 		case "items":
+		case "returned":
+			if _, ok := field.(float64); !ok {
+				return nil, 0, false
+			}
 		case "total":
 			number, ok := field.(float64)
 			if !ok {
