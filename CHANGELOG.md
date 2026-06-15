@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.4.4 - 2026-06-15
+
+Fixes from real-world agent field testing against a Cloud instance:
+
+- fixed `logs list`/`logs search` silently ignoring `--level` and `--filter-expression` whenever a `--params` blob was also supplied: the two input sources were mutually exclusive, so `logs search --level Error --params '{"take":30}'` dropped the level and returned newest-N unfiltered. The Management API honors both filters (confirmed live); flags now layer on top of `--params` and win on key conflicts. High-severity for incident triage
+- corrected `automate run get` help: it promised "per-step inputs, outputs, errors, timing", but the Automate API's run model exposes only status, error, retry count, and timing per step — resolved step values are never returned. The help now says what the response actually holds and names the API limit, so agents stop digging for data the server cannot provide
+- `-o table` now renders list responses as real column tables instead of one JSON-encoded `items` blob: a header row with one column per field (identity columns `id`/`name`/`alias`/`status`/`state` first, the rest alphabetical), nested values as compact truncated JSON (full data stays in `-o json`), control characters sanitized so columns hold, and a `(N of M)` footer on partial pages. Detail responses keep key/value rows; `--first-n` triaged envelopes still render as tables
+
 ## v0.4.3 - 2026-06-12
 
 Fixes for three field reports from agent runs, all reproduced live before fixing:
