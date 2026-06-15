@@ -184,34 +184,38 @@ type logQueryFlags struct {
 }
 
 func logParamsFromFlags(raw string, flags logQueryFlags) (map[string]any, error) {
-	params, err := parseParams(raw)
+	parsed, err := parseParams(raw)
 	if err != nil {
 		return nil, err
 	}
-	if params == nil {
-		params = map[string]any{}
-		if flags.level != "" {
-			params["logLevel"] = []any{flags.level}
-		}
-		if flags.filterExpression != "" {
-			params["filterExpression"] = flags.filterExpression
-		}
-		if flags.from != "" {
-			params["startDate"] = flags.from
-		}
-		if flags.to != "" {
-			params["endDate"] = flags.to
-		}
-		if flags.skip >= 0 {
-			params["skip"] = flags.skip
-		}
-		if flags.take >= 0 {
-			params["take"] = flags.take
-		}
-		return params, nil
-	}
 
-	return normalizeLogParams(params), nil
+	// Start from the raw --params blob (if any), then layer the named flags
+	// on top so the two sources combine. Previously a non-nil --params short-
+	// circuited every flag, so `--level Error --params '{"take":30}'` silently
+	// dropped the level filter and returned newest-N unfiltered.
+	params := map[string]any{}
+	if parsed != nil {
+		params = normalizeLogParams(parsed)
+	}
+	if flags.level != "" {
+		params["logLevel"] = []any{flags.level}
+	}
+	if flags.filterExpression != "" {
+		params["filterExpression"] = flags.filterExpression
+	}
+	if flags.from != "" {
+		params["startDate"] = flags.from
+	}
+	if flags.to != "" {
+		params["endDate"] = flags.to
+	}
+	if flags.skip >= 0 {
+		params["skip"] = flags.skip
+	}
+	if flags.take >= 0 {
+		params["take"] = flags.take
+	}
+	return params, nil
 }
 
 func normalizeLogParams(params map[string]any) map[string]any {
