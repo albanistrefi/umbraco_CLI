@@ -56,6 +56,56 @@ func TestLogsListUsesV17LogEndpointWithQueryFlags(t *testing.T) {
 	}
 }
 
+func TestLogsSearchCombinesFlagsWithParamsBlob(t *testing.T) {
+	var observedQuery = make(map[string][]string)
+
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/log-viewer/log":
+			observedQuery = req.URL.Query()
+			return endpointJSONResponse(http.StatusOK, `{"items":[{"level":"Error"}],"total":1}`), nil
+		default:
+			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	// The reported repro: a paging --params blob alongside a --level flag must
+	// forward both, not drop the level and return newest-N unfiltered.
+	_, err := execute(buildRootWithCollections(t, deps),
+		"logs", "search", "--level", "Error", "--params", `{"take":30}`)
+	if err != nil {
+		t.Fatalf("logs search failed: %v", err)
+	}
+	assertQueryValue(t, observedQuery, "logLevel", "Error")
+	assertQueryValue(t, observedQuery, "take", "30")
+}
+
+func TestLogsSearchFlagsOverrideParamsBlobOnConflict(t *testing.T) {
+	var observedQuery = make(map[string][]string)
+
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/log-viewer/log":
+			observedQuery = req.URL.Query()
+			return endpointJSONResponse(http.StatusOK, `{"items":[],"total":0}`), nil
+		default:
+			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	_, err := execute(buildRootWithCollections(t, deps),
+		"logs", "search", "--filter-expression", "@l = 'Error'", "--params", `{"filterExpression":"ignored","take":200}`)
+	if err != nil {
+		t.Fatalf("logs search failed: %v", err)
+	}
+	assertQueryValue(t, observedQuery, "filterExpression", "@l = 'Error'")
+	assertQueryValue(t, observedQuery, "take", "200")
+}
+
 func TestLogsListFallsBackToLegacyEndpointOnNotFound(t *testing.T) {
 	var requests []string
 	var legacyQuery = make(map[string][]string)
