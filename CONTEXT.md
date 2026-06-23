@@ -65,6 +65,7 @@ Implementation runtime is Go (`cmd/umbraco`).
 ### Diagnostics
 - `umbraco server status`
 - `umbraco logs list --level Error --take 50`
+- `umbraco logs search --around 2026-06-23T11:38:51Z --minutes 5 --source-context My.Source --flat --redact-default`
 - `umbraco health groups`
 
 ## Local Dev Commands
