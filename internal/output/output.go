@@ -104,21 +104,45 @@ func pagedItems(value map[string]any) ([]any, int, bool) {
 	for key, field := range value {
 		switch key {
 		case "items":
-		case "returned":
-			if _, ok := field.(float64); !ok {
+		case "returned", "cursor", "nextCursor", "take", "serverTotal", "serverReturned", "filteredOut":
+			if field == nil {
+				continue
+			}
+			if _, ok := numericField(field); !ok {
 				return nil, 0, false
 			}
 		case "total":
-			number, ok := field.(float64)
+			number, ok := numericField(field)
 			if !ok {
 				return nil, 0, false
 			}
-			total = int(number)
+			total = number
+		case "hasMore":
+			if _, ok := field.(bool); !ok {
+				return nil, 0, false
+			}
+		case "window":
+			if _, ok := field.(map[string]any); !ok {
+				return nil, 0, false
+			}
 		default:
 			return nil, 0, false
 		}
 	}
 	return items, total, true
+}
+
+func numericField(value any) (int, bool) {
+	switch typed := value.(type) {
+	case int:
+		return typed, true
+	case int64:
+		return int(typed), true
+	case float64:
+		return int(typed), true
+	default:
+		return 0, false
+	}
 }
 
 func printItemsTable(items []any, total int, out io.Writer) error {

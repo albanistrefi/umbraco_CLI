@@ -106,6 +106,216 @@ func TestLogsSearchFlagsOverrideParamsBlobOnConflict(t *testing.T) {
 	assertQueryValue(t, observedQuery, "take", "200")
 }
 
+func TestLogsSearchAppliesStrictClientSideIncidentFilters(t *testing.T) {
+	var observedQuery = make(map[string][]string)
+
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/log-viewer/log":
+			observedQuery = req.URL.Query()
+			return endpointJSONResponse(http.StatusOK, `{
+				"items": [
+					{
+						"timestamp": "2026-06-23T11:38:51Z",
+						"level": "Error",
+						"renderedMessage": "Needle failure",
+						"properties": [
+							{"name":"SourceContext","value":"My.Project.Controllers.WidgetController"},
+							{"name":"RequestPath","value":"/umbraco/backoffice/api/widget"},
+							{"name":"CorrelationId","value":"corr-abc-123"}
+						]
+					},
+					{
+						"timestamp": "2026-06-23T13:41:09Z",
+						"level": "Error",
+						"renderedMessage": "Needle failure",
+						"properties": [
+							{"name":"SourceContext","value":"My.Project.Controllers.WidgetController"},
+							{"name":"RequestPath","value":"/umbraco/backoffice/api/widget"},
+							{"name":"CorrelationId","value":"corr-abc-123"}
+						]
+					},
+					{
+						"timestamp": "2026-06-23T11:39:00Z",
+						"level": "Warning",
+						"renderedMessage": "Needle failure",
+						"properties": [
+							{"name":"SourceContext","value":"Other.Source"},
+							{"name":"RequestPath","value":"/umbraco/backoffice/api/widget"},
+							{"name":"CorrelationId","value":"corr-abc-123"}
+						]
+					}
+				],
+				"total": 10
+			}`), nil
+		default:
+			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	output, err := execute(buildRootWithCollections(t, deps),
+		"logs", "search",
+		"--from", "2026-06-23T11:30:00Z",
+		"--to", "2026-06-23T11:45:00Z",
+		"--level", "Error",
+		"--source-context", "WidgetController",
+		"--path", "/widget",
+		"--contains", "Needle",
+		"--correlation-id", "abc-123",
+		"--take", "3",
+	)
+	if err != nil {
+		t.Fatalf("logs search failed: %v", err)
+	}
+	assertQueryValue(t, observedQuery, "startDate", "2026-06-23T11:30:00Z")
+	assertQueryValue(t, observedQuery, "endDate", "2026-06-23T11:45:00Z")
+	assertQueryValue(t, observedQuery, "logLevel", "Error")
+	assertQueryValue(t, observedQuery, "take", "3")
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("failed to decode logs search payload: %v", err)
+	}
+	items := payload["items"].([]any)
+	if len(items) != 1 {
+		t.Fatalf("expected one strictly filtered item, got %+v", payload["items"])
+	}
+	item := items[0].(map[string]any)
+	if item["timestamp"] != "2026-06-23T11:38:51Z" {
+		t.Fatalf("expected only in-window timestamp, got %+v", item)
+	}
+	if payload["filteredOut"] != float64(2) || payload["serverReturned"] != float64(3) {
+		t.Fatalf("expected filter metadata, got %+v", payload)
+	}
+	if payload["nextCursor"] != float64(3) || payload["hasMore"] != true {
+		t.Fatalf("expected explicit pagination metadata, got %+v", payload)
+	}
+}
+
+func TestLogsSearchFlatJSONAndRedaction(t *testing.T) {
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/log-viewer/log":
+			return endpointJSONResponse(http.StatusOK, `{
+				"items": [
+					{
+						"timestamp": "2026-06-23T11:38:51Z",
+						"level": "Information",
+						"renderedMessage": "User jane@example.com sent Bearer abc.def.ghi",
+						"exception": null,
+						"properties": [
+							{"name":"SourceContext","value":"OpenIddict.Server.OpenIddictServerDispatcher"},
+							{"name":"RequestPath","value":"/umbraco/management/api/v1/security/back-office/token"},
+							{"name":"ClientSecret","value":"plain-secret"},
+							{"name":"Response","value":"{\"access_token\":\"secret-token\",\"client_secret\":\"secret-value\",\"email\":\"jane@example.com\"}"}
+						]
+					}
+				],
+				"total": 1
+			}`), nil
+		default:
+			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	output, err := execute(buildRootWithCollections(t, deps), "logs", "search", "--flat", "--redact-default")
+	if err != nil {
+		t.Fatalf("logs search failed: %v", err)
+	}
+	if strings.Contains(output, "jane@example.com") || strings.Contains(output, "secret-token") || strings.Contains(output, "plain-secret") || strings.Contains(output, "abc.def.ghi") {
+		t.Fatalf("expected sensitive values to be redacted, got %s", output)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("failed to decode flat logs payload: %v", err)
+	}
+	items := payload["items"].([]any)
+	item := items[0].(map[string]any)
+	if item["sourceContext"] != "OpenIddict.Server.OpenIddictServerDispatcher" {
+		t.Fatalf("expected flat sourceContext, got %+v", item)
+	}
+	if item["requestPath"] != "/umbraco/management/api/v1/security/back-office/token" {
+		t.Fatalf("expected flat requestPath, got %+v", item)
+	}
+	properties, ok := item["properties"].(map[string]any)
+	if !ok || properties["SourceContext"] == nil {
+		t.Fatalf("expected properties object in flat output, got %+v", item["properties"])
+	}
+}
+
+func TestLogsSearchAroundCursorAndCountBy(t *testing.T) {
+	var observedQuery = make(map[string][]string)
+
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/log-viewer/log":
+			observedQuery = req.URL.Query()
+			return endpointJSONResponse(http.StatusOK, `{
+				"items": [
+					{
+						"timestamp": "2026-06-23T11:38:51Z",
+						"level": "Warning",
+						"properties": [
+							{"name":"SourceContext","value":"Source.A"},
+							{"name":"RequestPath","value":"/umbraco/a"}
+						]
+					},
+					{
+						"timestamp": "2026-06-23T11:40:00Z",
+						"level": "Warning",
+						"properties": [
+							{"name":"SourceContext","value":"Source.A"},
+							{"name":"RequestPath","value":"/umbraco/b"}
+						]
+					}
+				],
+				"total": 60
+			}`), nil
+		default:
+			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	output, err := execute(buildRootWithCollections(t, deps),
+		"logs", "search",
+		"--around", "2026-06-23T11:38:51Z",
+		"--minutes", "5",
+		"--cursor", "50",
+		"--take", "2",
+		"--count-by", "source",
+	)
+	if err != nil {
+		t.Fatalf("logs search failed: %v", err)
+	}
+	assertQueryValue(t, observedQuery, "startDate", "2026-06-23T11:33:51Z")
+	assertQueryValue(t, observedQuery, "endDate", "2026-06-23T11:43:51Z")
+	assertQueryValue(t, observedQuery, "skip", "50")
+	assertQueryValue(t, observedQuery, "take", "2")
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("failed to decode count payload: %v", err)
+	}
+	if payload["countBy"] != "source" {
+		t.Fatalf("expected source count, got %+v", payload)
+	}
+	counts := payload["counts"].([]any)
+	first := counts[0].(map[string]any)
+	if first["key"] != "Source.A" || first["count"] != float64(2) {
+		t.Fatalf("expected grouped source count, got %+v", counts)
+	}
+	if payload["cursor"] != float64(50) || payload["nextCursor"] != float64(52) || payload["hasMore"] != true {
+		t.Fatalf("expected terminal cursor metadata, got %+v", payload)
+	}
+}
+
 func TestLogsListFallsBackToLegacyEndpointOnNotFound(t *testing.T) {
 	var requests []string
 	var legacyQuery = make(map[string][]string)

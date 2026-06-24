@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- hardened `logs list`/`logs search` for incident workflows: `--from`/`--to` and `--around ... --minutes N` are now enforced client-side so out-of-window rows returned by the Management API are filtered before output. Added deterministic client-side `--source-context`, `--path`, `--contains`, and `--correlation-id` filters; `--flat` JSON with `properties` as an object; `--redact`/`--redact-default`; `--count-by level|source|path`; and explicit pagination metadata with `--cursor`/`nextCursor`
+
 ## v0.4.4 - 2026-06-15
 
 Fixes from real-world agent field testing against a Cloud instance:
