@@ -15,11 +15,13 @@ import (
 )
 
 type Dependencies struct {
-	Client     *api.Client
-	Config     config.Config
-	HTTPClient *http.Client
-	EnvOutput  config.OutputFormat
-	OutputFlag *string
+	Client                *api.Client
+	Config                config.Config
+	HTTPClient            *http.Client
+	EnvOutput             config.OutputFormat
+	OutputFlag            *string
+	EnvOutputProvider     func() config.OutputFormat
+	ConfigOptionsProvider func() config.LoadOptions
 }
 
 func (d Dependencies) requestedOutput() string {
@@ -29,8 +31,22 @@ func (d Dependencies) requestedOutput() string {
 	return *d.OutputFlag
 }
 
+func (d Dependencies) envOutput() config.OutputFormat {
+	if d.EnvOutputProvider != nil {
+		return d.EnvOutputProvider()
+	}
+	return d.EnvOutput
+}
+
+func (d Dependencies) configOptions() config.LoadOptions {
+	if d.ConfigOptionsProvider != nil {
+		return d.ConfigOptionsProvider()
+	}
+	return config.LoadOptions{}
+}
+
 func printResult(cmd *cobra.Command, deps Dependencies, data any) error {
-	return output.Print(data, deps.requestedOutput(), deps.EnvOutput, cmd.OutOrStdout())
+	return output.Print(data, deps.requestedOutput(), deps.envOutput(), cmd.OutOrStdout())
 }
 
 // addPaginationFlags registers --skip/--take with the same -1-sentinel
@@ -80,8 +96,8 @@ func resolveOutputFormat(deps Dependencies) (config.OutputFormat, error) {
 	if requested := strings.TrimSpace(deps.requestedOutput()); requested != "" {
 		return config.ParseOutputFormat(requested)
 	}
-	if deps.EnvOutput != "" {
-		return deps.EnvOutput, nil
+	if envOutput := deps.envOutput(); envOutput != "" {
+		return envOutput, nil
 	}
 
 	info, err := os.Stdout.Stat()

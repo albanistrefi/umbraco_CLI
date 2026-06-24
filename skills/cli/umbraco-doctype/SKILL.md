@@ -64,13 +64,16 @@ umbraco doctype list
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--all` | bool | false | Walk every page until exhausted (auto-paginates with --take as the page size, default 500; combine with --skip to start partway through). Bounded by an internal 100k-item ceiling. |
+| `--exclude-folders` | bool | false | Alias for --types-only |
 | `--fields` | string | — | Limit response fields (comma-separated top-level keys) |
 | `--first-n` | int | 0 | Return only the first N items from item collections |
 | `--ids-only` | bool | false | Return only item IDs for item collections |
 | `--params` | string | — | Query parameters as JSON |
+| `--recursive` | bool | false | Walk document type folders recursively |
 | `--skip` | int | -1 | Skip count (passes through as ?skip=N; lets you walk past the server page size on large children/root collections) |
 | `--summarize` | bool | false | Return only id/name/alias fields for item collections |
 | `--take` | int | -1 | Take count (passes through as ?take=N; combine with --skip to page) |
+| `--types-only` | bool | false | Return document types only, excluding folders |
 
 ### root
 

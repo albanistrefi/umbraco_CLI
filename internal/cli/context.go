@@ -32,3 +32,25 @@ func NewRuntime() *Runtime {
 	client := api.NewClient(cfg, httpClient, tokenProvider)
 	return &Runtime{Config: cfg, Client: client, HTTPClient: httpClient}
 }
+
+func (r *Runtime) Reload(opts config.LoadOptions) error {
+	cfg, err := config.LoadWithOptions(opts)
+	if err != nil {
+		if r.Client == nil {
+			r.Client = api.NewUnavailableClient(err)
+		} else {
+			r.Client.ReplaceWith(api.NewUnavailableClient(err))
+		}
+		return err
+	}
+
+	tokenProvider := auth.New(cfg, r.HTTPClient)
+	client := api.NewClient(cfg, r.HTTPClient, tokenProvider)
+	if r.Client == nil {
+		r.Client = client
+	} else {
+		r.Client.ReplaceWith(client)
+	}
+	r.Config = cfg
+	return nil
+}

@@ -22,7 +22,15 @@ umbraco auth <command> [flags]
 
 | Command | Description |
 |---------|-------------|
+| `auth list` | List stored auth profiles without exposing secrets |
 | `auth status` | Show the current auth/config status without exposing secrets |
+| `auth use <profile>` | Set the active stored auth profile |
+
+### list
+
+```bash
+umbraco auth list
+```
 
 ### status
 
@@ -33,6 +41,12 @@ umbraco auth status
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--check` | bool | false | List command permission requirements for the resolved user context |
+
+### use
+
+```bash
+umbraco auth use <profile>
+```
 
 ## Mutation Commands
 

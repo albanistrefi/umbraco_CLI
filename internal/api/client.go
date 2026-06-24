@@ -67,6 +67,11 @@ type DryRunResult struct {
 	Body   any    `json:"body"`
 }
 
+type ResponseResult struct {
+	StatusCode int
+	Body       any
+}
+
 type Client struct {
 	cfg           config.Config
 	httpClient    *http.Client
@@ -107,6 +112,13 @@ func (e *APIError) Error() string {
 
 func NewClient(cfg config.Config, httpClient *http.Client, tokenProvider *auth.Provider) *Client {
 	return &Client{cfg: cfg, httpClient: httpClient, tokenProvider: tokenProvider}
+}
+
+func (c *Client) ReplaceWith(next *Client) {
+	if c == nil || next == nil {
+		return
+	}
+	*c = *next
 }
 
 func (c *Client) buildURL(path string, opts RequestOptions) (string, error) {
@@ -186,38 +198,43 @@ func parseResponse(resp *http.Response) (any, error) {
 }
 
 func (c *Client) Request(ctx context.Context, method string, path string, body any, opts RequestOptions) (any, error) {
+	result, err := c.RequestResult(ctx, method, path, body, opts)
+	return result.Body, err
+}
+
+func (c *Client) RequestResult(ctx context.Context, method string, path string, body any, opts RequestOptions) (ResponseResult, error) {
 	if c.initErr != nil {
-		return nil, c.initErr
+		return ResponseResult{}, c.initErr
 	}
 
 	fullURL, err := c.buildURL(path, opts)
 	if err != nil {
-		return nil, err
+		return ResponseResult{}, err
 	}
 	relativePath := c.relativeAPIPath(fullURL)
 
 	if opts.DryRun {
-		return DryRunResult{
+		return ResponseResult{Body: DryRunResult{
 			DryRun: true,
 			Valid:  true,
 			Method: method,
 			Path:   relativePath,
 			Body:   body,
-		}, nil
+		}}, nil
 	}
 
 	var encodedBody []byte
 	if body != nil {
 		encoded, err := json.Marshal(body)
 		if err != nil {
-			return nil, err
+			return ResponseResult{}, err
 		}
 		encodedBody = encoded
 	}
 
 	token, err := c.tokenProvider.AccessToken(ctx)
 	if err != nil {
-		return nil, err
+		return ResponseResult{}, err
 	}
 
 	for attempt := 0; attempt < 4; attempt++ {
@@ -228,14 +245,14 @@ func (c *Client) Request(ctx context.Context, method string, path string, body a
 
 		req, err := http.NewRequestWithContext(ctx, method, fullURL, reqBody)
 		if err != nil {
-			return nil, err
+			return ResponseResult{}, err
 		}
 		req.Header.Set("Authorization", "Bearer "+token)
 		req.Header.Set("Content-Type", "application/json")
 
 		resp, err := c.httpClient.Do(req)
 		if err != nil {
-			return nil, err
+			return ResponseResult{}, err
 		}
 
 		if resp.StatusCode == http.StatusTooManyRequests && attempt < 3 {
@@ -243,7 +260,7 @@ func (c *Client) Request(ctx context.Context, method string, path string, body a
 			_, _ = io.Copy(io.Discard, resp.Body)
 			resp.Body.Close()
 			if err := waitForRetry(ctx, retryDelay); err != nil {
-				return nil, err
+				return ResponseResult{}, err
 			}
 			continue
 		}
@@ -254,18 +271,18 @@ func (c *Client) Request(ctx context.Context, method string, path string, body a
 			c.tokenProvider.Invalidate()
 			token, err = c.tokenProvider.AccessToken(ctx)
 			if err != nil {
-				return nil, err
+				return ResponseResult{}, err
 			}
 			continue
 		}
 
 		result, err := parseResponse(resp)
 		if err != nil {
-			return nil, err
+			return ResponseResult{}, err
 		}
 
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			return nil, &APIError{
+			return ResponseResult{StatusCode: resp.StatusCode, Body: result}, &APIError{
 				StatusCode: resp.StatusCode,
 				Method:     method,
 				Path:       relativePath,
@@ -275,10 +292,10 @@ func (c *Client) Request(ctx context.Context, method string, path string, body a
 		}
 
 		result = mergeLocationID(result, resp.Header.Get("Location"))
-		return result, nil
+		return ResponseResult{StatusCode: resp.StatusCode, Body: result}, nil
 	}
 
-	return nil, fmt.Errorf("request retry budget exhausted")
+	return ResponseResult{}, fmt.Errorf("request retry budget exhausted")
 }
 
 func (c *Client) relativeAPIPath(fullURL string) string {

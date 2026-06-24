@@ -142,6 +142,40 @@ func TestFlagsTableRendered(t *testing.T) {
 	}
 }
 
+func TestRunnableTopLevelCommandRenderedAsCommand(t *testing.T) {
+	dir := t.TempDir()
+	root := buildTestRoot()
+	api := &cobra.Command{Use: "api <method> <path>", Short: "Call a raw API endpoint", RunE: func(cmd *cobra.Command, args []string) error {
+		return nil
+	}}
+	api.Flags().String("body", "", "JSON request body")
+	api.Flags().Bool("dry-run", false, "Print the planned request without executing")
+	root.AddCommand(api)
+
+	if err := Generate(root, dir, "", "0.0.1-test"); err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	content, err := os.ReadFile(filepath.Join(dir, "umbraco-api", "SKILL.md"))
+	if err != nil {
+		t.Fatalf("failed to read api skill: %v", err)
+	}
+	md := string(content)
+	for _, expected := range []string{
+		"umbraco api <method> <path> [flags]",
+		"## Command",
+		"### api",
+		"`--body`",
+	} {
+		if !strings.Contains(md, expected) {
+			t.Fatalf("api skill missing expected content %q:\n%s", expected, md)
+		}
+	}
+	if strings.Contains(md, "umbraco api <command>") {
+		t.Fatalf("api skill should not render top-level runnable command as a collection:\n%s", md)
+	}
+}
+
 func TestFilterLimitsOutput(t *testing.T) {
 	dir := t.TempDir()
 	root := buildTestRoot()
