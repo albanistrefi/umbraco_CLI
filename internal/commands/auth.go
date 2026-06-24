@@ -26,6 +26,8 @@ var verifyStoredAuth = func(cfg config.Config, httpClient *http.Client) error {
 func RegisterAuth(root *cobra.Command, deps Dependencies) {
 	authCmd := &cobra.Command{Use: "auth", Short: "Persistent authentication helpers"}
 	authCmd.AddCommand(authLogin(deps))
+	authCmd.AddCommand(authList(deps))
+	authCmd.AddCommand(authUse(deps))
 	authCmd.AddCommand(authStatus(deps))
 	authCmd.AddCommand(authLogout(deps))
 	root.AddCommand(authCmd)
@@ -66,17 +68,23 @@ func authLogin(deps Dependencies) *cobra.Command {
 				return err
 			}
 
+			_, _, selection, err := config.LoadUserConfigWithOptions(deps.configOptions())
+			if err != nil {
+				return err
+			}
+			source := authConfigSource(selection, !selection.Explicit && !selection.Active)
+
 			if dryRun {
 				return printResult(cmd, deps, map[string]any{
 					"loggedIn": false,
 					"dryRun":   true,
 					"baseUrl":  cfg.BaseURL,
-					"source":   "user-config",
+					"source":   source,
 					"message":  "credentials verified and would be saved",
 				})
 			}
 
-			existing, ok, err := config.LoadUserConfig()
+			existing, ok, _, err := config.LoadUserConfigWithOptions(deps.configOptions())
 			if err != nil {
 				return err
 			}
@@ -86,14 +94,14 @@ func authLogin(deps Dependencies) *cobra.Command {
 			existing.BaseURL = cfg.BaseURL
 			existing.ClientID = cfg.ClientID
 			existing.ClientSecret = cfg.ClientSecret
-			if err := config.WriteUserConfig(existing); err != nil {
+			if err := config.WriteUserConfigWithOptions(deps.configOptions(), existing); err != nil {
 				return err
 			}
 
 			return printResult(cmd, deps, map[string]any{
 				"loggedIn": true,
 				"baseUrl":  cfg.BaseURL,
-				"source":   "user-config",
+				"source":   source,
 			})
 		},
 	}
@@ -105,6 +113,75 @@ func authLogin(deps Dependencies) *cobra.Command {
 	return cmd
 }
 
+func authList(deps Dependencies) *cobra.Command {
+	return &cobra.Command{
+		Use:   "list",
+		Short: "List stored auth profiles without exposing secrets",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			profiles, err := config.ListUserProfiles()
+			if err != nil {
+				return err
+			}
+			items := make([]any, 0, len(profiles))
+			activeProfile := ""
+			for _, profile := range profiles {
+				if profile.Active {
+					activeProfile = profile.Name
+				}
+				items = append(items, map[string]any{
+					"name":            profile.Name,
+					"active":          profile.Active,
+					"default":         profile.IsDefault,
+					"baseUrl":         profile.Config.BaseURL,
+					"outputFormat":    profile.Config.OutputFormat,
+					"path":            profile.Path,
+					"hasClientID":     profile.Config.ClientID != "",
+					"hasClientSecret": profile.Config.ClientSecret != "",
+					"clientSecret":    redactedSecret(profile.Config.ClientSecret),
+				})
+			}
+			return printResult(cmd, deps, map[string]any{
+				"activeProfile": activeProfile,
+				"profiles":      items,
+				"count":         len(items),
+			})
+		},
+	}
+}
+
+func authUse(deps Dependencies) *cobra.Command {
+	return &cobra.Command{
+		Use:   "use <profile>",
+		Short: "Set the active stored auth profile",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			profile := strings.TrimSpace(args[0])
+			path, err := config.ProfileConfigPath(profile)
+			if err != nil {
+				return err
+			}
+			if _, err := os.Stat(path); err != nil {
+				if os.IsNotExist(err) {
+					return fmt.Errorf("auth profile %q does not exist at %s; create it with umbraco --profile %s auth login", profile, path, profile)
+				}
+				return err
+			}
+			if err := config.SetActiveProfile(profile); err != nil {
+				return err
+			}
+			active, _, _ := config.ActiveProfile()
+			if strings.TrimSpace(profile) == "default" {
+				active = "default"
+			}
+			return printResult(cmd, deps, map[string]any{
+				"activeProfile": active,
+				"profile":       profile,
+				"path":          path,
+			})
+		},
+	}
+}
+
 func authStatus(deps Dependencies) *cobra.Command {
 	var check bool
 	cmd := &cobra.Command{
@@ -112,22 +189,17 @@ func authStatus(deps Dependencies) *cobra.Command {
 		Short: "Show the current auth/config status without exposing secrets",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			env := currentAuthEnv()
-			userConfig, hasUserConfig, err := config.LoadUserConfig()
+			opts := deps.configOptions()
+			userConfig, hasUserConfig, selection, err := config.LoadUserConfigWithOptions(opts)
 			if err != nil {
 				return err
 			}
-			resolved, err := config.Load()
+			resolved, err := config.LoadWithOptions(opts)
 			if err != nil {
 				return err
 			}
 
-			source := "unconfigured"
-			switch {
-			case env["UMBRACO_CLIENT_ID"] != "" || env["UMBRACO_CLIENT_SECRET"] != "":
-				source = "env"
-			case hasUserConfig && (userConfig.ClientID != "" || userConfig.ClientSecret != ""):
-				source = "user-config"
-			}
+			source := resolvedAuthSource(env, hasUserConfig, userConfig, selection)
 
 			verified := false
 			var authError string
@@ -138,15 +210,21 @@ func authStatus(deps Dependencies) *cobra.Command {
 					verified = true
 				}
 			}
+			hasCredentials := resolved.ClientID != "" && resolved.ClientSecret != ""
 
 			result := map[string]any{
-				"authenticated": resolved.ClientID != "" && resolved.ClientSecret != "",
-				"verified":      verified,
-				"baseUrl":       resolved.BaseURL,
-				"source":        source,
-				"authError":     authError,
+				"authenticated":  verified,
+				"hasCredentials": hasCredentials,
+				"verified":       verified,
+				"baseUrl":        resolved.BaseURL,
+				"source":         source,
+				"authError":      authError,
 				"userConfig": map[string]any{
 					"present":         hasUserConfig,
+					"profile":         selection.Profile,
+					"path":            selection.Path,
+					"activeProfile":   selection.Active,
+					"customPath":      selection.CustomPath,
 					"hasClientID":     hasUserConfig && userConfig.ClientID != "",
 					"hasClientSecret": hasUserConfig && userConfig.ClientSecret != "",
 					"baseUrl":         userConfig.BaseURL,
@@ -173,20 +251,25 @@ func authLogout(deps Dependencies) *cobra.Command {
 		Use:   "logout",
 		Short: "Remove stored credentials from the user config",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			_, _, selection, err := config.LoadUserConfigWithOptions(deps.configOptions())
+			if err != nil {
+				return err
+			}
+			source := authConfigSource(selection, !selection.Explicit && !selection.Active)
 			if dryRun {
 				return printResult(cmd, deps, map[string]any{
 					"loggedOut": false,
 					"dryRun":    true,
-					"source":    "user-config",
+					"source":    source,
 					"message":   "stored credentials would be removed",
 				})
 			}
-			if err := config.ClearUserAuth(); err != nil {
+			if err := config.ClearUserAuthWithOptions(deps.configOptions()); err != nil {
 				return err
 			}
 			return printResult(cmd, deps, map[string]any{
 				"loggedOut": true,
-				"source":    "user-config",
+				"source":    source,
 			})
 		},
 	}
@@ -219,6 +302,40 @@ func currentAuthEnv() map[string]string {
 		"UMBRACO_BASE_URL":      strings.TrimSpace(os.Getenv("UMBRACO_BASE_URL")),
 		"UMBRACO_CLIENT_ID":     strings.TrimSpace(os.Getenv("UMBRACO_CLIENT_ID")),
 		"UMBRACO_CLIENT_SECRET": strings.TrimSpace(os.Getenv("UMBRACO_CLIENT_SECRET")),
+	}
+}
+
+func redactedSecret(secret string) string {
+	if strings.TrimSpace(secret) == "" {
+		return ""
+	}
+	return "redacted"
+}
+
+func resolvedAuthSource(env map[string]string, hasUserConfig bool, userConfig config.Config, selection config.UserConfigSelection) string {
+	if selection.CustomPath || selection.Explicit || selection.Active {
+		return authConfigSource(selection, true)
+	}
+	switch {
+	case env["UMBRACO_CLIENT_ID"] != "" || env["UMBRACO_CLIENT_SECRET"] != "":
+		return "env"
+	case hasUserConfig && (userConfig.ClientID != "" || userConfig.ClientSecret != ""):
+		return "user-config"
+	default:
+		return "unconfigured"
+	}
+}
+
+func authConfigSource(selection config.UserConfigSelection, defaultAsUserConfig bool) string {
+	switch {
+	case selection.CustomPath:
+		return "config:" + selection.Path
+	case selection.Profile != "" && selection.Profile != "default":
+		return "profile:" + selection.Profile
+	case selection.Profile == "default" && !defaultAsUserConfig:
+		return "profile:default"
+	default:
+		return "user-config"
 	}
 }
 

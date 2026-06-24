@@ -2,8 +2,10 @@ package commands
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"testing"
 
 	"umbraco-cli/internal/config"
@@ -149,6 +151,184 @@ func TestAuthStatusReportsStoredConfigAndVerification(t *testing.T) {
 	}
 	if payload["authenticated"] != true || payload["verified"] != true || payload["source"] != "user-config" {
 		t.Fatalf("unexpected auth status payload: %+v", payload)
+	}
+}
+
+func TestAuthStatusReportsFailedVerificationAsUnauthenticated(t *testing.T) {
+	homeDir := t.TempDir()
+	originalHome := os.Getenv("HOME")
+	originalBaseURL := os.Getenv("UMBRACO_BASE_URL")
+	originalClientID := os.Getenv("UMBRACO_CLIENT_ID")
+	originalClientSecret := os.Getenv("UMBRACO_CLIENT_SECRET")
+	t.Cleanup(func() {
+		_ = os.Setenv("HOME", originalHome)
+		_ = os.Setenv("UMBRACO_BASE_URL", originalBaseURL)
+		_ = os.Setenv("UMBRACO_CLIENT_ID", originalClientID)
+		_ = os.Setenv("UMBRACO_CLIENT_SECRET", originalClientSecret)
+	})
+	_ = os.Setenv("HOME", homeDir)
+	_ = os.Unsetenv("UMBRACO_BASE_URL")
+	_ = os.Unsetenv("UMBRACO_CLIENT_ID")
+	_ = os.Unsetenv("UMBRACO_CLIENT_SECRET")
+
+	if err := config.WriteUserConfig(config.Config{
+		BaseURL:      "https://localhost:44314",
+		ClientID:     "client-id",
+		ClientSecret: "bad-secret",
+	}); err != nil {
+		t.Fatalf("WriteUserConfig failed: %v", err)
+	}
+
+	originalVerify := verifyStoredAuth
+	t.Cleanup(func() { verifyStoredAuth = originalVerify })
+	verifyStoredAuth = func(cfg config.Config, httpClient *http.Client) error {
+		return fmt.Errorf("token request failed: 401")
+	}
+
+	output, err := execute(buildRootWithCollections(t, makeDeps()), "auth", "status")
+	if err != nil {
+		t.Fatalf("auth status failed: %v", err)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("failed to decode auth status payload: %v", err)
+	}
+	if payload["hasCredentials"] != true || payload["authenticated"] != false || payload["verified"] != false {
+		t.Fatalf("expected credentials present but not authenticated, got %+v", payload)
+	}
+	if authError, _ := payload["authError"].(string); !strings.Contains(authError, "401") {
+		t.Fatalf("expected authError to preserve verification failure, got %+v", payload)
+	}
+}
+
+func TestAuthLoginPersistsToSelectedProfile(t *testing.T) {
+	homeDir := t.TempDir()
+	originalHome := os.Getenv("HOME")
+	t.Cleanup(func() {
+		_ = os.Setenv("HOME", originalHome)
+	})
+	if err := os.Setenv("HOME", homeDir); err != nil {
+		t.Fatalf("failed to set HOME: %v", err)
+	}
+
+	originalVerify := verifyStoredAuth
+	t.Cleanup(func() { verifyStoredAuth = originalVerify })
+	verifyStoredAuth = func(cfg config.Config, httpClient *http.Client) error { return nil }
+
+	deps := makeDeps()
+	deps.ConfigOptionsProvider = func() config.LoadOptions {
+		return config.LoadOptions{Profile: "dev"}
+	}
+
+	output, err := execute(
+		buildRootWithCollections(t, deps),
+		"auth", "login",
+		"--base-url", "https://dev.example.test",
+		"--client-id", "dev-client",
+		"--client-secret", "dev-secret",
+	)
+	if err != nil {
+		t.Fatalf("auth login --profile failed: %v", err)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("failed to decode auth login payload: %v", err)
+	}
+	if payload["source"] != "profile:dev" {
+		t.Fatalf("expected profile source, got %+v", payload)
+	}
+
+	cfg, ok, _, err := config.LoadUserConfigWithOptions(config.LoadOptions{Profile: "dev"})
+	if err != nil {
+		t.Fatalf("LoadUserConfigWithOptions failed: %v", err)
+	}
+	if !ok || cfg.ClientID != "dev-client" || cfg.ClientSecret != "dev-secret" || cfg.BaseURL != "https://dev.example.test" {
+		t.Fatalf("unexpected selected profile config: ok=%v cfg=%+v", ok, cfg)
+	}
+}
+
+func TestAuthListRedactsStoredProfiles(t *testing.T) {
+	homeDir := t.TempDir()
+	originalHome := os.Getenv("HOME")
+	t.Cleanup(func() {
+		_ = os.Setenv("HOME", originalHome)
+	})
+	if err := os.Setenv("HOME", homeDir); err != nil {
+		t.Fatalf("failed to set HOME: %v", err)
+	}
+
+	if err := config.WriteUserConfig(config.Config{
+		BaseURL:      "https://default.example.test",
+		ClientID:     "default-client",
+		ClientSecret: "default-secret",
+	}); err != nil {
+		t.Fatalf("WriteUserConfig failed: %v", err)
+	}
+	if err := config.WriteUserConfigWithOptions(config.LoadOptions{Profile: "dev"}, config.Config{
+		BaseURL:      "https://dev.example.test",
+		ClientID:     "dev-client",
+		ClientSecret: "dev-secret",
+	}); err != nil {
+		t.Fatalf("WriteUserConfigWithOptions failed: %v", err)
+	}
+	if err := config.SetActiveProfile("dev"); err != nil {
+		t.Fatalf("SetActiveProfile failed: %v", err)
+	}
+
+	output, err := execute(buildRootWithCollections(t, makeDeps()), "auth", "list")
+	if err != nil {
+		t.Fatalf("auth list failed: %v", err)
+	}
+	if strings.Contains(output, "default-secret") || strings.Contains(output, "dev-secret") {
+		t.Fatalf("auth list leaked a client secret: %s", output)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("failed to decode auth list payload: %v", err)
+	}
+	if payload["activeProfile"] != "dev" || payload["count"] != float64(2) {
+		t.Fatalf("unexpected auth list payload: %+v", payload)
+	}
+}
+
+func TestAuthUseSetsActiveProfile(t *testing.T) {
+	homeDir := t.TempDir()
+	originalHome := os.Getenv("HOME")
+	t.Cleanup(func() {
+		_ = os.Setenv("HOME", originalHome)
+	})
+	if err := os.Setenv("HOME", homeDir); err != nil {
+		t.Fatalf("failed to set HOME: %v", err)
+	}
+	if err := config.WriteUserConfigWithOptions(config.LoadOptions{Profile: "dev"}, config.Config{
+		BaseURL:      "https://dev.example.test",
+		ClientID:     "dev-client",
+		ClientSecret: "dev-secret",
+	}); err != nil {
+		t.Fatalf("WriteUserConfigWithOptions failed: %v", err)
+	}
+
+	output, err := execute(buildRootWithCollections(t, makeDeps()), "auth", "use", "dev")
+	if err != nil {
+		t.Fatalf("auth use failed: %v", err)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("failed to decode auth use payload: %v", err)
+	}
+	if payload["activeProfile"] != "dev" {
+		t.Fatalf("unexpected auth use payload: %+v", payload)
+	}
+	active, ok, err := config.ActiveProfile()
+	if err != nil {
+		t.Fatalf("ActiveProfile failed: %v", err)
+	}
+	if !ok || active != "dev" {
+		t.Fatalf("expected active profile dev, got ok=%v active=%q", ok, active)
 	}
 }
 
