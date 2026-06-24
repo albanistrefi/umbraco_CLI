@@ -196,11 +196,18 @@ brew install --cask albanist/tap/umbraco-cli
 # Store credentials persistently
 umbraco auth login --base-url "https://localhost:44314" --client-id "umbraco-back-office-api-user" --client-secret "your-secret"
 
+# Store credentials in a named profile
+umbraco --profile dev auth login --base-url "https://localhost:44314" --client-id "umbraco-back-office-api-user" --client-secret "your-secret"
+
+# List and select profiles
+umbraco auth list
+umbraco auth use dev
+
 # Verify credentials
 umbraco auth status
 `+"```"+`
 
-Alternatively, set environment variables (highest precedence):
+Alternatively, set environment variables (highest precedence when no profile/config selector is active):
 
 `+"```bash"+`
 export UMBRACO_BASE_URL="https://localhost:44391"
@@ -209,6 +216,15 @@ export UMBRACO_CLIENT_SECRET="your-secret"
 `+"```"+`
 
 ## Config Precedence
+
+Explicit profile/config selection uses that file for base URL and credentials:
+
+`+"```bash"+`
+umbraco --profile dev document search --query Home
+umbraco --config ~/.umbraco/dev.config.json document search --query Home
+`+"```"+`
+
+Without `+"`--profile`"+`, `+"`--config`"+`, or an active profile from `+"`umbraco auth use`"+`, config is resolved in this order:
 
 1. Environment variables (`+"`UMBRACO_*`"+`)
 2. Project `+"`"+`.umbracorc.json`+"`"+` or `+"`"+`.umbracorc`+"`"+`
@@ -223,6 +239,8 @@ export UMBRACO_CLIENT_SECRET="your-secret"
 | Flag | Description |
 |------|-------------|
 | `+"`-o, --output <FORMAT>`"+` | Output format: `+"`json`"+`, `+"`table`"+`, `+"`plain`"+` |
+| `+"`--profile <NAME>`"+` | Load `+"`~/.umbraco/<NAME>.config.json`"+` for base URL and credentials |
+| `+"`--config <PATH>`"+` | Load an explicit config file for base URL and credentials |
 
 ## Safety Rules
 
@@ -268,6 +286,19 @@ metadata:
 
 	b.WriteString(fmt.Sprintf("# %s\n\n", name))
 	b.WriteString("> **PREREQUISITE:** Read `../umbraco-shared/SKILL.md` for auth, global flags, and security rules.\n\n")
+
+	if isRunnableCommand(cmd) && len(cmd.Commands()) == 0 {
+		fullUse := strings.TrimSpace(strings.TrimPrefix(cmd.Use, name))
+		b.WriteString(fmt.Sprintf("```bash\numbraco %s [flags]\n```\n\n", cmd.Use))
+		b.WriteString("## Command\n\n")
+		renderSubcommand(&b, name, skillCommand{Path: []string{name}, FullUse: fullUse, Command: cmd})
+		b.WriteString("## Discovering Commands\n\n")
+		b.WriteString("```bash\n")
+		b.WriteString(fmt.Sprintf("umbraco %s --help\n", name))
+		b.WriteString("```\n")
+		return b.String()
+	}
+
 	b.WriteString(fmt.Sprintf("```bash\numbraco %s <command> [flags]\n```\n\n", name))
 
 	// Collect leaf subcommands (recursing through subgroups like
@@ -362,6 +393,10 @@ func collectSkillCommands(cmd *cobra.Command, parent []string, includeHidden boo
 		commands = append(commands, skillCommand{Path: path, FullUse: fullUse, Command: sub})
 	}
 	return commands
+}
+
+func isRunnableCommand(cmd *cobra.Command) bool {
+	return cmd.Run != nil || cmd.RunE != nil
 }
 
 func renderSubcommand(b *strings.Builder, collection string, sub skillCommand) {

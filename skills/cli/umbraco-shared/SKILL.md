@@ -24,11 +24,18 @@ brew install --cask albanist/tap/umbraco-cli
 # Store credentials persistently
 umbraco auth login --base-url "https://localhost:44314" --client-id "umbraco-back-office-api-user" --client-secret "your-secret"
 
+# Store credentials in a named profile
+umbraco --profile dev auth login --base-url "https://localhost:44314" --client-id "umbraco-back-office-api-user" --client-secret "your-secret"
+
+# List and select profiles
+umbraco auth list
+umbraco auth use dev
+
 # Verify credentials
 umbraco auth status
 ```
 
-Alternatively, set environment variables (highest precedence):
+Alternatively, set environment variables (highest precedence when no profile/config selector is active):
 
 ```bash
 export UMBRACO_BASE_URL="https://localhost:44391"
@@ -37,6 +44,15 @@ export UMBRACO_CLIENT_SECRET="your-secret"
 ```
 
 ## Config Precedence
+
+Explicit profile/config selection uses that file for base URL and credentials:
+
+```bash
+umbraco --profile dev document search --query Home
+umbraco --config ~/.umbraco/dev.config.json document search --query Home
+```
+
+Without `--profile`, `--config`, or an active profile from `umbraco auth use`, config is resolved in this order:
 
 1. Environment variables (`UMBRACO_*`)
 2. Project `.umbracorc.json` or `.umbracorc`
@@ -51,6 +67,8 @@ export UMBRACO_CLIENT_SECRET="your-secret"
 | Flag | Description |
 |------|-------------|
 | `-o, --output <FORMAT>` | Output format: `json`, `table`, `plain` |
+| `--profile <NAME>` | Load `~/.umbraco/<NAME>.config.json` for base URL and credentials |
+| `--config <PATH>` | Load an explicit config file for base URL and credentials |
 
 ## Safety Rules
 

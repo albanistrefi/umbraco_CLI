@@ -16,6 +16,7 @@ Per-resource CLI command skills.
 
 | Skill | Description |
 |-------|-------------|
+| [umbraco-api](umbraco-api/SKILL.md) | Call an authenticated raw Umbraco Management API endpoint |
 | [umbraco-auth](umbraco-auth/SKILL.md) | Persistent authentication helpers |
 | [umbraco-automate](umbraco-automate/SKILL.md) | Umbraco Automate operations (event-driven workflow automation) |
 | [umbraco-datatype](umbraco-datatype/SKILL.md) | Data type operations |
