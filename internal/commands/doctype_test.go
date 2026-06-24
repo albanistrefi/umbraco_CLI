@@ -56,6 +56,147 @@ func TestDoctypeListSupportsFieldsAndReadTriage(t *testing.T) {
 	}
 }
 
+func TestDoctypeListRecursiveTypesOnlyWalksFolders(t *testing.T) {
+	childRequests := map[string]int{}
+
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/tree/document-type/root":
+			return datatypeJSONResponse(http.StatusOK, `{"total":2,"items":[
+				{"id":"folder-1","name":"Compositions","isFolder":true,"icon":"icon-folder"},
+				{"id":"dt-article","name":"Article","alias":"article","icon":"icon-document"}
+			]}`), nil
+		case "/umbraco/management/api/v1/tree/document-type/children":
+			parentID := req.URL.Query().Get("parentId")
+			childRequests[parentID]++
+			switch parentID {
+			case "folder-1":
+				return datatypeJSONResponse(http.StatusOK, `{"total":2,"items":[
+					{"id":"folder-2","name":"Nested","isFolder":true,"icon":"icon-folder"},
+					{"id":"dt-seo","name":"SEO","alias":"seo","icon":"icon-document"}
+				]}`), nil
+			case "folder-2":
+				return datatypeJSONResponse(http.StatusOK, `{"total":1,"items":[
+					{"id":"dt-card","name":"Card","alias":"card","icon":"icon-document"}
+				]}`), nil
+			default:
+				return datatypeJSONResponse(http.StatusOK, `{"total":0,"items":[]}`), nil
+			}
+		default:
+			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	output, err := execute(buildRootWithCollections(t, deps), "doctype", "list", "--recursive", "--types-only", "--fields", "id,name,alias")
+	if err != nil {
+		t.Fatalf("doctype list --recursive --types-only failed: %v", err)
+	}
+	if childRequests["folder-1"] != 1 || childRequests["folder-2"] != 1 {
+		t.Fatalf("expected recursive folder walk, got requests %+v", childRequests)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("failed to decode recursive doctype list payload: %v", err)
+	}
+	items := payload["items"].([]any)
+	if len(items) != 3 {
+		t.Fatalf("expected three document types and no folders, got %+v", payload)
+	}
+	for _, raw := range items {
+		item := raw.(map[string]any)
+		if item["alias"] == nil {
+			t.Fatalf("expected folders to be excluded from types-only output, got %+v", payload)
+		}
+	}
+}
+
+func TestDoctypeListRecursiveFirstNStopsWalkingAfterLimit(t *testing.T) {
+	childRequests := map[string]int{}
+
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/tree/document-type/root":
+			return datatypeJSONResponse(http.StatusOK, `{"total":3,"items":[
+				{"id":"folder-1","name":"Compositions","isFolder":true,"icon":"icon-folder"},
+				{"id":"folder-2","name":"Unused","isFolder":true,"icon":"icon-folder"},
+				{"id":"dt-article","name":"Article","alias":"article","icon":"icon-document"}
+			]}`), nil
+		case "/umbraco/management/api/v1/tree/document-type/children":
+			parentID := req.URL.Query().Get("parentId")
+			childRequests[parentID]++
+			switch parentID {
+			case "folder-1":
+				return datatypeJSONResponse(http.StatusOK, `{"total":2,"items":[
+					{"id":"dt-seo","name":"SEO","alias":"seo","icon":"icon-document"},
+					{"id":"dt-card","name":"Card","alias":"card","icon":"icon-document"}
+				]}`), nil
+			case "folder-2":
+				return datatypeJSONResponse(http.StatusOK, `{"total":1,"items":[
+					{"id":"dt-unused","name":"Unused","alias":"unused","icon":"icon-document"}
+				]}`), nil
+			default:
+				return datatypeJSONResponse(http.StatusOK, `{"total":0,"items":[]}`), nil
+			}
+		default:
+			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	output, err := execute(buildRootWithCollections(t, deps), "doctype", "list", "--recursive", "--first-n", "2", "--fields", "id,name")
+	if err != nil {
+		t.Fatalf("doctype list --recursive --first-n failed: %v", err)
+	}
+	if childRequests["folder-1"] != 1 {
+		t.Fatalf("expected one request for the first folder, got requests %+v", childRequests)
+	}
+	if childRequests["folder-2"] != 0 {
+		t.Fatalf("expected traversal to stop before the second folder, got requests %+v", childRequests)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("failed to decode recursive doctype list payload: %v", err)
+	}
+	if payload["returned"] != float64(2) {
+		t.Fatalf("expected returned=2, got %+v", payload)
+	}
+	items := payload["items"].([]any)
+	if len(items) != 2 {
+		t.Fatalf("expected two returned items, got %+v", payload)
+	}
+	if items[0].(map[string]any)["id"] != "folder-1" || items[1].(map[string]any)["id"] != "dt-seo" {
+		t.Fatalf("expected traversal to return first folder and first child, got %+v", payload)
+	}
+}
+
+func TestDoctypeGetFolderIDReturnsFolderDiagnostic(t *testing.T) {
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/document-type/folder-1":
+			return datatypeJSONResponse(http.StatusNotFound, `{"title":"Not Found"}`), nil
+		case "/umbraco/management/api/v1/tree/document-type/children":
+			if req.URL.Query().Get("parentId") == "folder-1" {
+				return datatypeJSONResponse(http.StatusOK, `{"total":1,"items":[{"id":"dt-1","name":"Article","alias":"article"}]}`), nil
+			}
+			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		default:
+			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	_, err := execute(buildRootWithCollections(t, deps), "doctype", "get", "folder-1")
+	if err == nil || !strings.Contains(err.Error(), "is a folder, not a document type") {
+		t.Fatalf("expected folder-specific diagnostic, got %v", err)
+	}
+}
+
 func TestDoctypeUpdateMergeJSONFetchesCurrentAndSendsMergedPayload(t *testing.T) {
 	var putPayload map[string]any
 	var getRequests int

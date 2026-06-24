@@ -1,7 +1,9 @@
 package commands
 
 import (
+	"context"
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -32,25 +34,96 @@ func RegisterDoctype(root *cobra.Command, deps Dependencies) {
 }
 
 func doctypeGet(deps Dependencies) *cobra.Command {
-	return getCommand(deps, getSpec{
+	var fields string
+	cmd := &cobra.Command{
 		Use:   "get <id>",
 		Short: "Get document type by ID",
-		Path:  func(args []string) string { return api.JoinPath("/document-type/%s", args[0]) },
-	})
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			result, err := deps.Client.Get(cmd.Context(), api.JoinPath("/document-type/%s", args[0]), api.RequestOptions{Fields: fields})
+			if err != nil {
+				if isDocumentTypeFolderID(cmd.Context(), deps.Client, args[0]) {
+					return fmt.Errorf("document type id %s is a folder, not a document type; use `umbraco doctype children %s` or `umbraco doctype list --recursive --types-only`", args[0], args[0])
+				}
+				return err
+			}
+			return printResult(cmd, deps, applyFieldsProjection(result, fields))
+		},
+	}
+	addFieldsFlag(cmd, &fields)
+	return cmd
 }
 
 func doctypeList(deps Dependencies) *cobra.Command {
-	return collectionCommand(deps, collectionSpec{
+	var fields string
+	var paramsRaw string
+	var skip, take int
+	var all bool
+	var recursive bool
+	var typesOnly bool
+	var excludeFolders bool
+	var triage readTriageOptions
+
+	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List document types (paginated; --skip/--take/--all)",
-		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
-			return []getRequestCandidate{
-				{path: "/tree/document-type/root", opts: api.RequestOptions{Params: params}},
-				{path: "/document-type/root", opts: api.RequestOptions{Params: params}},
-				{path: "/document-type", opts: api.RequestOptions{Params: params}},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			params, err := parseParams(paramsRaw)
+			if err != nil {
+				return err
 			}
+			params = applyPaginationParams(params, skip, take)
+			candidates := []getRequestCandidate{
+				{path: "/tree/document-type/root", opts: api.RequestOptions{Params: params, Fields: fields}},
+				{path: "/document-type/root", opts: api.RequestOptions{Params: params, Fields: fields}},
+				{path: "/document-type", opts: api.RequestOptions{Params: params, Fields: fields}},
+			}
+
+			ctx := cmd.Context()
+			filterFolders := typesOnly || excludeFolders
+			var result any
+			if recursive {
+				rootLimit := triage.FirstN
+				if filterFolders {
+					rootLimit = 0
+				}
+				result, err = getAllPagesWithFallback(ctx, deps.Client, take, skip, rootLimit, candidates...)
+			} else if all {
+				result, err = getAllPagesWithFallback(ctx, deps.Client, take, skip, triage.FirstN, candidates...)
+			} else {
+				result, err = getWithFallback(ctx, deps.Client, candidates...)
+			}
+			if err != nil {
+				return err
+			}
+
+			if recursive {
+				items, err := flattenDoctypeTree(ctx, deps.Client, resultItems(result), take, filterFolders, triage.FirstN)
+				if err != nil {
+					return err
+				}
+				result = map[string]any{
+					"items":     items,
+					"total":     len(items),
+					"recursive": true,
+					"typesOnly": filterFolders,
+				}
+			} else if filterFolders {
+				result = filterDoctypeFolders(result)
+			}
+
+			return printResult(cmd, deps, applyReadTriage(applyFieldsProjection(result, fields), triage))
 		},
-	})
+	}
+	addFieldsFlag(cmd, &fields)
+	cmd.Flags().StringVar(&paramsRaw, "params", "", "Query parameters as JSON")
+	addPaginationFlags(cmd, &skip, &take)
+	addAutoPaginationFlag(cmd, &all)
+	addReadTriageFlags(cmd, &triage)
+	cmd.Flags().BoolVar(&recursive, "recursive", false, "Walk document type folders recursively")
+	cmd.Flags().BoolVar(&typesOnly, "types-only", false, "Return document types only, excluding folders")
+	cmd.Flags().BoolVar(&excludeFolders, "exclude-folders", false, "Alias for --types-only")
+	return cmd
 }
 
 func doctypeRoot(deps Dependencies) *cobra.Command {
@@ -91,6 +164,123 @@ func doctypeSearch(deps Dependencies) *cobra.Command {
 			}
 		},
 	})
+}
+
+func flattenDoctypeTree(ctx context.Context, client *api.Client, items []any, pageSize int, excludeFolders bool, limit int) ([]any, error) {
+	flattened := make([]any, 0, len(items))
+	seenFolders := map[string]struct{}{}
+	if err := appendDoctypeTreeItems(ctx, client, &flattened, items, pageSize, excludeFolders, limit, seenFolders); err != nil {
+		return nil, err
+	}
+	return flattened, nil
+}
+
+func appendDoctypeTreeItems(ctx context.Context, client *api.Client, flattened *[]any, items []any, pageSize int, excludeFolders bool, limit int, seenFolders map[string]struct{}) error {
+	for _, item := range items {
+		if doctypeLimitReached(flattened, limit) {
+			return nil
+		}
+		folder := isDoctypeFolderItem(item)
+		if !folder || !excludeFolders {
+			*flattened = append(*flattened, item)
+			if doctypeLimitReached(flattened, limit) {
+				return nil
+			}
+		}
+		if !folder {
+			continue
+		}
+		id := itemID(item)
+		if id == "" {
+			continue
+		}
+		if _, seen := seenFolders[id]; seen {
+			continue
+		}
+		seenFolders[id] = struct{}{}
+		childLimit := 0
+		if !excludeFolders && limit > 0 {
+			childLimit = limit - len(*flattened)
+		}
+		children, err := fetchDoctypeFolderChildren(ctx, client, id, pageSize, childLimit)
+		if err != nil {
+			return err
+		}
+		if err := appendDoctypeTreeItems(ctx, client, flattened, children, pageSize, excludeFolders, limit, seenFolders); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func doctypeLimitReached(items *[]any, limit int) bool {
+	return limit > 0 && len(*items) >= limit
+}
+
+func fetchDoctypeFolderChildren(ctx context.Context, client *api.Client, folderID string, pageSize int, limit int) ([]any, error) {
+	result, err := getAllPagesWithFallback(ctx, client, pageSize, 0, limit,
+		getRequestCandidate{path: "/tree/document-type/children", opts: api.RequestOptions{Params: map[string]any{"parentId": folderID}}},
+		getRequestCandidate{path: api.JoinPath("/document-type/%s/children", folderID)},
+	)
+	if err != nil {
+		return nil, err
+	}
+	return resultItems(result), nil
+}
+
+func filterDoctypeFolders(result any) any {
+	items := resultItems(result)
+	filtered := make([]any, 0, len(items))
+	for _, item := range items {
+		if !isDoctypeFolderItem(item) {
+			filtered = append(filtered, item)
+		}
+	}
+	if payload, ok := result.(map[string]any); ok {
+		next := cloneAnyMap(payload)
+		next["items"] = filtered
+		next["total"] = len(filtered)
+		next["typesOnly"] = true
+		return next
+	}
+	return filtered
+}
+
+func isDocumentTypeFolderID(ctx context.Context, client *api.Client, id string) bool {
+	result, err := client.Get(ctx, "/tree/document-type/children", api.RequestOptions{Params: map[string]any{"parentId": id}})
+	if err != nil {
+		return false
+	}
+	_, ok := result.(map[string]any)
+	return ok
+}
+
+func isDoctypeFolderItem(item any) bool {
+	entry, ok := item.(map[string]any)
+	if !ok {
+		return false
+	}
+	for _, key := range []string{"isFolder", "isContainer"} {
+		if value, ok := entry[key].(bool); ok && value {
+			return true
+		}
+	}
+	for _, key := range []string{"type", "nodeType", "kind", "entityType"} {
+		if value, ok := entry[key].(string); ok && strings.EqualFold(strings.TrimSpace(value), "folder") {
+			return true
+		}
+	}
+	alias, hasAlias := entry["alias"].(string)
+	return !hasAlias || strings.TrimSpace(alias) == ""
+}
+
+func itemID(item any) string {
+	entry, ok := item.(map[string]any)
+	if !ok {
+		return ""
+	}
+	id, _ := entry["id"].(string)
+	return strings.TrimSpace(id)
 }
 
 func doctypeCreate(deps Dependencies) *cobra.Command {
