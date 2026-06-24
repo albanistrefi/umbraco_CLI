@@ -4,6 +4,13 @@
 
 - hardened `logs list`/`logs search` for incident workflows: `--from`/`--to` and `--around ... --minutes N` are now enforced client-side so out-of-window rows returned by the Management API are filtered before output. Added deterministic client-side `--source-context`, `--path`, `--contains`, and `--correlation-id` filters; `--flat` JSON with `properties` as an object; `--redact`/`--redact-default`; `--count-by level|source|path`; and explicit pagination metadata with `--cursor`/`nextCursor`
 
+Fixes from agent workflow reports against multi-environment Management API usage:
+
+- added first-class config selection: global `--profile <name>` loads `~/.umbraco/<name>.config.json`, global `--config <path>` loads an explicit config file, and `auth list` / `auth use <profile>` manage stored profiles without exposing client secrets
+- added `umbraco api <METHOD> <PATH>` for authenticated raw core Management API calls, including repeated query parameters, `--body @payload.json`, dry-run output, and status-code/body reporting for endpoint investigation
+- improved document type tree workflows: `doctype list --recursive --types-only` walks folders and returns real document types, `--exclude-folders` is an alias, and `doctype get <folderId>` now reports that the ID is a folder instead of surfacing the generic endpoint 404
+- clarified `auth status`: `hasCredentials` reports credential presence, while `authenticated` now reflects successful verification so a failed token request cannot look authenticated
+
 ## v0.4.4 - 2026-06-15
 
 Fixes from real-world agent field testing against a Cloud instance:

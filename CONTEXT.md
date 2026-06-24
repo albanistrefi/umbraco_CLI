@@ -13,13 +13,16 @@ Implementation runtime is Go (`cmd/umbraco`).
 - Response size should be constrained (`--fields`) to protect context window budget.
 - Mutations must be rehearsed first (`--dry-run` previews the planned request without executing).
 - Updates follow one contract everywhere: `--json` replaces the resource wholesale, `--merge-json` fetches and deep-merges. Hard deletes require `--force` or `--dry-run`.
-- Config resolves from env, project config, `.umbraco-cli.env`, `.env`, user config, and local `.NET` URL discovery in that order.
+- Config resolves from an explicit `--profile`/`--config` or active profile first; otherwise env, project config, `.umbraco-cli.env`, `.env`, user config, and local `.NET` URL discovery in that order.
 - Auth/connectivity errors include the resolved base URL to make misconfiguration obvious.
 
 ## Quick Command Reference
 
 ### Auth
 - `umbraco auth login --base-url "https://localhost:44314" --client-id "..." --client-secret "..."`
+- `umbraco --profile dev auth login --base-url "https://localhost:44314" --client-id "..." --client-secret "..."`
+- `umbraco auth list`
+- `umbraco auth use dev`
 - `umbraco auth status`
 - `umbraco auth logout --dry-run`
 
@@ -46,6 +49,7 @@ Implementation runtime is Go (`cmd/umbraco`).
 
 ### Schema
 - `umbraco doctype get <id>`
+- `umbraco doctype list --recursive --types-only --fields id,name,alias`
 - `umbraco datatype list --skip 0 --take 50`
 - `umbraco datatype search --query "rich text"`
 - `umbraco datatype extensions <id>`
@@ -63,6 +67,7 @@ Implementation runtime is Go (`cmd/umbraco`).
 - `umbraco user-group list`
 
 ### Diagnostics
+- `umbraco api GET "/item/document/ancestors?id=<id>&id=<id>"`
 - `umbraco server status`
 - `umbraco logs list --level Error --take 50`
 - `umbraco logs search --around 2026-06-23T11:38:51Z --minutes 5 --source-context My.Source --flat --redact-default`

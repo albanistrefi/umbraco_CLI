@@ -77,8 +77,18 @@ umbraco auth login --base-url "https://localhost:44314" --client-id "umbraco-bac
 umbraco auth status
 ```
 
+Use named profiles when you work across multiple environments:
+
+```bash
+umbraco --profile dev auth login --base-url "https://dev.example.test" --client-id "umbraco-back-office-api-user" --client-secret "your-secret"
+umbraco auth list
+umbraco auth use dev
+umbraco --profile dev document search --query "Home"
+umbraco --config ~/.umbraco/dev.config.json document search --query "Home"
+```
+
 Notes:
-- Environment variables still work and have the highest precedence.
+- Environment variables still work and have the highest precedence when no `--profile`, `--config`, or active profile is selected.
 - Project-local `.umbraco-cli.env` files are auto-loaded for `UMBRACO_*` keys and are intended for CLI-specific project setup.
 - Project-local `.env` files are auto-loaded for `UMBRACO_*` keys.
 - Project-local `.umbracorc.json` or `.umbracorc` can override project defaults.
@@ -89,6 +99,8 @@ Notes:
 - Auth/connectivity errors include the resolved base URL so it is obvious what the CLI is trying to reach.
 
 Config precedence, highest to lowest:
+
+Explicit `--profile`, `--config`, or an active profile from `umbraco auth use` selects that config file for base URL and credentials. Without one of those selectors:
 
 1. Process env (`UMBRACO_*`)
 2. Project `.umbracorc.json` or `.umbracorc`
@@ -167,6 +179,8 @@ Auth helpers:
 
 ```bash
 umbraco auth login --base-url "https://localhost:44314" --client-id "umbraco-back-office-api-user" --client-secret "your-secret"
+umbraco auth list
+umbraco auth use dev
 umbraco auth status
 umbraco auth status --check
 umbraco auth logout --dry-run
@@ -180,7 +194,15 @@ umbraco document search --query "Toxic" --skip 0 --take 25 --output json
 umbraco document search --query "Toxic" --under <parent-id> --skip 0 --take 25 --output json
 umbraco media search --query "Hero" --skip 0 --take 25 --output json
 umbraco doctype root --summarize --first-n 10 --output json
+umbraco doctype list --recursive --types-only --fields id,name,alias
 umbraco tree walk "Home/Partners/Partner List" --output json
+```
+
+Raw Management API passthrough for endpoints that do not have curated commands yet:
+
+```bash
+umbraco api GET "/item/document/ancestors?id=<guid>&id=<guid>" --output json
+umbraco api POST /some/endpoint --body @payload.json --dry-run --output json
 ```
 
 Safe write pattern (always dry-run first):
@@ -241,7 +263,7 @@ umbraco user client-credentials create <user-id> --client-id umbraco-back-office
 This repo ships two sets of SKILL.md files under `skills/`:
 
 - **67 bundled Umbraco extension-development skills** (`skills/foundation/`, `skills/backend/`, `skills/extensions/`, `skills/property-editors/`, `skills/rich-text/`, `skills/testing/`) — copied from `.agents/skills/` by `npm run bundle:skills`.
-- **25 CLI command skills** (`skills/cli/`) — generated from the cobra command tree by `umbraco generate-skills`.
+- **26 CLI command skills** (`skills/cli/`) — generated from the cobra command tree by `umbraco generate-skills`.
 
 Verify both sets are present and consistent with the package version:
 
@@ -291,10 +313,11 @@ skills into whichever harness directory you point it at is on the roadmap.
 - `server` (5)
 - `health` (4)
 - `tree` (1)
-- `auth` (3)
+- `api` (1)
+- `auth` (5)
 - `automate` (53) — requires [Umbraco Automate](https://docs.umbraco.com/umbraco-automate) on the target instance; see below
 
-Total: **216 runnable commands** counting every nested subcommand. Group counts above are direct subcommands; nested subgroups like `document version` and `automate workspace group` add the rest.
+Total: **219 runnable commands** counting every nested subcommand. Group counts above are direct subcommands; nested subgroups like `document version` and `automate workspace group` add the rest.
 
 ## Umbraco Automate
 
