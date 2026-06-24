@@ -61,6 +61,110 @@ IGNORED_VALUE=should-not-load
 	}
 }
 
+func TestLoadResolvedConfigWithProfileUsesOnlySelectedProfileCredentials(t *testing.T) {
+	workingDir := t.TempDir()
+	homeDir := t.TempDir()
+	userConfigDir := filepath.Join(homeDir, ".umbraco")
+	if err := os.MkdirAll(userConfigDir, 0o755); err != nil {
+		t.Fatalf("failed to create user config dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(userConfigDir, "dev.config.json"), []byte(`{
+  "baseUrl": "https://dev.example.test/umbraco",
+  "clientId": "dev-client",
+  "clientSecret": "dev-secret",
+  "outputFormat": "plain"
+}`), 0o644); err != nil {
+		t.Fatalf("failed to write profile config: %v", err)
+	}
+
+	cfg, err := loadResolvedConfigWithOptions(workingDir, homeDir, map[string]string{
+		"UMBRACO_BASE_URL":      "https://env.example.test",
+		"UMBRACO_CLIENT_ID":     "env-client",
+		"UMBRACO_CLIENT_SECRET": "env-secret",
+		"UMBRACO_OUTPUT_FORMAT": "json",
+	}, LoadOptions{Profile: "dev"})
+	if err != nil {
+		t.Fatalf("loadResolvedConfigWithOptions failed: %v", err)
+	}
+
+	if cfg.BaseURL != "https://dev.example.test" || cfg.ClientID != "dev-client" || cfg.ClientSecret != "dev-secret" {
+		t.Fatalf("expected selected profile credentials, got %+v", cfg)
+	}
+	if cfg.OutputFormat != OutputJSON {
+		t.Fatalf("expected output env override to remain available, got %q", cfg.OutputFormat)
+	}
+}
+
+func TestLoadResolvedConfigWithConfigPathUsesExplicitFile(t *testing.T) {
+	workingDir := t.TempDir()
+	homeDir := t.TempDir()
+	configPath := filepath.Join(workingDir, "local.config.json")
+	if err := os.WriteFile(configPath, []byte(`{
+  "baseUrl": "https://local.example.test",
+  "clientId": "local-client",
+  "clientSecret": "local-secret"
+}`), 0o644); err != nil {
+		t.Fatalf("failed to write config file: %v", err)
+	}
+
+	cfg, err := loadResolvedConfigWithOptions(workingDir, homeDir, map[string]string{
+		"UMBRACO_BASE_URL":      "https://env.example.test",
+		"UMBRACO_CLIENT_ID":     "env-client",
+		"UMBRACO_CLIENT_SECRET": "env-secret",
+	}, LoadOptions{ConfigPath: "local.config.json"})
+	if err != nil {
+		t.Fatalf("loadResolvedConfigWithOptions failed: %v", err)
+	}
+
+	if cfg.BaseURL != "https://local.example.test" || cfg.ClientID != "local-client" || cfg.ClientSecret != "local-secret" {
+		t.Fatalf("expected explicit config file credentials, got %+v", cfg)
+	}
+}
+
+func TestLoadResolvedConfigUsesActiveProfile(t *testing.T) {
+	workingDir := t.TempDir()
+	homeDir := t.TempDir()
+	userConfigDir := filepath.Join(homeDir, ".umbraco")
+	if err := os.MkdirAll(userConfigDir, 0o755); err != nil {
+		t.Fatalf("failed to create user config dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(userConfigDir, "dev.config.json"), []byte(`{
+  "baseUrl": "https://dev.example.test",
+  "clientId": "dev-client",
+  "clientSecret": "dev-secret"
+}`), 0o644); err != nil {
+		t.Fatalf("failed to write profile config: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(userConfigDir, "active-profile"), []byte("dev\n"), 0o600); err != nil {
+		t.Fatalf("failed to write active profile: %v", err)
+	}
+
+	cfg, err := loadResolvedConfigWithOptions(workingDir, homeDir, map[string]string{
+		"UMBRACO_CLIENT_ID": "env-client",
+	}, LoadOptions{})
+	if err != nil {
+		t.Fatalf("loadResolvedConfigWithOptions failed: %v", err)
+	}
+
+	if cfg.BaseURL != "https://dev.example.test" || cfg.ClientID != "dev-client" || cfg.ClientSecret != "dev-secret" {
+		t.Fatalf("expected active profile credentials without env credential merge, got %+v", cfg)
+	}
+}
+
+func TestLoadResolvedConfigRejectsMissingExplicitProfile(t *testing.T) {
+	_, err := loadResolvedConfigWithOptions(t.TempDir(), t.TempDir(), map[string]string{}, LoadOptions{Profile: "dev"})
+	if err == nil || !strings.Contains(err.Error(), "config file not found") {
+		t.Fatalf("expected missing profile config error, got %v", err)
+	}
+}
+
+func TestLoadResolvedConfigRejectsProfileAndConfigTogether(t *testing.T) {
+	_, err := loadResolvedConfigWithOptions(t.TempDir(), t.TempDir(), map[string]string{}, LoadOptions{Profile: "dev", ConfigPath: "dev.config.json"})
+	if err == nil || !strings.Contains(err.Error(), "mutually exclusive") {
+		t.Fatalf("expected mutually exclusive error, got %v", err)
+	}
+}
+
 func TestLoadResolvedConfigPrefersUmbracoCliDotEnvOverGenericDotEnv(t *testing.T) {
 	workingDir := t.TempDir()
 
