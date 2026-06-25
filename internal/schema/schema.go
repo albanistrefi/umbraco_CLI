@@ -63,8 +63,14 @@ type endpointBinding struct {
 }
 
 var (
-	fieldsQuery = ParamSchema{Type: "string", Description: "Comma-separated field list (applied client-side by the CLI)"}
-	withFields  = map[string]ParamSchema{"fields": fieldsQuery}
+	fieldsQuery       = ParamSchema{Type: "string", Description: "Comma-separated field list (applied client-side by the CLI); supports dotted paths on document read commands"}
+	documentTrimQuery = map[string]ParamSchema{
+		"fields":   fieldsQuery,
+		"summary":  {Type: "boolean", Description: "Return a compact CLI-side document summary shape"},
+		"no-empty": {Type: "boolean", Description: "Omit null, empty string, empty array, and empty object values from trimmed output"},
+		"full":     {Type: "boolean", Description: "Explicitly return the full payload; cannot be combined with --fields, --summary, or --no-empty"},
+	}
+	withFields = map[string]ParamSchema{"fields": fieldsQuery}
 )
 
 var documentGrepSchema = &rawSchema{
@@ -89,11 +95,11 @@ var documentGrepSchema = &rawSchema{
 
 var endpointBindings = map[string]endpointBinding{
 	// document
-	"document.get":                        {Method: "GET", Path: "/document/{id}", ExtraQuery: withFields},
-	"document.root":                       {Method: "GET", Path: "/tree/document/root", ExtraQuery: withFields},
-	"document.children":                   {Method: "GET", Path: "/tree/document/children", ExtraQuery: withFields},
+	"document.get":                        {Method: "GET", Path: "/document/{id}", ExtraQuery: documentTrimQuery},
+	"document.root":                       {Method: "GET", Path: "/tree/document/root", ExtraQuery: documentTrimQuery},
+	"document.children":                   {Method: "GET", Path: "/tree/document/children", ExtraQuery: documentTrimQuery},
 	"document.ancestors":                  {Method: "GET", Path: "/tree/document/ancestors"},
-	"document.search":                     {Method: "GET", Path: "/item/document/search"},
+	"document.search":                     {Method: "GET", Path: "/item/document/search", ExtraQuery: documentTrimQuery},
 	"document.grep":                       {Manual: documentGrepSchema},
 	"document.create":                     {Method: "POST", Path: "/document"},
 	"document.update":                     {Method: "PUT", Path: "/document/{id}"},
