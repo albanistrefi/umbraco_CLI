@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- added `document grep <substring>` for exhaustive CLI-side document content scans: walks the document tree, fetches draft and/or published document payloads, scans serialized property values for exact substrings or regexes, supports property/document-type/subtree filters, emits progress on stderr, and reports skipped document fetches without corrupting JSON output
+
 ## v0.4.5 - 2026-06-24
 
 - hardened `logs list`/`logs search` for incident workflows: `--from`/`--to` and `--around ... --minutes N` are now enforced client-side so out-of-window rows returned by the Management API are filtered before output. Added deterministic client-side `--source-context`, `--path`, `--contains`, and `--correlation-id` filters; `--flat` JSON with `properties` as an object; `--redact`/`--redact-default`; `--count-by level|source|path`; and explicit pagination metadata with `--cursor`/`nextCursor`
