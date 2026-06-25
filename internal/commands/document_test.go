@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"unicode/utf8"
 )
 
 // endpointNoContent simulates a 204 No Content reply (the shape Umbraco
@@ -222,6 +223,45 @@ func TestDocumentGrepCaseSensitiveByDefault(t *testing.T) {
 	}
 	if len(payload.Hits) != 0 {
 		t.Fatalf("case-sensitive search should not match uppercase text, got %+v", payload.Hits)
+	}
+}
+
+func TestDocumentGrepIgnoreCaseKeepsUnicodeMatchIndexesOnOriginalText(t *testing.T) {
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/tree/document/root":
+			return endpointJSONResponse(http.StatusOK, `{"items":[{"id":"doc-1"}],"total":1}`), nil
+		case "/umbraco/management/api/v1/tree/document/children":
+			return endpointJSONResponse(http.StatusOK, `{"items":[],"total":0}`), nil
+		case "/umbraco/management/api/v1/document/doc-1":
+			return endpointJSONResponse(http.StatusOK, `{"id":"doc-1","name":"Unicode","values":[{"alias":"body","value":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA Kfoo suffix"}]}`), nil
+		default:
+			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	output, err := execute(buildRootWithCollections(t, deps), "document", "grep", "kfoo", "--ignore-case", "--draft", "--concurrency", "1")
+	if err != nil {
+		t.Fatalf("document grep failed: %v", err)
+	}
+	var payload documentGrepResult
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("failed to decode grep payload: %v", err)
+	}
+	if len(payload.Hits) != 1 {
+		t.Fatalf("expected one unicode case-folded hit, got %+v", payload.Hits)
+	}
+	hit := payload.Hits[0]
+	if hit.Match != "Kfoo" {
+		t.Fatalf("expected original unicode substring as match, got %q", hit.Match)
+	}
+	if !utf8.ValidString(hit.Snippet) {
+		t.Fatalf("snippet should remain valid UTF-8, got %q", hit.Snippet)
+	}
+	if !strings.Contains(hit.Snippet, "Kfoo") {
+		t.Fatalf("snippet should include original unicode match, got %q", hit.Snippet)
 	}
 }
 

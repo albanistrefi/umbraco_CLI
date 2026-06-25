@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/spf13/cobra"
 
@@ -61,10 +62,8 @@ type documentGrepSkipped struct {
 }
 
 type documentGrepMatcher struct {
-	needle     string
-	needleFold string
-	regex      *regexp.Regexp
-	ignoreCase bool
+	needle string
+	regex  *regexp.Regexp
 }
 
 func documentGrep(deps Dependencies) *cobra.Command {
@@ -365,7 +364,7 @@ func documentGrepDocumentName(doc map[string]any) string {
 }
 
 func newDocumentGrepMatcher(opts documentGrepOptions) (documentGrepMatcher, error) {
-	matcher := documentGrepMatcher{needle: opts.Needle, ignoreCase: opts.IgnoreCase}
+	matcher := documentGrepMatcher{needle: opts.Needle}
 	if opts.Regex {
 		pattern := opts.Needle
 		if opts.IgnoreCase {
@@ -379,7 +378,11 @@ func newDocumentGrepMatcher(opts documentGrepOptions) (documentGrepMatcher, erro
 		return matcher, nil
 	}
 	if opts.IgnoreCase {
-		matcher.needleFold = strings.ToLower(opts.Needle)
+		compiled, err := regexp.Compile("(?i:" + regexp.QuoteMeta(opts.Needle) + ")")
+		if err != nil {
+			return documentGrepMatcher{}, fmt.Errorf("invalid case-insensitive substring: %w", err)
+		}
+		matcher.regex = compiled
 	}
 	return matcher, nil
 }
@@ -393,28 +396,22 @@ func (m documentGrepMatcher) find(text string) [][2]int {
 		}
 		return matches
 	}
-	searchText := text
-	needle := m.needle
-	if m.ignoreCase {
-		searchText = strings.ToLower(text)
-		needle = m.needleFold
-	}
 	var matches [][2]int
 	offset := 0
 	for {
-		index := strings.Index(searchText[offset:], needle)
+		index := strings.Index(text[offset:], m.needle)
 		if index < 0 {
 			break
 		}
 		start := offset + index
-		end := start + len(needle)
+		end := start + len(m.needle)
 		matches = append(matches, [2]int{start, end})
 		if end == offset {
 			offset++
 		} else {
 			offset = end
 		}
-		if offset >= len(searchText) {
+		if offset >= len(text) {
 			break
 		}
 	}
@@ -465,10 +462,12 @@ func grepSnippet(text string, start int, end int) string {
 	if left < 0 {
 		left = 0
 	}
+	left = nearestUTF8StartBefore(text, left)
 	right := end + contextSize
 	if right > len(text) {
 		right = len(text)
 	}
+	right = nearestUTF8BoundaryAfter(text, right)
 	snippet := strings.ReplaceAll(text[left:right], "\n", " ")
 	if left > 0 {
 		snippet = "..." + snippet
@@ -477,6 +476,32 @@ func grepSnippet(text string, start int, end int) string {
 		snippet += "..."
 	}
 	return snippet
+}
+
+func nearestUTF8StartBefore(text string, index int) int {
+	if index <= 0 {
+		return 0
+	}
+	if index >= len(text) {
+		return len(text)
+	}
+	for index > 0 && !utf8.RuneStart(text[index]) {
+		index--
+	}
+	return index
+}
+
+func nearestUTF8BoundaryAfter(text string, index int) int {
+	if index <= 0 {
+		return 0
+	}
+	if index >= len(text) {
+		return len(text)
+	}
+	for index < len(text) && !utf8.RuneStart(text[index]) {
+		index++
+	}
+	return index
 }
 
 func documentGrepMode(opts documentGrepOptions) string {
