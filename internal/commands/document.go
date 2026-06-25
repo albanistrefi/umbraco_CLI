@@ -26,6 +26,7 @@ func RegisterDocument(root *cobra.Command, deps Dependencies) {
 	document.AddCommand(documentChildren(deps))
 	document.AddCommand(documentAncestors(deps))
 	document.AddCommand(documentSearch(deps))
+	document.AddCommand(documentGrep(deps))
 	document.AddCommand(documentCreate(deps))
 	document.AddCommand(documentUpdate(deps))
 	document.AddCommand(documentBulkUpdate(deps))

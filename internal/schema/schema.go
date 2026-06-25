@@ -67,6 +67,26 @@ var (
 	withFields  = map[string]ParamSchema{"fields": fieldsQuery}
 )
 
+var documentGrepSchema = &rawSchema{
+	Method: "GET",
+	Path:   "/tree/document/root + /tree/document/children + /document/{id}",
+	QueryParams: map[string]ParamSchema{
+		"substring":   {Type: "string", Required: true, Description: "Required positional substring or regex pattern"},
+		"regex":       {Type: "boolean", Description: "Treat substring as a regular expression"},
+		"ignore-case": {Type: "boolean", Description: "Case-insensitive matching"},
+		"published":   {Type: "boolean", Description: "Scan only published snapshots"},
+		"draft":       {Type: "boolean", Description: "Scan only current draft payloads"},
+		"property":    {Type: "array", Description: "Restrict to property aliases; repeatable"},
+		"doctype":     {Type: "array", Description: "Restrict to document type aliases; repeatable"},
+		"start-id":    {Type: "string", Format: "uuid", Description: "Scan this document subtree instead of the full tree"},
+		"concurrency": {Type: "number", Format: "int32", Description: "Maximum concurrent document fetches"},
+	},
+	Response: &ObjectSchema{
+		Type:        "object",
+		Description: "CLI workflow: walks the document tree, fetches draft and/or published document payloads, scans serialized property values client-side, and returns hits plus skipped fetches",
+	},
+}
+
 var endpointBindings = map[string]endpointBinding{
 	// document
 	"document.get":                        {Method: "GET", Path: "/document/{id}", ExtraQuery: withFields},
@@ -74,6 +94,7 @@ var endpointBindings = map[string]endpointBinding{
 	"document.children":                   {Method: "GET", Path: "/tree/document/children", ExtraQuery: withFields},
 	"document.ancestors":                  {Method: "GET", Path: "/tree/document/ancestors"},
 	"document.search":                     {Method: "GET", Path: "/item/document/search"},
+	"document.grep":                       {Manual: documentGrepSchema},
 	"document.create":                     {Method: "POST", Path: "/document"},
 	"document.update":                     {Method: "PUT", Path: "/document/{id}"},
 	"document.update-properties":          {Method: "PUT", Path: "/document/{id}", Response: &ObjectSchema{Type: "object", Description: "CLI convenience wrapper that fetches, merges, and writes the full document payload"}},

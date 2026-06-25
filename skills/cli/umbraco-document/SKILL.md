@@ -28,6 +28,7 @@ umbraco document <command> [flags]
 | `document children <id>` | Get child documents (paginated; --skip/--take/--all) |
 | `document domains get <id>` | Get the domains assigned to a document |
 | `document get <id>` | Get a document by ID |
+| `document grep <substring>` | Exhaustively scan document property values for an exact substring |
 | `document public-access get <id>` | Get the public-access (member protection) rules on a document |
 | `document publish-descendants-result <id> <task-id>` | Check the progress of an asynchronous publish-descendants run |
 | `document referenced-descendants <id>` | List items that reference this document or any of its descendants |
@@ -105,6 +106,31 @@ umbraco document get <id>
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--fields` | string | — | Limit response fields (comma-separated top-level keys) |
+
+### grep
+
+```bash
+umbraco document grep <substring>
+```
+
+Walks the document tree, fetches each document, and scans each serialized
+property value for an exact substring. This is intentionally different from
+document search: search is Examine-backed and can miss buried URLs, aliases,
+tokens, or strings inside rich text and block/grid JSON.
+
+By default grep scans both the current draft representation and the published
+snapshot when one exists. Use --draft or --published to narrow the scan.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--concurrency` | int | 6 | Maximum concurrent document fetches |
+| `--doctype` | stringArray | [] | Restrict matches to a document type alias; repeat for multiple aliases |
+| `--draft` | bool | false | Scan only current draft document payloads |
+| `--ignore-case` | bool | false | Match case-insensitively |
+| `--property` | stringArray | [] | Restrict matches to a property alias; repeat for multiple aliases |
+| `--published` | bool | false | Scan only published document snapshots |
+| `--regex` | bool | false | Treat the substring argument as a regular expression |
+| `--start-id` | string | — | Document ID whose subtree should be scanned instead of the full tree |
 
 ### public-access get
 
