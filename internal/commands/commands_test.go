@@ -65,6 +65,16 @@ func execute(root *cobra.Command, args ...string) (string, error) {
 	return buf.String(), err
 }
 
+func executeWithErr(root *cobra.Command, args ...string) (string, string, error) {
+	out := &bytes.Buffer{}
+	errOut := &bytes.Buffer{}
+	root.SetOut(out)
+	root.SetErr(errOut)
+	root.SetArgs(args)
+	err := root.Execute()
+	return out.String(), errOut.String(), err
+}
+
 func TestCommandCountsMatchMVP(t *testing.T) {
 	deps := makeDeps()
 	root := buildRootWithCollections(t, deps)
@@ -87,8 +97,8 @@ func TestCommandCountsMatchMVP(t *testing.T) {
 		total += len(found.Commands())
 	}
 
-	if total != 161 {
-		t.Fatalf("expected 161 collection commands, got %d", total)
+	if total != 162 {
+		t.Fatalf("expected 162 collection commands, got %d", total)
 	}
 }
 

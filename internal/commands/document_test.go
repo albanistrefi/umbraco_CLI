@@ -68,6 +68,273 @@ func TestDocumentSearchUsesItemSearchEndpointAndFallsBack(t *testing.T) {
 	}
 }
 
+func TestDocumentGrepFindsBuriedSubstringThatSearchMisses(t *testing.T) {
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/item/document/search":
+			return endpointJSONResponse(http.StatusOK, `{"items":[],"total":0}`), nil
+		case "/umbraco/management/api/v1/tree/document/root":
+			return endpointJSONResponse(http.StatusOK, `{"items":[{"id":"doc-1"},{"id":"doc-2"}],"total":2}`), nil
+		case "/umbraco/management/api/v1/tree/document/children":
+			return endpointJSONResponse(http.StatusOK, `{"items":[],"total":0}`), nil
+		case "/umbraco/management/api/v1/document/doc-1":
+			return endpointJSONResponse(http.StatusOK, `{
+				"id":"doc-1",
+				"name":"Audit Target",
+				"documentType":{"alias":"article"},
+				"values":[{"alias":"body","value":{"blocks":[{"content":{"url":"/compare_reports","label":"Deep"}}]}}]
+			}`), nil
+		case "/umbraco/management/api/v1/document/doc-2":
+			return endpointJSONResponse(http.StatusOK, `{
+				"id":"doc-2",
+				"name":"No Match",
+				"documentType":{"alias":"article"},
+				"values":[{"alias":"body","value":"ordinary body"}]
+			}`), nil
+		case "/umbraco/management/api/v1/document/doc-1/published", "/umbraco/management/api/v1/document/doc-2/published":
+			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		default:
+			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	searchOutput, err := execute(buildRootWithCollections(t, deps), "document", "search", "--query", "compare_reports")
+	if err != nil {
+		t.Fatalf("document search failed: %v", err)
+	}
+	var searchPayload map[string]any
+	if err := json.Unmarshal([]byte(searchOutput), &searchPayload); err != nil {
+		t.Fatalf("failed to decode search payload: %v", err)
+	}
+	if got := len(searchPayload["items"].([]any)); got != 0 {
+		t.Fatalf("fixture search should miss buried content, got %d items", got)
+	}
+
+	grepOutput, err := execute(buildRootWithCollections(t, deps), "document", "grep", "compare_reports", "--concurrency", "1")
+	if err != nil {
+		t.Fatalf("document grep failed: %v", err)
+	}
+	var grepPayload documentGrepResult
+	if err := json.Unmarshal([]byte(grepOutput), &grepPayload); err != nil {
+		t.Fatalf("failed to decode grep payload: %v", err)
+	}
+	if grepPayload.DocumentsWalked != 2 || grepPayload.DocumentsFetched != 2 || grepPayload.DocumentsMatched != 1 {
+		t.Fatalf("unexpected grep counts: %+v", grepPayload)
+	}
+	if len(grepPayload.Hits) != 1 {
+		t.Fatalf("expected one buried hit, got %+v", grepPayload.Hits)
+	}
+	hit := grepPayload.Hits[0]
+	if hit.DocumentID != "doc-1" || hit.PropertyAlias != "body" || !strings.Contains(hit.Snippet, "compare_reports") {
+		t.Fatalf("unexpected grep hit: %+v", hit)
+	}
+}
+
+func TestDocumentGrepSupportsStartIDRegexIgnoreCaseAndFilters(t *testing.T) {
+	var sawRoot bool
+	var sawStartChildQuery bool
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/tree/document/root":
+			sawRoot = true
+			return endpointJSONResponse(http.StatusOK, `{"items":[],"total":0}`), nil
+		case "/umbraco/management/api/v1/tree/document/children":
+			if req.URL.Query().Get("parentId") == "root-1" {
+				sawStartChildQuery = true
+				return endpointJSONResponse(http.StatusOK, `{"items":[{"id":"child-1"}],"total":1}`), nil
+			}
+			return endpointJSONResponse(http.StatusOK, `{"items":[],"total":0}`), nil
+		case "/umbraco/management/api/v1/document/root-1":
+			return endpointJSONResponse(http.StatusOK, `{"id":"root-1","name":"Root","documentType":{"id":"dt-root"},"values":[{"alias":"body","value":"root has G2.COM but wrong doctype"}]}`), nil
+		case "/umbraco/management/api/v1/document/child-1":
+			return endpointJSONResponse(http.StatusOK, `{"id":"child-1","variants":[{"name":"Child"}],"documentType":{"id":"dt-article"},"values":[{"alias":"body","value":"Visit G2.COM now"},{"alias":"summary","value":"G2.COM ignored by property filter"}]}`), nil
+		case "/umbraco/management/api/v1/document-type/dt-root":
+			return endpointJSONResponse(http.StatusOK, `{"id":"dt-root","alias":"landingPage"}`), nil
+		case "/umbraco/management/api/v1/document-type/dt-article":
+			return endpointJSONResponse(http.StatusOK, `{"id":"dt-article","alias":"article"}`), nil
+		default:
+			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	output, err := execute(buildRootWithCollections(t, deps),
+		"document", "grep", `g2\.com`,
+		"--regex",
+		"--ignore-case",
+		"--property", "body",
+		"--doctype", "article",
+		"--start-id", "root-1",
+		"--draft",
+		"--concurrency", "1",
+	)
+	if err != nil {
+		t.Fatalf("document grep failed: %v", err)
+	}
+	if sawRoot {
+		t.Fatalf("--start-id should not fetch tree root")
+	}
+	if !sawStartChildQuery {
+		t.Fatalf("--start-id should fetch children for the requested subtree root")
+	}
+	var payload documentGrepResult
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("failed to decode grep payload: %v", err)
+	}
+	if payload.Mode != "draft" || payload.StartID != "root-1" {
+		t.Fatalf("unexpected mode/start metadata: %+v", payload)
+	}
+	if len(payload.Hits) != 1 {
+		t.Fatalf("expected one filtered regex hit, got %+v", payload.Hits)
+	}
+	hit := payload.Hits[0]
+	if hit.DocumentID != "child-1" || hit.DocumentName != "Child" || hit.DocumentTypeAlias != "article" || hit.PropertyAlias != "body" || hit.Match != "G2.COM" {
+		t.Fatalf("unexpected filtered hit: %+v", hit)
+	}
+}
+
+func TestDocumentGrepCaseSensitiveByDefault(t *testing.T) {
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/tree/document/root":
+			return endpointJSONResponse(http.StatusOK, `{"items":[{"id":"doc-1"}],"total":1}`), nil
+		case "/umbraco/management/api/v1/tree/document/children":
+			return endpointJSONResponse(http.StatusOK, `{"items":[],"total":0}`), nil
+		case "/umbraco/management/api/v1/document/doc-1":
+			return endpointJSONResponse(http.StatusOK, `{"id":"doc-1","name":"Case","values":[{"alias":"body","value":"G2.COM"}]}`), nil
+		default:
+			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	output, err := execute(buildRootWithCollections(t, deps), "document", "grep", "g2.com", "--draft", "--concurrency", "1")
+	if err != nil {
+		t.Fatalf("document grep failed: %v", err)
+	}
+	var payload documentGrepResult
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("failed to decode grep payload: %v", err)
+	}
+	if len(payload.Hits) != 0 {
+		t.Fatalf("case-sensitive search should not match uppercase text, got %+v", payload.Hits)
+	}
+}
+
+func TestDocumentGrepPreservesExactWhitespaceNeedle(t *testing.T) {
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/tree/document/root":
+			return endpointJSONResponse(http.StatusOK, `{"items":[{"id":"doc-1"}],"total":1}`), nil
+		case "/umbraco/management/api/v1/tree/document/children":
+			return endpointJSONResponse(http.StatusOK, `{"items":[],"total":0}`), nil
+		case "/umbraco/management/api/v1/document/doc-1":
+			return endpointJSONResponse(http.StatusOK, `{"id":"doc-1","name":"Spacing","values":[{"alias":"body","value":"prefix compare_reports suffix"}]}`), nil
+		default:
+			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	output, err := execute(buildRootWithCollections(t, deps), "document", "grep", " compare_reports ", "--draft", "--concurrency", "1")
+	if err != nil {
+		t.Fatalf("document grep failed: %v", err)
+	}
+	var payload documentGrepResult
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("failed to decode grep payload: %v", err)
+	}
+	if len(payload.Hits) != 1 || payload.Hits[0].Match != " compare_reports " {
+		t.Fatalf("expected exact whitespace match, got %+v", payload.Hits)
+	}
+}
+
+func TestDocumentGrepReportsSkippedFetchesAndKeepsProgressOnStderr(t *testing.T) {
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/tree/document/root":
+			return endpointJSONResponse(http.StatusOK, `{"items":[{"id":"doc-ok"},{"id":"doc-bad"}],"total":2}`), nil
+		case "/umbraco/management/api/v1/tree/document/children":
+			return endpointJSONResponse(http.StatusOK, `{"items":[],"total":0}`), nil
+		case "/umbraco/management/api/v1/document/doc-ok":
+			return endpointJSONResponse(http.StatusOK, `{"id":"doc-ok","name":"OK","values":[{"alias":"body","value":"compare_reports"}]}`), nil
+		case "/umbraco/management/api/v1/document/doc-bad":
+			return endpointJSONResponse(http.StatusInternalServerError, `{"title":"boom"}`), nil
+		default:
+			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	stdout, stderr, err := executeWithErr(buildRootWithCollections(t, deps), "document", "grep", "compare_reports", "--draft", "--concurrency", "1")
+	if err != nil {
+		t.Fatalf("document grep failed: %v", err)
+	}
+	if strings.Contains(stdout, "document grep:") {
+		t.Fatalf("progress leaked into stdout JSON: %q", stdout)
+	}
+	if !strings.Contains(stderr, "document grep: walked=") {
+		t.Fatalf("expected progress on stderr, got %q", stderr)
+	}
+	var payload documentGrepResult
+	if err := json.Unmarshal([]byte(stdout), &payload); err != nil {
+		t.Fatalf("stdout must remain parseable JSON: %v\n%s", err, stdout)
+	}
+	if len(payload.Hits) != 1 {
+		t.Fatalf("expected successful doc hit, got %+v", payload.Hits)
+	}
+	if len(payload.Skipped) != 1 || payload.Skipped[0].ID != "doc-bad" || payload.Skipped[0].Stage != "draft" {
+		t.Fatalf("expected skipped fetch for doc-bad, got %+v", payload.Skipped)
+	}
+}
+
+func TestDocumentGrepPublishedScansPublishedEndpointOnly(t *testing.T) {
+	var draftFetched bool
+	var publishedFetched bool
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/tree/document/root":
+			return endpointJSONResponse(http.StatusOK, `{"items":[{"id":"doc-1"}],"total":1}`), nil
+		case "/umbraco/management/api/v1/tree/document/children":
+			return endpointJSONResponse(http.StatusOK, `{"items":[],"total":0}`), nil
+		case "/umbraco/management/api/v1/document/doc-1":
+			draftFetched = true
+			return endpointJSONResponse(http.StatusOK, `{"id":"doc-1","values":[{"alias":"body","value":"draft-only"}]}`), nil
+		case "/umbraco/management/api/v1/document/doc-1/published":
+			publishedFetched = true
+			return endpointJSONResponse(http.StatusOK, `{"id":"doc-1","name":"Published","values":[{"alias":"body","value":"published-only"}]}`), nil
+		default:
+			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	output, err := execute(buildRootWithCollections(t, deps), "document", "grep", "published-only", "--published", "--concurrency", "1")
+	if err != nil {
+		t.Fatalf("document grep failed: %v", err)
+	}
+	if draftFetched {
+		t.Fatalf("--published should not fetch the draft endpoint")
+	}
+	if !publishedFetched {
+		t.Fatalf("--published should fetch the published endpoint")
+	}
+	var payload documentGrepResult
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("failed to decode grep payload: %v", err)
+	}
+	if payload.Mode != "published" || len(payload.Hits) != 1 || payload.Hits[0].State != "published" {
+		t.Fatalf("unexpected published grep payload: %+v", payload)
+	}
+}
+
 func TestDocumentGetJSONOutputEscapesControlCharacters(t *testing.T) {
 	controlString := allJSONControlCharacters() + `"\\emoji: 😀`
 	apiPayload := map[string]any{
