@@ -103,6 +103,9 @@ type collectionSpec struct {
 	Short string
 	Long  string
 	NArgs int
+	// DocumentOutputTrim enables document-specific --summary/--no-empty/--full
+	// output shaping in addition to --fields.
+	DocumentOutputTrim bool
 	// Args overrides the default cobra.ExactArgs(NArgs) validation for
 	// commands with optional positional arguments.
 	Args cobra.PositionalArgs
@@ -120,6 +123,7 @@ type collectionSpec struct {
 // auto-pagination, and projection.
 func collectionCommand(deps Dependencies, spec collectionSpec) *cobra.Command {
 	var fields string
+	var trim outputTrimOptions
 	var paramsRaw string
 	var skip, take int
 	var all bool
@@ -140,6 +144,9 @@ func collectionCommand(deps Dependencies, spec collectionSpec) *cobra.Command {
 			}
 			params = applyPaginationParams(params, skip, take)
 			candidates := spec.Endpoints(args, params)
+			if spec.DocumentOutputTrim {
+				fields = trim.Fields
+			}
 			for i := range candidates {
 				candidates[i].opts.Fields = fields
 			}
@@ -160,10 +167,21 @@ func collectionCommand(deps Dependencies, spec collectionSpec) *cobra.Command {
 					return err
 				}
 			}
+			if spec.DocumentOutputTrim {
+				result, err = applyDocumentOutputTrim(result, trim, cmd.ErrOrStderr())
+				if err != nil {
+					return err
+				}
+				return printResult(cmd, deps, applyReadTriage(result, triage))
+			}
 			return printResult(cmd, deps, applyReadTriage(applyFieldsProjection(result, fields), triage))
 		},
 	}
-	addFieldsFlag(cmd, &fields)
+	if spec.DocumentOutputTrim {
+		addDocumentOutputTrimFlags(cmd, &trim)
+	} else {
+		addFieldsFlag(cmd, &fields)
+	}
 	cmd.Flags().StringVar(&paramsRaw, "params", "", "Query parameters as JSON")
 	addPaginationFlags(cmd, &skip, &take)
 	addAutoPaginationFlag(cmd, &all)
@@ -194,6 +212,9 @@ type searchSpec struct {
 	Use   string
 	Short string
 	Long  string
+	// DocumentOutputTrim enables document-specific --fields/--summary output
+	// shaping for document search results.
+	DocumentOutputTrim bool
 	// Flags beyond the always-present --query, e.g. --under → parentId.
 	Extra []paramFlag
 	// Endpoints maps the resolved query params to candidates in fallback order.
@@ -207,6 +228,7 @@ func searchCommand(deps Dependencies, spec searchSpec) *cobra.Command {
 	var paramsRaw string
 	var query string
 	var skip, take int
+	var trim outputTrimOptions
 	extraValues := make([]string, len(spec.Extra))
 
 	cmd := &cobra.Command{
@@ -244,12 +266,21 @@ func searchCommand(deps Dependencies, spec searchSpec) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if spec.DocumentOutputTrim {
+				result, err = applyDocumentOutputTrim(result, trim, cmd.ErrOrStderr())
+				if err != nil {
+					return err
+				}
+			}
 			return printResult(cmd, deps, result)
 		},
 	}
 
 	cmd.Flags().StringVar(&paramsRaw, "params", "", "Search parameters as JSON; convenience flags fill in missing keys, --params wins on collisions")
 	cmd.Flags().StringVar(&query, "query", "", "Search query")
+	if spec.DocumentOutputTrim {
+		addDocumentOutputTrimFlags(cmd, &trim)
+	}
 	for i, extra := range spec.Extra {
 		cmd.Flags().StringVar(&extraValues[i], extra.Flag, "", extra.Usage)
 	}
