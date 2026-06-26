@@ -60,6 +60,9 @@ func documentGet(deps Dependencies) *cobra.Command {
 		Short: "Get a document by ID",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := validateDocumentOutputTrim(trim); err != nil {
+				return err
+			}
 			result, err := deps.Client.Get(cmd.Context(), api.JoinPath("/document/%s", args[0]), api.RequestOptions{Fields: trim.Fields})
 			if err != nil {
 				return err

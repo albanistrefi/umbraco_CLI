@@ -130,10 +130,10 @@ func applyFieldsProjection(data any, fields string) any {
 }
 
 func applyDocumentOutputTrim(data any, opts outputTrimOptions, warnings io.Writer) (any, error) {
+	if err := validateDocumentOutputTrim(opts); err != nil {
+		return nil, err
+	}
 	if opts.Full {
-		if strings.TrimSpace(opts.Fields) != "" || opts.Summary || opts.NoEmpty {
-			return nil, fmt.Errorf("--full cannot be combined with --fields, --summary, or --no-empty")
-		}
 		return data, nil
 	}
 	paths := parseFieldPaths(opts.Fields)
@@ -157,6 +157,13 @@ func applyDocumentOutputTrim(data any, opts outputTrimOptions, warnings io.Write
 		out = pruneEmptyValues(out)
 	}
 	return out, nil
+}
+
+func validateDocumentOutputTrim(opts outputTrimOptions) error {
+	if opts.Full && (strings.TrimSpace(opts.Fields) != "" || opts.Summary || opts.NoEmpty) {
+		return fmt.Errorf("--full cannot be combined with --fields, --summary, or --no-empty")
+	}
+	return nil
 }
 
 func parseFieldPaths(fields string) [][]string {

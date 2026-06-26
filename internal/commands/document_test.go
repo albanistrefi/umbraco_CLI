@@ -571,6 +571,25 @@ func TestDocumentCollectionFieldsPreserveEnvelopeAndDoNotChangeQuery(t *testing.
 	}
 }
 
+func TestDocumentCollectionRejectsConflictingTrimFlagsBeforeFetch(t *testing.T) {
+	var calls int
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		calls++
+		return endpointJSONResponse(http.StatusOK, `{}`), nil
+	})
+
+	_, err := execute(buildRootWithCollections(t, deps), "document", "root", "--all", "--full", "--summary", "-o", "json")
+	if err == nil {
+		t.Fatalf("expected conflicting trim flags to fail")
+	}
+	if !strings.Contains(err.Error(), "--full cannot be combined") {
+		t.Fatalf("expected trim conflict error, got %v", err)
+	}
+	if calls != 0 {
+		t.Fatalf("expected validation before any API request, saw %d calls", calls)
+	}
+}
+
 func TestDocumentRootAndSearchSupportSummaryOutput(t *testing.T) {
 	var sawRoot bool
 	var sawSearch bool

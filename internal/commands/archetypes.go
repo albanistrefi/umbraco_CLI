@@ -138,6 +138,11 @@ func collectionCommand(deps Dependencies, spec collectionSpec) *cobra.Command {
 		Long:  spec.Long,
 		Args:  positionalArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if spec.DocumentOutputTrim {
+				if err := validateDocumentOutputTrim(trim); err != nil {
+					return err
+				}
+			}
 			params, err := parseParams(paramsRaw)
 			if err != nil {
 				return err
@@ -236,6 +241,11 @@ func searchCommand(deps Dependencies, spec searchSpec) *cobra.Command {
 		Short: spec.Short,
 		Long:  spec.Long,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if spec.DocumentOutputTrim {
+				if err := validateDocumentOutputTrim(trim); err != nil {
+					return err
+				}
+			}
 			params, err := parseParams(paramsRaw)
 			if err != nil {
 				return err
