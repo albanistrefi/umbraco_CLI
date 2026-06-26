@@ -427,6 +427,223 @@ func TestDocumentGetJSONOutputEscapesControlCharacters(t *testing.T) {
 	}
 }
 
+func TestDocumentGetTrimsFieldsSummaryNoEmptyAndWarnsUnknownFields(t *testing.T) {
+	var observedPath string
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/document/doc-1":
+			observedPath = req.URL.String()
+			return endpointJSONResponse(http.StatusOK, `{
+				"id":"doc-1",
+				"name":"",
+				"variants":[{"name":"Home"}],
+				"documentType":{"id":"dt-1","alias":"","icon":null},
+				"route":{"path":"/"},
+				"updateDate":"",
+				"values":[
+					{"alias":"bodyText","value":"Welcome"},
+					{"alias":"empty","value":""}
+				],
+				"big":{"nested":true}
+			}`), nil
+		default:
+			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	stdout, stderr, err := executeWithErr(buildRootWithCollections(t, deps),
+		"document", "get", "doc-1",
+		"--summary",
+		"--fields", "values.bodyText,missing",
+		"--no-empty",
+		"-o", "json",
+	)
+	if err != nil {
+		t.Fatalf("document get trim failed: %v", err)
+	}
+	if strings.Contains(observedPath, "fields=") {
+		t.Fatalf("expected --fields to stay client-side, got %q", observedPath)
+	}
+	if !strings.Contains(stderr, `warning: field "missing" not found in output`) {
+		t.Fatalf("expected missing-field warning on stderr, got %q", stderr)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(stdout), &payload); err != nil {
+		t.Fatalf("document get trim emitted invalid JSON: %v\n%s", err, stdout)
+	}
+	if payload["id"] != "doc-1" || payload["name"] != "Home" {
+		t.Fatalf("expected compact summary id/name, got %+v", payload)
+	}
+	if _, ok := payload["big"]; ok {
+		t.Fatalf("expected unrequested large field to be dropped, got %+v", payload)
+	}
+	docType := payload["documentType"].(map[string]any)
+	if docType["id"] != "dt-1" {
+		t.Fatalf("expected documentType id, got %+v", docType)
+	}
+	if _, ok := docType["alias"]; ok {
+		t.Fatalf("expected empty documentType alias pruned, got %+v", docType)
+	}
+	if got := payload["values"].(map[string]any)["bodyText"]; got != "Welcome" {
+		t.Fatalf("expected values.bodyText projection, got %v", got)
+	}
+}
+
+func TestDocumentGetSummaryIsSmallerThanFullPayload(t *testing.T) {
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/document/doc-1":
+			return endpointJSONResponse(http.StatusOK, `{
+				"id":"doc-1",
+				"name":"Home",
+				"documentType":{"id":"dt-1","alias":"homePage"},
+				"route":{"path":"/"},
+				"values":[
+					{"alias":"bodyText","value":"large body text that a summary should omit"},
+					{"alias":"seoDescription","value":"large seo text that a summary should omit"}
+				],
+				"permissions":["A","B","C"],
+				"cultures":{"en-US":{"name":"Home","url":"/"}}
+			}`), nil
+		default:
+			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	full, err := execute(buildRootWithCollections(t, deps), "document", "get", "doc-1", "-o", "json")
+	if err != nil {
+		t.Fatalf("document get full failed: %v", err)
+	}
+	summary, err := execute(buildRootWithCollections(t, deps), "document", "get", "doc-1", "--summary", "-o", "json")
+	if err != nil {
+		t.Fatalf("document get summary failed: %v", err)
+	}
+	if len(summary) >= len(full) {
+		t.Fatalf("expected summary output (%d bytes) to be smaller than full output (%d bytes)\nsummary=%s\nfull=%s", len(summary), len(full), summary, full)
+	}
+}
+
+func TestDocumentCollectionFieldsPreserveEnvelopeAndDoNotChangeQuery(t *testing.T) {
+	var observedPath string
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/tree/document/children":
+			observedPath = req.URL.String()
+			return endpointJSONResponse(http.StatusOK, `{
+				"items":[
+					{"id":"doc-1","name":"Home","documentType":{"id":"dt-1"},"extra":"drop"},
+					{"id":"doc-2","name":"About","documentType":{"id":"dt-2"},"extra":"drop"}
+				],
+				"total":2
+			}`), nil
+		default:
+			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	output, err := execute(buildRootWithCollections(t, deps), "document", "children", "parent-1", "--fields", "id,name", "--skip", "10", "--take", "5", "-o", "json")
+	if err != nil {
+		t.Fatalf("document children fields failed: %v", err)
+	}
+	if strings.Contains(observedPath, "fields=") || !strings.Contains(observedPath, "parentId=parent-1") || !strings.Contains(observedPath, "skip=10") || !strings.Contains(observedPath, "take=5") {
+		t.Fatalf("unexpected document children request path: %q", observedPath)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("failed to decode children payload: %v", err)
+	}
+	if payload["total"] != float64(2) {
+		t.Fatalf("expected total preserved, got %+v", payload)
+	}
+	items := payload["items"].([]any)
+	if len(items) != 2 {
+		t.Fatalf("expected item count preserved, got %+v", items)
+	}
+	first := items[0].(map[string]any)
+	if first["id"] != "doc-1" || first["name"] != "Home" || len(first) != 2 {
+		t.Fatalf("expected projected child item, got %+v", first)
+	}
+}
+
+func TestDocumentCollectionRejectsConflictingTrimFlagsBeforeFetch(t *testing.T) {
+	var calls int
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		calls++
+		return endpointJSONResponse(http.StatusOK, `{}`), nil
+	})
+
+	_, err := execute(buildRootWithCollections(t, deps), "document", "root", "--all", "--full", "--summary", "-o", "json")
+	if err == nil {
+		t.Fatalf("expected conflicting trim flags to fail")
+	}
+	if !strings.Contains(err.Error(), "--full cannot be combined") {
+		t.Fatalf("expected trim conflict error, got %v", err)
+	}
+	if calls != 0 {
+		t.Fatalf("expected validation before any API request, saw %d calls", calls)
+	}
+}
+
+func TestDocumentRootAndSearchSupportSummaryOutput(t *testing.T) {
+	var sawRoot bool
+	var sawSearch bool
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/tree/document/root":
+			sawRoot = true
+			return endpointJSONResponse(http.StatusOK, `{"items":[{"id":"root-1","variants":[{"name":"Home"}],"documentType":{"id":"dt-1","alias":"homePage"},"extra":"drop"}],"total":1}`), nil
+		case "/umbraco/management/api/v1/item/document/search":
+			sawSearch = true
+			return endpointJSONResponse(http.StatusOK, `{"items":[{"id":"search-1","name":"Result","documentType":{"id":"dt-2","alias":"article"},"route":{"path":"/result"},"extra":"drop"}],"total":1}`), nil
+		default:
+			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	rootOutput, err := execute(buildRootWithCollections(t, deps), "document", "root", "--summary", "-o", "json")
+	if err != nil {
+		t.Fatalf("document root summary failed: %v", err)
+	}
+	var rootPayload map[string]any
+	if err := json.Unmarshal([]byte(rootOutput), &rootPayload); err != nil {
+		t.Fatalf("failed to decode root payload: %v", err)
+	}
+	rootItem := rootPayload["items"].([]any)[0].(map[string]any)
+	if rootItem["id"] != "root-1" || rootItem["name"] != "Home" {
+		t.Fatalf("expected compact root summary, got %+v", rootItem)
+	}
+	if _, ok := rootItem["extra"]; ok {
+		t.Fatalf("expected root summary to drop extra fields, got %+v", rootItem)
+	}
+
+	searchOutput, err := execute(buildRootWithCollections(t, deps), "document", "search", "--query", "Result", "--summary", "-o", "json")
+	if err != nil {
+		t.Fatalf("document search summary failed: %v", err)
+	}
+	var searchPayload map[string]any
+	if err := json.Unmarshal([]byte(searchOutput), &searchPayload); err != nil {
+		t.Fatalf("failed to decode search payload: %v", err)
+	}
+	searchItem := searchPayload["items"].([]any)[0].(map[string]any)
+	if searchItem["id"] != "search-1" || searchItem["route"].(map[string]any)["path"] != "/result" {
+		t.Fatalf("expected compact search summary, got %+v", searchItem)
+	}
+	if _, ok := searchItem["extra"]; ok {
+		t.Fatalf("expected search summary to drop extra fields, got %+v", searchItem)
+	}
+	if !sawRoot || !sawSearch {
+		t.Fatalf("expected root and search endpoints to be called")
+	}
+}
+
 func TestDocumentCopyPublishPublishesCopiedDocument(t *testing.T) {
 	var publishPath string
 

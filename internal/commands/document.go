@@ -54,18 +54,36 @@ func RegisterDocument(root *cobra.Command, deps Dependencies) {
 }
 
 func documentGet(deps Dependencies) *cobra.Command {
-	return getCommand(deps, getSpec{
+	var trim outputTrimOptions
+	cmd := &cobra.Command{
 		Use:   "get <id>",
 		Short: "Get a document by ID",
-		Path:  func(args []string) string { return api.JoinPath("/document/%s", args[0]) },
-	})
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := validateDocumentOutputTrim(trim); err != nil {
+				return err
+			}
+			result, err := deps.Client.Get(cmd.Context(), api.JoinPath("/document/%s", args[0]), api.RequestOptions{Fields: trim.Fields})
+			if err != nil {
+				return err
+			}
+			result, err = applyDocumentOutputTrim(result, trim, cmd.ErrOrStderr())
+			if err != nil {
+				return err
+			}
+			return printResult(cmd, deps, result)
+		},
+	}
+	addDocumentOutputTrimFlags(cmd, &trim)
+	return cmd
 }
 
 func documentRoot(deps Dependencies) *cobra.Command {
 	var resolveDoctype bool
 	cmd := collectionCommand(deps, collectionSpec{
-		Use:   "root",
-		Short: "Get root documents (paginated; --skip/--take/--all)",
+		Use:                "root",
+		Short:              "Get root documents (paginated; --skip/--take/--all)",
+		DocumentOutputTrim: true,
 		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
 			return []getRequestCandidate{
 				{path: "/tree/document/root", opts: api.RequestOptions{Params: params}},
@@ -86,9 +104,10 @@ func documentRoot(deps Dependencies) *cobra.Command {
 func documentChildren(deps Dependencies) *cobra.Command {
 	var resolveDoctype bool
 	cmd := collectionCommand(deps, collectionSpec{
-		Use:   "children <id>",
-		Short: "Get child documents (paginated; --skip/--take/--all)",
-		NArgs: 1,
+		Use:                "children <id>",
+		Short:              "Get child documents (paginated; --skip/--take/--all)",
+		NArgs:              1,
+		DocumentOutputTrim: true,
 		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
 			return []getRequestCandidate{
 				{path: "/tree/document/children", opts: api.RequestOptions{Params: withParam(params, "parentId", args[0])}},
@@ -173,8 +192,9 @@ func documentAncestors(deps Dependencies) *cobra.Command {
 
 func documentSearch(deps Dependencies) *cobra.Command {
 	return searchCommand(deps, searchSpec{
-		Use:   "search",
-		Short: "Search documents",
+		Use:                "search",
+		Short:              "Search documents",
+		DocumentOutputTrim: true,
 		Extra: []paramFlag{
 			{Flag: "under", Param: "parentId", Usage: "Limit search to documents under the given parent ID"},
 		},

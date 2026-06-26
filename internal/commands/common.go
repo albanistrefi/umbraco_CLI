@@ -92,6 +92,13 @@ func addReadTriageFlags(cmd *cobra.Command, opts *readTriageOptions) {
 	cmd.Flags().IntVar(&opts.FirstN, "first-n", 0, "Return only the first N items from item collections")
 }
 
+func addDocumentOutputTrimFlags(cmd *cobra.Command, opts *outputTrimOptions) {
+	cmd.Flags().StringVar(&opts.Fields, "fields", "", "Project response fields client-side; supports comma-separated dotted paths such as id,name,documentType.alias,values.bodyText")
+	cmd.Flags().BoolVar(&opts.Summary, "summary", false, "Return a compact document shape with id, name, documentType, route/url, and state/date fields when present")
+	cmd.Flags().BoolVar(&opts.NoEmpty, "no-empty", false, "Omit null, empty string, empty array, and empty object values from trimmed output")
+	cmd.Flags().BoolVar(&opts.Full, "full", false, "Return the full payload explicitly; cannot be combined with --fields, --summary, or --no-empty")
+}
+
 func resolveOutputFormat(deps Dependencies) (config.OutputFormat, error) {
 	if requested := strings.TrimSpace(deps.requestedOutput()); requested != "" {
 		return config.ParseOutputFormat(requested)

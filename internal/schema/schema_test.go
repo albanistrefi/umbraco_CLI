@@ -38,7 +38,22 @@ func TestSchemasComposeBindingOverlays(t *testing.T) {
 	if _, ok := s.QueryParams["fields"]; !ok {
 		t.Fatalf("expected CLI fields overlay on document.get, got %+v", s.QueryParams)
 	}
+	for _, key := range []string{"summary", "no-empty", "full"} {
+		if _, ok := s.QueryParams[key]; !ok {
+			t.Fatalf("expected CLI trim overlay %q on document.get, got %+v", key, s.QueryParams)
+		}
+	}
 	if s.PathParams["id"].Format != "uuid" {
 		t.Fatalf("expected spec-derived id path param, got %+v", s.PathParams)
+	}
+
+	search, ok := Schemas["document.search"]
+	if !ok {
+		t.Fatalf("missing document.search schema")
+	}
+	for _, key := range []string{"fields", "summary", "no-empty", "full"} {
+		if _, ok := search.QueryParams[key]; !ok {
+			t.Fatalf("expected CLI trim overlay %q on document.search, got %+v", key, search.QueryParams)
+		}
 	}
 }

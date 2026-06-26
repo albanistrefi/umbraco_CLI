@@ -82,13 +82,16 @@ umbraco document children <id>
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--all` | bool | false | Walk every page until exhausted (auto-paginates with --take as the page size, default 500; combine with --skip to start partway through). Bounded by an internal 100k-item ceiling. |
-| `--fields` | string | — | Limit response fields (comma-separated top-level keys) |
+| `--fields` | string | — | Project response fields client-side; supports comma-separated dotted paths such as id,name,documentType.alias,values.bodyText |
 | `--first-n` | int | 0 | Return only the first N items from item collections |
+| `--full` | bool | false | Return the full payload explicitly; cannot be combined with --fields, --summary, or --no-empty |
 | `--ids-only` | bool | false | Return only item IDs for item collections |
+| `--no-empty` | bool | false | Omit null, empty string, empty array, and empty object values from trimmed output |
 | `--params` | string | — | Query parameters as JSON |
 | `--resolve-doctype` | bool | false | Annotate each item's documentType with its alias (tree responses carry only the id; this fetches each distinct document type once) |
 | `--skip` | int | -1 | Skip count (passes through as ?skip=N; lets you walk past the server page size on large children/root collections) |
 | `--summarize` | bool | false | Return only id/name/alias fields for item collections |
+| `--summary` | bool | false | Return a compact document shape with id, name, documentType, route/url, and state/date fields when present |
 | `--take` | int | -1 | Take count (passes through as ?take=N; combine with --skip to page) |
 
 ### domains get
@@ -105,7 +108,10 @@ umbraco document get <id>
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--fields` | string | — | Limit response fields (comma-separated top-level keys) |
+| `--fields` | string | — | Project response fields client-side; supports comma-separated dotted paths such as id,name,documentType.alias,values.bodyText |
+| `--full` | bool | false | Return the full payload explicitly; cannot be combined with --fields, --summary, or --no-empty |
+| `--no-empty` | bool | false | Omit null, empty string, empty array, and empty object values from trimmed output |
+| `--summary` | bool | false | Return a compact document shape with id, name, documentType, route/url, and state/date fields when present |
 
 ### grep
 
@@ -189,13 +195,16 @@ umbraco document root
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--all` | bool | false | Walk every page until exhausted (auto-paginates with --take as the page size, default 500; combine with --skip to start partway through). Bounded by an internal 100k-item ceiling. |
-| `--fields` | string | — | Limit response fields (comma-separated top-level keys) |
+| `--fields` | string | — | Project response fields client-side; supports comma-separated dotted paths such as id,name,documentType.alias,values.bodyText |
 | `--first-n` | int | 0 | Return only the first N items from item collections |
+| `--full` | bool | false | Return the full payload explicitly; cannot be combined with --fields, --summary, or --no-empty |
 | `--ids-only` | bool | false | Return only item IDs for item collections |
+| `--no-empty` | bool | false | Omit null, empty string, empty array, and empty object values from trimmed output |
 | `--params` | string | — | Query parameters as JSON |
 | `--resolve-doctype` | bool | false | Annotate each item's documentType with its alias (tree responses carry only the id; this fetches each distinct document type once) |
 | `--skip` | int | -1 | Skip count (passes through as ?skip=N; lets you walk past the server page size on large children/root collections) |
 | `--summarize` | bool | false | Return only id/name/alias fields for item collections |
+| `--summary` | bool | false | Return a compact document shape with id, name, documentType, route/url, and state/date fields when present |
 | `--take` | int | -1 | Take count (passes through as ?take=N; combine with --skip to page) |
 
 ### search
@@ -206,9 +215,13 @@ umbraco document search
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--fields` | string | — | Project response fields client-side; supports comma-separated dotted paths such as id,name,documentType.alias,values.bodyText |
+| `--full` | bool | false | Return the full payload explicitly; cannot be combined with --fields, --summary, or --no-empty |
+| `--no-empty` | bool | false | Omit null, empty string, empty array, and empty object values from trimmed output |
 | `--params` | string | — | Search parameters as JSON; convenience flags fill in missing keys, --params wins on collisions |
 | `--query` | string | — | Search query |
 | `--skip` | int | -1 | Skip count (passes through as ?skip=N; lets you walk past the server page size on large children/root collections) |
+| `--summary` | bool | false | Return a compact document shape with id, name, documentType, route/url, and state/date fields when present |
 | `--take` | int | -1 | Take count (passes through as ?take=N; combine with --skip to page) |
 | `--under` | string | — | Limit search to documents under the given parent ID |
 
