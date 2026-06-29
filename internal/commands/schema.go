@@ -50,6 +50,7 @@ func RegisterSchema(root *cobra.Command, deps Dependencies) {
 	}
 	schemaCommand.Flags().BoolVar(&list, "list", false, "List available endpoints")
 	schemaCommand.Flags().BoolVar(&printTemplate, "template", false, "Print a JSON payload template for the endpoint")
+	schemaCommand.AddCommand(schemaDiffCommand(deps))
 	schemaCommand.AddCommand(&cobra.Command{
 		Use:   "list",
 		Short: "List schema endpoints",
