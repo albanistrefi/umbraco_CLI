@@ -315,9 +315,9 @@ skills into whichever harness directory you point it at is on the roadmap.
 - `tree` (1)
 - `api` (1)
 - `auth` (5)
-- `automate` (53) — requires [Umbraco Automate](https://docs.umbraco.com/umbraco-automate) on the target instance; see below
+- `automate` (54) — requires [Umbraco Automate](https://docs.umbraco.com/umbraco-automate) on the target instance; see below
 
-Total: **219 runnable commands** counting every nested subcommand. Group counts above are direct subcommands; nested subgroups like `document version` and `automate workspace group` add the rest.
+Total: **220 runnable commands** counting every nested subcommand. Group counts above are direct subcommands; nested subgroups like `document version` and `automate workspace group` add the rest.
 
 ## Umbraco Automate
 
@@ -330,8 +330,10 @@ requires Umbraco Automate to be installed on the target instance.
 ```bash
 umbraco automate workspace list
 umbraco automate automation list --fields id,name
+umbraco automate catalogue operators
 umbraco automate automation export <id> > automation.json
 umbraco automate automation validate --workspace-id <ws> --file automation.json
+umbraco automate automation import-update <id> --file automation.json --dry-run
 umbraco automate automation runs <id> --take 10
 ```
 
