@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- added `schema diff <envA> <envB>` for cross-environment schema checks: compares configured profiles, fetches document types and data types from both environments, normalizes volatile IDs/order, reports added/removed/changed schema entities, supports `--entity`, `--include`, `--exclude`, stable JSON output, and `--exit-zero` for automation
 - added `document grep <substring>` for exhaustive CLI-side document content scans: walks the document tree, fetches draft and/or published document payloads, scans serialized property values for exact substrings or regexes, supports property/document-type/subtree filters, emits progress on stderr, and reports skipped document fetches without corrupting JSON output
 - added token-efficient document read output: `document get`, `document root`, `document children`, and `document search` now support CLI-side dotted `--fields`, compact `--summary`, recursive `--no-empty`, and explicit `--full` output controls without changing API requests or pagination semantics
 

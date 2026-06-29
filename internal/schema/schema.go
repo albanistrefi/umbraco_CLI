@@ -93,7 +93,29 @@ var documentGrepSchema = &rawSchema{
 	},
 }
 
+var schemaDiffSchema = &rawSchema{
+	Method: "GET",
+	Path:   "profiles:{envA},{envB} + /tree/document-type/root + /document-type/{id} + /filter/data-type + /data-type/{id}",
+	PathParams: map[string]ParamSchema{
+		"envA": {Type: "string", Required: true, Description: "Configured profile/environment name for the left side of the comparison"},
+		"envB": {Type: "string", Required: true, Description: "Configured profile/environment name for the right side of the comparison"},
+	},
+	QueryParams: map[string]ParamSchema{
+		"entity":    {Type: "string", Description: "Comma-separated entity kinds to compare: doctype, datatype; defaults to both"},
+		"include":   {Type: "array", Description: "Only include matching aliases/names; repeatable or comma-separated"},
+		"exclude":   {Type: "array", Description: "Exclude matching aliases/names; repeatable or comma-separated"},
+		"exit-zero": {Type: "boolean", Description: "Exit 0 even when schema differences are found"},
+	},
+	Response: &ObjectSchema{
+		Type:        "object",
+		Description: "CLI workflow: loads two configured profiles, fetches document types and data types from each, normalizes volatile IDs/order, and returns added/removed/changed schema differences",
+	},
+}
+
 var endpointBindings = map[string]endpointBinding{
+	// schema
+	"schema.diff": {Manual: schemaDiffSchema},
+
 	// document
 	"document.get":                        {Method: "GET", Path: "/document/{id}", ExtraQuery: documentTrimQuery},
 	"document.root":                       {Method: "GET", Path: "/tree/document/root", ExtraQuery: documentTrimQuery},
