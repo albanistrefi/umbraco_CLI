@@ -133,6 +133,46 @@ func TestAutomateCatalogueOutputSchemaSendsSettingsBody(t *testing.T) {
 	}
 }
 
+func TestAutomateCatalogueOperatorsIsLocalAndDocumentsUDAIntegerMapping(t *testing.T) {
+	requests := 0
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		requests++
+		return endpointJSONResponse(http.StatusNotFound, `null`), nil
+	})
+
+	output, err := execute(buildRootWithCollections(t, deps),
+		"automate", "catalogue", "operators")
+	if err != nil {
+		t.Fatalf("automate catalogue operators failed: %v", err)
+	}
+	if requests != 0 {
+		t.Fatalf("operators are local metadata and should not perform HTTP requests, got %d", requests)
+	}
+
+	var operators []map[string]any
+	if err := json.Unmarshal([]byte(output), &operators); err != nil {
+		t.Fatalf("failed to decode operators: %v", err)
+	}
+	if len(operators) != 12 {
+		t.Fatalf("expected 12 operators, got %d: %+v", len(operators), operators)
+	}
+	if operators[1]["operator"] != "NotEquals" || operators[1]["deployUdaOperator"] != float64(1) {
+		t.Fatalf("expected NotEquals to map to Deploy .uda operator 1, got %+v", operators[1])
+	}
+}
+
+func TestAutomateValidateHelpPointsExistingEditsToImportUpdateDryRun(t *testing.T) {
+	output, err := execute(buildRootWithCollections(t, makeDeps()),
+		"automate", "automation", "validate", "--help")
+	if err != nil {
+		t.Fatalf("validate help failed: %v", err)
+	}
+	if !strings.Contains(output, "does not validate overwriting an existing automation") ||
+		!strings.Contains(output, "automation import-update <id> --dry-run") {
+		t.Fatalf("validate help should point update edits to import-update --dry-run, got:\n%s", output)
+	}
+}
+
 func TestAutomateAutomationTriggerDryRunUsesAutomatePathWithoutRequest(t *testing.T) {
 	requests := 0
 	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
@@ -462,7 +502,7 @@ func TestGenerateSkillsIncludesAutomateByDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected automate skill in default generation: %v", err)
 	}
-	for _, want := range []string{"automation list", "automation validate", "workspace group add", "version-history rollback"} {
+	for _, want := range []string{"automation list", "automation validate", "catalogue operators", "workspace group add", "version-history rollback"} {
 		if !strings.Contains(string(content), want) {
 			t.Fatalf("generated automate skill missing %q:\n%s", want, string(content)[:500])
 		}

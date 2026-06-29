@@ -112,6 +112,19 @@ var schemaDiffSchema = &rawSchema{
 	},
 }
 
+var automateCatalogueOperatorsSchema = &rawSchema{
+	Method:  "GET",
+	APIRoot: "/umbraco/automate/management/api/v1",
+	Path:    "local:ConditionOperatorModel",
+	QueryParams: map[string]ParamSchema{
+		"fields": fieldsQuery,
+	},
+	Response: &ObjectSchema{
+		Type:        "array",
+		Description: "CLI-local catalogue from the Automate OpenAPI ConditionOperatorModel enum. Use the operator string in export/import/update JSON; deployUdaOperator documents the integer value used by Deploy .uda files.",
+	},
+}
+
 var endpointBindings = map[string]endpointBinding{
 	// schema
 	"schema.diff": {Manual: schemaDiffSchema},
@@ -283,6 +296,7 @@ var endpointBindings = map[string]endpointBinding{
 	"automate.catalogue.control-flows":          {Method: "GET", Path: "/catalogue/control-flows"},
 	"automate.catalogue.notification-channels":  {Method: "GET", Path: "/catalogue/notification-channels"},
 	"automate.catalogue.webhook-authenticators": {Method: "GET", Path: "/catalogue/webhook-authenticators"},
+	"automate.catalogue.operators":              {Manual: automateCatalogueOperatorsSchema},
 	"automate.catalogue.step-types":             {Method: "GET", Path: "/catalogue/step-types"},
 	"automate.catalogue.output-schema":          {Method: "POST", Path: "/catalogue/step-types/{alias}/output-schema"},
 	"automate.automation.list":                  {Method: "GET", Path: "/automations"},

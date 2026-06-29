@@ -53,7 +53,7 @@ func automateCatalogue(deps Dependencies) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "catalogue",
 		Short: "Discover the building blocks automations are made of",
-		Long:  "Catalogue reads return the step types available for building automations: triggers start a flow, actions do work, control-flows branch or loop, connection types describe external-service credentials. Step settings and output schemas are embedded, so prefer --fields (e.g. --fields alias,name,description) unless schema detail is needed.",
+		Long:  "Catalogue reads return the step types available for building automations: triggers start a flow, actions do work, control-flows branch or loop, operators build filters/conditions, and connection types describe external-service credentials. Step settings and output schemas are embedded, so prefer --fields (e.g. --fields alias,name,description) unless schema detail is needed.",
 	}
 	cmd.AddCommand(automateCatalogueScoped(deps, "actions", "List action step types", "/catalogue/actions"))
 	cmd.AddCommand(automateCatalogueScoped(deps, "triggers", "List trigger step types", "/catalogue/triggers"))
@@ -61,6 +61,7 @@ func automateCatalogue(deps Dependencies) *cobra.Command {
 	cmd.AddCommand(automateArrayRead(deps, "control-flows", "List control-flow step types", "/catalogue/control-flows"))
 	cmd.AddCommand(automateArrayRead(deps, "notification-channels", "List notification channels", "/catalogue/notification-channels"))
 	cmd.AddCommand(automateArrayRead(deps, "webhook-authenticators", "List webhook authenticators", "/catalogue/webhook-authenticators"))
+	cmd.AddCommand(automateCatalogueOperators(deps))
 	cmd.AddCommand(automateCatalogueStepTypes(deps))
 	cmd.AddCommand(automateCatalogueOutputSchema(deps))
 	return cmd
@@ -103,6 +104,41 @@ func automateCatalogueStepTypes(deps Dependencies) *cobra.Command {
 	}}
 	addFieldsFlag(cmd, &fields)
 	cmd.Flags().StringVar(&stepType, "type", "", "Step type filter")
+	return cmd
+}
+
+type automateConditionOperator struct {
+	Operator          string `json:"operator"`
+	Label             string `json:"label"`
+	DeployUDAOperator int    `json:"deployUdaOperator"`
+}
+
+var automateConditionOperators = []automateConditionOperator{
+	{Operator: "Equals", Label: "Equals", DeployUDAOperator: 0},
+	{Operator: "NotEquals", Label: "Not equals", DeployUDAOperator: 1},
+	{Operator: "Contains", Label: "Contains", DeployUDAOperator: 2},
+	{Operator: "NotContains", Label: "Does not contain", DeployUDAOperator: 3},
+	{Operator: "StartsWith", Label: "Starts with", DeployUDAOperator: 4},
+	{Operator: "EndsWith", Label: "Ends with", DeployUDAOperator: 5},
+	{Operator: "GreaterThan", Label: "Greater than", DeployUDAOperator: 6},
+	{Operator: "LessThan", Label: "Less than", DeployUDAOperator: 7},
+	{Operator: "GreaterThanOrEquals", Label: "Greater than or equals", DeployUDAOperator: 8},
+	{Operator: "LessThanOrEquals", Label: "Less than or equals", DeployUDAOperator: 9},
+	{Operator: "IsEmpty", Label: "Is empty", DeployUDAOperator: 10},
+	{Operator: "IsNotEmpty", Label: "Is not empty", DeployUDAOperator: 11},
+}
+
+func automateCatalogueOperators(deps Dependencies) *cobra.Command {
+	var fields string
+	cmd := &cobra.Command{
+		Use:   "operators",
+		Short: "List condition/filter operators for automation export models",
+		Long:  "Lists the ConditionOperator values accepted by automation export/import/update payloads. Use the string in the operator field, e.g. {\"operator\":\"NotEquals\"}; Deploy .uda files use integer Operator values, exposed here only as a mapping aid.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return printResult(cmd, deps, applyFieldsProjection(automateConditionOperators, fields))
+		},
+	}
+	addFieldsFlag(cmd, &fields)
 	return cmd
 }
 
@@ -221,7 +257,7 @@ func automateAutomationExport(deps Dependencies) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "export <id>",
 		Short: "Export an automation as a portable definition",
-		Long:  "GET /automations/{id}/export. The export model is the template format for 'automation validate' and 'automation import' -- export a working automation, adjust the JSON, validate, and import it elsewhere.",
+		Long:  "GET /automations/{id}/export. The export model is the template format for 'automation validate', 'automation import', and 'automation import-update'. Filter conditions use string operators such as \"NotEquals\" in the lowercase operator field; Deploy .uda files use integer Operator values, so do not paste .uda condition JSON directly into import/update payloads. Use 'automate catalogue operators' for the mapping.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var params map[string]any

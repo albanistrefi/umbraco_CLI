@@ -12,8 +12,9 @@ import (
 
 // The export/validate/import round-trip is the agent-friendliest authoring
 // path: export a working automation as a portable definition, adjust the
-// JSON, validate it server-side without writing anything, then import it as
-// a new automation or over an existing one.
+// JSON, validate create/import payloads server-side without writing anything,
+// then import it as a new automation. Existing automation edits use
+// import-update; rehearse those with --dry-run.
 
 // automateExportModelInput resolves the export model from --file or --json
 // (exactly one required). The model is what 'automation export' returns.
@@ -39,8 +40,8 @@ func automateAutomationValidate(deps Dependencies) *cobra.Command {
 	var jsonRaw string
 	cmd := &cobra.Command{
 		Use:   "validate --workspace-id <id> --file <export.json>",
-		Short: "Validate an automation definition server-side without writing anything",
-		Long:  "POST /automations/import/validate. Checks an export model against a workspace -- step aliases, connection references, binding syntax -- and reports success/errors/warnings. The dry-run for authoring: validate before 'automation import'.",
+		Short: "Validate a new automation import server-side without writing anything",
+		Long:  "POST /automations/import/validate. Checks an export model against a workspace -- step aliases, connection references, binding syntax -- and reports success/errors/warnings for creating/importing a new automation. It does not validate overwriting an existing automation; for edits use 'automation import-update <id> --dry-run' to preflight the update request shape.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := requireValue("--workspace-id", workspaceID); err != nil {
 				return err
@@ -71,7 +72,7 @@ func automateAutomationImport(deps Dependencies) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "import --workspace-id <id> --file <export.json>",
 		Short: "Import an automation definition as a new automation",
-		Long:  "POST /automations/import. Creates a new draft automation from an export model. Run 'automation validate' first -- it performs the same checks without writing.",
+		Long:  "POST /automations/import. Creates a new draft automation from an export model. Run 'automation validate' first -- it performs the same create/import checks without writing.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := requireValue("--workspace-id", workspaceID); err != nil {
 				return err
@@ -102,7 +103,7 @@ func automateAutomationImportUpdate(deps Dependencies) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "import-update <id> --file <export.json>",
 		Short: "Overwrite an existing automation from an export model",
-		Long:  "PUT /automations/{id}/import. Unlike 'automation import' this takes the bare export model as the body (no workspace wrapper -- the automation already lives somewhere) and replaces the automation's definition with it.",
+		Long:  "PUT /automations/{id}/import. Unlike 'automation import' this takes the bare export model as the body (no workspace wrapper -- the automation already lives somewhere) and replaces the automation's definition with it. Use --dry-run as the update preflight path; 'automation validate' targets only new imports and can reject existing automation IDs.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			exportModel, err := automateExportModelInput(file, jsonRaw)
