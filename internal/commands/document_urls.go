@@ -21,7 +21,7 @@ type documentURLResult struct {
 
 type documentURLInfo struct {
 	Culture  any    `json:"culture"`
-	URL      string `json:"url"`
+	URL      any    `json:"url"`
 	Provider string `json:"provider"`
 	Message  any    `json:"message"`
 }
@@ -177,7 +177,9 @@ func absolutizeDocumentURLs(results []documentURLResult, baseURL string) []docum
 		next := result
 		next.URLInfos = make([]documentURLInfo, 0, len(result.URLInfos))
 		for _, info := range result.URLInfos {
-			info.URL = absolutizeDocumentURL(baseURL, info.URL)
+			if rawURL, ok := info.URL.(string); ok {
+				info.URL = absolutizeDocumentURL(baseURL, rawURL)
+			}
 			next.URLInfos = append(next.URLInfos, info)
 		}
 		out = append(out, next)
@@ -234,7 +236,7 @@ func flattenDocumentURLRows(results []documentURLResult) []documentURLRow {
 			rows = append(rows, documentURLRow{
 				ID:       result.ID,
 				Culture:  cultureValue(info.Culture),
-				URL:      info.URL,
+				URL:      urlValue(info.URL),
 				Provider: info.Provider,
 				Message:  messageValue(info.Message),
 			})
@@ -257,7 +259,7 @@ func documentURLMissingIDs(requestedIDs []string, results []documentURLResult) [
 		}
 		hasURL := false
 		for _, info := range result.URLInfos {
-			if strings.TrimSpace(info.URL) != "" {
+			if strings.TrimSpace(urlValue(info.URL)) != "" {
 				hasURL = true
 				break
 			}
@@ -272,8 +274,8 @@ func documentURLMissingIDs(requestedIDs []string, results []documentURLResult) [
 func printDocumentURLPlain(cmd *cobra.Command, results []documentURLResult) error {
 	for _, result := range results {
 		for _, info := range result.URLInfos {
-			if strings.TrimSpace(info.URL) != "" {
-				if _, err := fmt.Fprintln(cmd.OutOrStdout(), info.URL); err != nil {
+			if printedURL := strings.TrimSpace(urlValue(info.URL)); printedURL != "" {
+				if _, err := fmt.Fprintln(cmd.OutOrStdout(), printedURL); err != nil {
 					return err
 				}
 			}
@@ -303,6 +305,17 @@ func cultureValue(value any) string {
 }
 
 func messageValue(value any) string {
+	switch typed := value.(type) {
+	case nil:
+		return ""
+	case string:
+		return typed
+	default:
+		return fmt.Sprint(typed)
+	}
+}
+
+func urlValue(value any) string {
 	switch typed := value.(type) {
 	case nil:
 		return ""
