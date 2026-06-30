@@ -137,6 +137,7 @@ var Templates = map[string]any{
 		"groupId":     "<automation group GUID, optional>",
 		"trigger":     map[string]any{"alias": "<trigger alias from 'automate catalogue triggers'>", "settings": map[string]any{}},
 		"steps":       []any{map[string]any{"alias": "<action alias from 'automate catalogue actions'>", "settings": map[string]any{"<settingAlias>": "<value; bind earlier outputs with ${...}>"}}},
+		"filter":      map[string]any{"groups": []any{map[string]any{"conditions": []any{map[string]any{"leftOperand": "<binding or value>", "operator": "<string from 'automate catalogue operators', e.g. NotEquals>", "rightOperand": "<binding or value>"}}}}},
 		"connections": []any{"<connection GUID used by the steps; pass [] for none>"},
 	},
 	"automate.connection.create": map[string]any{

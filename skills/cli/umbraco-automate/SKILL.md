@@ -28,11 +28,12 @@ umbraco automate <command> [flags]
 | `automate automation get <id>` | Get an automation by ID (trigger, steps, connections, state) |
 | `automate automation list` | List automations (paginated; --skip/--take/--all) |
 | `automate automation runs <id>` | List runs for an automation (paginated; --skip/--take/--all) |
-| `automate automation validate --workspace-id <id> --file <export.json>` | Validate an automation definition server-side without writing anything |
+| `automate automation validate --workspace-id <id> --file <export.json>` | Validate a new automation import server-side without writing anything |
 | `automate catalogue actions` | List action step types |
 | `automate catalogue connection-types` | List connection types |
 | `automate catalogue control-flows` | List control-flow step types |
 | `automate catalogue notification-channels` | List notification channels |
+| `automate catalogue operators` | List condition/filter operators for automation export models |
 | `automate catalogue output-schema <alias>` | Resolve a step type's dynamic output schema |
 | `automate catalogue step-types` | List step types, optionally filtered by kind |
 | `automate catalogue triggers` | List trigger step types |
@@ -73,7 +74,7 @@ umbraco automate automation ancestors <id>
 umbraco automate automation export <id>
 ```
 
-GET /automations/{id}/export. The export model is the template format for 'automation validate' and 'automation import' -- export a working automation, adjust the JSON, validate, and import it elsewhere.
+GET /automations/{id}/export. The export model is the template format for 'automation validate', 'automation import', and 'automation import-update'. Filter conditions use string operators such as "NotEquals" in the lowercase operator field; Deploy .uda files use integer Operator values, so do not paste .uda condition JSON directly into import/update payloads. Use 'automate catalogue operators' for the mapping.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
@@ -132,7 +133,7 @@ umbraco automate automation runs <id>
 umbraco automate automation validate --workspace-id <id> --file <export.json>
 ```
 
-POST /automations/import/validate. Checks an export model against a workspace -- step aliases, connection references, binding syntax -- and reports success/errors/warnings. The dry-run for authoring: validate before 'automation import'.
+POST /automations/import/validate. Checks an export model against a workspace -- step aliases, connection references, binding syntax -- and reports success/errors/warnings for creating/importing a new automation. It does not validate overwriting an existing automation; for edits use 'automation import-update <id> --dry-run' to preflight the update request shape.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
@@ -176,6 +177,18 @@ umbraco automate catalogue control-flows
 ```bash
 umbraco automate catalogue notification-channels
 ```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--fields` | string | — | Limit response fields (comma-separated top-level keys) |
+
+### catalogue operators
+
+```bash
+umbraco automate catalogue operators
+```
+
+Lists the ConditionOperator values accepted by automation export/import/update payloads. Use the string in the operator field, e.g. {"operator":"NotEquals"}; Deploy .uda files use integer Operator values, exposed here only as a mapping aid.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
@@ -476,7 +489,7 @@ umbraco automate automation delete <id>
 umbraco automate automation import --workspace-id <id> --file <export.json>
 ```
 
-POST /automations/import. Creates a new draft automation from an export model. Run 'automation validate' first -- it performs the same checks without writing.
+POST /automations/import. Creates a new draft automation from an export model. Run 'automation validate' first -- it performs the same create/import checks without writing.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
@@ -501,7 +514,7 @@ umbraco automate automation import --workspace-id <id> --file <export.json>
 umbraco automate automation import-update <id> --file <export.json>
 ```
 
-PUT /automations/{id}/import. Unlike 'automation import' this takes the bare export model as the body (no workspace wrapper -- the automation already lives somewhere) and replaces the automation's definition with it.
+PUT /automations/{id}/import. Unlike 'automation import' this takes the bare export model as the body (no workspace wrapper -- the automation already lives somewhere) and replaces the automation's definition with it. Use --dry-run as the update preflight path; 'automation validate' targets only new imports and can reject existing automation IDs.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|

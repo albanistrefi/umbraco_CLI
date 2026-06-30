@@ -70,6 +70,13 @@ var (
 		"no-empty": {Type: "boolean", Description: "Omit null, empty string, empty array, and empty object values from trimmed output"},
 		"full":     {Type: "boolean", Description: "Explicitly return the full payload; cannot be combined with --fields, --summary, or --no-empty"},
 	}
+	documentGetQuery = map[string]ParamSchema{
+		"fields":    fieldsQuery,
+		"summary":   {Type: "boolean", Description: "Return a compact CLI-side document summary shape"},
+		"no-empty":  {Type: "boolean", Description: "Omit null, empty string, empty array, and empty object values from trimmed output"},
+		"full":      {Type: "boolean", Description: "Explicitly return the full payload; cannot be combined with --fields, --summary, or --no-empty"},
+		"with-urls": {Type: "boolean", Description: "Fetch GET /document/urls for the document and include the returned urlInfos as urls"},
+	}
 	withFields = map[string]ParamSchema{"fields": fieldsQuery}
 )
 
@@ -93,9 +100,45 @@ var documentGrepSchema = &rawSchema{
 	},
 }
 
+var schemaDiffSchema = &rawSchema{
+	Method: "GET",
+	Path:   "profiles:{envA},{envB} + /tree/document-type/root + /document-type/{id} + /filter/data-type + /data-type/{id}",
+	PathParams: map[string]ParamSchema{
+		"envA": {Type: "string", Required: true, Description: "Configured profile/environment name for the left side of the comparison"},
+		"envB": {Type: "string", Required: true, Description: "Configured profile/environment name for the right side of the comparison"},
+	},
+	QueryParams: map[string]ParamSchema{
+		"entity":    {Type: "string", Description: "Comma-separated entity kinds to compare: doctype, datatype; defaults to both"},
+		"include":   {Type: "array", Description: "Only include matching aliases/names; repeatable or comma-separated"},
+		"exclude":   {Type: "array", Description: "Exclude matching aliases/names; repeatable or comma-separated"},
+		"exit-zero": {Type: "boolean", Description: "Exit 0 even when schema differences are found"},
+	},
+	Response: &ObjectSchema{
+		Type:        "object",
+		Description: "CLI workflow: loads two configured profiles, fetches document types and data types from each, normalizes volatile IDs/order, and returns added/removed/changed schema differences",
+	},
+}
+
+var automateCatalogueOperatorsSchema = &rawSchema{
+	Method:  "GET",
+	APIRoot: "/umbraco/automate/management/api/v1",
+	Path:    "local:ConditionOperatorModel",
+	QueryParams: map[string]ParamSchema{
+		"fields": fieldsQuery,
+	},
+	Response: &ObjectSchema{
+		Type:        "array",
+		Description: "CLI-local catalogue from the Automate OpenAPI ConditionOperatorModel enum. Use the operator string in export/import/update JSON; deployUdaOperator documents the integer value used by Deploy .uda files.",
+	},
+}
+
 var endpointBindings = map[string]endpointBinding{
+	// schema
+	"schema.diff": {Manual: schemaDiffSchema},
+
 	// document
-	"document.get":                        {Method: "GET", Path: "/document/{id}", ExtraQuery: documentTrimQuery},
+	"document.get":                        {Method: "GET", Path: "/document/{id}", ExtraQuery: documentGetQuery},
+	"document.urls":                       {Method: "GET", Path: "/document/urls", ExtraQuery: map[string]ParamSchema{"culture": {Type: "string", Description: "CLI-side filter for a single culture"}, "absolute": {Type: "boolean", Description: "Resolve returned URLs against the configured site host"}}},
 	"document.root":                       {Method: "GET", Path: "/tree/document/root", ExtraQuery: documentTrimQuery},
 	"document.children":                   {Method: "GET", Path: "/tree/document/children", ExtraQuery: documentTrimQuery},
 	"document.ancestors":                  {Method: "GET", Path: "/tree/document/ancestors"},
@@ -261,6 +304,7 @@ var endpointBindings = map[string]endpointBinding{
 	"automate.catalogue.control-flows":          {Method: "GET", Path: "/catalogue/control-flows"},
 	"automate.catalogue.notification-channels":  {Method: "GET", Path: "/catalogue/notification-channels"},
 	"automate.catalogue.webhook-authenticators": {Method: "GET", Path: "/catalogue/webhook-authenticators"},
+	"automate.catalogue.operators":              {Manual: automateCatalogueOperatorsSchema},
 	"automate.catalogue.step-types":             {Method: "GET", Path: "/catalogue/step-types"},
 	"automate.catalogue.output-schema":          {Method: "POST", Path: "/catalogue/step-types/{alias}/output-schema"},
 	"automate.automation.list":                  {Method: "GET", Path: "/automations"},
