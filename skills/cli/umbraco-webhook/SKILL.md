@@ -2,7 +2,7 @@
 name: umbraco-webhook
 description: "Webhook management (the Management API's outbound event notifications)"
 metadata:
-  version: 0.4.5
+  version: 0.4.6
   requires:
     bins:
       - umbraco

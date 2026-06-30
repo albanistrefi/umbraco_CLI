@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.4.6 - 2026-06-30
+
 - added `document urls <id> [<id>...]` for the Management API's batch document URL endpoint, with `--culture`, `--absolute`, clean `-o plain` URL output, message-preserving table output, non-zero exit when a requested document has no published URL, and `document get --with-urls`
 - added Automate authoring guardrails: `automate catalogue operators` now lists condition/filter operator strings plus Deploy `.uda` integer mappings, automation export/template/help text warns that import/update payloads use lowercase `operator` string values, and `automation validate` now points existing automation edits to `import-update --dry-run`
 - added `schema diff <envA> <envB>` for cross-environment schema checks: compares configured profiles, fetches document types and data types from both environments, normalizes volatile IDs/order, reports added/removed/changed schema entities, supports `--entity`, `--include`, `--exclude`, stable JSON output, and `--exit-zero` for automation
