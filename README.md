@@ -190,6 +190,8 @@ Safe read:
 
 ```bash
 umbraco document get <id> --fields "id,name,updateDate"
+umbraco document get <id> --with-urls --fields "id,name,urls"
+umbraco document urls <id> --absolute --output plain
 umbraco document search --query "Toxic" --skip 0 --take 25 --output json
 umbraco document search --query "Toxic" --under <parent-id> --skip 0 --take 25 --output json
 umbraco media search --query "Hero" --skip 0 --take 25 --output json
@@ -297,7 +299,7 @@ skills into whichever harness directory you point it at is on the roadmap.
 
 ## Collections
 
-- `document` (27) — incl. `version` history/rollback, `audit-log`, `publish-descendants`, `sort`, `domains`, `public-access`
+- `document` (29) — incl. `urls`, `version` history/rollback, `audit-log`, `publish-descendants`, `sort`, `domains`, `public-access`
 - `media` (15)
 - `doctype` (12)
 - `datatype` (14)
@@ -317,7 +319,7 @@ skills into whichever harness directory you point it at is on the roadmap.
 - `auth` (5)
 - `automate` (54) — requires [Umbraco Automate](https://docs.umbraco.com/umbraco-automate) on the target instance; see below
 
-Total: **220 runnable commands** counting every nested subcommand. Group counts above are direct subcommands; nested subgroups like `document version` and `automate workspace group` add the rest.
+Total: **221 runnable commands** counting every nested subcommand. Group counts above are direct subcommands; nested subgroups like `document version` and `automate workspace group` add the rest.
 
 ## Umbraco Automate
 

@@ -35,6 +35,7 @@ umbraco document <command> [flags]
 | `document references <id>` | List items that reference this document (paginated; --skip/--take/--all) |
 | `document root` | Get root documents (paginated; --skip/--take/--all) |
 | `document search` | Search documents |
+| `document urls <id> [<id>...]` | Get published document URLs |
 | `document version get <version-id>` | Get a stored document version (the full payload as it was) |
 | `document version list <document-id>` | List stored versions of a document (paginated; --skip/--take/--all) |
 
@@ -112,6 +113,7 @@ umbraco document get <id>
 | `--full` | bool | false | Return the full payload explicitly; cannot be combined with --fields, --summary, or --no-empty |
 | `--no-empty` | bool | false | Omit null, empty string, empty array, and empty object values from trimmed output |
 | `--summary` | bool | false | Return a compact document shape with id, name, documentType, route/url, and state/date fields when present |
+| `--with-urls` | bool | false | Fetch published document URL info and include it as urls in the response |
 
 ### grep
 
@@ -224,6 +226,17 @@ umbraco document search
 | `--summary` | bool | false | Return a compact document shape with id, name, documentType, route/url, and state/date fields when present |
 | `--take` | int | -1 | Take count (passes through as ?take=N; combine with --skip to page) |
 | `--under` | string | — | Limit search to documents under the given parent ID |
+
+### urls
+
+```bash
+umbraco document urls <id> [<id>...]
+```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--absolute` | bool | false | Resolve returned URLs against the configured site host |
+| `--culture` | string | — | Only include URL info for the given culture; defaults to all cultures |
 
 ### version get
 
