@@ -37,6 +37,8 @@ func endpointDeps(handler endpointRoundTripper) Dependencies {
 
 	return Dependencies{
 		Client:     api.NewClient(cfg, httpClient, auth.New(cfg, httpClient)),
+		Config:     cfg,
+		HTTPClient: httpClient,
 		EnvOutput:  config.OutputJSON,
 		OutputFlag: &output,
 	}

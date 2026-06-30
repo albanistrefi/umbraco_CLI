@@ -22,6 +22,7 @@ func RegisterDocument(root *cobra.Command, deps Dependencies) {
 	}
 
 	document.AddCommand(documentGet(deps))
+	document.AddCommand(documentURLs(deps))
 	document.AddCommand(documentRoot(deps))
 	document.AddCommand(documentChildren(deps))
 	document.AddCommand(documentAncestors(deps))
@@ -55,6 +56,7 @@ func RegisterDocument(root *cobra.Command, deps Dependencies) {
 
 func documentGet(deps Dependencies) *cobra.Command {
 	var trim outputTrimOptions
+	var withURLs bool
 	cmd := &cobra.Command{
 		Use:   "get <id>",
 		Short: "Get a document by ID",
@@ -67,6 +69,12 @@ func documentGet(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if withURLs {
+				result, err = attachDocumentURLs(cmd.Context(), deps, args[0], result)
+				if err != nil {
+					return err
+				}
+			}
 			result, err = applyDocumentOutputTrim(result, trim, cmd.ErrOrStderr())
 			if err != nil {
 				return err
@@ -75,6 +83,7 @@ func documentGet(deps Dependencies) *cobra.Command {
 		},
 	}
 	addDocumentOutputTrimFlags(cmd, &trim)
+	cmd.Flags().BoolVar(&withURLs, "with-urls", false, "Fetch published document URL info and include it as urls in the response")
 	return cmd
 }
 

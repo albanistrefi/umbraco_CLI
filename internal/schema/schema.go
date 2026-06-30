@@ -70,6 +70,13 @@ var (
 		"no-empty": {Type: "boolean", Description: "Omit null, empty string, empty array, and empty object values from trimmed output"},
 		"full":     {Type: "boolean", Description: "Explicitly return the full payload; cannot be combined with --fields, --summary, or --no-empty"},
 	}
+	documentGetQuery = map[string]ParamSchema{
+		"fields":    fieldsQuery,
+		"summary":   {Type: "boolean", Description: "Return a compact CLI-side document summary shape"},
+		"no-empty":  {Type: "boolean", Description: "Omit null, empty string, empty array, and empty object values from trimmed output"},
+		"full":      {Type: "boolean", Description: "Explicitly return the full payload; cannot be combined with --fields, --summary, or --no-empty"},
+		"with-urls": {Type: "boolean", Description: "Fetch GET /document/urls for the document and include the returned urlInfos as urls"},
+	}
 	withFields = map[string]ParamSchema{"fields": fieldsQuery}
 )
 
@@ -130,7 +137,8 @@ var endpointBindings = map[string]endpointBinding{
 	"schema.diff": {Manual: schemaDiffSchema},
 
 	// document
-	"document.get":                        {Method: "GET", Path: "/document/{id}", ExtraQuery: documentTrimQuery},
+	"document.get":                        {Method: "GET", Path: "/document/{id}", ExtraQuery: documentGetQuery},
+	"document.urls":                       {Method: "GET", Path: "/document/urls", ExtraQuery: map[string]ParamSchema{"culture": {Type: "string", Description: "CLI-side filter for a single culture"}, "absolute": {Type: "boolean", Description: "Resolve returned URLs against the configured site host"}}},
 	"document.root":                       {Method: "GET", Path: "/tree/document/root", ExtraQuery: documentTrimQuery},
 	"document.children":                   {Method: "GET", Path: "/tree/document/children", ExtraQuery: documentTrimQuery},
 	"document.ancestors":                  {Method: "GET", Path: "/tree/document/ancestors"},
