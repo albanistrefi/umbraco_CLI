@@ -930,3 +930,239 @@ func TestDatatypeBlockRemoveRejectsMalformedContentGUID(t *testing.T) {
 		t.Fatalf("expected --content-element-type rejection, got: %v", err)
 	}
 }
+
+const bgGridID = "dt-blockgrid-1"
+const bgPath = "/umbraco/management/api/v1/data-type/dt-blockgrid-1"
+
+func blockGridPayload() string {
+	return `{"id":"dt-blockgrid-1","name":"Grid","editorAlias":"Umbraco.BlockGrid","values":[
+		{"alias":"blockGroups","value":[{"key":"aaaaaaaa-0000-0000-0000-000000000001","name":"Layout"}]},
+		{"alias":"blocks","value":[
+			{"contentElementTypeKey":"11111111-1111-1111-1111-111111111111","groupKey":"aaaaaaaa-0000-0000-0000-000000000001","allowAtRoot":true,"allowInAreas":true,"forceHideContentEditorInOverlay":false},
+			{"contentElementTypeKey":"22222222-2222-2222-2222-222222222222","allowAtRoot":true,"allowInAreas":true,"forceHideContentEditorInOverlay":false},
+			{"contentElementTypeKey":"33333333-3333-3333-3333-333333333333","allowAtRoot":true,"allowInAreas":true,"forceHideContentEditorInOverlay":false}
+		]},
+		{"alias":"gridColumns","value":12}
+	]}`
+}
+
+func blockGridDeps(t *testing.T, putBody *map[string]any, afterPut func() string) Dependencies {
+	t.Helper()
+	var wrote atomic.Bool
+	return datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch {
+		case req.URL.Path == "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case req.URL.Path == bgPath && req.Method == http.MethodPut:
+			body := map[string]any{}
+			_ = json.NewDecoder(req.Body).Decode(&body)
+			*putBody = body
+			wrote.Store(true)
+			return datatypeJSONResponse(http.StatusOK, ``), nil
+		case req.URL.Path == bgPath:
+			if wrote.Load() && afterPut != nil {
+				return datatypeJSONResponse(http.StatusOK, afterPut()), nil
+			}
+			return datatypeJSONResponse(http.StatusOK, blockGridPayload()), nil
+		default:
+			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+}
+
+func gridBlocksFromBody(body map[string]any) []string {
+	order := []string{}
+	for _, item := range body["values"].([]any) {
+		entry := item.(map[string]any)
+		if entry["alias"] == "blocks" {
+			for _, b := range entry["value"].([]any) {
+				order = append(order, b.(map[string]any)["contentElementTypeKey"].(string))
+			}
+		}
+	}
+	return order
+}
+
+func TestDatatypeBlockReorderListedFirstThenRestAndVerifies(t *testing.T) {
+	var putBody map[string]any
+	deps := blockGridDeps(t, &putBody, func() string {
+		encoded, _ := json.Marshal(putBody)
+		return string(encoded)
+	})
+	output, err := execute(buildRootWithCollections(t, deps), "datatype", "block", "reorder", bgGridID, "--keys", "33333333-3333-3333-3333-333333333333,11111111-1111-1111-1111-111111111111")
+	if err != nil {
+		t.Fatalf("reorder failed: %v", err)
+	}
+	got := gridBlocksFromBody(putBody)
+	if strings.Join(got, ",") != "33333333-3333-3333-3333-333333333333,11111111-1111-1111-1111-111111111111,22222222-2222-2222-2222-222222222222" {
+		t.Fatalf("unexpected order: %v", got)
+	}
+	if !strings.Contains(output, `"verified": true`) {
+		t.Fatalf("expected verification, got %s", output)
+	}
+	// Unrelated config survives.
+	found := false
+	for _, item := range putBody["values"].([]any) {
+		if item.(map[string]any)["alias"] == "gridColumns" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("gridColumns value entry was dropped")
+	}
+	if _, err := execute(buildRootWithCollections(t, deps), "datatype", "block", "reorder", bgGridID, "--keys", "99999999-9999-9999-9999-999999999999"); err == nil || !strings.Contains(err.Error(), "no block") {
+		t.Fatalf("expected unknown key error, got %v", err)
+	}
+}
+
+func TestDatatypeBlockReorderFailsWhenServerPersistsDifferentOrder(t *testing.T) {
+	var putBody map[string]any
+	deps := blockGridDeps(t, &putBody, blockGridPayload) // server "keeps" the old order
+	_, err := execute(buildRootWithCollections(t, deps), "datatype", "block", "reorder", bgGridID, "--keys", "22222222-2222-2222-2222-222222222222")
+	if err == nil || !strings.Contains(err.Error(), "persisted a different block order") {
+		t.Fatalf("expected verification failure, got %v", err)
+	}
+}
+
+func TestDatatypeBlockGroupFlagCreatesGroupAndListsCounts(t *testing.T) {
+	var putBody map[string]any
+	deps := blockGridDeps(t, &putBody, nil)
+	output, err := execute(buildRootWithCollections(t, deps), "datatype", "block", "add", bgGridID, "--content-element-type", "44444444-4444-4444-4444-444444444444", "--group", "content")
+	if err != nil {
+		t.Fatalf("add --group failed: %v", err)
+	}
+	var groups []any
+	var newBlock map[string]any
+	for _, item := range putBody["values"].([]any) {
+		entry := item.(map[string]any)
+		switch entry["alias"] {
+		case "blockGroups":
+			groups = entry["value"].([]any)
+		case "blocks":
+			blocks := entry["value"].([]any)
+			newBlock = blocks[len(blocks)-1].(map[string]any)
+		}
+	}
+	if len(groups) != 2 || groups[1].(map[string]any)["name"] != "content" {
+		t.Fatalf("expected a new 'content' group appended, got %v", groups)
+	}
+	if newBlock["groupKey"] != groups[1].(map[string]any)["key"] {
+		t.Fatalf("expected the block bound to the new group, got %v", newBlock)
+	}
+	if !strings.Contains(output, `"changed": true`) {
+		t.Fatalf("unexpected output %s", output)
+	}
+
+	// Existing group matched case-insensitively on update; clearing removes groupKey.
+	if _, err := execute(buildRootWithCollections(t, deps), "datatype", "block", "update", bgGridID, "--content-element-type", "22222222-2222-2222-2222-222222222222", "--group", "LAYOUT"); err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range putBody["values"].([]any) {
+		entry := item.(map[string]any)
+		if entry["alias"] == "blocks" {
+			if entry["value"].([]any)[1].(map[string]any)["groupKey"] != "aaaaaaaa-0000-0000-0000-000000000001" {
+				t.Fatalf("expected existing Layout group reused, got %v", entry["value"].([]any)[1])
+			}
+		}
+		if entry["alias"] == "blockGroups" && len(entry["value"].([]any)) != 1 {
+			t.Fatalf("expected no new group for a case-insensitive match, got %v", entry["value"])
+		}
+	}
+	if _, err := execute(buildRootWithCollections(t, deps), "datatype", "block", "update", bgGridID, "--content-element-type", "11111111-1111-1111-1111-111111111111", "--group", ""); err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range putBody["values"].([]any) {
+		entry := item.(map[string]any)
+		if entry["alias"] == "blocks" {
+			if _, has := entry["value"].([]any)[0].(map[string]any)["groupKey"]; has {
+				t.Fatalf("expected groupKey cleared, got %v", entry["value"].([]any)[0])
+			}
+		}
+	}
+
+	groupsOut, err := execute(buildRootWithCollections(t, deps), "datatype", "block", "groups", bgGridID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(groupsOut, `"ungroupedBlocks": 2`) || !strings.Contains(groupsOut, `"name": "Layout"`) {
+		t.Fatalf("unexpected groups output: %s", groupsOut)
+	}
+}
+
+func TestDatatypeBlockGroupRejectedOnBlockList(t *testing.T) {
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case blPath:
+			return datatypeJSONResponse(http.StatusOK, blockListPayload(t)), nil
+		default:
+			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+	if _, err := execute(buildRootWithCollections(t, deps), "datatype", "block", "add", blListID, "--content-element-type", "44444444-4444-4444-4444-444444444444", "--group", "x"); err == nil || !strings.Contains(err.Error(), "BlockGrid only") {
+		t.Fatalf("expected BlockList rejection, got %v", err)
+	}
+	if _, err := execute(buildRootWithCollections(t, deps), "datatype", "block", "groups", blListID); err == nil {
+		t.Fatalf("expected groups to reject BlockList")
+	}
+}
+
+func TestDatatypeBlockGroupValidatedBeforeIdempotentReturnAndWhitespaceRejected(t *testing.T) {
+	var puts int32
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case blPath:
+			if req.Method == http.MethodPut {
+				atomic.AddInt32(&puts, 1)
+			}
+			return datatypeJSONResponse(http.StatusOK, blockListPayload(t)), nil
+		default:
+			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+	// Existing block on a Block List: --group must still be rejected, not swallowed by changed:false.
+	if _, err := execute(buildRootWithCollections(t, deps), "datatype", "block", "add", blListID, "--content-element-type", "11111111-1111-1111-1111-111111111111", "--group", "x"); err == nil || !strings.Contains(err.Error(), "BlockGrid only") {
+		t.Fatalf("expected rejection before the idempotent return, got %v", err)
+	}
+	var putBody map[string]any
+	grid := blockGridDeps(t, &putBody, nil)
+	if _, err := execute(buildRootWithCollections(t, grid), "datatype", "block", "add", bgGridID, "--content-element-type", "44444444-4444-4444-4444-444444444444", "--group", "   "); err == nil || !strings.Contains(err.Error(), "whitespace") {
+		t.Fatalf("expected whitespace group rejected on add, got %v", err)
+	}
+	if _, err := execute(buildRootWithCollections(t, grid), "datatype", "block", "update", bgGridID, "--content-element-type", "11111111-1111-1111-1111-111111111111", "--group", "  "); err == nil || !strings.Contains(err.Error(), "whitespace") {
+		t.Fatalf("expected whitespace group rejected on update, got %v", err)
+	}
+	if putBody != nil || atomic.LoadInt32(&puts) != 0 {
+		t.Fatalf("rejections must not write")
+	}
+}
+
+func TestDatatypeBlockReorderWorksOnBlockList(t *testing.T) {
+	var putBody map[string]any
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch {
+		case req.URL.Path == "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case req.URL.Path == blPath && req.Method == http.MethodPut:
+			_ = json.NewDecoder(req.Body).Decode(&putBody)
+			return datatypeJSONResponse(http.StatusOK, ``), nil
+		case req.URL.Path == blPath:
+			if putBody != nil {
+				encoded, _ := json.Marshal(putBody)
+				return datatypeJSONResponse(http.StatusOK, string(encoded)), nil
+			}
+			return datatypeJSONResponse(http.StatusOK, blockListPayload(t)), nil
+		default:
+			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+	if _, err := execute(buildRootWithCollections(t, deps), "datatype", "block", "reorder", blListID, "--keys", "22222222-2222-2222-2222-222222222222"); err != nil {
+		t.Fatalf("reorder on Block List should work (picker order applies there too): %v", err)
+	}
+	if got := gridBlocksFromBody(putBody); got[0] != "22222222-2222-2222-2222-222222222222" {
+		t.Fatalf("unexpected order %v", got)
+	}
+}
