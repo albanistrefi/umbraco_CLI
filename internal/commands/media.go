@@ -14,8 +14,25 @@ import (
 )
 
 func RegisterMedia(root *cobra.Command, deps Dependencies) {
-	media := &cobra.Command{Use: "media", Short: "Media asset operations"}
+	media := &cobra.Command{
+		Use:   "media",
+		Short: "Media asset operations",
+		Long: `Media asset operations.
 
+Task → command:
+  Which file is behind this item, how big, what dimensions?   media inspect <id>
+  Which content uses this media item?                          media references <id>   (aliases: find-references, referenced-by, usage)
+  Is any of these items referenced at all?                     media are-referenced <id> [<id>...]
+  Download the file to disk                                    media download <id> <path>
+  Upload a new file as a new media item                        media upload <file> --type <alias>
+  Swap the file behind an existing item (keep other values)    media replace-file <id> <file> --backup
+  Undo a bad write                                             media restore-backup <backup.json>
+  Change name/values without touching the file                 media update <id> --merge-json '{...}' --backup
+  Where is it served from?                                     media urls <id>`,
+	}
+
+	media.AddCommand(mediaInspect(deps))
+	media.AddCommand(mediaDownload(deps))
 	media.AddCommand(mediaGet(deps))
 	media.AddCommand(mediaRoot(deps))
 	media.AddCommand(mediaChildren(deps))
@@ -90,7 +107,7 @@ func mediaSearch(deps Dependencies) *cobra.Command {
 }
 
 func mediaURLs(deps Dependencies) *cobra.Command {
-	return &cobra.Command{Use: "urls <id>", Short: "Get media URLs", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	return &cobra.Command{Use: "urls <id>", Aliases: []string{"url"}, Short: "Get media URLs", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		result, err := getWithFallback(
 			cmd.Context(),
 			deps.Client,
@@ -557,12 +574,14 @@ func mediaTrash(deps Dependencies) *cobra.Command {
 }
 
 func mediaReferences(deps Dependencies) *cobra.Command {
-	return referencesCommand(deps, referencesSpec{
+	cmd := referencesCommand(deps, referencesSpec{
 		Use:   "references <id>",
 		Short: "List items that reference this media item (paginated; --skip/--take/--all)",
-		Long:  "Wraps GET /media/{id}/referenced-by. Same content-audit role as 'document references' for media assets.",
+		Long:  "Wraps GET /media/{id}/referenced-by. Same content-audit role as 'document references' for media assets — answers \"which content uses this media item?\".",
 		Path:  func(args []string) string { return api.JoinPath("/media/%s/referenced-by", args[0]) },
 	})
+	cmd.Aliases = []string{"find-references", "referenced-by", "usage"}
+	return cmd
 }
 
 func mediaReferencedDescendants(deps Dependencies) *cobra.Command {
