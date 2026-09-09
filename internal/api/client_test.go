@@ -523,3 +523,11 @@ func TestNotFoundHintDistinguishesMissingEntityFromMissingRoute(t *testing.T) {
 		t.Fatalf("expected route-missing hint, got %q", route)
 	}
 }
+
+func TestNotFoundHintTruncatesLongServerDetail(t *testing.T) {
+	long := strings.Repeat("x", 5000)
+	hint := buildAPIErrorHint(http.StatusNotFound, http.MethodGet, "/umbraco/management/api/v1/document-type/x", map[string]any{"operationStatus": "NotFound", "detail": long})
+	if len(hint) > 600 {
+		t.Fatalf("expected hint to be capped, got %d bytes", len(hint))
+	}
+}
