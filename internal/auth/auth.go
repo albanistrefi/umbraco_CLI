@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"umbraco-cli/internal/config"
+	"umbraco-cli/internal/version"
 )
 
 // Error marks authentication and credential failures so the CLI can exit
@@ -83,6 +84,7 @@ func (p *Provider) AccessToken(ctx context.Context) (string, error) {
 		return "", err
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("User-Agent", version.UserAgent())
 
 	resp, err := p.httpClient.Do(req)
 	if err != nil {

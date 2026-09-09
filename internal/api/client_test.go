@@ -512,3 +512,95 @@ func TestRetryAfterDelayJitterWithinBounds(t *testing.T) {
 		t.Fatalf("expected exact Retry-After honor, got %v", delay)
 	}
 }
+
+func TestRequestSetsUserAgentAndCustomHeadersOnTokenAndAPICalls(t *testing.T) {
+	observed := map[string]string{}
+
+	httpClient := newTestHTTPClient(func(r *http.Request) (*http.Response, error) {
+		switch r.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			observed["token-ua"] = r.Header.Get("User-Agent")
+			return jsonResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`, nil), nil
+		case "/umbraco/management/api/v1/server/status":
+			observed["api-ua"] = r.Header.Get("User-Agent")
+			observed["custom"] = r.Header.Get("X-Trace")
+			return jsonResponse(http.StatusOK, `{"serverStatus":"Run"}`, nil), nil
+		default:
+			return jsonResponse(http.StatusNotFound, `null`, nil), nil
+		}
+	})
+
+	cfg := config.Config{BaseURL: "https://example.test", ClientID: "client-id", ClientSecret: "client-secret"}
+	client := NewClient(cfg, httpClient, auth.New(cfg, httpClient))
+	if _, err := client.Get(context.Background(), "/server/status", RequestOptions{Headers: map[string]string{"X-Trace": "abc"}}); err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	for _, key := range []string{"token-ua", "api-ua"} {
+		if !strings.HasPrefix(observed[key], "umbraco-cli/") {
+			t.Fatalf("expected %s to carry umbraco-cli User-Agent, got %q", key, observed[key])
+		}
+	}
+	if observed["custom"] != "abc" {
+		t.Fatalf("expected custom header to be forwarded, got %q", observed["custom"])
+	}
+}
+
+func TestRawPathSkipsManagementAPIPrefix(t *testing.T) {
+	var observedPath string
+	httpClient := newTestHTTPClient(func(r *http.Request) (*http.Response, error) {
+		switch r.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return jsonResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`, nil), nil
+		default:
+			observedPath = r.URL.Path
+			return jsonResponse(http.StatusOK, `{"ok":true}`, nil), nil
+		}
+	})
+	cfg := config.Config{BaseURL: "https://example.test", ClientID: "client-id", ClientSecret: "client-secret"}
+	client := NewClient(cfg, httpClient, auth.New(cfg, httpClient))
+	if _, err := client.Get(context.Background(), "/umbraco/automate/management/api/v1/automations", RequestOptions{RawPath: true}); err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	if observedPath != "/umbraco/automate/management/api/v1/automations" {
+		t.Fatalf("expected raw path to be sent verbatim, got %q", observedPath)
+	}
+}
+
+func TestMultipartResultSendsFieldsAndFiles(t *testing.T) {
+	filePath := filepath.Join(t.TempDir(), "logo.svg")
+	if err := os.WriteFile(filePath, []byte("<svg/>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var observedID, observedFile, observedName string
+	httpClient := newTestHTTPClient(func(r *http.Request) (*http.Response, error) {
+		switch r.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return jsonResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`, nil), nil
+		case "/umbraco/management/api/v1/temporary-file":
+			if err := r.ParseMultipartForm(1 << 20); err != nil {
+				t.Fatalf("multipart parse failed: %v", err)
+			}
+			observedID = r.FormValue("id")
+			file, header, err := r.FormFile("file")
+			if err != nil {
+				t.Fatalf("missing file part: %v", err)
+			}
+			defer func() { _ = file.Close() }()
+			content, _ := io.ReadAll(file)
+			observedFile = string(content)
+			observedName = header.Filename
+			return jsonResponse(http.StatusCreated, ``, map[string]string{"Location": "/umbraco/management/api/v1/temporary-file/tmp-1"}), nil
+		default:
+			return jsonResponse(http.StatusNotFound, `null`, nil), nil
+		}
+	})
+	cfg := config.Config{BaseURL: "https://example.test", ClientID: "client-id", ClientSecret: "client-secret"}
+	client := NewClient(cfg, httpClient, auth.New(cfg, httpClient))
+	result, err := client.MultipartResult(context.Background(), http.MethodPost, "/temporary-file", map[string]string{"id": "tmp-1"}, map[string]string{"file": filePath}, RequestOptions{})
+	if err != nil {
+		t.Fatalf("multipart failed: %v", err)
+	}
+	if result.StatusCode != http.StatusCreated || observedID != "tmp-1" || observedFile != "<svg/>" || observedName != "logo.svg" {
+		t.Fatalf("unexpected multipart observation: status=%d id=%q file=%q name=%q", result.StatusCode, observedID, observedFile, observedName)
+	}
+}

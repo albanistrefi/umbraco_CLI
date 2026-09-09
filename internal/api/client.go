@@ -19,6 +19,7 @@ import (
 
 	"umbraco-cli/internal/auth"
 	"umbraco-cli/internal/config"
+	"umbraco-cli/internal/version"
 )
 
 type RequestOptions struct {
@@ -34,6 +35,13 @@ type RequestOptions struct {
 	// Management API mount (e.g. Umbraco Forms at
 	// "/umbraco/forms/management/api/v1").
 	APIPrefix string
+	// RawPath, when true, sends the path relative to the host root instead of
+	// the Management API mount. Used by `api --raw-path` and by media
+	// downloads, which fetch /media/... assets outside the API.
+	RawPath bool
+	// Headers are extra request headers applied after the defaults, so a
+	// caller can override Content-Type or add e.g. a custom User-Agent.
+	Headers map[string]string
 }
 
 const defaultAPIPrefix = "/umbraco/management/api/v1"
@@ -163,6 +171,9 @@ func (c *Client) buildURL(path string, opts RequestOptions) (string, error) {
 		prefix = "/" + prefix
 	}
 	prefix = strings.TrimRight(prefix, "/")
+	if opts.RawPath {
+		prefix = ""
+	}
 
 	// Track the escaped form alongside the decoded form so percent-escapes
 	// produced by JoinPath survive into the request URI instead of being
@@ -256,7 +267,7 @@ func (c *Client) RequestResult(ctx context.Context, method string, path string, 
 		encodedBody = encoded
 	}
 
-	resp, err := c.send(ctx, method, fullURL, "application/json", func() io.Reader {
+	resp, err := c.send(ctx, method, fullURL, "application/json", opts.Headers, func() io.Reader {
 		if encodedBody == nil {
 			return nil
 		}
@@ -291,7 +302,7 @@ const maxRequestAttempts = 4
 // Retry-After/backoff and refreshing the token once per 401, within a fixed
 // attempt budget. makeBody must return a fresh reader per call so retries
 // never replay a consumed reader.
-func (c *Client) send(ctx context.Context, method string, fullURL string, contentType string, makeBody func() io.Reader) (*http.Response, error) {
+func (c *Client) send(ctx context.Context, method string, fullURL string, contentType string, headers map[string]string, makeBody func() io.Reader) (*http.Response, error) {
 	token, err := c.tokenProvider.AccessToken(ctx)
 	if err != nil {
 		return nil, err
@@ -304,6 +315,10 @@ func (c *Client) send(ctx context.Context, method string, fullURL string, conten
 		}
 		req.Header.Set("Authorization", "Bearer "+token)
 		req.Header.Set("Content-Type", contentType)
+		req.Header.Set("User-Agent", version.UserAgent())
+		for key, value := range headers {
+			req.Header.Set(key, value)
+		}
 
 		resp, err := c.httpClient.Do(req)
 		if err != nil {
@@ -402,77 +417,96 @@ func (c *Client) Post(ctx context.Context, path string, body any, opts RequestOp
 	return c.Request(ctx, http.MethodPost, path, body, opts)
 }
 
+// MultipartPost uploads a single file field plus text fields with POST. It is
+// a thin wrapper over MultipartRequest kept for the media upload workflow.
 func (c *Client) MultipartPost(ctx context.Context, path string, fields map[string]string, fileField string, filePath string, opts RequestOptions) (any, error) {
+	return c.MultipartRequest(ctx, http.MethodPost, path, fields, map[string]string{fileField: filePath}, opts)
+}
+
+// MultipartRequest sends a multipart/form-data body with the given text
+// fields and file fields (form field name → local path). The form is fully
+// buffered so retries can replay it from a fresh reader per attempt.
+func (c *Client) MultipartRequest(ctx context.Context, method string, path string, fields map[string]string, files map[string]string, opts RequestOptions) (any, error) {
+	result, err := c.MultipartResult(ctx, method, path, fields, files, opts)
+	return result.Body, err
+}
+
+// MultipartResult is MultipartRequest with the HTTP status code preserved.
+func (c *Client) MultipartResult(ctx context.Context, method string, path string, fields map[string]string, files map[string]string, opts RequestOptions) (ResponseResult, error) {
 	if c.initErr != nil {
-		return nil, c.initErr
+		return ResponseResult{}, c.initErr
 	}
 
 	fullURL, err := c.buildURL(path, opts)
 	if err != nil {
-		return nil, err
+		return ResponseResult{}, err
 	}
 	relativePath := c.relativeAPIPath(fullURL)
 
 	if opts.DryRun {
-		return DryRunResult{
+		return ResponseResult{Body: DryRunResult{
 			DryRun: true,
 			Valid:  true,
-			Method: http.MethodPost,
+			Method: method,
 			Path:   relativePath,
 			Body: map[string]any{
 				"fields": fields,
-				"file":   filePath,
+				"files":  files,
 			},
-		}, nil
+		}}, nil
 	}
-
-	file, err := os.Open(filePath)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = file.Close() }()
 
 	var buffered bytes.Buffer
 	writer := multipart.NewWriter(&buffered)
 	for key, value := range fields {
 		if err := writer.WriteField(key, value); err != nil {
-			return nil, err
+			return ResponseResult{}, err
 		}
 	}
-	part, err := writer.CreateFormFile(fileField, filepath.Base(filePath))
-	if err != nil {
-		return nil, err
-	}
-	if _, err := io.Copy(part, file); err != nil {
-		return nil, err
+	for field, filePath := range files {
+		if err := writeMultipartFile(writer, field, filePath); err != nil {
+			return ResponseResult{}, err
+		}
 	}
 	if err := writer.Close(); err != nil {
-		return nil, err
+		return ResponseResult{}, err
 	}
 
-	// The form is already fully buffered in memory, so retries can replay it
-	// from a fresh reader per attempt.
 	encodedBody := buffered.Bytes()
-	resp, err := c.send(ctx, http.MethodPost, fullURL, writer.FormDataContentType(), func() io.Reader {
+	resp, err := c.send(ctx, method, fullURL, writer.FormDataContentType(), opts.Headers, func() io.Reader {
 		return bytes.NewReader(encodedBody)
 	})
 	if err != nil {
-		return nil, err
+		return ResponseResult{}, err
 	}
 	result, err := parseResponse(resp)
 	if err != nil {
-		return nil, err
+		return ResponseResult{}, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, &APIError{
+		return ResponseResult{StatusCode: resp.StatusCode, Body: result}, &APIError{
 			StatusCode: resp.StatusCode,
-			Method:     http.MethodPost,
+			Method:     method,
 			Path:       relativePath,
 			Payload:    result,
-			Hint:       buildAPIErrorHint(resp.StatusCode, http.MethodPost, relativePath),
+			Hint:       buildAPIErrorHint(resp.StatusCode, method, relativePath),
 		}
 	}
-	return result, nil
+	return ResponseResult{StatusCode: resp.StatusCode, Body: mergeLocationID(result, resp.Header.Get("Location"))}, nil
+}
+
+func writeMultipartFile(writer *multipart.Writer, field string, filePath string) error {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = file.Close() }()
+	part, err := writer.CreateFormFile(field, filepath.Base(filePath))
+	if err != nil {
+		return err
+	}
+	_, err = io.Copy(part, file)
+	return err
 }
 
 func (c *Client) Put(ctx context.Context, path string, body any, opts RequestOptions) (any, error) {
