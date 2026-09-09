@@ -334,9 +334,11 @@ After the write the item is fetched again; if the server accepted the PUT but le
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--backup` | string | — | Save the current item to a JSON file before writing; bare --backup writes ./<collection>-<id>-<timestamp>.backup.json, --backup=<path> chooses the file. Undo with '<collection> restore-backup <file>' where available |
+| `--culture` | string | — | Culture of the file value to replace (required when the property varies by culture) |
 | `--dry-run` | bool | false | Print the planned request without executing |
 | `--name` | string | — | Also rename the media item |
 | `--property` | string | umbracoFile | File property alias to replace |
+| `--segment` | string | — | Segment of the file value to replace |
 
 **Safe pattern:**
 
