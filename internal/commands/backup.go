@@ -1,6 +1,8 @@
 package commands
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -33,6 +35,8 @@ type backupEnvelope struct {
 
 type backupFile struct {
 	Property string `json:"property"`
+	Culture  string `json:"culture,omitempty"`
+	Segment  string `json:"segment,omitempty"`
 	Src      string `json:"src"`
 	Path     string `json:"path"`
 	Bytes    int    `json:"bytes"`
@@ -49,9 +53,19 @@ func addBackupFlag(cmd *cobra.Command, target *string) {
 func resolveBackupPath(target string, resource string, id string) string {
 	file := strings.TrimSpace(target)
 	if file == "" || file == backupAutoValue {
-		file = fmt.Sprintf("%s-%s-%s.backup.json", resource, sanitizeFileComponent(id), time.Now().UTC().Format("20060102T150405Z"))
+		// Timestamp plus a random suffix: two writes to the same item in the
+		// same second must not share (and truncate) one backup.
+		file = fmt.Sprintf("%s-%s-%s-%s.backup.json", resource, sanitizeFileComponent(id), time.Now().UTC().Format("20060102T150405Z"), randomSuffix())
 	}
 	return file
+}
+
+func randomSuffix() string {
+	var buf [3]byte
+	if _, err := rand.Read(buf[:]); err != nil {
+		return fmt.Sprintf("%06d", time.Now().UnixNano()%1000000)
+	}
+	return hex.EncodeToString(buf[:])
 }
 
 // writeBackup persists the pre-change entity (and, when given, the binary
@@ -73,7 +87,7 @@ func writeBackup(file string, resource string, id string, path string, entity ma
 		// The binary keeps its original file name inside a sibling folder so a
 		// restore re-uploads it under the same name (Umbraco derives the
 		// stored file name from the upload and strips extra dots).
-		filesDir := strings.TrimSuffix(file, ".json") + ".files"
+		filesDir := backupFilesDir(file)
 		if err := os.MkdirAll(filesDir, 0o700); err != nil {
 			return "", err
 		}
@@ -89,14 +103,23 @@ func writeBackup(file string, resource string, id string, path string, entity ma
 		if err != nil {
 			relative = binaryPath
 		}
-		envelope.File = &backupFile{Property: binary.Property, Src: binary.Src, Path: filepath.ToSlash(relative), Bytes: len(binary.Content)}
+		envelope.File = &backupFile{Property: binary.Property, Culture: binary.Culture, Segment: binary.Segment, Src: binary.Src, Path: filepath.ToSlash(relative), Bytes: len(binary.Content)}
 	}
 	encoded, err := json.MarshalIndent(envelope, "", "  ")
 	if err != nil {
 		return "", err
 	}
-	if err := os.WriteFile(file, encoded, 0o600); err != nil {
+	// Exclusive create: never truncate an existing backup.
+	handle, err := os.OpenFile(file, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return "", fmt.Errorf("failed to write backup %s (refusing to overwrite an existing file): %w", file, err)
+	}
+	if _, err := handle.Write(encoded); err != nil {
+		_ = handle.Close()
 		return "", fmt.Errorf("failed to write backup %s: %w", file, err)
+	}
+	if err := handle.Close(); err != nil {
+		return "", err
 	}
 	return file, nil
 }
@@ -105,8 +128,44 @@ func writeBackup(file string, resource string, id string, path string, entity ma
 // envelope.
 type backupBinary struct {
 	Property string
+	Culture  string
+	Segment  string
 	Src      string
 	Content  []byte
+}
+
+// backupFilesDir is the sibling folder holding a backup's binaries.
+func backupFilesDir(envelopePath string) string {
+	return strings.TrimSuffix(envelopePath, ".json") + ".files"
+}
+
+// backupBinaryPath resolves a stored relative binary path and refuses
+// anything that escapes the envelope's .files directory (including via
+// symlinks): a crafted envelope must not make restore upload arbitrary
+// local files.
+func backupBinaryPath(envelopePath string, stored string) (string, error) {
+	filesDir, err := filepath.Abs(backupFilesDir(envelopePath))
+	if err != nil {
+		return "", err
+	}
+	if resolved, err := filepath.EvalSymlinks(filesDir); err == nil {
+		filesDir = resolved
+	}
+	candidate := filepath.Join(filepath.Dir(envelopePath), filepath.FromSlash(stored))
+	candidateAbs, err := filepath.Abs(candidate)
+	if err != nil {
+		return "", err
+	}
+	if resolved, err := filepath.EvalSymlinks(candidateAbs); err == nil {
+		candidateAbs = resolved
+	}
+	if candidateAbs != filesDir && !strings.HasPrefix(candidateAbs, filesDir+string(filepath.Separator)) {
+		return "", fmt.Errorf("backup file path %q points outside %s; refusing to upload it", stored, filesDir)
+	}
+	if candidateAbs == filesDir {
+		return "", fmt.Errorf("backup file path %q is a directory", stored)
+	}
+	return candidateAbs, nil
 }
 
 // readBackup loads a backup envelope and checks it belongs to the expected
@@ -125,6 +184,9 @@ func readBackup(file string, resource string) (backupEnvelope, error) {
 	}
 	if envelope.ID == "" || len(envelope.Entity) == 0 {
 		return backupEnvelope{}, fmt.Errorf("backup file %s is missing the id or entity", file)
+	}
+	if strings.ContainsAny(envelope.ID, "/\\?#% \t\r\n") || strings.Contains(envelope.ID, "..") {
+		return backupEnvelope{}, fmt.Errorf("backup file %s has an invalid id %q", file, envelope.ID)
 	}
 	return envelope, nil
 }

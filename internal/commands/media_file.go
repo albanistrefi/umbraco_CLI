@@ -3,7 +3,6 @@ package commands
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -19,6 +18,8 @@ import (
 // refuses to report success for an emptied item.
 func mediaReplaceFile(deps Dependencies) *cobra.Command {
 	var propertyAlias string
+	var culture string
+	var segment string
 	var name string
 	var backup string
 	var dryRun bool
@@ -40,14 +41,15 @@ func mediaReplaceFile(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			before, _ := mediaFileValue(current, propertyAlias)
-			if before == nil {
-				return fmt.Errorf("media item %s has no %q property; check the media type or pass --property", id, propertyAlias)
+			selected, err := selectMediaFileValue(current, propertyAlias, culture, segment)
+			if err != nil {
+				return fmt.Errorf("media item %s: %w", id, err)
 			}
+			before := selected.Value
 
 			var backupFile string
 			if cmd.Flags().Changed("backup") && !dryRun {
-				binary, err := downloadMediaBinary(ctx, deps.Client, propertyAlias, before)
+				binary, err := downloadMediaBinary(ctx, deps.Client, propertyAlias, selected, before)
 				if err != nil {
 					return fmt.Errorf("--backup could not download the current file: %w", err)
 				}
@@ -66,10 +68,14 @@ func mediaReplaceFile(deps Dependencies) *cobra.Command {
 				return err
 			}
 
+			// Carry the selected entry's culture/segment so the merge replaces
+			// that variant instead of appending an invariant entry.
 			patch := map[string]any{
 				"values": []any{map[string]any{
-					"alias": propertyAlias,
-					"value": map[string]any{"temporaryFileId": tempID},
+					"alias":   propertyAlias,
+					"culture": selected.Culture,
+					"segment": selected.Segment,
+					"value":   map[string]any{"temporaryFileId": tempID},
 				}},
 			}
 			if strings.TrimSpace(name) != "" {
@@ -91,7 +97,7 @@ func mediaReplaceFile(deps Dependencies) *cobra.Command {
 				})
 			}
 
-			after, err := verifyMediaFileWrite(ctx, deps.Client, path, propertyAlias)
+			after, err := verifyMediaFileWrite(ctx, deps.Client, path, propertyAlias, culture, segment)
 			if err != nil {
 				if backupFile != "" {
 					return fmt.Errorf("%w; the pre-change item was saved to %s — run 'umbraco media restore-backup %s' to put it back", err, backupFile, backupFile)
@@ -115,6 +121,8 @@ func mediaReplaceFile(deps Dependencies) *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&propertyAlias, "property", "umbracoFile", "File property alias to replace")
+	cmd.Flags().StringVar(&culture, "culture", "", "Culture of the file value to replace (required when the property varies by culture)")
+	cmd.Flags().StringVar(&segment, "segment", "", "Segment of the file value to replace")
 	cmd.Flags().StringVar(&name, "name", "", "Also rename the media item")
 	addBackupFlag(cmd, &backup)
 	addDryRunFlag(cmd, &dryRun)
@@ -138,9 +146,11 @@ func mediaRestoreBackup(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			path := envelope.Path
-			if path == "" {
-				path = api.JoinPath("/media/%s", envelope.ID)
+			// The endpoint is derived from the validated id, never taken from
+			// the file: a crafted envelope must not steer the PUT elsewhere.
+			path := api.JoinPath("/media/%s", envelope.ID)
+			if envelope.Path != "" && envelope.Path != path {
+				return fmt.Errorf("backup file %s names path %q, which does not match media item %s", args[0], envelope.Path, envelope.ID)
 			}
 			body := envelope.Entity
 			result := map[string]any{"id": envelope.ID, "savedAt": envelope.SavedAt}
@@ -156,7 +166,10 @@ func mediaRestoreBackup(deps Dependencies) *cobra.Command {
 					}
 				}
 			} else {
-				binaryPath := filepath.Join(filepath.Dir(args[0]), filepath.FromSlash(envelope.File.Path))
+				binaryPath, err := backupBinaryPath(args[0], envelope.File.Path)
+				if err != nil {
+					return err
+				}
 				tempID, err := newUUIDv4()
 				if err != nil {
 					return fmt.Errorf("failed to generate temporary file id: %w", err)
@@ -165,7 +178,12 @@ func mediaRestoreBackup(deps Dependencies) *cobra.Command {
 					return fmt.Errorf("re-uploading the backed-up file %s failed: %w", binaryPath, err)
 				}
 				body = mergeAliasPayload(envelope.Entity, map[string]any{
-					"values": []any{map[string]any{"alias": envelope.File.Property, "value": map[string]any{"temporaryFileId": tempID}}},
+					"values": []any{map[string]any{
+						"alias":   envelope.File.Property,
+						"culture": nullableString(envelope.File.Culture),
+						"segment": nullableString(envelope.File.Segment),
+						"value":   map[string]any{"temporaryFileId": tempID},
+					}},
 				})
 				result["reuploaded"] = map[string]any{"file": binaryPath, "property": envelope.File.Property, "temporaryFile": tempID}
 			}
@@ -196,7 +214,7 @@ func mediaRestoreBackup(deps Dependencies) *cobra.Command {
 
 // verifyMediaFileWrite re-fetches the item and returns the file property's
 // value, failing when the write emptied the item or dropped the property.
-func verifyMediaFileWrite(ctx context.Context, client *api.Client, path string, propertyAlias string) (map[string]any, error) {
+func verifyMediaFileWrite(ctx context.Context, client *api.Client, path string, propertyAlias string, culture string, segment string) (map[string]any, error) {
 	after, err := fetchObject(ctx, client, path, api.RequestOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("the update was accepted but re-reading the item failed: %w", err)
@@ -204,11 +222,83 @@ func verifyMediaFileWrite(ctx context.Context, client *api.Client, path string, 
 	if len(mediaValues(after)) == 0 {
 		return nil, fmt.Errorf("the server accepted the update but left the media item with no values (this is what happens when the temporary file id does not resolve)")
 	}
-	value, _ := mediaFileValue(after, propertyAlias)
-	if value == nil || strings.TrimSpace(fmt.Sprint(value["src"])) == "" || value["src"] == nil {
+	selected, err := selectMediaFileValue(after, propertyAlias, culture, segment)
+	if err != nil || selected.Value["src"] == nil || strings.TrimSpace(fmt.Sprint(selected.Value["src"])) == "" {
 		return nil, fmt.Errorf("the server accepted the update but the %q property has no file afterwards", propertyAlias)
 	}
-	return value, nil
+	return selected.Value, nil
+}
+
+// mediaFileSelection is one value entry of a file property, with the
+// culture/segment it belongs to (nil for invariant).
+type mediaFileSelection struct {
+	Culture any
+	Segment any
+	Value   map[string]any
+}
+
+// selectMediaFileValue picks the file value entry for alias and, when the
+// property varies, the given culture/segment. With no selector it accepts a
+// single entry and refuses to guess between several variants.
+func selectMediaFileValue(entity map[string]any, alias string, culture string, segment string) (mediaFileSelection, error) {
+	matches := []mediaFileSelection{}
+	for _, raw := range mediaValues(entity) {
+		entry, ok := raw.(map[string]any)
+		if !ok || entry["alias"] != alias {
+			continue
+		}
+		value, _ := entry["value"].(map[string]any)
+		if value == nil {
+			value = map[string]any{}
+		}
+		matches = append(matches, mediaFileSelection{Culture: entry["culture"], Segment: entry["segment"], Value: value})
+	}
+	if len(matches) == 0 {
+		return mediaFileSelection{}, fmt.Errorf("no %q property; check the media type or pass --property", alias)
+	}
+	wantCulture := strings.TrimSpace(culture)
+	wantSegment := strings.TrimSpace(segment)
+	if wantCulture != "" || wantSegment != "" {
+		for _, match := range matches {
+			if strings.EqualFold(variantString(match.Culture), wantCulture) && variantString(match.Segment) == wantSegment {
+				return match, nil
+			}
+		}
+		return mediaFileSelection{}, fmt.Errorf("%q has no value for culture %q segment %q; available: %s", alias, wantCulture, wantSegment, describeVariants(matches))
+	}
+	if len(matches) == 1 {
+		return matches[0], nil
+	}
+	return mediaFileSelection{}, fmt.Errorf("%q varies by culture/segment (%s); pass --culture (and --segment) to choose", alias, describeVariants(matches))
+}
+
+func variantString(value any) string {
+	if value == nil {
+		return ""
+	}
+	return strings.TrimSpace(fmt.Sprint(value))
+}
+
+func nullableString(value string) any {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	return value
+}
+
+func describeVariants(matches []mediaFileSelection) string {
+	parts := make([]string, 0, len(matches))
+	for _, match := range matches {
+		culture := variantString(match.Culture)
+		if culture == "" {
+			culture = "invariant"
+		}
+		if segment := variantString(match.Segment); segment != "" {
+			culture += "/" + segment
+		}
+		parts = append(parts, culture)
+	}
+	return strings.Join(parts, ", ")
 }
 
 func mediaValues(entity map[string]any) []any {
@@ -256,7 +346,7 @@ func renameVariants(current map[string]any, name string) []any {
 
 // downloadMediaBinary fetches the file currently behind a media file property
 // so a backup can restore it after the server deletes the replaced file.
-func downloadMediaBinary(ctx context.Context, client *api.Client, propertyAlias string, value map[string]any) (*backupBinary, error) {
+func downloadMediaBinary(ctx context.Context, client *api.Client, propertyAlias string, selected mediaFileSelection, value map[string]any) (*backupBinary, error) {
 	src := strings.TrimSpace(fmt.Sprint(value["src"]))
 	if src == "" || src == "<nil>" {
 		return nil, nil
@@ -265,5 +355,5 @@ func downloadMediaBinary(ctx context.Context, client *api.Client, propertyAlias 
 	if err != nil {
 		return nil, err
 	}
-	return &backupBinary{Property: propertyAlias, Src: src, Content: content}, nil
+	return &backupBinary{Property: propertyAlias, Culture: variantString(selected.Culture), Segment: variantString(selected.Segment), Src: src, Content: content}, nil
 }

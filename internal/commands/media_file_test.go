@@ -246,3 +246,104 @@ func TestMediaRestoreBackupRefusesMetadataOnlyWhenFileIsGone(t *testing.T) {
 		t.Fatalf("expected no PUT when the file is gone, got %d", puts)
 	}
 }
+
+const mediaFileTestVariantItem = `{"id":"m-3","mediaType":{"id":"mt-1"},"variants":[{"culture":"en-US","segment":null,"name":"Logo"},{"culture":"da-DK","segment":null,"name":"Logo"}],"values":[` +
+	`{"alias":"umbracoFile","culture":"en-US","segment":null,"editorAlias":"Umbraco.UploadField","value":{"src":"/media/abc/en.svg"}},` +
+	`{"alias":"umbracoFile","culture":"da-DK","segment":null,"editorAlias":"Umbraco.UploadField","value":{"src":"/media/abc/da.svg"}}]}`
+
+func TestMediaReplaceFileRequiresCultureForVariantsAndCarriesIt(t *testing.T) {
+	filePath := writeTestSVG(t, "new.svg", "<svg>new</svg>")
+	var putBody map[string]any
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch {
+		case req.URL.Path == "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case req.URL.Path == "/umbraco/management/api/v1/media/m-3" && req.Method == http.MethodGet:
+			return datatypeJSONResponse(http.StatusOK, mediaFileTestVariantItem), nil
+		case req.URL.Path == "/umbraco/management/api/v1/temporary-file":
+			return datatypeJSONResponse(http.StatusCreated, ``), nil
+		case req.URL.Path == "/umbraco/management/api/v1/media/m-3" && req.Method == http.MethodPut:
+			raw, _ := io.ReadAll(req.Body)
+			_ = json.Unmarshal(raw, &putBody)
+			return datatypeJSONResponse(http.StatusOK, ``), nil
+		default:
+			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+	_, err := execute(buildRootWithCollections(t, deps), "media", "replace-file", "m-3", filePath)
+	if err == nil || !strings.Contains(err.Error(), "--culture") || !strings.Contains(err.Error(), "en-US, da-DK") {
+		t.Fatalf("expected culture selection error, got %v", err)
+	}
+	if _, err := execute(buildRootWithCollections(t, deps), "media", "replace-file", "m-3", filePath, "--culture", "da-DK"); err != nil {
+		t.Fatalf("replace-file with --culture failed: %v", err)
+	}
+	values := putBody["values"].([]any)
+	if len(values) != 2 {
+		t.Fatalf("expected the da-DK entry replaced, not appended, got %d entries", len(values))
+	}
+	da := values[1].(map[string]any)
+	if da["culture"] != "da-DK" || da["value"].(map[string]any)["temporaryFileId"] == nil {
+		t.Fatalf("expected da-DK entry to carry the temp file, got %#v", da)
+	}
+	if values[0].(map[string]any)["value"].(map[string]any)["src"] != "/media/abc/en.svg" {
+		t.Fatalf("expected en-US entry untouched, got %#v", values[0])
+	}
+}
+
+func TestMediaRestoreBackupRejectsCraftedPathsAndEndpoints(t *testing.T) {
+	dir := t.TempDir()
+	secret := filepath.Join(dir, "secret.txt")
+	if err := os.WriteFile(secret, []byte("private"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	requests := 0
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		if req.URL.Path == "/umbraco/management/api/v1/security/back-office/token" {
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		}
+		requests++
+		return datatypeJSONResponse(http.StatusOK, ``), nil
+	})
+
+	traversal := filepath.Join(dir, "t.json")
+	if err := os.WriteFile(traversal, []byte(`{"resource":"media","id":"m-1","entity":`+mediaFileTestItem+`,"file":{"property":"umbracoFile","src":"/media/abc/old.svg","path":"../secret.txt","bytes":7}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := execute(buildRootWithCollections(t, deps), "media", "restore-backup", traversal); err == nil || !strings.Contains(err.Error(), "outside") {
+		t.Fatalf("expected traversal refusal, got %v", err)
+	}
+
+	wrongPath := filepath.Join(dir, "p.json")
+	if err := os.WriteFile(wrongPath, []byte(`{"resource":"media","id":"m-1","path":"/user-group/admin","entity":`+mediaFileTestItem+`}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := execute(buildRootWithCollections(t, deps), "media", "restore-backup", wrongPath); err == nil || !strings.Contains(err.Error(), "does not match") {
+		t.Fatalf("expected endpoint mismatch refusal, got %v", err)
+	}
+
+	badID := filepath.Join(dir, "i.json")
+	if err := os.WriteFile(badID, []byte(`{"resource":"media","id":"../user-group/admin","entity":`+mediaFileTestItem+`}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := execute(buildRootWithCollections(t, deps), "media", "restore-backup", badID); err == nil || !strings.Contains(err.Error(), "invalid id") {
+		t.Fatalf("expected invalid id refusal, got %v", err)
+	}
+	if requests != 0 {
+		t.Fatalf("expected no API writes for rejected envelopes, got %d", requests)
+	}
+}
+
+func TestBackupAutoNamesAreUniqueAndNeverOverwrite(t *testing.T) {
+	a := resolveBackupPath("", "media", "m-1")
+	b := resolveBackupPath("", "media", "m-1")
+	if a == b {
+		t.Fatalf("expected distinct auto names, got %s twice", a)
+	}
+	target := filepath.Join(t.TempDir(), "x.json")
+	if _, err := writeBackup(target, "media", "m-1", "/media/m-1", map[string]any{"values": []any{}}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := writeBackup(target, "media", "m-1", "/media/m-1", map[string]any{"values": []any{}}, nil); err == nil || !strings.Contains(err.Error(), "refusing to overwrite") {
+		t.Fatalf("expected exclusive create to refuse, got %v", err)
+	}
+}
