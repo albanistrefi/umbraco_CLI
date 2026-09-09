@@ -115,6 +115,14 @@ const maxErrorPayloadBytes = 500
 
 func (e *APIError) Error() string {
 	encoded, _ := json.Marshal(e.Payload)
+	// Umbraco puts the exception message in ProblemDetails.title and the
+	// stack trace in detail; alphabetical JSON order would let truncation
+	// hide the message behind the stack, so lead with the title.
+	if problem, ok := e.Payload.(map[string]any); ok {
+		if title, _ := problem["title"].(string); strings.TrimSpace(title) != "" {
+			encoded = append([]byte(strconv.Quote(sanitizeTerminalText(title))+" "), encoded...)
+		}
+	}
 	encoded = truncatePayload(encoded, maxErrorPayloadBytes)
 	if e.Method != "" || e.Path != "" {
 		if e.Hint != "" {

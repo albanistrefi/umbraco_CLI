@@ -676,6 +676,55 @@ func compareContentTypeArtifact(artifact map[string]any, remote map[string]any) 
 		}
 	}
 
+	if templates, ok := artifact["AllowedTemplates"].([]any); ok {
+		if remoteTemplates := referencedGUIDSetFlat(remote["allowedTemplates"]); remoteTemplates != nil && !udiSetMatches(templates, remoteTemplates) {
+			diffs = append(diffs, "allowedTemplates")
+		}
+	}
+	if defaultTemplate, ok := artifact["DefaultTemplate"].(string); ok {
+		_, want := parseUdi(defaultTemplate)
+		got := ""
+		if ref, ok := remote["defaultTemplate"].(map[string]any); ok {
+			got, _ = ref["id"].(string)
+		}
+		if _, hasKey := remote["defaultTemplate"]; hasKey && !guidLikeEqual(want, got) {
+			diffs = append(diffs, "defaultTemplate")
+		}
+	}
+	if listView, ok := artifact["ListView"].(string); ok {
+		_, want := parseUdi(listView)
+		got := ""
+		if ref, ok := remote["collection"].(map[string]any); ok {
+			got, _ = ref["id"].(string)
+		}
+		if _, hasKey := remote["collection"]; hasKey && !guidLikeEqual(want, got) {
+			diffs = append(diffs, "collection")
+		}
+	}
+	if history, ok := artifact["HistoryCleanup"].(map[string]any); ok {
+		if cleanup, ok := remote["cleanup"].(map[string]any); ok {
+			diffs = diffFields(diffs,
+				fieldDiff("cleanup.preventCleanup", udaBool(history, "PreventCleanup"), udaBool(cleanup, "preventCleanup")),
+				fieldDiff("cleanup.keepAllVersionsNewerThanDays", history["KeepAllVersionsNewerThanDays"], cleanup["keepAllVersionsNewerThanDays"]),
+				fieldDiff("cleanup.keepLatestVersionPerDayForDays", history["KeepLatestVersionPerDayForDays"], cleanup["keepLatestVersionPerDayForDays"]),
+			)
+		}
+	}
+	if variations, ok := artifact["Variations"]; ok {
+		wantCulture, wantSegment := parseVariations(variations)
+		if got, isBool := remote["variesByCulture"].(bool); isBool && got != wantCulture {
+			diffs = append(diffs, "variesByCulture")
+		}
+		if got, isBool := remote["variesBySegment"].(bool); isBool && got != wantSegment {
+			diffs = append(diffs, "variesBySegment")
+		}
+	}
+	if groups, ok := artifact["PropertyGroups"].([]any); ok {
+		if remoteContainers, ok := remote["containers"].([]any); ok {
+			diffs = append(diffs, compareContainers(groups, remoteContainers)...)
+		}
+	}
+
 	artifactProperties := artifactPropertyIndex(artifact)
 	remoteProperties := map[string]map[string]any{}
 	if properties, ok := remote["properties"].([]any); ok {
@@ -735,6 +784,70 @@ func compareContentTypeArtifact(artifact map[string]any, remote map[string]any) 
 	for alias := range remoteProperties {
 		if _, exists := artifactProperties[alias]; !exists {
 			diffs = append(diffs, "property "+alias+" (missing in artifact)")
+		}
+	}
+	return diffs
+}
+
+// referencedGUIDSetFlat reads [{id}] reference lists (allowedTemplates).
+func referencedGUIDSetFlat(value any) map[string]struct{} {
+	items, ok := value.([]any)
+	if !ok {
+		return nil
+	}
+	set := map[string]struct{}{}
+	for _, item := range items {
+		if ref, ok := item.(map[string]any); ok {
+			if id, _ := ref["id"].(string); id != "" {
+				set[strings.ToLower(id)] = struct{}{}
+			}
+		}
+	}
+	return set
+}
+
+// compareContainers matches artifact PropertyGroups to remote containers by
+// key and compares name, type, and sort order; unmatched entries on either
+// side are diffs.
+func compareContainers(groups []any, remoteContainers []any) []string {
+	diffs := []string{}
+	remoteByID := map[string]map[string]any{}
+	for _, item := range remoteContainers {
+		if container, ok := item.(map[string]any); ok {
+			if id, _ := container["id"].(string); id != "" {
+				remoteByID[strings.ToLower(id)] = container
+			}
+		}
+	}
+	seen := map[string]bool{}
+	for _, item := range groups {
+		group, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		key := normalizeGUID(udaStringField(group, "Key"))
+		name := udaStringField(group, "Name")
+		remote, exists := remoteByID[key]
+		if !exists {
+			diffs = append(diffs, "container "+name+" (missing remotely)")
+			continue
+		}
+		seen[key] = true
+		if name != udaStringField(remote, "name") {
+			diffs = append(diffs, "container "+name+".name")
+		}
+		if containerTypeName(group["Type"]) != udaStringField(remote, "type") {
+			diffs = append(diffs, "container "+name+".type")
+		}
+		if sortOrder, ok := group["SortOrder"].(float64); ok {
+			if remoteSort, ok := remote["sortOrder"].(float64); ok && sortOrder != remoteSort {
+				diffs = append(diffs, "container "+name+".sortOrder")
+			}
+		}
+	}
+	for id, remote := range remoteByID {
+		if !seen[id] {
+			diffs = append(diffs, "container "+udaStringField(remote, "name")+" (missing in artifact)")
 		}
 	}
 	return diffs

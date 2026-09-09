@@ -158,6 +158,25 @@ func sortChildrenSchema(resource string, withCulture bool) *rawSchema {
 	}
 }
 
+var deployApplySchema = &rawSchema{
+	Method: "POST",
+	Path:   "local: <uda-dir>/*.uda → per-kind Management API writes (POST /data-type, PUT /document-type/{id}, ...)",
+	QueryParams: map[string]ParamSchema{
+		"uda-dir":           {Type: "string", Description: "Directory holding the .uda artifacts (default umbraco/Deploy/Revision)"},
+		"kind":              {Type: "array", Description: "Only apply these artifact kinds (Udi entity types); repeatable"},
+		"dry-run":           {Type: "boolean", Description: "Plan only: compare, order, and build request bodies without writing"},
+		"force":             {Type: "boolean", Description: "Actually write (required without --dry-run)"},
+		"backup-dir":        {Type: "string", Description: "Directory for pre-change backups of updated entities (default ./.umbraco-deploy-backup/<timestamp>)"},
+		"no-backup":         {Type: "boolean", Description: "Skip pre-change backups"},
+		"continue-on-error": {Type: "boolean", Description: "Keep applying after a failed write"},
+		"bodies":            {Type: "boolean", Description: "Include the exact request bodies in the plan output"},
+	},
+	Response: &ObjectSchema{
+		Type:        "object",
+		Description: "CLI workflow, mutating: the write side of deploy status. Per artifact: action create|update|skip|unsupported|error with reason and diffs, dependency order, deferred forward references; after execution result applied|applied-drifted (with remaining diffs)|failed|not-run and the backup path. Exit 4 when any write failed or still drifts.",
+	},
+}
+
 var deployStatusSchema = &rawSchema{
 	Method: "GET",
 	Path:   "local: <uda-dir>/*.uda + per-kind Management API lookups (/data-type/{id}, /document-type/{id}, /template/{id}, ...)",
@@ -231,6 +250,7 @@ var endpointBindings = map[string]endpointBinding{
 	// deploy (effect-based observation composites)
 	"deploy.watch":  {Manual: deployWatchSchema},
 	"deploy.status": {Manual: deployStatusSchema},
+	"deploy.apply":  {Manual: deployApplySchema},
 
 	// document
 	"document.get":                        {Method: "GET", Path: "/document/{id}", ExtraQuery: documentGetQuery},
