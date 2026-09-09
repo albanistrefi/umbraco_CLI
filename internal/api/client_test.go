@@ -513,6 +513,14 @@ func TestRetryAfterDelayJitterWithinBounds(t *testing.T) {
 	}
 }
 
+func TestNotFoundHintDistinguishesMissingEntityFromMissingRoute(t *testing.T) {
+	entity := buildAPIErrorHint(http.StatusNotFound, http.MethodGet, "/umbraco/management/api/v1/document-type/x", map[string]any{"operationStatus": "NotFound", "detail": "The specified document type was not found"})
+	if !strings.Contains(entity, "The specified document type was not found") || strings.Contains(entity, "may not be supported") {
+		t.Fatalf("expected entity-missing hint, got %q", entity)
+	}
+	route := buildAPIErrorHint(http.StatusNotFound, http.MethodGet, "/umbraco/management/api/v1/health-check-group/x/run", nil)
+	if !strings.Contains(route, "may not be supported in your Umbraco version") {
+		t.Fatalf("expected route-missing hint, got %q", route)
 func TestRequestSetsUserAgentAndCustomHeadersOnTokenAndAPICalls(t *testing.T) {
 	observed := map[string]string{}
 
