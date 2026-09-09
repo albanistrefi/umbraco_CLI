@@ -14,9 +14,10 @@ import (
 func RegisterDeploy(root *cobra.Command, deps Dependencies) {
 	deploy := &cobra.Command{
 		Use:   "deploy",
-		Short: "Effect-based deployment observation (watch an environment, not a pipeline)",
+		Short: "Deployment observation and schema application (watch, status, apply)",
 	}
 	deploy.AddCommand(deployWatch(deps))
 	deploy.AddCommand(deployStatus(deps))
+	deploy.AddCommand(deployApply(deps))
 	root.AddCommand(deploy)
 }

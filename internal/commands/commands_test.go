@@ -104,8 +104,8 @@ func TestCommandCountsMatchMVP(t *testing.T) {
 		total += len(found.Commands())
 	}
 
-	if total != 229 {
-		t.Fatalf("expected 229 collection commands, got %d", total)
+	if total != 230 {
+		t.Fatalf("expected 230 collection commands, got %d", total)
 	}
 }
 
