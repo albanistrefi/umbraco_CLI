@@ -286,6 +286,8 @@ var endpointBindings = map[string]endpointBinding{
 	"media.create":                 {Method: "POST", Path: "/media"},
 	"media.create-folder":          {Method: "POST", Path: "/media", Response: &ObjectSchema{Type: "object", Description: "CLI workflow: resolves the Folder media type and creates a media item of that type"}},
 	"media.upload":                 {Manual: &rawSchema{Method: "POST", Path: "/temporary-file", RequestBody: &ObjectSchema{Type: "object", Description: "CLI workflow: multipart temporary-file upload followed by media create"}}},
+	"media.replace-file":           {Manual: &rawSchema{Method: "PUT", Path: "/media/{id}", RequestBody: &ObjectSchema{Type: "object", Description: "CLI workflow: fetch current item, multipart temporary-file upload, PUT with the file property rewritten, then re-fetch to verify the item was not emptied"}}},
+	"media.restore-backup":         {Manual: &rawSchema{Method: "PUT", Path: "/media/{id}", RequestBody: &ObjectSchema{Type: "object", Description: "CLI workflow: PUT the entity captured by --backup back onto the item, then verify"}}},
 	"media.update":                 {Method: "PUT", Path: "/media/{id}"},
 	"media.move":                   {Method: "PUT", Path: "/media/{id}/move"},
 	"media.sort":                   {Method: "PUT", Path: "/media/sort"},

@@ -24,6 +24,8 @@ func RegisterMedia(root *cobra.Command, deps Dependencies) {
 	media.AddCommand(mediaCreate(deps))
 	media.AddCommand(mediaCreateFolder(deps))
 	media.AddCommand(mediaUpload(deps))
+	media.AddCommand(mediaReplaceFile(deps))
+	media.AddCommand(mediaRestoreBackup(deps))
 	media.AddCommand(mediaUpdate(deps))
 	media.AddCommand(mediaMove(deps))
 	media.AddCommand(sortCommand(deps, "media"))

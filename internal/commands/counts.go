@@ -4,7 +4,7 @@ var ExpectedCollectionCommandCounts = map[string]int{
 	"document":        31,
 	"element":         21,
 	"dictionary":      6,
-	"media":           19,
+	"media":           21,
 	"doctype":         14,
 	"datatype":        14,
 	"template":        6,
