@@ -245,13 +245,17 @@ func fetchSchemaTypeFolderChildren(ctx context.Context, client *api.Client, reso
 	return resultItems(result), nil
 }
 
+// isSchemaTypeFolderID asks the folder endpoint directly. The earlier
+// tree-children probe answered 200 with an empty list for *any* id, so a
+// plain 404 (typo, deleted type, wrong environment) was misreported as
+// "is a folder"; now only an actual folder record counts.
 func isSchemaTypeFolderID(ctx context.Context, client *api.Client, resource string, id string) bool {
-	result, err := client.Get(ctx, "/tree/"+resource+"/children", api.RequestOptions{Params: map[string]any{"parentId": id}})
+	result, err := client.Get(ctx, api.JoinPath("/"+resource+"/folder/%s", id), api.RequestOptions{})
 	if err != nil {
 		return false
 	}
-	_, ok := result.(map[string]any)
-	return ok
+	folder, ok := result.(map[string]any)
+	return ok && folder["id"] != nil
 }
 
 func isSchemaTypeFolderItem(item any) bool {

@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"umbraco-cli/internal/auth"
@@ -288,7 +289,7 @@ func (c *Client) RequestResult(ctx context.Context, method string, path string, 
 			Method:     method,
 			Path:       relativePath,
 			Payload:    result,
-			Hint:       buildAPIErrorHint(resp.StatusCode, method, relativePath),
+			Hint:       buildAPIErrorHint(resp.StatusCode, method, relativePath, result),
 		}
 	}
 
@@ -359,12 +360,50 @@ func (c *Client) relativeAPIPath(fullURL string) string {
 	return strings.TrimPrefix(fullURL, strings.TrimRight(c.cfg.BaseURL, "/"))
 }
 
-func buildAPIErrorHint(statusCode int, method string, path string) string {
+// maxHintDetailBytes caps server-provided detail text quoted into hints.
+const maxHintDetailBytes = 200
+
+// sanitizeTerminalText strips control characters (ANSI/OSC sequences, CR/LF,
+// tabs) from untrusted server text before it is printed unescaped, so a
+// hostile ProblemDetails cannot manipulate the terminal.
+func sanitizeTerminalText(text string) string {
+	var b strings.Builder
+	for _, r := range text {
+		// C0/C1 controls plus Unicode format characters (category Cf:
+		// bidi overrides/isolates, zero-width joiners, BOM ...), which can
+		// reorder or hide terminal text just as effectively as ESC.
+		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || !unicode.IsPrint(r) && r != ' ' {
+			b.WriteRune(' ')
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return strings.Join(strings.Fields(b.String()), " ")
+}
+
+func buildAPIErrorHint(statusCode int, method string, path string, payload any) string {
 	if statusCode != http.StatusNotFound {
 		return ""
 	}
 	if !strings.Contains(path, "/management/api/v") {
 		return ""
+	}
+	// A ProblemDetails body means the route exists and the *entity* is
+	// missing (e.g. {"operationStatus":"NotFound","detail":"The specified
+	// document type was not found"}); a bare 404 with no body is the route
+	// itself being absent on this Umbraco version.
+	if problem, ok := payload.(map[string]any); ok {
+		detail := strings.TrimSpace(fmt.Sprint(problem["detail"]))
+		status := strings.TrimSpace(fmt.Sprint(problem["operationStatus"]))
+		if strings.EqualFold(status, "NotFound") || (detail != "" && detail != "<nil>" && strings.Contains(strings.ToLower(detail), "not found")) {
+			if detail == "" || detail == "<nil>" {
+				detail = "the requested item was not found"
+			}
+			// Server-controlled text: keep it inside the same budget the
+			// payload gets so a pathological detail cannot flood the terminal.
+			detail = string(truncatePayload([]byte(sanitizeTerminalText(detail)), maxHintDetailBytes))
+			return fmt.Sprintf("%s — the id does not exist in this environment; check the id and the active profile (umbraco auth list)", detail)
+		}
 	}
 
 	return fmt.Sprintf("endpoint %s %s was not found; this may not be supported in your Umbraco version or may require a different route", method, path)
@@ -489,7 +528,7 @@ func (c *Client) MultipartResult(ctx context.Context, method string, path string
 			Method:     method,
 			Path:       relativePath,
 			Payload:    result,
-			Hint:       buildAPIErrorHint(resp.StatusCode, method, relativePath),
+			Hint:       buildAPIErrorHint(resp.StatusCode, method, relativePath, result),
 		}
 	}
 	return ResponseResult{StatusCode: resp.StatusCode, Body: mergeLocationID(result, resp.Header.Get("Location"))}, nil
@@ -597,7 +636,7 @@ func (c *Client) GetStream(ctx context.Context, path string, w io.Writer, opts R
 			Method:     http.MethodGet,
 			Path:       relativePath,
 			Payload:    strings.TrimSpace(string(body)),
-			Hint:       buildAPIErrorHint(resp.StatusCode, http.MethodGet, relativePath),
+			Hint:       buildAPIErrorHint(resp.StatusCode, http.MethodGet, relativePath, nil),
 		}
 	}
 	n, err := io.Copy(w, resp.Body)
