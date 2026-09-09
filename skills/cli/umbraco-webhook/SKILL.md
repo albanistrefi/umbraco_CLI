@@ -18,6 +18,12 @@ metadata:
 umbraco webhook <command> [flags]
 ```
 
+## Overview
+
+```text
+Create, inspect, and audit webhooks that fire on content events. 'webhook events' lists the event aliases a webhook can subscribe to; 'webhook logs' shows delivery attempts with status codes for debugging integrations.
+```
+
 ## Read Commands
 
 | Command | Description |

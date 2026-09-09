@@ -18,6 +18,12 @@ metadata:
 umbraco models-builder <command> [flags]
 ```
 
+## Overview
+
+```text
+Wraps /umbraco/management/api/v1/models-builder/*. Useful after CLI schema changes (doctype create, etc.) when ModelsMode is SourceCodeManual — the backoffice 'Generate models' button would otherwise be the only trigger.
+```
+
 ## Read Commands
 
 | Command | Description |

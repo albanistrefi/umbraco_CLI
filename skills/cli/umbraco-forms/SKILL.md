@@ -18,6 +18,12 @@ metadata:
 umbraco forms <command> [flags]
 ```
 
+## Overview
+
+```text
+Read-focused commands for the Umbraco Forms Management API. Useful for resolving form and field GUIDs when composing Umbraco.Forms.Automate flows, and for inspecting submitted records.
+```
+
 ## Read Commands
 
 | Command | Description |

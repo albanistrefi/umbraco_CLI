@@ -18,6 +18,12 @@ metadata:
 umbraco member <command> [flags]
 ```
 
+## Overview
+
+```text
+Wraps /umbraco/management/api/v1/member and /filter/member. Lookups, edits, and group assignment.
+```
+
 ## Read Commands
 
 | Command | Description |

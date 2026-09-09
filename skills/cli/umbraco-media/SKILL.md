@@ -18,6 +18,23 @@ metadata:
 umbraco media <command> [flags]
 ```
 
+## Overview
+
+```text
+Media asset operations.
+
+Task → command:
+  Which file is behind this item, how big, what dimensions?   media inspect <id>
+  Which content uses this media item?                          media references <id>   (aliases: find-references, referenced-by, usage)
+  Is any of these items referenced at all?                     media are-referenced <id> [<id>...]
+  Download the file to disk                                    media download <id> <path>
+  Upload a new file as a new media item                        media upload <file> --type <alias>
+  Swap the file behind an existing item (keep other values)    media replace-file <id> <file> --backup
+  Undo a bad write                                             media restore-backup <backup.json>
+  Change name/values without touching the file                 media update <id> --merge-json '{...}' --backup
+  Where is it served from?                                     media urls <id>
+```
+
 ## Read Commands
 
 | Command | Description |
@@ -27,7 +44,9 @@ umbraco media <command> [flags]
 | `media bin list` | List media items at the recycle bin root |
 | `media bin original-parent <id>` | Get the original parent of a trashed media item (the default restore target) |
 | `media children <id>` | Get child media items (paginated; --skip/--take/--all) |
+| `media download <id> <path>` | Download the file behind a media item to a local path |
 | `media get <id>` | Get media by ID |
+| `media inspect <id>` | Summarize a media item: name, type, file src/URL, extension, size, dimensions |
 | `media referenced-descendants <id>` | List items that reference this media item or any of its descendants |
 | `media references <id>` | List items that reference this media item (paginated; --skip/--take/--all) |
 | `media root` | Get root media items (paginated; --skip/--take/--all) |
@@ -107,6 +126,20 @@ umbraco media children <id>
 | `--summarize` | bool | false | Return only id/name/alias fields for item collections |
 | `--take` | int | -1 | Take count (passes through as ?take=N; combine with --skip to page) |
 
+### download
+
+```bash
+umbraco media download <id> <path>
+```
+
+Aliases: `get-file`
+
+Resolves the file property (default umbracoFile) and fetches the asset from the same host, writing it verbatim. If <path> is an existing directory (or ends with /), the server-side file name is used inside it.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--property` | string | umbracoFile | File property alias to download |
+
 ### get
 
 ```bash
@@ -116,6 +149,21 @@ umbraco media get <id>
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--fields` | string | — | Limit response fields (comma-separated top-level keys) |
+
+### inspect
+
+```bash
+umbraco media inspect <id>
+```
+
+Aliases: `info`
+
+One-call view of what a media item points at. Combines GET /media/{id} with the public URL and flattens the file property (default umbracoFile) into file.src, file.url, file.extension, file.bytes. Raster dimensions come from the umbracoWidth/umbracoHeight values; for SVGs the file is fetched and its viewBox/width/height attributes are reported (skip with --no-fetch). Use before and after 'media replace-file' to confirm the swap, or 'media references <id>' to see which content uses the item.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--no-fetch` | bool | false | Do not download SVG files to read their viewBox |
+| `--property` | string | umbracoFile | File property alias to summarize |
 
 ### referenced-descendants
 
@@ -140,7 +188,9 @@ umbraco media referenced-descendants <id>
 umbraco media references <id>
 ```
 
-Wraps GET /media/{id}/referenced-by. Same content-audit role as 'document references' for media assets.
+Aliases: `find-references`, `referenced-by`, `usage`
+
+Wraps GET /media/{id}/referenced-by. Same content-audit role as 'document references' for media assets — answers "which content uses this media item?".
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
@@ -188,6 +238,8 @@ umbraco media search
 ```bash
 umbraco media urls <id>
 ```
+
+Aliases: `url`
 
 ## Mutation Commands
 
@@ -326,6 +378,8 @@ umbraco media move <id> [flags]
 ```bash
 umbraco media replace-file <id> <file>
 ```
+
+Aliases: `replace`
 
 Uploads <file> as a temporary file, rewrites the file property (default umbracoFile) on the existing item, and verifies the result. Every other value is preserved; the server recomputes derived values (umbracoBytes, umbracoExtension, dimensions).
 
