@@ -2,7 +2,7 @@
 name: umbraco-deploy
 description: "Deployment observation and schema application (watch, status, apply)"
 metadata:
-  version: 0.4.13
+  version: 0.4.14
   requires:
     bins:
       - umbraco
