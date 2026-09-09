@@ -200,7 +200,9 @@ umbraco media urls <id>
 | `media create` | Create media from JSON payload |
 | `media create-folder [name]` | Create media folder |
 | `media move <id>` | Move media item |
+| `media replace-file <id> <file>` | Replace the file behind an existing media item, keeping its other values |
 | `media restore <id>` | Restore a media item from the recycle bin |
+| `media restore-backup <file>` | Restore a media item from a --backup JSON file |
 | `media sort` | Reorder sibling media items into an explicit order |
 | `media sort-children [parent-id]` | Sort all children of a node by a field |
 | `media trash <id>` | Move media item to recycle bin |
@@ -319,6 +321,33 @@ umbraco media move <id> [flags] --dry-run
 umbraco media move <id> [flags]
 ```
 
+### replace-file
+
+```bash
+umbraco media replace-file <id> <file>
+```
+
+Uploads <file> as a temporary file, rewrites the file property (default umbracoFile) on the existing item, and verifies the result. Every other value is preserved; the server recomputes derived values (umbracoBytes, umbracoExtension, dimensions).
+
+After the write the item is fetched again; if the server accepted the PUT but left the item with no values (what happens when a temporary file id does not resolve) the command fails instead of reporting success. Pass --backup to save the pre-change item first; 'media restore-backup <file>' puts it back.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--backup` | string | — | Save the current item to a JSON file before writing; bare --backup writes ./<collection>-<id>-<timestamp>.backup.json, --backup=<path> chooses the file. Undo with '<collection> restore-backup <file>' where available |
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--name` | string | — | Also rename the media item |
+| `--property` | string | umbracoFile | File property alias to replace |
+
+**Safe pattern:**
+
+```bash
+# 1. Rehearse with the exact flags you will execute with
+umbraco media replace-file <id> <file> [flags] --dry-run
+
+# 2. Execute with the same flags
+umbraco media replace-file <id> <file> [flags]
+```
+
 ### restore
 
 ```bash
@@ -340,6 +369,28 @@ umbraco media restore <id> [flags] --dry-run
 
 # 2. Execute with the same flags
 umbraco media restore <id> [flags]
+```
+
+### restore-backup
+
+```bash
+umbraco media restore-backup <file>
+```
+
+Reads a file written by 'media replace-file --backup' or 'media update --backup' and PUTs the saved item back to the server, then verifies the item is no longer empty. Backups from replace-file also carry the original file: Umbraco deletes the previous file when it is replaced, so the restore re-uploads the saved binary rather than pointing at a path that no longer exists. Backups from 'media update --backup' are metadata-only; the restore first checks the referenced file is still served and refuses to write if it is gone. This restores values and name; it does not undo a move or delete (use 'media restore' for the recycle bin).
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--dry-run` | bool | false | Print the planned request without executing |
+
+**Safe pattern:**
+
+```bash
+# 1. Rehearse with the exact flags you will execute with
+umbraco media restore-backup <file> [flags] --dry-run
+
+# 2. Execute with the same flags
+umbraco media restore-backup <file> [flags]
 ```
 
 ### sort
@@ -419,6 +470,7 @@ umbraco media update <id>
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--backup` | string | — | Save the current item to a JSON file before writing; bare --backup writes ./<collection>-<id>-<timestamp>.backup.json, --backup=<path> chooses the file. Undo with '<collection> restore-backup <file>' where available |
 | `--dry-run` | bool | false | Print the planned request without executing |
 | `--json` | string | — | Full replacement payload as JSON (fields not mentioned are reset by the server) |
 | `--merge-json` | string | — | Partial JSON deep-merged into the current resource before update (fields not mentioned are preserved) |
