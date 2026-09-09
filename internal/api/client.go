@@ -483,7 +483,7 @@ func (c *Client) MultipartPost(ctx context.Context, path string, fields map[stri
 			Method:     http.MethodPost,
 			Path:       relativePath,
 			Payload:    result,
-			Hint:       buildAPIErrorHint(resp.StatusCode, http.MethodPost, relativePath),
+			Hint:       buildAPIErrorHint(resp.StatusCode, http.MethodPost, relativePath, result),
 		}
 	}
 	return result, nil
