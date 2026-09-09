@@ -156,6 +156,9 @@ func TestMediaInspectRequiresCultureForVariants(t *testing.T) {
 	if file["src"] != "/media/abc/da.svg" || file["culture"] != "da-DK" || file["url"] != "https://example.test/da.svg" {
 		t.Fatalf("expected da-DK variant flattened with its own URL, got %#v", file)
 	}
+	if payload["name"] != "Logo DA" {
+		t.Fatalf("expected the da-DK variant's metadata, got name=%v", payload["name"])
+	}
 	if others, _ := payload["otherVariants"].([]any); len(others) != 1 {
 		t.Fatalf("expected the en-US variant listed under otherVariants, got %s", output)
 	}
@@ -185,5 +188,44 @@ func TestMediaDownloadSanitizesServerFileName(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(filepath.Dir(dir), "evil.svg")); err == nil {
 		t.Fatalf("download escaped the target directory")
+	}
+}
+
+func TestSanitizeFileNameRejectsWindowsDeviceNames(t *testing.T) {
+	for _, name := range []string{"CON", "nul", "COM1", "LPT1.txt", "aux.svg"} {
+		if got := sanitizeFileName(name, "file"); !strings.HasPrefix(got, "_") {
+			t.Fatalf("expected %q to be rewritten, got %q", name, got)
+		}
+	}
+	if got := sanitizeFileName("console.svg", "file"); got != "console.svg" {
+		t.Fatalf("expected ordinary names untouched, got %q", got)
+	}
+}
+
+func TestMediaInspectOmitsURLForCustomFileProperty(t *testing.T) {
+	item := `{"id":"m-4","variants":[{"culture":null,"segment":null,"name":"Doc"}],"values":[` +
+		`{"alias":"umbracoFile","culture":null,"segment":null,"value":{"src":"/media/a/main.pdf"}},` +
+		`{"alias":"secondaryFile","culture":null,"segment":null,"value":{"src":"/media/a/extra.pdf"}}]}`
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/media/m-4":
+			return datatypeJSONResponse(http.StatusOK, item), nil
+		case "/umbraco/management/api/v1/media/urls":
+			return datatypeJSONResponse(http.StatusOK, `[{"id":"m-4","urlInfos":[{"culture":null,"url":"https://example.test/media/a/main.pdf"}]}]`), nil
+		default:
+			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+	output, err := execute(buildRootWithCollections(t, deps), "media", "inspect", "m-4", "--property", "secondaryFile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload map[string]any
+	_ = json.Unmarshal([]byte(output), &payload)
+	file := payload["file"].(map[string]any)
+	if file["src"] != "/media/a/extra.pdf" || file["url"] != nil {
+		t.Fatalf("expected no canonical URL on a custom property, got %#v", file)
 	}
 }

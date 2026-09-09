@@ -56,7 +56,10 @@ func mediaInspect(deps Dependencies) *cobra.Command {
 				urls = append(urls, info.URL)
 			}
 			summary["urls"] = urls
-			if file, ok := summary["file"].(map[string]any); ok {
+			// /media/urls describes the canonical umbracoFile only (it is
+			// keyed by media id, with no property discriminator), so a URL is
+			// attached to file.url solely for that property.
+			if file, ok := summary["file"].(map[string]any); ok && propertyAlias == "umbracoFile" {
 				// Pair the URL with the selected variant's culture; an
 				// invariant item has a single null-culture URL.
 				for _, info := range urlInfos {
@@ -142,16 +145,35 @@ func mediaDownload(deps Dependencies) *cobra.Command {
 					"overwrites": existsErr == nil,
 				})
 			}
-			content, contentType, err := deps.Client.GetBytes(ctx, src, api.RequestOptions{RawPath: true})
-			if err != nil {
-				return err
-			}
 			if dir := filepath.Dir(target); dir != "." {
 				if err := os.MkdirAll(dir, 0o755); err != nil {
 					return err
 				}
 			}
-			if err := os.WriteFile(target, content, 0o644); err != nil {
+			// Stream into a temp file beside the target and rename on success,
+			// so large assets never sit in memory and a failure never leaves a
+			// truncated destination.
+			tmp, err := os.CreateTemp(filepath.Dir(target), "."+filepath.Base(target)+".*.part")
+			if err != nil {
+				return err
+			}
+			tmpName := tmp.Name()
+			result, err := deps.Client.GetStream(ctx, src, tmp, api.RequestOptions{RawPath: true})
+			if err != nil {
+				_ = tmp.Close()
+				_ = os.Remove(tmpName)
+				return err
+			}
+			if err := tmp.Close(); err != nil {
+				_ = os.Remove(tmpName)
+				return err
+			}
+			if err := os.Chmod(tmpName, 0o644); err != nil {
+				_ = os.Remove(tmpName)
+				return err
+			}
+			if err := os.Rename(tmpName, target); err != nil {
+				_ = os.Remove(tmpName)
 				return fmt.Errorf("failed to write %s: %w", target, err)
 			}
 			return printResult(cmd, deps, map[string]any{
@@ -159,8 +181,8 @@ func mediaDownload(deps Dependencies) *cobra.Command {
 				"property":    propertyAlias,
 				"src":         src,
 				"path":        target,
-				"bytes":       len(content),
-				"contentType": contentType,
+				"bytes":       result.Bytes,
+				"contentType": result.ContentType,
 				"overwrote":   existsErr == nil,
 			})
 		},
@@ -178,11 +200,28 @@ func summarizeMedia(item map[string]any, propertyAlias string, selected mediaFil
 		"mediaType": item["mediaType"],
 		"isTrashed": item["isTrashed"],
 	}
+	// Metadata comes from the variant matching the selected culture/segment
+	// (falling back to the first variant for invariant items), so a da-DK
+	// file is never paired with the en-US name.
 	if variants, ok := item["variants"].([]any); ok && len(variants) > 0 {
-		if first, ok := variants[0].(map[string]any); ok {
-			summary["name"] = first["name"]
-			summary["createDate"] = first["createDate"]
-			summary["updateDate"] = first["updateDate"]
+		var chosen map[string]any
+		for _, raw := range variants {
+			variant, ok := raw.(map[string]any)
+			if !ok {
+				continue
+			}
+			if variantString(variant["culture"]) == variantString(selected.Culture) && variantString(variant["segment"]) == variantString(selected.Segment) {
+				chosen = variant
+				break
+			}
+		}
+		if chosen == nil {
+			chosen, _ = variants[0].(map[string]any)
+		}
+		if chosen != nil {
+			summary["name"] = chosen["name"]
+			summary["createDate"] = chosen["createDate"]
+			summary["updateDate"] = chosen["updateDate"]
 		}
 	}
 

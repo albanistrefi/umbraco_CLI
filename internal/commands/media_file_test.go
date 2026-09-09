@@ -247,7 +247,7 @@ func TestMediaRestoreBackupRefusesMetadataOnlyWhenFileIsGone(t *testing.T) {
 	}
 }
 
-const mediaFileTestVariantItem = `{"id":"m-3","mediaType":{"id":"mt-1"},"variants":[{"culture":"en-US","segment":null,"name":"Logo"},{"culture":"da-DK","segment":null,"name":"Logo"}],"values":[` +
+const mediaFileTestVariantItem = `{"id":"m-3","mediaType":{"id":"mt-1"},"variants":[{"culture":"en-US","segment":null,"name":"Logo"},{"culture":"da-DK","segment":null,"name":"Logo DA"}],"values":[` +
 	`{"alias":"umbracoFile","culture":"en-US","segment":null,"editorAlias":"Umbraco.UploadField","value":{"src":"/media/abc/en.svg"}},` +
 	`{"alias":"umbracoFile","culture":"da-DK","segment":null,"editorAlias":"Umbraco.UploadField","value":{"src":"/media/abc/da.svg"}}]}`
 
