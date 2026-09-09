@@ -552,3 +552,36 @@ func waitForRetry(ctx context.Context, delay time.Duration) error {
 		return nil
 	}
 }
+
+// GetBytes fetches a resource verbatim (no JSON decoding) and returns the
+// body with its Content-Type. Used for media asset downloads, which live
+// outside the Management API (pair with RequestOptions{RawPath: true}).
+func (c *Client) GetBytes(ctx context.Context, path string, opts RequestOptions) ([]byte, string, error) {
+	if c.initErr != nil {
+		return nil, "", c.initErr
+	}
+	fullURL, err := c.buildURL(path, opts)
+	if err != nil {
+		return nil, "", err
+	}
+	relativePath := c.relativeAPIPath(fullURL)
+	resp, err := c.send(ctx, http.MethodGet, fullURL, "application/json", opts.Headers, func() io.Reader { return nil })
+	if err != nil {
+		return nil, "", err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, "", err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, "", &APIError{
+			StatusCode: resp.StatusCode,
+			Method:     http.MethodGet,
+			Path:       relativePath,
+			Payload:    strings.TrimSpace(string(body)),
+			Hint:       buildAPIErrorHint(resp.StatusCode, http.MethodGet, relativePath),
+		}
+	}
+	return body, resp.Header.Get("Content-Type"), nil
+}
