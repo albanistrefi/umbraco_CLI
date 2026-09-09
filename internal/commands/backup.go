@@ -146,8 +146,26 @@ func sanitizeFileName(name string, fallback string) string {
 	if cleaned == "" || strings.Trim(cleaned, ".") == "" {
 		return fallback
 	}
+	// Windows reserves device names regardless of extension (CON, NUL,
+	// COM1, LPT1.txt ...); opening one addresses the device, not a file.
+	stem := strings.ToUpper(cleaned)
+	if dot := strings.IndexByte(stem, '.'); dot >= 0 {
+		stem = stem[:dot]
+	}
+	if windowsReservedNames[stem] {
+		return "_" + cleaned
+	}
 	return cleaned
 }
+
+var windowsReservedNames = func() map[string]bool {
+	names := map[string]bool{"CON": true, "PRN": true, "AUX": true, "NUL": true}
+	for i := 1; i <= 9; i++ {
+		names[fmt.Sprintf("COM%d", i)] = true
+		names[fmt.Sprintf("LPT%d", i)] = true
+	}
+	return names
+}()
 
 // safeChildPath joins name under dir and verifies the result is a direct
 // child of dir under the host OS's path semantics.

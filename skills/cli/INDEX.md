@@ -54,5 +54,6 @@ Multi-step task sequences with real commands.
 | [recipe-find-and-update-document](recipe-find-and-update-document/SKILL.md) | Walk the content tree to find a document, update a property, and publish. |
 | [recipe-bulk-update-from-csv](recipe-bulk-update-from-csv/SKILL.md) | Use csv-update to batch-modify a property across multiple documents. |
 | [recipe-discover-and-modify-datatype](recipe-discover-and-modify-datatype/SKILL.md) | Search for a data type, inspect it, and update its configuration. |
+| [recipe-replace-media-file-safely](recipe-replace-media-file-safely/SKILL.md) | Inspect a media item, see which content uses it, swap its file with a backup, verify, and undo if needed. |
 | [recipe-search-and-publish-documents](recipe-search-and-publish-documents/SKILL.md) | Search for documents matching a query and publish them. |
 

@@ -18,6 +18,12 @@ metadata:
 umbraco language <command> [flags]
 ```
 
+## Overview
+
+```text
+Manage the languages content can vary by. 'language cultures' lists every ISO culture the server knows, for picking valid isoCode values. Languages are addressed by isoCode (e.g. en-US), not GUID.
+```
+
 ## Read Commands
 
 | Command | Description |

@@ -67,6 +67,26 @@ var recipes = []Recipe{
 		},
 	},
 	{
+		Name:        "replace-media-file-safely",
+		Title:       "Replace the File Behind a Media Item (Reversibly)",
+		Description: "Inspect a media item, see which content uses it, swap its file with a backup, verify, and undo if needed.",
+		Services:    []string{"umbraco-media"},
+		Steps: []string{
+			`umbraco media inspect <media-id> --output json`,
+			`umbraco media references <media-id> --fields id,name --output json`,
+			`umbraco media replace-file <media-id> ./new-logo.svg --backup --dry-run --output json`,
+			`umbraco media replace-file <media-id> ./new-logo.svg --backup --output json`,
+			`umbraco media inspect <media-id> --output json   # verify; if correct, STOP here — steps 6–7 are the undo path`,
+			`umbraco media restore-backup ./media-<media-id>-<timestamp>-<suffix>.backup.json --dry-run --output json   # ONLY if step 5 shows the wrong file`,
+			`umbraco media restore-backup ./media-<media-id>-<timestamp>-<suffix>.backup.json --output json             # ONLY if step 5 shows the wrong file`,
+		},
+		Tips: []string{
+			"Never PUT /media/{id} by hand to change a file: a temporaryFileId that does not resolve is accepted with 200 and empties the item. replace-file verifies the item afterwards.",
+			"--backup also saves the current binary; Umbraco deletes the replaced file, so an entity-only backup cannot bring it back.",
+			"Use `media download <id> <path>` to pull the current file before editing it locally.",
+		},
+	},
+	{
 		Name:        "search-and-publish-documents",
 		Title:       "Search and Publish Documents",
 		Description: "Search for documents matching a query and publish them.",

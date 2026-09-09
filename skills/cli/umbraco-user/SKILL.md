@@ -18,6 +18,12 @@ metadata:
 umbraco user <command> [flags]
 ```
 
+## Overview
+
+```text
+Manages the backoffice users the CLI itself authenticates as — not front-office members (see 'member'). 'user client-credentials' manages the OAuth client IDs/secrets that API users like this CLI log in with.
+```
+
 ## Read Commands
 
 | Command | Description |

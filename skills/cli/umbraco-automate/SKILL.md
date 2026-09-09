@@ -18,6 +18,12 @@ metadata:
 umbraco automate <command> [flags]
 ```
 
+## Overview
+
+```text
+Operate Umbraco Automate: discover the step catalogue, author and trigger automations, manage runs, decide approvals, and roll back via version history. Requires Umbraco Automate on the target instance; targets its Management API mount (/umbraco/automate/management/api/v1).
+```
+
 ## Read Commands
 
 | Command | Description |

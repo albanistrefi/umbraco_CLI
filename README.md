@@ -283,6 +283,9 @@ umbraco media upload ./hero.png --name "Hero" --type Image --culture en-US --dry
 `media upload --type` accepts a media type ID or an existing media type alias/name; names and aliases are resolved from the live media type list before media creation. Use `--culture` when the media type varies by culture.
 
 ```bash
+umbraco media inspect <media-id> --output json                                    # name, type, file src/url, extension, bytes, width/height or viewBox
+umbraco media references <media-id> --output json                                 # which content uses this item (aliases: find-references, referenced-by, usage)
+umbraco media download <media-id> ./assets/ --output json                          # save the file verbatim (server file name inside a directory)
 umbraco media replace-file <media-id> ./new-logo.svg --backup --output json      # swap the file, keep every other value, verify
 umbraco media restore-backup ./media-<id>-<timestamp>.backup.json --output json   # undo: re-uploads the saved binary
 umbraco media update <media-id> --merge-json '{...}' --backup=./before.json         # any update command accepts --backup
@@ -347,7 +350,7 @@ testing) are not part of this repo — get those from
 
 - `document` (30) — incl. `urls`, `version` history/rollback, `audit-log`, `publish-descendants`, `sort`, `domains`, `public-access`, and the `bin` recycle-bin subgroup
 - `element` (21) — the Umbraco 18.1+ element library: CRUD with atomic `create --publish`/`update --save-and-publish`, publish lifecycle, `version` history/rollback, references, and the `bin` recycle-bin subgroup
-- `media` (21) — incl. `upload`, `replace-file`/`restore-backup`, `references`, `restore` and the `bin` recycle-bin subgroup
+- `media` (23) — incl. `inspect`, `download`, `upload`, `replace-file`/`restore-backup`, `references`, `restore` and the `bin` recycle-bin subgroup
 - `doctype` (14) / `mediatype` (8) / `membertype` (8) — the full schema type family, all with `--recursive --types-only` folder handling
 - `datatype` (14)
 - `dictionary` (6)

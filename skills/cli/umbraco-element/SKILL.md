@@ -18,6 +18,12 @@ metadata:
 umbraco element <command> [flags]
 ```
 
+## Overview
+
+```text
+Manages elements — reusable content items introduced in Umbraco 18.1 that live in a folder library rather than the page tree. Element types are document types with allowedInLibrary set ('doctype allowed-in-library' lists them). Requires an 18.1+ server.
+```
+
 ## Read Commands
 
 | Command | Description |

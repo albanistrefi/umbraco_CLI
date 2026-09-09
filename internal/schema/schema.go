@@ -279,6 +279,8 @@ var endpointBindings = map[string]endpointBinding{
 
 	// media
 	"media.get":                    {Method: "GET", Path: "/media/{id}", ExtraQuery: withFields},
+	"media.inspect":                {Manual: &rawSchema{Method: "GET", Path: "/media/{id}", Response: &ObjectSchema{Type: "object", Description: "CLI workflow: GET /media/{id} plus /media/urls flattened into name, mediaType, file{src,url,extension,bytes,width,height,viewBox}, otherValues"}}},
+	"media.download":               {Manual: &rawSchema{Method: "GET", Path: "/media/{id}", Response: &ObjectSchema{Type: "object", Description: "CLI workflow: resolve the file property from GET /media/{id}, fetch the asset from the host root, write it verbatim to <path>"}}},
 	"media.root":                   {Method: "GET", Path: "/tree/media/root", ExtraQuery: withFields},
 	"media.children":               {Method: "GET", Path: "/tree/media/children", ExtraQuery: withFields},
 	"media.search":                 {Method: "GET", Path: "/item/media/search"},

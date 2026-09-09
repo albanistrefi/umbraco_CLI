@@ -301,6 +301,15 @@ metadata:
 
 	fmt.Fprintf(&b, "```bash\numbraco %s <command> [flags]\n```\n\n", name)
 
+	// Group-level help (task → command maps, collection caveats) is where
+	// discoverability lives; agents reading the skill must see it too.
+	if long := strings.TrimSpace(cmd.Long); long != "" && long != strings.TrimSpace(cmd.Short) {
+		b.WriteString("## Overview\n\n")
+		b.WriteString("```text\n")
+		b.WriteString(long)
+		b.WriteString("\n```\n\n")
+	}
+
 	// Collect leaf subcommands (recursing through subgroups like
 	// 'document version'), split into reads and mutations.
 	reads := make([]skillCommand, 0)
@@ -403,6 +412,10 @@ func renderSubcommand(b *strings.Builder, collection string, sub skillCommand) {
 	fmt.Fprintf(b, "### %s\n\n", strings.Join(sub.Path, " "))
 
 	fmt.Fprintf(b, "```bash\numbraco %s %s\n```\n\n", collection, sub.FullUse)
+
+	if len(sub.Command.Aliases) > 0 {
+		fmt.Fprintf(b, "Aliases: `%s`\n\n", strings.Join(sub.Command.Aliases, "`, `"))
+	}
 
 	// Long help text (caveats, API limitations, etc.) — agents reading the
 	// generated SKILL.md should see the same warnings a human gets from
