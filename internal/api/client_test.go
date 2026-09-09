@@ -634,3 +634,10 @@ func TestNotFoundHintStripsControlCharacters(t *testing.T) {
 		t.Fatalf("expected Unicode format controls stripped and printable text kept, got %q", bidi)
 	}
 }
+
+func TestAPIErrorLeadsWithProblemTitle(t *testing.T) {
+	err := &APIError{StatusCode: 500, Method: "POST", Path: "/x", Payload: map[string]any{"detail": strings.Repeat("   at Stack.Frame()\n", 60), "title": "The INSERT statement conflicted with the FOREIGN KEY", "status": 500}}
+	if !strings.Contains(err.Error(), `"The INSERT statement conflicted with the FOREIGN KEY"`) {
+		t.Fatalf("expected the title up front, got %q", err.Error()[:200])
+	}
+}

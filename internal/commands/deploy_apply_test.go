@@ -268,3 +268,84 @@ func TestDeployApplyStopsOnFirstFailureAndExits4(t *testing.T) {
 func errorsAs(err error, target any) bool {
 	return errors.As(err, target)
 }
+
+func TestDeployApplyPlanErrorsBlockExecutionAndExit4(t *testing.T) {
+	dir := writeApplyCorpus(t, map[string]string{"folder.uda": applyFolderUda, "broken.uda": `{"Name":"x","Udi":"umb://document-type/nothex","Dependencies":[]}`})
+	rec := &applyRecorder{}
+	output, err := execute(buildDeployRoot(applyDeps(t, rec)), "deploy", "apply", "--uda-dir", dir, "--force", "--no-backup")
+	if err == nil || !strings.Contains(err.Error(), "could not be planned") {
+		t.Fatalf("expected plan-error failure, got %v", err)
+	}
+	if len(rec.writes()) != 0 {
+		t.Fatalf("plan errors must block execution, saw %v", rec.writes())
+	}
+	if !strings.Contains(output, `"result": "not-run"`) {
+		t.Fatalf("expected the valid write reported as not-run: %s", output)
+	}
+	// Dry-run reports the same problem with exit 4 as well.
+	if _, err := execute(buildDeployRoot(applyDeps(t, rec)), "deploy", "apply", "--uda-dir", dir, "--dry-run"); err == nil {
+		t.Fatalf("expected dry-run to exit non-zero on plan errors")
+	}
+	// --continue-on-error applies the valid entries anyway (still exit 4).
+	rec2 := &applyRecorder{}
+	if _, err := execute(buildDeployRoot(applyDeps(t, rec2)), "deploy", "apply", "--uda-dir", dir, "--force", "--no-backup", "--continue-on-error"); err == nil {
+		t.Fatalf("expected exit 4 with plan errors even under --continue-on-error")
+	}
+	if len(rec2.writes()) != 1 {
+		t.Fatalf("expected the folder create to run under --continue-on-error, got %v", rec2.writes())
+	}
+}
+
+func TestDeployApplyComparisonFailureIsAnErrorNotASkip(t *testing.T) {
+	dir := writeApplyCorpus(t, map[string]string{"dt.uda": statusDataTypeUda})
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		path := strings.TrimPrefix(req.URL.Path, "/umbraco/management/api/v1")
+		switch path {
+		case "/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"t","expires_in":3600}`), nil
+		case "/server/status":
+			return datatypeJSONResponse(http.StatusOK, `{}`), nil
+		case "/data-type/aaaaaaaa-1111-2222-3333-444444444444":
+			return datatypeJSONResponse(http.StatusInternalServerError, `{"title":"boom"}`), nil
+		}
+		return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+	})
+	output, err := execute(buildDeployRoot(deps), "deploy", "apply", "--uda-dir", dir, "--dry-run")
+	if err == nil || !strings.Contains(output, `"action": "error"`) || !strings.Contains(output, "comparison failed") {
+		t.Fatalf("expected comparison failure surfaced as a plan error, got err=%v output=%s", err, output)
+	}
+}
+
+func TestContentTypeComparerCoversAppliedFields(t *testing.T) {
+	artifact := map[string]any{
+		"Name": "Page", "Alias": "page", "Icon": "icon-document",
+		"AllowedTemplates": []any{"umb://template/aaaa0006bbbb4ccc8ddd000000000006"},
+		"DefaultTemplate":  "umb://template/aaaa0006bbbb4ccc8ddd000000000006",
+		"HistoryCleanup":   map[string]any{"PreventCleanup": true, "KeepAllVersionsNewerThanDays": nil, "KeepLatestVersionPerDayForDays": nil},
+		"Variations":       "Culture",
+		"PropertyGroups":   []any{map[string]any{"Key": "11111111-1111-1111-1111-111111111111", "Name": "Content", "Alias": "content", "Type": "Tab", "SortOrder": float64(0), "PropertyTypes": []any{}}},
+	}
+	remote := map[string]any{
+		"name": "Page", "alias": "page", "icon": "icon-document",
+		"allowedTemplates": []any{map[string]any{"id": "aaaa0006-bbbb-4ccc-8ddd-000000000006"}},
+		"defaultTemplate":  map[string]any{"id": "aaaa0006-bbbb-4ccc-8ddd-000000000006"},
+		"cleanup":          map[string]any{"preventCleanup": true, "keepAllVersionsNewerThanDays": nil, "keepLatestVersionPerDayForDays": nil},
+		"variesByCulture":  true, "variesBySegment": false,
+		"containers": []any{map[string]any{"id": "11111111-1111-1111-1111-111111111111", "name": "Content", "type": "Tab", "sortOrder": float64(0)}},
+		"properties": []any{},
+	}
+	if diffs := compareContentTypeArtifact(artifact, remote); len(diffs) != 0 {
+		t.Fatalf("expected in sync, got %v", diffs)
+	}
+	remote["defaultTemplate"] = nil
+	remote["cleanup"].(map[string]any)["preventCleanup"] = false
+	remote["variesByCulture"] = false
+	remote["containers"].([]any)[0].(map[string]any)["type"] = "Group"
+	diffs := compareContentTypeArtifact(artifact, remote)
+	joined := strings.Join(diffs, " ")
+	for _, want := range []string{"defaultTemplate", "cleanup.preventCleanup", "variesByCulture", "container Content.type"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("expected diff %q in %v", want, diffs)
+		}
+	}
+}

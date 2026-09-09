@@ -19,11 +19,19 @@ import (
 // (or were applied but still drift); it shares exit code 4 with API errors
 // because that is what a failed write is.
 type deployApplyFailedError struct {
-	failed  int
-	drifted int
+	failed     int
+	drifted    int
+	planErrors int
+	dryRun     bool
 }
 
 func (e deployApplyFailedError) Error() string {
+	if e.planErrors > 0 {
+		if e.dryRun {
+			return fmt.Sprintf("deploy apply: %d artifact(s) could not be planned (parse, mapping, or comparison failure); a forced run would not execute until they are fixed or --continue-on-error is passed", e.planErrors)
+		}
+		return fmt.Sprintf("deploy apply: %d artifact(s) could not be planned; %d write(s) failed, %d applied but still drifted", e.planErrors, e.failed, e.drifted)
+	}
 	return fmt.Sprintf("deploy apply: %d write(s) failed, %d applied but still drifted", e.failed, e.drifted)
 }
 func (deployApplyFailedError) ExitCode() int { return 4 }
@@ -42,6 +50,7 @@ type udaPlanEntry struct {
 	Path     string         `json:"path,omitempty"`
 	Body     map[string]any `json:"body,omitempty"`
 	Deferred []string       `json:"deferredReferences,omitempty"`
+	Warnings []string       `json:"warnings,omitempty"`
 	// Execution outcome
 	Result   string   `json:"result,omitempty"` // applied | applied-drifted | failed | not-run
 	Backup   string   `json:"backup,omitempty"`
@@ -73,7 +82,9 @@ Writes run in dependency order (Deploy's Ordering dependencies, then kind preced
 
 Supported kinds: language, data-type(+folders), document-type/media-type/member-type(+folders), template, member-group. Relation types and Automate artifacts are read-only in the Management API and are listed as unsupported. Mutating: refuses to run without --dry-run (plan only, no writes; the plan includes the exact request bodies with --bodies) or --force. Every updated entity is backed up first (see --backup-dir).
 
-Exit 0 when every planned write applied and verified; exit 4 when any write failed or still drifts; exit 7 is not used here (that is 'deploy status').`,
+Artifacts that cannot be parsed, mapped, or compared are plan errors: they exit 4 (also under --dry-run) and block a forced run entirely unless --continue-on-error is passed, so a partial apply never exits cleanly. Folder parents cannot be compared or moved through the Management API and are flagged as warnings.
+
+Exit 0 when every planned write applied and verified; exit 4 when any artifact could not be planned or any write failed or still drifts; exit 7 is not used here (that is 'deploy status').`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !dryRun && !force {
@@ -96,8 +107,23 @@ Exit 0 when every planned write applied and verified; exit 4 when any write fail
 
 			statuses := compareArtifacts(ctx, deps, artifacts, nil, concurrency)
 			plan := buildApplyPlan(artifacts, statuses)
+			planErrors := 0
+			for i := range plan {
+				if plan[i].Action == "error" {
+					planErrors++
+				}
+			}
 
-			if !dryRun {
+			// Plan errors (unparseable or unmappable artifacts, failed
+			// comparisons) block execution: a partial apply that exits
+			// cleanly would hide them. --continue-on-error applies anyway.
+			if !dryRun && planErrors > 0 && !continueOnError {
+				for i := range plan {
+					if plan[i].Action == "create" || plan[i].Action == "update" {
+						plan[i].Result = "not-run"
+					}
+				}
+			} else if !dryRun {
 				resolvedBackupDir := ""
 				if !noBackup {
 					resolvedBackupDir = backupDir
@@ -141,6 +167,9 @@ Exit 0 when every planned write applied and verified; exit 4 when any write fail
 			}
 			if err := printResult(cmd, deps, payload); err != nil {
 				return err
+			}
+			if planErrors > 0 {
+				return deployApplyFailedError{failed: summary["failed"], drifted: summary["applied-drifted"], planErrors: planErrors, dryRun: dryRun}
 			}
 			if !dryRun && (summary["failed"] > 0 || summary["applied-drifted"] > 0) {
 				return deployApplyFailedError{failed: summary["failed"], drifted: summary["applied-drifted"]}
@@ -207,7 +236,10 @@ func buildApplyPlan(artifacts []udaArtifact, statuses []udaStatusResult) []udaPl
 			if _, ok := udaWriter(artifact.Kind); !ok {
 				entry.Action, entry.Reason = "unsupported", "kind is read-only in the Management API or has no CLI writer: "+artifact.Kind
 			} else {
-				entry.Action, entry.Reason = "skip", "comparison unavailable: "+status.Reason
+				// A supported artifact whose comparison could not run is a
+				// failure, not a skip: exiting 0 here would let automation
+				// read an unperformed apply as a completed one.
+				entry.Action, entry.Reason = "error", "comparison failed: "+status.Reason
 			}
 		default:
 			spec, ok := udaWriter(artifact.Kind)
@@ -229,6 +261,9 @@ func buildApplyPlan(artifacts []udaArtifact, statuses []udaStatusResult) []udaPl
 				entry.Action = "update"
 				entry.Method, entry.Path, entry.Body = http.MethodPut, udaUpdatePath(spec, artifact), update
 				entry.Reason = "drifted: " + strings.Join(status.Diffs, ", ")
+				if strings.HasSuffix(artifact.Kind, "-container") && artifact.Body["Parent"] != nil {
+					entry.Warnings = append(entry.Warnings, "folder parent cannot be compared or changed through the Management API (folder model has no parent, no move route); verify placement in the backoffice")
+				}
 			}
 			planned[udaKey(artifact.Kind, artifact.GUID)] = len(entries)
 		}
