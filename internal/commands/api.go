@@ -278,8 +278,23 @@ func apiDownload(cmd *cobra.Command, deps Dependencies, path string, outFile str
 	if opts.DryRun {
 		return printResult(cmd, deps, map[string]any{"dryRun": true, "method": http.MethodGet, "path": path, "params": opts.Params, "out": outFile})
 	}
-	content, contentType, err := deps.Client.GetBytes(cmd.Context(), path, opts)
+	if dir := filepath.Dir(outFile); dir != "." {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return err
+		}
+	}
+	// Stream to a temp file beside the target and rename on success, so a
+	// failed or non-2xx download never leaves a truncated destination.
+	tmp, err := os.CreateTemp(filepath.Dir(outFile), "."+filepath.Base(outFile)+".*.part")
 	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	cleanup := func() { _ = tmp.Close(); _ = os.Remove(tmpName) }
+
+	result, err := deps.Client.GetStream(cmd.Context(), path, tmp, opts)
+	if err != nil {
+		cleanup()
 		var apiErr *managementapi.APIError
 		if !errors.As(err, &apiErr) {
 			return err
@@ -294,22 +309,26 @@ func apiDownload(cmd *cobra.Command, deps Dependencies, path string, outFile str
 			"error":      apiErr.Error(),
 		})
 	}
-	if dir := filepath.Dir(outFile); dir != "." {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return err
-		}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpName)
+		return err
 	}
-	if err := os.WriteFile(outFile, content, 0o644); err != nil {
+	if err := os.Chmod(tmpName, 0o644); err != nil {
+		_ = os.Remove(tmpName)
+		return err
+	}
+	if err := os.Rename(tmpName, outFile); err != nil {
+		_ = os.Remove(tmpName)
 		return fmt.Errorf("failed to write %s: %w", outFile, err)
 	}
 	return printResult(cmd, deps, map[string]any{
 		"ok":          true,
-		"statusCode":  http.StatusOK,
+		"statusCode":  result.StatusCode,
 		"method":      http.MethodGet,
 		"path":        path,
 		"params":      opts.Params,
-		"contentType": contentType,
-		"bytes":       len(content),
+		"contentType": result.ContentType,
+		"bytes":       result.Bytes,
 		"out":         outFile,
 	})
 }
