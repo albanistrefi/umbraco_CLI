@@ -3,12 +3,12 @@ package commands
 import (
 	"encoding/json"
 	"errors"
-	"sync"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
