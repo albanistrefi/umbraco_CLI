@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -20,6 +21,7 @@ func RegisterAPI(root *cobra.Command, deps Dependencies) {
 	var headerFlags []string
 	var formFlags []string
 	var rawPath bool
+	var outFile string
 
 	cmd := &cobra.Command{
 		Use:   "api <method> <path>",
@@ -29,7 +31,8 @@ func RegisterAPI(root *cobra.Command, deps Dependencies) {
 			"Full Management API paths are also accepted and normalized to the core API root.\n\n" +
 			"--raw-path sends the path relative to the host root instead (any endpoint on the same host, e.g. /umbraco/automate/management/api/v1/automations or /media/abc/logo.svg).\n" +
 			"--form field=value / field=@path sends multipart/form-data instead of JSON (e.g. POST /temporary-file with --form id=<uuid> --form file=@./logo.svg).\n" +
-			"--header 'Key: Value' adds or overrides request headers. Every request already carries User-Agent umbraco-cli/<version>.",
+			"--header 'Key: Value' adds or overrides request headers. Every request already carries User-Agent umbraco-cli/<version>.\n\n" +
+			"Response bodies are decoded as JSON (or text) for the structured output; binary responses are not preserved that way — use --out <file> to save a GET response verbatim.",
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			method, err := normalizeAPIMethod(args[0])
@@ -57,6 +60,16 @@ func RegisterAPI(root *cobra.Command, deps Dependencies) {
 				DryRun:  dryRun,
 				RawPath: rawPath,
 				Headers: headers,
+			}
+
+			if outFile != "" {
+				if method != http.MethodGet {
+					return fmt.Errorf("--out requires GET")
+				}
+				if len(formFlags) > 0 || body != nil {
+					return fmt.Errorf("--out cannot be combined with --form or --body")
+				}
+				return apiDownload(cmd, deps, path, outFile, opts)
 			}
 
 			var result managementapi.ResponseResult
@@ -102,6 +115,7 @@ func RegisterAPI(root *cobra.Command, deps Dependencies) {
 	cmd.Flags().StringArrayVar(&headerFlags, "header", nil, "Extra request header as 'Key: Value' (repeatable)")
 	cmd.Flags().StringArrayVar(&formFlags, "form", nil, "Multipart form field as field=value or field=@path for a file (repeatable; replaces the JSON body)")
 	cmd.Flags().BoolVar(&rawPath, "raw-path", false, "Send the path relative to the host root instead of /umbraco/management/api/v1")
+	cmd.Flags().StringVar(&outFile, "out", "", "GET only: write the response body verbatim to this file (binary-safe; use for /media/... assets with --raw-path) and print a summary instead of the body")
 	addDryRunFlag(cmd, &dryRun)
 	root.AddCommand(cmd)
 }
@@ -128,7 +142,9 @@ func parseAPIHeaders(raw []string) (map[string]string, error) {
 		if !ok || key == "" {
 			return nil, fmt.Errorf("invalid --header %q; expected 'Key: Value'", entry)
 		}
-		headers[key] = strings.TrimSpace(value)
+		// Header names are case-insensitive; canonicalize so a later flag
+		// deterministically overrides an earlier spelling of the same name.
+		headers[http.CanonicalHeaderKey(key)] = strings.TrimSpace(value)
 	}
 	return headers, nil
 }
@@ -253,4 +269,47 @@ func parseAPIBody(raw string) (any, error) {
 		return nil, fmt.Errorf("invalid --body JSON: %w", err)
 	}
 	return body, nil
+}
+
+// apiDownload writes a GET response body to disk without decoding it, so
+// binary assets survive (the structured output path re-encodes bodies as
+// JSON strings, which mangles non-UTF-8 bytes).
+func apiDownload(cmd *cobra.Command, deps Dependencies, path string, outFile string, opts managementapi.RequestOptions) error {
+	if opts.DryRun {
+		return printResult(cmd, deps, map[string]any{"dryRun": true, "method": http.MethodGet, "path": path, "params": opts.Params, "out": outFile})
+	}
+	content, contentType, err := deps.Client.GetBytes(cmd.Context(), path, opts)
+	if err != nil {
+		var apiErr *managementapi.APIError
+		if !errors.As(err, &apiErr) {
+			return err
+		}
+		return printResult(cmd, deps, map[string]any{
+			"ok":         false,
+			"statusCode": apiErr.StatusCode,
+			"method":     http.MethodGet,
+			"path":       path,
+			"params":     opts.Params,
+			"body":       apiErr.Payload,
+			"error":      apiErr.Error(),
+		})
+	}
+	if dir := filepath.Dir(outFile); dir != "." {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return err
+		}
+	}
+	if err := os.WriteFile(outFile, content, 0o644); err != nil {
+		return fmt.Errorf("failed to write %s: %w", outFile, err)
+	}
+	return printResult(cmd, deps, map[string]any{
+		"ok":          true,
+		"statusCode":  http.StatusOK,
+		"method":      http.MethodGet,
+		"path":        path,
+		"params":      opts.Params,
+		"contentType": contentType,
+		"bytes":       len(content),
+		"out":         outFile,
+	})
 }

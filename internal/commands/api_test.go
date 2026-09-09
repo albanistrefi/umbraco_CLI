@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -176,5 +177,48 @@ func TestAPIPassthroughRejectsFormWithBodyAndBadHeader(t *testing.T) {
 	}
 	if _, err := execute(buildRootWithCollections(t, deps), "api", "GET", "/server/status", "--header", "novalue"); err == nil {
 		t.Fatalf("expected malformed --header to be rejected")
+	}
+}
+
+func TestAPIPassthroughCanonicalizesHeadersLastWins(t *testing.T) {
+	headers, err := parseAPIHeaders([]string{"X-Trace: default", "x-trace: override"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(headers) != 1 || headers["X-Trace"] != "override" {
+		t.Fatalf("expected canonicalized last-wins header, got %#v", headers)
+	}
+}
+
+func TestAPIPassthroughOutWritesBinaryBodyVerbatim(t *testing.T) {
+	outPath := filepath.Join(t.TempDir(), "asset", "logo.png")
+	binary := []byte{0x89, 'P', 'N', 'G', 0xff, 0xfe, 0x00, 0x01}
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/media/abc/logo.png":
+			return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"image/png"}}, Body: io.NopCloser(bytes.NewReader(binary))}, nil
+		default:
+			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+	output, err := execute(buildRootWithCollections(t, deps), "api", "GET", "/media/abc/logo.png", "--raw-path", "--out", outPath)
+	if err != nil {
+		t.Fatalf("api --out failed: %v", err)
+	}
+	saved, err := os.ReadFile(outPath)
+	if err != nil || !bytes.Equal(saved, binary) {
+		t.Fatalf("expected verbatim bytes on disk, got %v (%v)", saved, err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload["bytes"] != float64(len(binary)) || payload["contentType"] != "image/png" || payload["ok"] != true {
+		t.Fatalf("unexpected summary: %s", output)
+	}
+	if _, err := execute(buildRootWithCollections(t, deps), "api", "POST", "/x", "--out", outPath); err == nil {
+		t.Fatalf("expected --out with POST to be rejected")
 	}
 }
