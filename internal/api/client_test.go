@@ -620,3 +620,10 @@ func TestNotFoundHintTruncatesLongServerDetail(t *testing.T) {
 		t.Fatalf("expected hint to be capped, got %d bytes", len(hint))
 	}
 }
+
+func TestNotFoundHintStripsControlCharacters(t *testing.T) {
+	hint := buildAPIErrorHint(http.StatusNotFound, http.MethodGet, "/umbraco/management/api/v1/document-type/x", map[string]any{"operationStatus": "NotFound", "detail": "gone\x1b[2J\x1b]52;c;evil\x07 really"})
+	if strings.ContainsAny(hint, "\x1b\x07\r\n") || !strings.Contains(hint, "gone") {
+		t.Fatalf("expected control characters stripped, got %q", hint)
+	}
+}

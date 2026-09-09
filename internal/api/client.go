@@ -362,6 +362,21 @@ func (c *Client) relativeAPIPath(fullURL string) string {
 // maxHintDetailBytes caps server-provided detail text quoted into hints.
 const maxHintDetailBytes = 200
 
+// sanitizeTerminalText strips control characters (ANSI/OSC sequences, CR/LF,
+// tabs) from untrusted server text before it is printed unescaped, so a
+// hostile ProblemDetails cannot manipulate the terminal.
+func sanitizeTerminalText(text string) string {
+	var b strings.Builder
+	for _, r := range text {
+		if r < 0x20 || r == 0x7f || (r >= 0x80 && r < 0xa0) {
+			b.WriteRune(' ')
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return strings.Join(strings.Fields(b.String()), " ")
+}
+
 func buildAPIErrorHint(statusCode int, method string, path string, payload any) string {
 	if statusCode != http.StatusNotFound {
 		return ""
@@ -382,7 +397,7 @@ func buildAPIErrorHint(statusCode int, method string, path string, payload any) 
 			}
 			// Server-controlled text: keep it inside the same budget the
 			// payload gets so a pathological detail cannot flood the terminal.
-			detail = string(truncatePayload([]byte(detail), maxHintDetailBytes))
+			detail = string(truncatePayload([]byte(sanitizeTerminalText(detail)), maxHintDetailBytes))
 			return fmt.Sprintf("%s — the id does not exist in this environment; check the id and the active profile (umbraco auth list)", detail)
 		}
 	}
