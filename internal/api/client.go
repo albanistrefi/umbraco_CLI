@@ -556,26 +556,43 @@ func waitForRetry(ctx context.Context, delay time.Duration) error {
 // GetBytes fetches a resource verbatim (no JSON decoding) and returns the
 // body with its Content-Type. Used for media asset downloads, which live
 // outside the Management API (pair with RequestOptions{RawPath: true}).
+// For large assets prefer GetStream, which does not buffer the body.
 func (c *Client) GetBytes(ctx context.Context, path string, opts RequestOptions) ([]byte, string, error) {
+	var buffered bytes.Buffer
+	result, err := c.GetStream(ctx, path, &buffered, opts)
+	if err != nil {
+		return nil, "", err
+	}
+	return buffered.Bytes(), result.ContentType, nil
+}
+
+// StreamResult describes a completed GetStream.
+type StreamResult struct {
+	StatusCode  int
+	ContentType string
+	Bytes       int64
+}
+
+// GetStream fetches a resource verbatim and copies the body straight into w,
+// so a large binary never has to fit in memory. Non-2xx responses are read
+// (bounded) into an APIError instead of being written to w.
+func (c *Client) GetStream(ctx context.Context, path string, w io.Writer, opts RequestOptions) (StreamResult, error) {
 	if c.initErr != nil {
-		return nil, "", c.initErr
+		return StreamResult{}, c.initErr
 	}
 	fullURL, err := c.buildURL(path, opts)
 	if err != nil {
-		return nil, "", err
+		return StreamResult{}, err
 	}
 	relativePath := c.relativeAPIPath(fullURL)
 	resp, err := c.send(ctx, http.MethodGet, fullURL, "application/json", opts.Headers, func() io.Reader { return nil })
 	if err != nil {
-		return nil, "", err
+		return StreamResult{}, err
 	}
 	defer func() { _ = resp.Body.Close() }()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, "", err
-	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, "", &APIError{
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
+		return StreamResult{StatusCode: resp.StatusCode}, &APIError{
 			StatusCode: resp.StatusCode,
 			Method:     http.MethodGet,
 			Path:       relativePath,
@@ -583,5 +600,9 @@ func (c *Client) GetBytes(ctx context.Context, path string, opts RequestOptions)
 			Hint:       buildAPIErrorHint(resp.StatusCode, http.MethodGet, relativePath),
 		}
 	}
-	return body, resp.Header.Get("Content-Type"), nil
+	n, err := io.Copy(w, resp.Body)
+	if err != nil {
+		return StreamResult{}, err
+	}
+	return StreamResult{StatusCode: resp.StatusCode, ContentType: resp.Header.Get("Content-Type"), Bytes: n}, nil
 }

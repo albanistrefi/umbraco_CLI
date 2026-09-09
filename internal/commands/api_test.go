@@ -198,7 +198,7 @@ func TestAPIPassthroughOutWritesBinaryBodyVerbatim(t *testing.T) {
 		case "/umbraco/management/api/v1/security/back-office/token":
 			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/media/abc/logo.png":
-			return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"image/png"}}, Body: io.NopCloser(bytes.NewReader(binary))}, nil
+			return &http.Response{StatusCode: http.StatusPartialContent, Header: http.Header{"Content-Type": []string{"image/png"}}, Body: io.NopCloser(bytes.NewReader(binary))}, nil
 		default:
 			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
 		}
@@ -215,8 +215,11 @@ func TestAPIPassthroughOutWritesBinaryBodyVerbatim(t *testing.T) {
 	if err := json.Unmarshal([]byte(output), &payload); err != nil {
 		t.Fatal(err)
 	}
-	if payload["bytes"] != float64(len(binary)) || payload["contentType"] != "image/png" || payload["ok"] != true {
-		t.Fatalf("unexpected summary: %s", output)
+	if payload["bytes"] != float64(len(binary)) || payload["contentType"] != "image/png" || payload["ok"] != true || payload["statusCode"] != float64(http.StatusPartialContent) {
+		t.Fatalf("unexpected summary (status must be the server's, not a constant 200): %s", output)
+	}
+	if entries, _ := os.ReadDir(filepath.Dir(outPath)); len(entries) != 1 {
+		t.Fatalf("expected no leftover .part file, got %v", entries)
 	}
 	if _, err := execute(buildRootWithCollections(t, deps), "api", "POST", "/x", "--out", outPath); err == nil {
 		t.Fatalf("expected --out with POST to be rejected")
