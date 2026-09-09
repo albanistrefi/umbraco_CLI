@@ -236,7 +236,7 @@ umbraco datatype block remove <datatypeId> [flags]
 umbraco datatype block reorder <datatypeId>
 ```
 
-Rewrites the datatype's blocks array so the --keys content element types come first in the given order; blocks not listed keep their relative order after them. Idempotent: no PUT when the order is already the requested one. Re-reads the datatype afterwards and fails if the server did not persist the order.
+Rewrites the datatype's blocks array so the --keys content element types come first in the given order; blocks not listed keep their relative order after them. Works on both Umbraco.BlockList and Umbraco.BlockGrid (array order is the picker order in both editors). Idempotent: no PUT when the order is already the requested one. Re-reads the datatype afterwards and fails if the server did not persist the order.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|

@@ -1107,3 +1107,62 @@ func TestDatatypeBlockGroupRejectedOnBlockList(t *testing.T) {
 		t.Fatalf("expected groups to reject BlockList")
 	}
 }
+
+func TestDatatypeBlockGroupValidatedBeforeIdempotentReturnAndWhitespaceRejected(t *testing.T) {
+	var puts int32
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case blPath:
+			if req.Method == http.MethodPut {
+				atomic.AddInt32(&puts, 1)
+			}
+			return datatypeJSONResponse(http.StatusOK, blockListPayload(t)), nil
+		default:
+			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+	// Existing block on a Block List: --group must still be rejected, not swallowed by changed:false.
+	if _, err := execute(buildRootWithCollections(t, deps), "datatype", "block", "add", blListID, "--content-element-type", "11111111-1111-1111-1111-111111111111", "--group", "x"); err == nil || !strings.Contains(err.Error(), "BlockGrid only") {
+		t.Fatalf("expected rejection before the idempotent return, got %v", err)
+	}
+	var putBody map[string]any
+	grid := blockGridDeps(t, &putBody, nil)
+	if _, err := execute(buildRootWithCollections(t, grid), "datatype", "block", "add", bgGridID, "--content-element-type", "44444444-4444-4444-4444-444444444444", "--group", "   "); err == nil || !strings.Contains(err.Error(), "whitespace") {
+		t.Fatalf("expected whitespace group rejected on add, got %v", err)
+	}
+	if _, err := execute(buildRootWithCollections(t, grid), "datatype", "block", "update", bgGridID, "--content-element-type", "11111111-1111-1111-1111-111111111111", "--group", "  "); err == nil || !strings.Contains(err.Error(), "whitespace") {
+		t.Fatalf("expected whitespace group rejected on update, got %v", err)
+	}
+	if putBody != nil || atomic.LoadInt32(&puts) != 0 {
+		t.Fatalf("rejections must not write")
+	}
+}
+
+func TestDatatypeBlockReorderWorksOnBlockList(t *testing.T) {
+	var putBody map[string]any
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch {
+		case req.URL.Path == "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case req.URL.Path == blPath && req.Method == http.MethodPut:
+			_ = json.NewDecoder(req.Body).Decode(&putBody)
+			return datatypeJSONResponse(http.StatusOK, ``), nil
+		case req.URL.Path == blPath:
+			if putBody != nil {
+				encoded, _ := json.Marshal(putBody)
+				return datatypeJSONResponse(http.StatusOK, string(encoded)), nil
+			}
+			return datatypeJSONResponse(http.StatusOK, blockListPayload(t)), nil
+		default:
+			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+	if _, err := execute(buildRootWithCollections(t, deps), "datatype", "block", "reorder", blListID, "--keys", "22222222-2222-2222-2222-222222222222"); err != nil {
+		t.Fatalf("reorder on Block List should work (picker order applies there too): %v", err)
+	}
+	if got := gridBlocksFromBody(putBody); got[0] != "22222222-2222-2222-2222-222222222222" {
+		t.Fatalf("unexpected order %v", got)
+	}
+}

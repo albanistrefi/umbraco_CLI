@@ -127,6 +127,9 @@ func datatypeBlockAdd(deps Dependencies) *cobra.Command {
 			if editorSize != "" && !datatypeBlockValidEditorSizes[strings.ToLower(editorSize)] {
 				return fmt.Errorf("--editor-size must be one of small, medium, large (got %q)", editorSize)
 			}
+			if cmd.Flags().Changed("group") && strings.TrimSpace(group) == "" {
+				return fmt.Errorf("--group must not be empty or whitespace")
+			}
 
 			ctx := cmd.Context()
 			payload, err := fetchDatatypeObject(ctx, deps.Client, args[0])
@@ -136,6 +139,12 @@ func datatypeBlockAdd(deps Dependencies) *cobra.Command {
 			editor, err := requireDatatypeBlockEditor(payload, args[0])
 			if err != nil {
 				return err
+			}
+			// Validate --group against the editor before the idempotent
+			// early return, so a no-op on Block List cannot look like the
+			// group was applied.
+			if group != "" && editor != "Umbraco.BlockGrid" {
+				return fmt.Errorf("--group applies to Umbraco.BlockGrid only; %s is %s", args[0], editor)
 			}
 
 			blocks := loadDatatypeBlocks(payload)
@@ -176,9 +185,6 @@ func datatypeBlockAdd(deps Dependencies) *cobra.Command {
 				block["allowInAreas"] = allowInAreas
 			}
 			if group != "" {
-				if editor != "Umbraco.BlockGrid" {
-					return fmt.Errorf("--group applies to Umbraco.BlockGrid only; %s is %s", args[0], editor)
-				}
 				groupKey, withGroup := ensureBlockGroup(payload, group)
 				payload = withGroup
 				block["groupKey"] = groupKey
@@ -332,8 +338,10 @@ BlockGrid: --allow-at-root and --allow-in-areas are honored when explicitly pass
 				if editor != "Umbraco.BlockGrid" {
 					return fmt.Errorf("--group applies to Umbraco.BlockGrid only; %s is %s", args[0], editor)
 				}
-				if strings.TrimSpace(group) == "" {
+				if group == "" {
 					delete(updated, "groupKey")
+				} else if strings.TrimSpace(group) == "" {
+					return fmt.Errorf("--group must not be whitespace; pass an empty string to remove the block from its group")
 				} else {
 					groupKey, withGroup := ensureBlockGroup(payload, group)
 					payload = withGroup
@@ -441,7 +449,7 @@ func datatypeBlockReorder(deps Dependencies) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "reorder <datatypeId>",
 		Short: "Reorder the allowed blocks (array order is the picker order)",
-		Long:  "Rewrites the datatype's blocks array so the --keys content element types come first in the given order; blocks not listed keep their relative order after them. Idempotent: no PUT when the order is already the requested one. Re-reads the datatype afterwards and fails if the server did not persist the order.",
+		Long:  "Rewrites the datatype's blocks array so the --keys content element types come first in the given order; blocks not listed keep their relative order after them. Works on both Umbraco.BlockList and Umbraco.BlockGrid (array order is the picker order in both editors). Idempotent: no PUT when the order is already the requested one. Re-reads the datatype afterwards and fails if the server did not persist the order.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(keys) == 0 {
