@@ -1,7 +1,9 @@
 package commands
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -112,5 +114,111 @@ func TestAPIPassthroughPrintsErrorStatusAndBody(t *testing.T) {
 	body := payload["body"].(map[string]any)
 	if body["title"] != "missing" {
 		t.Fatalf("expected error response body to be preserved, got %+v", payload)
+	}
+}
+
+func TestAPIPassthroughFormSendsMultipartAndRawPathSkipsPrefix(t *testing.T) {
+	filePath := filepath.Join(t.TempDir(), "logo.svg")
+	if err := os.WriteFile(filePath, []byte("<svg/>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var observedPath, observedID, observedFile, observedHeader string
+
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/custom/upload":
+			observedPath = req.URL.Path
+			observedHeader = req.Header.Get("X-Custom")
+			if err := req.ParseMultipartForm(1 << 20); err != nil {
+				t.Fatalf("multipart parse failed: %v", err)
+			}
+			observedID = req.FormValue("id")
+			file, _, err := req.FormFile("file")
+			if err != nil {
+				t.Fatalf("missing file part: %v", err)
+			}
+			defer func() { _ = file.Close() }()
+			content, _ := io.ReadAll(file)
+			observedFile = string(content)
+			return datatypeJSONResponse(http.StatusCreated, `{"id":"tmp-1"}`), nil
+		default:
+			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	output, err := execute(buildRootWithCollections(t, deps), "api", "POST", "/umbraco/custom/upload", "--raw-path",
+		"--form", "id=tmp-1", "--form", "file=@"+filePath, "--header", "X-Custom: yes")
+	if err != nil {
+		t.Fatalf("api POST --form failed: %v", err)
+	}
+	if observedPath != "/umbraco/custom/upload" || observedID != "tmp-1" || observedFile != "<svg/>" || observedHeader != "yes" {
+		t.Fatalf("unexpected request: path=%q id=%q file=%q header=%q", observedPath, observedID, observedFile, observedHeader)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("failed to decode api output: %v", err)
+	}
+	if payload["statusCode"] != float64(http.StatusCreated) || payload["ok"] != true {
+		t.Fatalf("unexpected api output: %+v", payload)
+	}
+}
+
+func TestAPIPassthroughRejectsFormWithBodyAndBadHeader(t *testing.T) {
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+	})
+	if _, err := execute(buildRootWithCollections(t, deps), "api", "POST", "/temporary-file", "--form", "id=1", "--body", `{}`); err == nil {
+		t.Fatalf("expected --form with --body to be rejected")
+	}
+	if _, err := execute(buildRootWithCollections(t, deps), "api", "GET", "/temporary-file", "--form", "id=1"); err == nil {
+		t.Fatalf("expected --form with GET to be rejected")
+	}
+	if _, err := execute(buildRootWithCollections(t, deps), "api", "GET", "/server/status", "--header", "novalue"); err == nil {
+		t.Fatalf("expected malformed --header to be rejected")
+	}
+}
+
+func TestAPIPassthroughCanonicalizesHeadersLastWins(t *testing.T) {
+	headers, err := parseAPIHeaders([]string{"X-Trace: default", "x-trace: override"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(headers) != 1 || headers["X-Trace"] != "override" {
+		t.Fatalf("expected canonicalized last-wins header, got %#v", headers)
+	}
+}
+
+func TestAPIPassthroughOutWritesBinaryBodyVerbatim(t *testing.T) {
+	outPath := filepath.Join(t.TempDir(), "asset", "logo.png")
+	binary := []byte{0x89, 'P', 'N', 'G', 0xff, 0xfe, 0x00, 0x01}
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/media/abc/logo.png":
+			return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"image/png"}}, Body: io.NopCloser(bytes.NewReader(binary))}, nil
+		default:
+			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+	output, err := execute(buildRootWithCollections(t, deps), "api", "GET", "/media/abc/logo.png", "--raw-path", "--out", outPath)
+	if err != nil {
+		t.Fatalf("api --out failed: %v", err)
+	}
+	saved, err := os.ReadFile(outPath)
+	if err != nil || !bytes.Equal(saved, binary) {
+		t.Fatalf("expected verbatim bytes on disk, got %v (%v)", saved, err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload["bytes"] != float64(len(binary)) || payload["contentType"] != "image/png" || payload["ok"] != true {
+		t.Fatalf("unexpected summary: %s", output)
+	}
+	if _, err := execute(buildRootWithCollections(t, deps), "api", "POST", "/x", "--out", outPath); err == nil {
+		t.Fatalf("expected --out with POST to be rejected")
 	}
 }

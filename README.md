@@ -252,6 +252,10 @@ Raw Management API passthrough for endpoints that do not have curated commands y
 ```bash
 umbraco api GET "/item/document/ancestors?id=<guid>&id=<guid>" --output json
 umbraco api POST /some/endpoint --body @payload.json --dry-run --output json
+umbraco api POST /temporary-file --form id=<uuid> --form file=@./logo.svg --output json          # multipart instead of JSON
+umbraco api GET /umbraco/automate/management/api/v1/automations --raw-path --output json         # any path on the host
+umbraco api GET /server/status --header "X-Trace: abc" --output json                            # extra/override headers
+umbraco api GET /media/abc123/logo.png --raw-path --out ./logo.png --output json                 # save a binary response verbatim
 ```
 
 Safe write pattern (always dry-run first):
