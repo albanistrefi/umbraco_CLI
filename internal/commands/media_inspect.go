@@ -47,13 +47,27 @@ func mediaInspect(deps Dependencies) *cobra.Command {
 
 			// The URL read is part of the promised result; a failure there is
 			// an API error (exit 4), not a silently shorter answer.
-			urls, err := mediaPublicURLs(ctx, deps.Client, args[0])
+			urlInfos, err := mediaPublicURLs(ctx, deps.Client, args[0])
 			if err != nil {
 				return err
 			}
+			urls := make([]string, 0, len(urlInfos))
+			for _, info := range urlInfos {
+				urls = append(urls, info.URL)
+			}
 			summary["urls"] = urls
-			if file, ok := summary["file"].(map[string]any); ok && len(urls) > 0 {
-				file["url"] = urls[0]
+			if file, ok := summary["file"].(map[string]any); ok {
+				// Pair the URL with the selected variant's culture; an
+				// invariant item has a single null-culture URL.
+				for _, info := range urlInfos {
+					if strings.EqualFold(info.Culture, variantString(selected.Culture)) {
+						file["url"] = info.URL
+						break
+					}
+				}
+				if file["url"] == nil && len(urlInfos) == 1 && variantString(selected.Culture) == "" {
+					file["url"] = urlInfos[0].URL
+				}
 			}
 
 			if file, ok := summary["file"].(map[string]any); ok && !noFetch && strings.EqualFold(fmt.Sprint(file["extension"]), "svg") {
@@ -109,7 +123,13 @@ func mediaDownload(deps Dependencies) *cobra.Command {
 			}
 			target := args[1]
 			if info, statErr := os.Stat(target); strings.HasSuffix(target, "/") || (statErr == nil && info.IsDir()) {
-				target = filepath.Join(target, path.Base(src))
+				// Server-controlled name: sanitize for the host OS and verify
+				// it stays a direct child of the requested directory.
+				child, err := safeChildPath(target, sanitizeFileName(path.Base(src), "download"))
+				if err != nil {
+					return err
+				}
+				target = child
 			}
 			_, existsErr := os.Stat(target)
 			if dryRun {
@@ -256,8 +276,14 @@ func numericValue(value any) any {
 	}
 }
 
-// mediaPublicURLs returns the public URLs reported by /media/urls.
-func mediaPublicURLs(ctx context.Context, client *api.Client, id string) ([]string, error) {
+type mediaURLInfo struct {
+	Culture string
+	URL     string
+}
+
+// mediaPublicURLs returns the public URLs reported by /media/urls with the
+// culture each belongs to ("" for invariant).
+func mediaPublicURLs(ctx context.Context, client *api.Client, id string) ([]mediaURLInfo, error) {
 	result, err := getWithFallback(ctx, client,
 		getRequestCandidate{path: "/media/urls", opts: api.RequestOptions{Params: map[string]any{"id": id}}},
 		getRequestCandidate{path: api.JoinPath("/media/%s/urls", id), opts: api.RequestOptions{}},
@@ -265,7 +291,7 @@ func mediaPublicURLs(ctx context.Context, client *api.Client, id string) ([]stri
 	if err != nil {
 		return nil, err
 	}
-	urls := []string{}
+	urls := []mediaURLInfo{}
 	items, _ := result.([]any)
 	for _, raw := range items {
 		entry, ok := raw.(map[string]any)
@@ -276,7 +302,7 @@ func mediaPublicURLs(ctx context.Context, client *api.Client, id string) ([]stri
 		for _, rawInfo := range infos {
 			if info, ok := rawInfo.(map[string]any); ok {
 				if url := strings.TrimSpace(fmt.Sprint(info["url"])); url != "" && url != "<nil>" {
-					urls = append(urls, url)
+					urls = append(urls, mediaURLInfo{Culture: variantString(info["culture"]), URL: url})
 				}
 			}
 		}

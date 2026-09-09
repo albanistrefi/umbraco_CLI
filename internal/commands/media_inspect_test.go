@@ -136,7 +136,7 @@ func TestMediaInspectRequiresCultureForVariants(t *testing.T) {
 		case "/umbraco/management/api/v1/media/m-3":
 			return datatypeJSONResponse(http.StatusOK, mediaFileTestVariantItem), nil
 		case "/umbraco/management/api/v1/media/urls":
-			return datatypeJSONResponse(http.StatusOK, `[]`), nil
+			return datatypeJSONResponse(http.StatusOK, `[{"id":"m-3","urlInfos":[{"culture":"en-US","url":"https://example.test/en.svg"},{"culture":"da-DK","url":"https://example.test/da.svg"}]}]`), nil
 		default:
 			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
 		}
@@ -153,10 +153,37 @@ func TestMediaInspectRequiresCultureForVariants(t *testing.T) {
 		t.Fatal(err)
 	}
 	file := payload["file"].(map[string]any)
-	if file["src"] != "/media/abc/da.svg" || file["culture"] != "da-DK" {
-		t.Fatalf("expected da-DK variant flattened, got %#v", file)
+	if file["src"] != "/media/abc/da.svg" || file["culture"] != "da-DK" || file["url"] != "https://example.test/da.svg" {
+		t.Fatalf("expected da-DK variant flattened with its own URL, got %#v", file)
 	}
 	if others, _ := payload["otherVariants"].([]any); len(others) != 1 {
 		t.Fatalf("expected the en-US variant listed under otherVariants, got %s", output)
+	}
+}
+
+func TestMediaDownloadSanitizesServerFileName(t *testing.T) {
+	dir := t.TempDir()
+	item := strings.Replace(mediaFileTestItem, "/media/abc/old.svg", `/media/abc/..\\evil.svg`, 1)
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch {
+		case req.URL.Path == "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case req.URL.Path == "/umbraco/management/api/v1/media/m-1":
+			return datatypeJSONResponse(http.StatusOK, item), nil
+		case strings.HasPrefix(req.URL.Path, "/media/abc/"):
+			return &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader("<svg/>"))}, nil
+		default:
+			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+	if _, err := execute(buildRootWithCollections(t, deps), "media", "download", "m-1", dir); err != nil {
+		t.Fatal(err)
+	}
+	entries, _ := os.ReadDir(dir)
+	if len(entries) != 1 || strings.ContainsAny(entries[0].Name(), `\/`) || strings.Contains(entries[0].Name(), "..") {
+		t.Fatalf("expected one sanitized file, got %v", entries)
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(dir), "evil.svg")); err == nil {
+		t.Fatalf("download escaped the target directory")
 	}
 }

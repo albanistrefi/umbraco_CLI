@@ -22,9 +22,9 @@ Inspect a media item, see which content uses it, swap its file with a backup, ve
 2. `umbraco media references <media-id> --fields id,name --output json`
 3. `umbraco media replace-file <media-id> ./new-logo.svg --backup --dry-run --output json`
 4. `umbraco media replace-file <media-id> ./new-logo.svg --backup --output json`
-5. `umbraco media inspect <media-id> --output json`
-6. `umbraco media restore-backup ./media-<media-id>-<timestamp>-<suffix>.backup.json --dry-run --output json   # only if the result is wrong`
-7. `umbraco media restore-backup ./media-<media-id>-<timestamp>-<suffix>.backup.json --output json`
+5. `umbraco media inspect <media-id> --output json   # verify; if correct, STOP here — steps 6–7 are the undo path`
+6. `umbraco media restore-backup ./media-<media-id>-<timestamp>-<suffix>.backup.json --dry-run --output json   # ONLY if step 5 shows the wrong file`
+7. `umbraco media restore-backup ./media-<media-id>-<timestamp>-<suffix>.backup.json --output json             # ONLY if step 5 shows the wrong file`
 
 ## Tips
 
