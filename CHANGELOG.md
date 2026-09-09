@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- fixed `doctype get` / `mediatype get` / `membertype get` reporting any unknown id as "is a folder, not a document type" (agent-reported): the folder probe asked the tree for children of the id, and the tree answers 200 with an empty page for *any* GUID. The probe now hits the folder endpoint itself, so a typo, a deleted type, or the wrong environment surfaces as the real 404 (exit 4) and only actual folders get the folder hint
+
 ## v0.4.13 - 2026-09-01
 
 - fixed the `doctype add-container` → `add-property` workflow, which could never work (agent-reported, reproduced live on 18.1): the server prunes containers saved with no properties while still answering success, so `add-container` reported `updated: true` for a container that silently vanished, and `add-property` then refused to target it. `add-container` now verifies the container survived the save and errors honestly when it was pruned (with the working alternative in the message), and `add-property` gains `--create-container` (+ `--container-type Group|Tab`) to create the container together with its first property in one request — the only shape the server persists
