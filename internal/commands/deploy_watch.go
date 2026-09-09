@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/version"
 )
 
 // deployWatchFailedError maps the watch's failed terminal phase to exit
@@ -472,6 +473,7 @@ func (p *watchProbes) probeManagement(ctx context.Context) (bool, int) {
 		return false, 0
 	}
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("User-Agent", version.UserAgent())
 	response, err := p.httpClient.Do(request)
 	if err != nil {
 		return false, 0
@@ -494,6 +496,7 @@ func (p *watchProbes) probeHealth(ctx context.Context) map[string]bool {
 			health[path] = false
 			continue
 		}
+		request.Header.Set("User-Agent", version.UserAgent())
 		response, err := p.httpClient.Do(request)
 		if err != nil {
 			cancel()
