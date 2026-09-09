@@ -1,6 +1,6 @@
 ---
 name: umbraco-deploy
-description: "Effect-based deployment observation (watch an environment, not a pipeline)"
+description: "Deployment observation and schema application (watch, status, apply)"
 metadata:
   version: 0.4.13
   requires:
@@ -68,6 +68,50 @@ Phases: baseline → restarting → app-alive → serving → landed → settlin
 | `--settle` | duration | 1m30s | How long the environment must stay healthy after everything first looks good before verified is emitted; 0 disables (single-sample verification) |
 | `--skip-index-verify` | bool | false | Do not require Examine indexes to be healthy for the verified phase |
 | `--timeout` | duration | 30m0s | Give up after this long without verification (exit 6, status unknown) |
+
+## Mutation Commands
+
+> **Safety:** Always use `--dry-run` first. Remove the flag only after verifying the dry-run output.
+
+| Command | Description |
+|---------|-------------|
+| `deploy apply` | Apply local .uda deploy artifacts to the environment (Deploy's "Update schema" from the CLI) |
+
+### apply
+
+```bash
+umbraco deploy apply
+```
+
+Makes the target environment's schema match the Umbraco Deploy artifacts in --uda-dir: the write side of 'deploy status'. Every artifact is first compared exactly as 'deploy status' does; in-sync artifacts are skipped, missing ones are created (with the artifact's GUID, so references keep resolving), drifted ones are updated with a full replacement built from the artifact — the same semantics as Deploy's schema pass.
+
+Writes run in dependency order (Deploy's Ordering dependencies, then kind precedence: languages → folders → data types → templates → member/media/document types → member groups). Content-type references to items that come later in the same plan (allowed children, compositions) are deferred and re-applied in a fix-up pass once the referenced types exist. After every write the entity is re-read and compared again; a write the server accepted but that still drifts is reported as such, never as success.
+
+Supported kinds: language, data-type(+folders), document-type/media-type/member-type(+folders), template, member-group. Relation types and Automate artifacts are read-only in the Management API and are listed as unsupported. Mutating: refuses to run without --dry-run (plan only, no writes; the plan includes the exact request bodies with --bodies) or --force. Every updated entity is backed up first (see --backup-dir).
+
+Exit 0 when every planned write applied and verified; exit 4 when any write failed or still drifts; exit 7 is not used here (that is 'deploy status').
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--backup-dir` | string | — | Directory for pre-change backups of every updated entity (default ./.umbraco-deploy-backup/<timestamp>) |
+| `--bodies` | bool | false | Include the exact request bodies in the plan output |
+| `--concurrency` | int | 8 | Maximum concurrent environment lookups during comparison |
+| `--continue-on-error` | bool | false | Keep applying after a failed write (default: stop, leaving later entries not-run) |
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--force` | bool | false | Actually write to the environment (required without --dry-run) |
+| `--kind` | stringArray | [] | Only apply these artifact kinds (Udi entity types, e.g. data-type, document-type; repeatable) |
+| `--no-backup` | bool | false | Do not write pre-change backups |
+| `--uda-dir` | string | umbraco/Deploy/Revision | Directory holding the .uda artifacts |
+
+**Safe pattern:**
+
+```bash
+# 1. Rehearse with the exact flags you will execute with
+umbraco deploy apply [flags] --dry-run
+
+# 2. Execute with the same flags
+umbraco deploy apply --force [flags]
+```
 
 ## Discovering Commands
 

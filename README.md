@@ -104,6 +104,8 @@ Scripts and CI gates can rely on the exit code to tell failure classes apart:
 | 6 | `deploy watch` reached `--timeout` without verification — deployment status unknown, never inferred |
 | 7 | `deploy status` ran cleanly and found drifted or missing entities (suppress with `--exit-zero`) |
 
+`deploy apply` uses exit 4 for a failed or still-drifting write (it is an API-level failure), never exit 7.
+
 JSON output is the stable machine contract — only additive changes. Table
 output is unstable and may reorder columns between releases.
 
@@ -364,7 +366,7 @@ testing) are not part of this repo — get those from
 - `logs` (6) — incl. `tail` for following new entries as they arrive
 - `server` (5)
 - `health` (4)
-- `deploy` (2) — effect-based deployment observation, host-agnostic and read-only: `watch` polls an environment for state deltas only a deploy can cause (app recycle via ProcessId, 503→401→200 recovery, index rebuilds) and emits phase transitions; `status` compares local Deploy `.uda` artifacts against the environment per entity as a pre-flight drift check
+- `deploy` (3) — effect-based deployment observation plus schema application: `watch` polls an environment for state deltas only a deploy can cause (app recycle via ProcessId, 503→401→200 recovery, index rebuilds) and emits phase transitions; `status` compares local Deploy `.uda` artifacts against the environment per entity as a pre-flight drift check; `apply` is its write side — Deploy's "Update schema" from the CLI: creates missing entities with their artifact GUIDs and full-replaces drifted ones in dependency order, backs up every updated entity, re-verifies each write, and refuses to run without `--dry-run` or `--force`
 - `published-cache` (3) — status / rebuild / reload, for stale-content incident response
 - `indexer` (3) — Examine index health and rebuilds, with `--wait` polling
 - `redirect` (6) — the redirect URL tracker: list/get/delete, status, enable/disable
