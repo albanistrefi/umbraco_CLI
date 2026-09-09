@@ -25,8 +25,9 @@ func mediaReplaceFile(deps Dependencies) *cobra.Command {
 	var dryRun bool
 
 	cmd := &cobra.Command{
-		Use:   "replace-file <id> <file>",
-		Short: "Replace the file behind an existing media item, keeping its other values",
+		Use:     "replace-file <id> <file>",
+		Aliases: []string{"replace"},
+		Short:   "Replace the file behind an existing media item, keeping its other values",
 		Long: "Uploads <file> as a temporary file, rewrites the file property (default umbracoFile) on the existing item, and verifies the result. " +
 			"Every other value is preserved; the server recomputes derived values (umbracoBytes, umbracoExtension, dimensions).\n\n" +
 			"After the write the item is fetched again; if the server accepted the PUT but left the item with no values (what happens when a temporary file id does not resolve) the command fails instead of reporting success. " +
