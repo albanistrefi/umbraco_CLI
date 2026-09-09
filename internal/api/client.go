@@ -597,7 +597,7 @@ func (c *Client) GetStream(ctx context.Context, path string, w io.Writer, opts R
 			Method:     http.MethodGet,
 			Path:       relativePath,
 			Payload:    strings.TrimSpace(string(body)),
-			Hint:       buildAPIErrorHint(resp.StatusCode, http.MethodGet, relativePath),
+			Hint:       buildAPIErrorHint(resp.StatusCode, http.MethodGet, relativePath, nil),
 		}
 	}
 	n, err := io.Copy(w, resp.Body)
