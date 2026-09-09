@@ -3,7 +3,8 @@
 ## Unreleased
 
 - every outbound request (token, Management API, multipart, raw) now carries `User-Agent: umbraco-cli/<version> (<os>; <arch>)` instead of Go's default `Go-http-client/1.1`, which Cloudflare-fronted hosts flag as a bot — the cause of an agent-reported 403 on a live site that only a hand-set header got past
-- `api` gains `--form field=value` / `--form field=@path` (multipart/form-data, e.g. `POST /temporary-file`), `--header "Key: Value"` (repeatable), and `--raw-path` (send the path relative to the host root — Automate, Forms, or a public `/media/...` asset — instead of the Management API mount). Previously `api` was JSON-only and force-rooted every path under `/umbraco/management/api/v1`, so a file upload required leaving the CLI entirely
+- `api` gains `--form field=value` / `--form field=@path` (multipart/form-data, e.g. `POST /temporary-file`), `--header "Key: Value"` (repeatable), and `--raw-path` (send the path relative to the host root — Automate, Forms, or a public `/media/...` asset — instead of the Management API mount), and `--out <file>` (GET only; writes the response body verbatim so binary assets survive — the structured output re-encodes bodies as JSON strings). Previously `api` was JSON-only and force-rooted every path under `/umbraco/management/api/v1`, so a file upload required leaving the CLI entirely. Header names are canonicalized so a later `--header` deterministically overrides an earlier spelling
+- `deploy watch` probes (management liveness and public health paths) now carry the same User-Agent as every other request, so a Cloudflare-fronted host that blocks Go's default agent cannot leave the watch stuck before `serving`
 
 ## v0.4.13 - 2026-09-01
 
