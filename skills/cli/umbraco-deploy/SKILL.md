@@ -89,7 +89,9 @@ Writes run in dependency order (Deploy's Ordering dependencies, then kind preced
 
 Supported kinds: language, data-type(+folders), document-type/media-type/member-type(+folders), template, member-group. Relation types and Automate artifacts are read-only in the Management API and are listed as unsupported. Mutating: refuses to run without --dry-run (plan only, no writes; the plan includes the exact request bodies with --bodies) or --force. Every updated entity is backed up first (see --backup-dir).
 
-Exit 0 when every planned write applied and verified; exit 4 when any write failed or still drifts; exit 7 is not used here (that is 'deploy status').
+Artifacts that cannot be parsed, mapped, or compared are plan errors: they exit 4 (also under --dry-run) and block a forced run entirely unless --continue-on-error is passed, so a partial apply never exits cleanly. Folder parents cannot be compared or moved through the Management API and are flagged as warnings.
+
+Exit 0 when every planned write applied and verified; exit 4 when any artifact could not be planned or any write failed or still drifts; exit 7 is not used here (that is 'deploy status').
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
