@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- fixed `doctype get` / `mediatype get` / `membertype get` reporting any unknown id as "is a folder, not a document type" (agent-reported): the folder probe asked the tree for children of the id, and the tree answers 200 with an empty page for *any* GUID. The probe now hits the folder endpoint itself, so a typo, a deleted type, or the wrong environment surfaces as the real 404 (exit 4) and only actual folders get the folder hint
+- fixed `doctype get` / `mediatype get` / `membertype get` reporting any unknown id as "is a folder, not a document type" (agent-reported): the folder probe asked the tree for children of the id, and the tree answers 200 with an empty page for *any* GUID. The probe now hits the folder endpoint itself, so a typo, a deleted type, or the wrong environment surfaces as the real 404 (exit 4) and only actual folders get the folder hint. The 404 hint now also tells a missing *entity* (server ProblemDetails, "the id does not exist in this environment") apart from a missing *route* ("may not be supported in your Umbraco version"), which previously read the same
 
 ## v0.4.13 - 2026-09-01
 

@@ -277,7 +277,7 @@ func (c *Client) RequestResult(ctx context.Context, method string, path string, 
 			Method:     method,
 			Path:       relativePath,
 			Payload:    result,
-			Hint:       buildAPIErrorHint(resp.StatusCode, method, relativePath),
+			Hint:       buildAPIErrorHint(resp.StatusCode, method, relativePath, result),
 		}
 	}
 
@@ -344,12 +344,26 @@ func (c *Client) relativeAPIPath(fullURL string) string {
 	return strings.TrimPrefix(fullURL, strings.TrimRight(c.cfg.BaseURL, "/"))
 }
 
-func buildAPIErrorHint(statusCode int, method string, path string) string {
+func buildAPIErrorHint(statusCode int, method string, path string, payload any) string {
 	if statusCode != http.StatusNotFound {
 		return ""
 	}
 	if !strings.Contains(path, "/management/api/v") {
 		return ""
+	}
+	// A ProblemDetails body means the route exists and the *entity* is
+	// missing (e.g. {"operationStatus":"NotFound","detail":"The specified
+	// document type was not found"}); a bare 404 with no body is the route
+	// itself being absent on this Umbraco version.
+	if problem, ok := payload.(map[string]any); ok {
+		detail := strings.TrimSpace(fmt.Sprint(problem["detail"]))
+		status := strings.TrimSpace(fmt.Sprint(problem["operationStatus"]))
+		if strings.EqualFold(status, "NotFound") || (detail != "" && detail != "<nil>" && strings.Contains(strings.ToLower(detail), "not found")) {
+			if detail == "" || detail == "<nil>" {
+				detail = "the requested item was not found"
+			}
+			return fmt.Sprintf("%s — the id does not exist in this environment; check the id and the active profile (umbraco auth list)", detail)
+		}
 	}
 
 	return fmt.Sprintf("endpoint %s %s was not found; this may not be supported in your Umbraco version or may require a different route", method, path)
