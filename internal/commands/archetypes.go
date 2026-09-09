@@ -391,6 +391,7 @@ type updateSpec struct {
 func updateCommand(deps Dependencies, spec updateSpec) *cobra.Command {
 	var jsonPayload string
 	var mergeJSON string
+	var backup string
 	var dryRun bool
 	cmd := &cobra.Command{
 		Use:   spec.Use,
@@ -404,15 +405,43 @@ func updateCommand(deps Dependencies, spec updateSpec) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			var backupFile string
+			if cmd.Flags().Changed("backup") && !dryRun {
+				resource := "resource"
+				if parent := cmd.Parent(); parent != nil {
+					resource = parent.Name()
+				}
+				current, err := fetchObject(ctx, deps.Client, path, api.RequestOptions{APIPrefix: spec.APIPrefix})
+				if err != nil {
+					return fmt.Errorf("--backup could not read the current %s: %w", resource, err)
+				}
+				backupFile, err = writeBackup(resolveBackupPath(backup, resource, args[0]), resource, args[0], path, current, nil)
+				if err != nil {
+					return err
+				}
+			}
 			result, err := deps.Client.Put(ctx, path, body, api.RequestOptions{DryRun: dryRun, APIPrefix: spec.APIPrefix})
 			if err != nil {
 				return err
+			}
+			if backupFile != "" {
+				// Always surface the backup path: auto names carry a random
+				// suffix, so the caller cannot reconstruct it.
+				if result == nil {
+					return printResult(cmd, deps, map[string]any{"updated": true, "backup": backupFile})
+				}
+				if body, ok := result.(map[string]any); ok {
+					body["backup"] = backupFile
+					return printResult(cmd, deps, body)
+				}
+				return printResult(cmd, deps, map[string]any{"updated": result, "backup": backupFile})
 			}
 			return printMutationResult(cmd, deps, "updated", result, dryRun)
 		},
 	}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Full replacement payload as JSON (fields not mentioned are reset by the server)")
 	cmd.Flags().StringVar(&mergeJSON, "merge-json", "", "Partial JSON deep-merged into the current resource before update (fields not mentioned are preserved)")
+	addBackupFlag(cmd, &backup)
 	addDryRunFlag(cmd, &dryRun)
 	return cmd
 }

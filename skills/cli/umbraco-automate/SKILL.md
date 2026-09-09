@@ -624,6 +624,7 @@ Updating creates a new draft version; 'automation publish <id>' makes it live.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--backup` | string | — | Save the current item to a JSON file before writing; bare --backup writes ./<collection>-<id>-<timestamp>.backup.json, --backup=<path> chooses the file. Undo with '<collection> restore-backup <file>' where available |
 | `--dry-run` | bool | false | Print the planned request without executing |
 | `--json` | string | — | Full replacement payload as JSON (fields not mentioned are reset by the server) |
 | `--merge-json` | string | — | Partial JSON deep-merged into the current resource before update (fields not mentioned are preserved) |
@@ -711,6 +712,7 @@ umbraco automate connection update <id>
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--backup` | string | — | Save the current item to a JSON file before writing; bare --backup writes ./<collection>-<id>-<timestamp>.backup.json, --backup=<path> chooses the file. Undo with '<collection> restore-backup <file>' where available |
 | `--dry-run` | bool | false | Print the planned request without executing |
 | `--json` | string | — | Full replacement payload as JSON (fields not mentioned are reset by the server) |
 | `--merge-json` | string | — | Partial JSON deep-merged into the current resource before update (fields not mentioned are preserved) |
@@ -947,6 +949,7 @@ PUT /workspaces/{id}. The update model requires the workspace's current version 
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--backup` | string | — | Save the current item to a JSON file before writing; bare --backup writes ./<collection>-<id>-<timestamp>.backup.json, --backup=<path> chooses the file. Undo with '<collection> restore-backup <file>' where available |
 | `--dry-run` | bool | false | Print the planned request without executing |
 | `--json` | string | — | Full replacement payload as JSON (fields not mentioned are reset by the server) |
 | `--merge-json` | string | — | Partial JSON deep-merged into the current resource before update (fields not mentioned are preserved) |
