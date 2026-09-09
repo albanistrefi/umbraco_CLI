@@ -3,6 +3,7 @@ package commands
 import (
 	"encoding/json"
 	"errors"
+	"sync"
 	"io"
 	"net/http"
 	"os"
@@ -33,9 +34,28 @@ func writeApplyCorpus(t *testing.T, files map[string]string) string {
 }
 
 type applyRecorder struct {
+	mu       sync.Mutex
 	requests []string
 	bodies   map[string]map[string]any
 	created  map[string]bool
+}
+
+func (r *applyRecorder) writes() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := []string{}
+	for _, req := range r.requests {
+		if strings.HasPrefix(req, "POST") || strings.HasPrefix(req, "PUT") {
+			out = append(out, req)
+		}
+	}
+	return out
+}
+
+func (r *applyRecorder) body(key string) map[string]any {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.bodies[key]
 }
 
 // applyDeps simulates an environment where the data type exists but drifts
@@ -55,6 +75,9 @@ func applyDeps(t *testing.T, rec *applyRecorder) Dependencies {
 		case "/automations":
 			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
 		}
+		// Comparison lookups run concurrently; serialize the recorder.
+		rec.mu.Lock()
+		defer rec.mu.Unlock()
 		if req.Method == http.MethodPost || req.Method == http.MethodPut {
 			raw, _ := io.ReadAll(req.Body)
 			body := map[string]any{}
@@ -112,7 +135,7 @@ func TestDeployApplyRequiresDryRunOrForce(t *testing.T) {
 	if _, err := execute(buildDeployRoot(applyDeps(t, rec)), "deploy", "apply", "--uda-dir", dir); err == nil || !strings.Contains(err.Error(), "--force") {
 		t.Fatalf("expected force gate, got %v", err)
 	}
-	if len(rec.requests) != 0 {
+	if len(rec.writes()) != 0 || len(rec.requests) != 0 {
 		t.Fatalf("gate must fire before any request, got %v", rec.requests)
 	}
 }
@@ -130,10 +153,8 @@ func TestDeployApplyDryRunPlansInDependencyOrderWithoutWriting(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dry-run failed: %v", err)
 	}
-	for _, r := range rec.requests {
-		if strings.HasPrefix(r, "POST") || strings.HasPrefix(r, "PUT") {
-			t.Fatalf("dry-run must not write, saw %s", r)
-		}
+	if writes := rec.writes(); len(writes) != 0 {
+		t.Fatalf("dry-run must not write, saw %v", writes)
 	}
 	var payload map[string]any
 	if err := json.Unmarshal([]byte(output), &payload); err != nil {
@@ -188,12 +209,7 @@ func TestDeployApplyForceWritesBacksUpVerifiesAndFixesUpDeferred(t *testing.T) {
 	if err != nil {
 		t.Fatalf("apply failed: %v\n%s", err, output)
 	}
-	writes := []string{}
-	for _, r := range rec.requests {
-		if strings.HasPrefix(r, "POST") || strings.HasPrefix(r, "PUT") {
-			writes = append(writes, r)
-		}
-	}
+	writes := rec.writes()
 	want := []string{
 		"POST /document-type/folder",
 		"PUT /data-type/aaaaaaaa-1111-2222-3333-444444444444",
@@ -204,7 +220,7 @@ func TestDeployApplyForceWritesBacksUpVerifiesAndFixesUpDeferred(t *testing.T) {
 	if strings.Join(writes, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("unexpected write sequence:\n%s", strings.Join(writes, "\n"))
 	}
-	fixup := rec.bodies["PUT /document-type/bbbbbbbb-1111-2222-3333-444444444444"]
+	fixup := rec.body("PUT /document-type/bbbbbbbb-1111-2222-3333-444444444444")
 	if len(fixup["allowedDocumentTypes"].([]any)) != 1 {
 		t.Fatalf("expected fix-up to restore the allowed child, got %v", fixup["allowedDocumentTypes"])
 	}
