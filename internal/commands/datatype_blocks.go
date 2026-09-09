@@ -63,8 +63,10 @@ func datatypeBlock(deps Dependencies) *cobra.Command {
 		Long:  "Read-modify-write helpers that mutate the 'blocks' value entry on Umbraco.BlockList and Umbraco.BlockGrid datatypes without clobbering the rest of the configuration. Idempotent: 'add' is a no-op if the element type is already an allowed block; 'remove' is a no-op if it isn't; 'update' is a no-op if the resulting block is byte-identical to the current one.",
 	}
 	cmd.AddCommand(datatypeBlockList(deps))
+	cmd.AddCommand(datatypeBlockGroups(deps))
 	cmd.AddCommand(datatypeBlockAdd(deps))
 	cmd.AddCommand(datatypeBlockUpdate(deps))
+	cmd.AddCommand(datatypeBlockReorder(deps))
 	cmd.AddCommand(datatypeBlockRemove(deps))
 	return cmd
 }
@@ -94,6 +96,7 @@ func datatypeBlockList(deps Dependencies) *cobra.Command {
 }
 
 func datatypeBlockAdd(deps Dependencies) *cobra.Command {
+	var group string
 	var contentElementType string
 	var settingsElementType string
 	var label string
@@ -107,7 +110,7 @@ func datatypeBlockAdd(deps Dependencies) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "add <datatypeId>",
 		Short: "Register an element type as an allowed block",
-		Long:  "Appends a block to the datatype's blocks array. Idempotent: if a block with the same --content-element-type is already present, no PUT is sent.\n\nBlockGrid: --allow-at-root and --allow-in-areas default to true so the block is actually placeable after registration (server-side both default to false when omitted, which would register a block that's invisible to editors). Pass --allow-at-root=false or --allow-in-areas=false to override. --group support over BlockGrid's blockGroups array is a deferred follow-up.\n\nBlockList: --allow-at-root and --allow-in-areas are ignored (those flags only apply to Block Grid).",
+		Long:  "Appends a block to the datatype's blocks array. Idempotent: if a block with the same --content-element-type is already present, no PUT is sent.\n\nBlockGrid: --allow-at-root and --allow-in-areas default to true so the block is actually placeable after registration (server-side both default to false when omitted, which would register a block that's invisible to editors). Pass --allow-at-root=false or --allow-in-areas=false to override. --group <name> places the block in a BlockGrid block group, creating the group in blockGroups when it does not exist yet (groups are matched by name, case-insensitively).\n\nBlockList: --allow-at-root, --allow-in-areas and --group are Block Grid concepts; the first two are ignored, --group is rejected.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := requireValue("--content-element-type", contentElementType); err != nil {
@@ -172,6 +175,14 @@ func datatypeBlockAdd(deps Dependencies) *cobra.Command {
 				block["allowAtRoot"] = allowAtRoot
 				block["allowInAreas"] = allowInAreas
 			}
+			if group != "" {
+				if editor != "Umbraco.BlockGrid" {
+					return fmt.Errorf("--group applies to Umbraco.BlockGrid only; %s is %s", args[0], editor)
+				}
+				groupKey, withGroup := ensureBlockGroup(payload, group)
+				payload = withGroup
+				block["groupKey"] = groupKey
+			}
 
 			next := append([]map[string]any{}, blocks...)
 			next = append(next, block)
@@ -208,11 +219,13 @@ func datatypeBlockAdd(deps Dependencies) *cobra.Command {
 	cmd.Flags().BoolVar(&forceHideContentEditor, "force-hide-content-editor", false, "Hide the content editor in the overlay (settings-only blocks)")
 	cmd.Flags().BoolVar(&allowAtRoot, "allow-at-root", true, "BlockGrid only: allow placing the block at the grid's root level (default true). Ignored for BlockList.")
 	cmd.Flags().BoolVar(&allowInAreas, "allow-in-areas", true, "BlockGrid only: allow placing the block inside areas of other blocks (default true). Ignored for BlockList.")
+	cmd.Flags().StringVar(&group, "group", "", "BlockGrid only: put the block in this block group (created in blockGroups when it does not exist yet)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate the resulting payload without writing it")
 	return cmd
 }
 
 func datatypeBlockUpdate(deps Dependencies) *cobra.Command {
+	var group string
 	var contentElementType string
 	var settingsElementType string
 	var label string
@@ -315,6 +328,18 @@ BlockGrid: --allow-at-root and --allow-in-areas are honored when explicitly pass
 					updated["allowInAreas"] = allowInAreas
 				}
 			}
+			if cmd.Flags().Changed("group") {
+				if editor != "Umbraco.BlockGrid" {
+					return fmt.Errorf("--group applies to Umbraco.BlockGrid only; %s is %s", args[0], editor)
+				}
+				if strings.TrimSpace(group) == "" {
+					delete(updated, "groupKey")
+				} else {
+					groupKey, withGroup := ensureBlockGroup(payload, group)
+					payload = withGroup
+					updated["groupKey"] = groupKey
+				}
+			}
 
 			if reflect.DeepEqual(blocks[idx], updated) {
 				return printResult(cmd, deps, datatypeBlockMutationSummary{
@@ -364,8 +389,208 @@ BlockGrid: --allow-at-root and --allow-in-areas are honored when explicitly pass
 	cmd.Flags().BoolVar(&forceHideContentEditor, "force-hide-content-editor", false, "Hide the content editor in the overlay (settings-only blocks)")
 	cmd.Flags().BoolVar(&allowAtRoot, "allow-at-root", true, "BlockGrid only: allow placing the block at the grid's root level. Ignored for BlockList.")
 	cmd.Flags().BoolVar(&allowInAreas, "allow-in-areas", true, "BlockGrid only: allow placing the block inside areas of other blocks. Ignored for BlockList.")
+	cmd.Flags().StringVar(&group, "group", "", "BlockGrid only: move the block into this block group (created when missing). Pass empty string to remove it from its group.")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate the resulting payload without writing it")
 	return cmd
+}
+
+// datatypeBlockGroups lists a Block Grid's block groups with how many blocks
+// each holds.
+func datatypeBlockGroups(deps Dependencies) *cobra.Command {
+	return &cobra.Command{
+		Use:   "groups <datatypeId>",
+		Short: "List a Block Grid's block groups (blockGroups) with block counts",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			payload, err := fetchDatatypeObject(cmd.Context(), deps.Client, args[0])
+			if err != nil {
+				return err
+			}
+			editor, err := requireDatatypeBlockEditor(payload, args[0])
+			if err != nil {
+				return err
+			}
+			if editor != "Umbraco.BlockGrid" {
+				return fmt.Errorf("block groups exist on Umbraco.BlockGrid only; %s is %s", args[0], editor)
+			}
+			counts := map[string]int{}
+			ungrouped := 0
+			for _, block := range loadDatatypeBlocks(payload) {
+				if key := asString(block["groupKey"]); key != "" {
+					counts[strings.ToLower(key)]++
+				} else {
+					ungrouped++
+				}
+			}
+			groups := []map[string]any{}
+			for _, group := range loadBlockGroups(payload) {
+				key := asString(group["key"])
+				groups = append(groups, map[string]any{"key": key, "name": group["name"], "blocks": counts[strings.ToLower(key)]})
+			}
+			return printResult(cmd, deps, map[string]any{"datatypeId": args[0], "groups": groups, "ungroupedBlocks": ungrouped})
+		},
+	}
+}
+
+// datatypeBlockReorder rewrites the blocks array in the given order: listed
+// keys first, in that order; unlisted blocks keep their relative order after
+// them. Array order is what the block picker shows.
+func datatypeBlockReorder(deps Dependencies) *cobra.Command {
+	var keys []string
+	var dryRun bool
+	cmd := &cobra.Command{
+		Use:   "reorder <datatypeId>",
+		Short: "Reorder the allowed blocks (array order is the picker order)",
+		Long:  "Rewrites the datatype's blocks array so the --keys content element types come first in the given order; blocks not listed keep their relative order after them. Idempotent: no PUT when the order is already the requested one. Re-reads the datatype afterwards and fails if the server did not persist the order.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(keys) == 0 {
+				return fmt.Errorf("--keys is required (comma-separated content element type GUIDs in the desired order)")
+			}
+			for _, key := range keys {
+				if err := validateBlockGUID("--keys", key); err != nil {
+					return err
+				}
+			}
+			ctx := cmd.Context()
+			payload, err := fetchDatatypeObject(ctx, deps.Client, args[0])
+			if err != nil {
+				return err
+			}
+			editor, err := requireDatatypeBlockEditor(payload, args[0])
+			if err != nil {
+				return err
+			}
+			blocks := loadDatatypeBlocks(payload)
+			next, err := reorderBlocks(blocks, keys)
+			if err != nil {
+				return err
+			}
+			order := blockKeyOrder(next)
+			if reflect.DeepEqual(blockKeyOrder(blocks), order) {
+				return printResult(cmd, deps, map[string]any{"action": "reorder", "datatypeId": args[0], "editorAlias": editor, "changed": false, "order": order})
+			}
+			result, err := deps.Client.Put(ctx, api.JoinPath(dataTypeLegacyCollectionPath+"/%s", args[0]), writeDatatypeBlocks(payload, next), api.RequestOptions{DryRun: dryRun})
+			if err != nil {
+				return err
+			}
+			if dryRun {
+				return printResult(cmd, deps, result)
+			}
+			after, err := fetchDatatypeObject(ctx, deps.Client, args[0])
+			if err != nil {
+				return fmt.Errorf("the update was accepted but re-reading the datatype failed: %w", err)
+			}
+			persisted := blockKeyOrder(loadDatatypeBlocks(after))
+			if !reflect.DeepEqual(persisted, order) {
+				return fmt.Errorf("the server accepted the update but persisted a different block order: %v", persisted)
+			}
+			return printResult(cmd, deps, map[string]any{"action": "reorder", "datatypeId": args[0], "editorAlias": editor, "changed": true, "order": order, "verified": true})
+		},
+	}
+	cmd.Flags().StringSliceVar(&keys, "keys", nil, "Content element type GUIDs in the desired order (comma-separated or repeated); unlisted blocks follow in their current order")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate the resulting payload without writing it")
+	return cmd
+}
+
+func reorderBlocks(blocks []map[string]any, keys []string) ([]map[string]any, error) {
+	next := make([]map[string]any, 0, len(blocks))
+	used := make(map[int]bool, len(blocks))
+	for _, key := range keys {
+		idx := findBlockIndex(blocks, strings.ToLower(key))
+		if idx < 0 {
+			idx = findBlockIndex(blocks, key)
+		}
+		if idx < 0 {
+			return nil, fmt.Errorf("datatype has no block with content element type %s", key)
+		}
+		if used[idx] {
+			return nil, fmt.Errorf("content element type %s listed twice", key)
+		}
+		used[idx] = true
+		next = append(next, blocks[idx])
+	}
+	for i, block := range blocks {
+		if !used[i] {
+			next = append(next, block)
+		}
+	}
+	return next, nil
+}
+
+func blockKeyOrder(blocks []map[string]any) []string {
+	order := make([]string, 0, len(blocks))
+	for _, block := range blocks {
+		order = append(order, strings.ToLower(asString(block["contentElementTypeKey"])))
+	}
+	return order
+}
+
+// loadBlockGroups reads the blockGroups value entry ([{key, name}]).
+func loadBlockGroups(payload map[string]any) []map[string]any {
+	values, _ := payload["values"].([]any)
+	for _, item := range values {
+		entry, _ := item.(map[string]any)
+		if entry == nil || entry["alias"] != "blockGroups" {
+			continue
+		}
+		raw, _ := entry["value"].([]any)
+		out := make([]map[string]any, 0, len(raw))
+		for _, g := range raw {
+			if asMap, ok := g.(map[string]any); ok {
+				out = append(out, asMap)
+			}
+		}
+		return out
+	}
+	return nil
+}
+
+// ensureBlockGroup returns the key of the block group named name, creating
+// the group (with a fresh GUID) in a cloned payload when it does not exist.
+// Names match case-insensitively.
+func ensureBlockGroup(payload map[string]any, name string) (string, map[string]any) {
+	name = strings.TrimSpace(name)
+	for _, group := range loadBlockGroups(payload) {
+		if strings.EqualFold(asString(group["name"]), name) {
+			return asString(group["key"]), payload
+		}
+	}
+	key, err := newUUIDv4()
+	if err != nil {
+		key = strings.ToLower(name)
+	}
+	groups := append([]map[string]any{}, loadBlockGroups(payload)...)
+	groups = append(groups, map[string]any{"key": key, "name": name})
+	return key, writeDatatypeValue(payload, "blockGroups", groups)
+}
+
+// writeDatatypeValue returns a deep-cloned payload with the given value entry
+// replaced (or appended), preserving every other field.
+func writeDatatypeValue(payload map[string]any, alias string, next []map[string]any) map[string]any {
+	cloned := cloneObject(payload)
+	encoded := make([]any, 0, len(next))
+	for _, item := range next {
+		encoded = append(encoded, cloneObject(item))
+	}
+	values, ok := cloned["values"].([]any)
+	if !ok {
+		cloned["values"] = []any{map[string]any{"alias": alias, "value": encoded}}
+		return cloned
+	}
+	for i, item := range values {
+		entry, entryOk := item.(map[string]any)
+		if !entryOk || entry["alias"] != alias {
+			continue
+		}
+		nextEntry := cloneObject(entry)
+		nextEntry["value"] = encoded
+		values[i] = nextEntry
+		cloned["values"] = values
+		return cloned
+	}
+	cloned["values"] = append(values, map[string]any{"alias": alias, "value": encoded})
+	return cloned
 }
 
 func datatypeBlockRemove(deps Dependencies) *cobra.Command {
