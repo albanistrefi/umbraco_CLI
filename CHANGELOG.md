@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- every outbound request (token, Management API, multipart, raw) now carries `User-Agent: umbraco-cli/<version> (<os>; <arch>)` instead of Go's default `Go-http-client/1.1`, which Cloudflare-fronted hosts flag as a bot — the cause of an agent-reported 403 on a live site that only a hand-set header got past
+- `api` gains `--form field=value` / `--form field=@path` (multipart/form-data, e.g. `POST /temporary-file`), `--header "Key: Value"` (repeatable), and `--raw-path` (send the path relative to the host root — Automate, Forms, or a public `/media/...` asset — instead of the Management API mount). Previously `api` was JSON-only and force-rooted every path under `/umbraco/management/api/v1`, so a file upload required leaving the CLI entirely
+
 ## v0.4.13 - 2026-09-01
 
 - fixed the `doctype add-container` → `add-property` workflow, which could never work (agent-reported, reproduced live on 18.1): the server prunes containers saved with no properties while still answering success, so `add-container` reported `updated: true` for a container that silently vanished, and `add-property` then refused to target it. `add-container` now verifies the container survived the save and errors honestly when it was pruned (with the working alternative in the message), and `add-property` gains `--create-container` (+ `--container-type Group|Tab`) to create the container together with its first property in one request — the only shape the server persists
