@@ -612,3 +612,11 @@ func TestMultipartResultSendsFieldsAndFiles(t *testing.T) {
 		t.Fatalf("unexpected multipart observation: status=%d id=%q file=%q name=%q", result.StatusCode, observedID, observedFile, observedName)
 	}
 }
+
+func TestNotFoundHintTruncatesLongServerDetail(t *testing.T) {
+	long := strings.Repeat("x", 5000)
+	hint := buildAPIErrorHint(http.StatusNotFound, http.MethodGet, "/umbraco/management/api/v1/document-type/x", map[string]any{"operationStatus": "NotFound", "detail": long})
+	if len(hint) > 600 {
+		t.Fatalf("expected hint to be capped, got %d bytes", len(hint))
+	}
+}

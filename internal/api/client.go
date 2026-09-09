@@ -359,6 +359,9 @@ func (c *Client) relativeAPIPath(fullURL string) string {
 	return strings.TrimPrefix(fullURL, strings.TrimRight(c.cfg.BaseURL, "/"))
 }
 
+// maxHintDetailBytes caps server-provided detail text quoted into hints.
+const maxHintDetailBytes = 200
+
 func buildAPIErrorHint(statusCode int, method string, path string, payload any) string {
 	if statusCode != http.StatusNotFound {
 		return ""
@@ -377,6 +380,9 @@ func buildAPIErrorHint(statusCode int, method string, path string, payload any) 
 			if detail == "" || detail == "<nil>" {
 				detail = "the requested item was not found"
 			}
+			// Server-controlled text: keep it inside the same budget the
+			// payload gets so a pathological detail cannot flood the terminal.
+			detail = string(truncatePayload([]byte(detail), maxHintDetailBytes))
 			return fmt.Sprintf("%s — the id does not exist in this environment; check the id and the active profile (umbraco auth list)", detail)
 		}
 	}
