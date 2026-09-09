@@ -21,6 +21,8 @@ import (
 // instead of digging through the values array and a separate urls call.
 func mediaInspect(deps Dependencies) *cobra.Command {
 	var propertyAlias string
+	var culture string
+	var segment string
 	var noFetch bool
 	cmd := &cobra.Command{
 		Use:     "inspect <id>",
@@ -36,14 +38,22 @@ func mediaInspect(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			summary := summarizeMedia(item, propertyAlias)
+			selected, err := selectMediaFileValue(item, propertyAlias, culture, segment)
+			if err != nil {
+				return fmt.Errorf("media item %s: %w", args[0], err)
+			}
+			summary := summarizeMedia(item, propertyAlias, selected)
 			summary["id"] = args[0]
 
-			if urls, err := mediaPublicURLs(ctx, deps.Client, args[0]); err == nil && len(urls) > 0 {
-				summary["urls"] = urls
-				if file, ok := summary["file"].(map[string]any); ok && file["url"] == nil {
-					file["url"] = urls[0]
-				}
+			// The URL read is part of the promised result; a failure there is
+			// an API error (exit 4), not a silently shorter answer.
+			urls, err := mediaPublicURLs(ctx, deps.Client, args[0])
+			if err != nil {
+				return err
+			}
+			summary["urls"] = urls
+			if file, ok := summary["file"].(map[string]any); ok && len(urls) > 0 {
+				file["url"] = urls[0]
 			}
 
 			if file, ok := summary["file"].(map[string]any); ok && !noFetch && strings.EqualFold(fmt.Sprint(file["extension"]), "svg") {
@@ -65,6 +75,8 @@ func mediaInspect(deps Dependencies) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&propertyAlias, "property", "umbracoFile", "File property alias to summarize")
+	cmd.Flags().StringVar(&culture, "culture", "", "Culture of the file value to summarize (required when the property varies by culture)")
+	cmd.Flags().StringVar(&segment, "segment", "", "Segment of the file value to summarize")
 	cmd.Flags().BoolVar(&noFetch, "no-fetch", false, "Do not download SVG files to read their viewBox")
 	return cmd
 }
@@ -72,11 +84,14 @@ func mediaInspect(deps Dependencies) *cobra.Command {
 // mediaDownload saves the file behind a media item to disk, byte for byte.
 func mediaDownload(deps Dependencies) *cobra.Command {
 	var propertyAlias string
+	var culture string
+	var segment string
+	var dryRun bool
 	cmd := &cobra.Command{
 		Use:     "download <id> <path>",
 		Aliases: []string{"get-file"},
 		Short:   "Download the file behind a media item to a local path",
-		Long:    "Resolves the file property (default umbracoFile) and fetches the asset from the same host, writing it verbatim. If <path> is an existing directory (or ends with /), the server-side file name is used inside it.",
+		Long:    "Resolves the file property (default umbracoFile) and fetches the asset from the same host, writing it verbatim. If <path> is an existing directory (or ends with /), the server-side file name is used inside it. An existing file at the destination is overwritten; --dry-run reports the resolved destination without fetching or writing.",
 		Args:    cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
@@ -84,21 +99,32 @@ func mediaDownload(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			value, ok := mediaFileValue(item, propertyAlias)
-			if !ok {
-				return fmt.Errorf("media item %s has no %q property; check the media type or pass --property", args[0], propertyAlias)
+			selected, err := selectMediaFileValue(item, propertyAlias, culture, segment)
+			if err != nil {
+				return fmt.Errorf("media item %s: %w", args[0], err)
 			}
-			src := strings.TrimSpace(fmt.Sprint(value["src"]))
+			src := strings.TrimSpace(fmt.Sprint(selected.Value["src"]))
 			if src == "" || src == "<nil>" {
 				return fmt.Errorf("media item %s has no file behind %q", args[0], propertyAlias)
-			}
-			content, contentType, err := deps.Client.GetBytes(ctx, src, api.RequestOptions{RawPath: true})
-			if err != nil {
-				return err
 			}
 			target := args[1]
 			if info, statErr := os.Stat(target); strings.HasSuffix(target, "/") || (statErr == nil && info.IsDir()) {
 				target = filepath.Join(target, path.Base(src))
+			}
+			_, existsErr := os.Stat(target)
+			if dryRun {
+				return printResult(cmd, deps, map[string]any{
+					"dryRun":     true,
+					"id":         args[0],
+					"property":   propertyAlias,
+					"src":        src,
+					"path":       target,
+					"overwrites": existsErr == nil,
+				})
+			}
+			content, contentType, err := deps.Client.GetBytes(ctx, src, api.RequestOptions{RawPath: true})
+			if err != nil {
+				return err
 			}
 			if dir := filepath.Dir(target); dir != "." {
 				if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -115,15 +141,19 @@ func mediaDownload(deps Dependencies) *cobra.Command {
 				"path":        target,
 				"bytes":       len(content),
 				"contentType": contentType,
+				"overwrote":   existsErr == nil,
 			})
 		},
 	}
 	cmd.Flags().StringVar(&propertyAlias, "property", "umbracoFile", "File property alias to download")
+	cmd.Flags().StringVar(&culture, "culture", "", "Culture of the file value to download (required when the property varies by culture)")
+	cmd.Flags().StringVar(&segment, "segment", "", "Segment of the file value to download")
+	addDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
 // summarizeMedia flattens a media item into the inspect shape.
-func summarizeMedia(item map[string]any, propertyAlias string) map[string]any {
+func summarizeMedia(item map[string]any, propertyAlias string, selected mediaFileSelection) map[string]any {
 	summary := map[string]any{
 		"mediaType": item["mediaType"],
 		"isTrashed": item["isTrashed"],
@@ -137,6 +167,12 @@ func summarizeMedia(item map[string]any, propertyAlias string) map[string]any {
 	}
 
 	file := map[string]any{"property": propertyAlias}
+	if selected.Culture != nil {
+		file["culture"] = selected.Culture
+	}
+	if selected.Segment != nil {
+		file["segment"] = selected.Segment
+	}
 	other := map[string]any{}
 	var width, height any
 	for _, raw := range mediaValues(item) {
@@ -147,6 +183,13 @@ func summarizeMedia(item map[string]any, propertyAlias string) map[string]any {
 		alias := fmt.Sprint(entry["alias"])
 		switch alias {
 		case propertyAlias:
+			// Only the selected variant is flattened; other variants of the
+			// file property are listed under otherVariants.
+			if variantString(entry["culture"]) != variantString(selected.Culture) || variantString(entry["segment"]) != variantString(selected.Segment) {
+				variants, _ := summary["otherVariants"].([]any)
+				summary["otherVariants"] = append(variants, map[string]any{"culture": entry["culture"], "segment": entry["segment"], "value": entry["value"]})
+				continue
+			}
 			if value, ok := entry["value"].(map[string]any); ok {
 				file["src"] = value["src"]
 				// The crops array carries every crop *definition* of the data

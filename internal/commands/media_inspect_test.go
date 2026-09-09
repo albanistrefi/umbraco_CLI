@@ -99,3 +99,64 @@ func TestMediaDownloadWritesAssetIntoDirectory(t *testing.T) {
 		t.Fatalf("expected missing property to fail")
 	}
 }
+
+func TestMediaInspectFailsWhenURLLookupFailsAndDownloadDryRun(t *testing.T) {
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/media/m-1":
+			return datatypeJSONResponse(http.StatusOK, mediaFileTestItem), nil
+		default:
+			return datatypeJSONResponse(http.StatusForbidden, `{"title":"Forbidden"}`), nil
+		}
+	})
+	if _, err := execute(buildRootWithCollections(t, deps), "media", "inspect", "m-1"); err == nil || !strings.Contains(err.Error(), "403") {
+		t.Fatalf("expected the URL lookup failure to propagate, got %v", err)
+	}
+
+	dir := t.TempDir()
+	output, err := execute(buildRootWithCollections(t, deps), "media", "download", "m-1", dir, "--dry-run")
+	if err != nil {
+		t.Fatalf("download --dry-run failed: %v", err)
+	}
+	if !strings.Contains(output, `"dryRun": true`) || !strings.Contains(output, filepath.Join(dir, "old.svg")) {
+		t.Fatalf("unexpected dry-run output: %s", output)
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+		t.Fatalf("dry-run must not write, found %d entries", len(entries))
+	}
+}
+
+func TestMediaInspectRequiresCultureForVariants(t *testing.T) {
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/media/m-3":
+			return datatypeJSONResponse(http.StatusOK, mediaFileTestVariantItem), nil
+		case "/umbraco/management/api/v1/media/urls":
+			return datatypeJSONResponse(http.StatusOK, `[]`), nil
+		default:
+			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+	if _, err := execute(buildRootWithCollections(t, deps), "media", "inspect", "m-3"); err == nil || !strings.Contains(err.Error(), "--culture") {
+		t.Fatalf("expected culture requirement, got %v", err)
+	}
+	output, err := execute(buildRootWithCollections(t, deps), "media", "inspect", "m-3", "--culture", "da-DK", "--no-fetch")
+	if err != nil {
+		t.Fatalf("inspect --culture failed: %v", err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatal(err)
+	}
+	file := payload["file"].(map[string]any)
+	if file["src"] != "/media/abc/da.svg" || file["culture"] != "da-DK" {
+		t.Fatalf("expected da-DK variant flattened, got %#v", file)
+	}
+	if others, _ := payload["otherVariants"].([]any); len(others) != 1 {
+		t.Fatalf("expected the en-US variant listed under otherVariants, got %s", output)
+	}
+}

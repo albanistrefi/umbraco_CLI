@@ -44,7 +44,6 @@ Task → command:
 | `media bin list` | List media items at the recycle bin root |
 | `media bin original-parent <id>` | Get the original parent of a trashed media item (the default restore target) |
 | `media children <id>` | Get child media items (paginated; --skip/--take/--all) |
-| `media download <id> <path>` | Download the file behind a media item to a local path |
 | `media get <id>` | Get media by ID |
 | `media inspect <id>` | Summarize a media item: name, type, file src/URL, extension, size, dimensions |
 | `media referenced-descendants <id>` | List items that reference this media item or any of its descendants |
@@ -126,20 +125,6 @@ umbraco media children <id>
 | `--summarize` | bool | false | Return only id/name/alias fields for item collections |
 | `--take` | int | -1 | Take count (passes through as ?take=N; combine with --skip to page) |
 
-### download
-
-```bash
-umbraco media download <id> <path>
-```
-
-Aliases: `get-file`
-
-Resolves the file property (default umbracoFile) and fetches the asset from the same host, writing it verbatim. If <path> is an existing directory (or ends with /), the server-side file name is used inside it.
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--property` | string | umbracoFile | File property alias to download |
-
 ### get
 
 ```bash
@@ -162,8 +147,10 @@ One-call view of what a media item points at. Combines GET /media/{id} with the 
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--culture` | string | — | Culture of the file value to summarize (required when the property varies by culture) |
 | `--no-fetch` | bool | false | Do not download SVG files to read their viewBox |
 | `--property` | string | umbracoFile | File property alias to summarize |
+| `--segment` | string | — | Segment of the file value to summarize |
 
 ### referenced-descendants
 
@@ -251,6 +238,7 @@ Aliases: `url`
 | `media bin empty` | Permanently delete everything in the media recycle bin |
 | `media create` | Create media from JSON payload |
 | `media create-folder [name]` | Create media folder |
+| `media download <id> <path>` | Download the file behind a media item to a local path |
 | `media move <id>` | Move media item |
 | `media replace-file <id> <file>` | Replace the file behind an existing media item, keeping its other values |
 | `media restore <id>` | Restore a media item from the recycle bin |
@@ -349,6 +337,33 @@ umbraco media create-folder [name] [flags] --dry-run
 
 # 2. Execute with the same flags
 umbraco media create-folder [name] [flags]
+```
+
+### download
+
+```bash
+umbraco media download <id> <path>
+```
+
+Aliases: `get-file`
+
+Resolves the file property (default umbracoFile) and fetches the asset from the same host, writing it verbatim. If <path> is an existing directory (or ends with /), the server-side file name is used inside it. An existing file at the destination is overwritten; --dry-run reports the resolved destination without fetching or writing.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--culture` | string | — | Culture of the file value to download (required when the property varies by culture) |
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--property` | string | umbracoFile | File property alias to download |
+| `--segment` | string | — | Segment of the file value to download |
+
+**Safe pattern:**
+
+```bash
+# 1. Rehearse with the exact flags you will execute with
+umbraco media download <id> <path> [flags] --dry-run
+
+# 2. Execute with the same flags
+umbraco media download <id> <path> [flags]
 ```
 
 ### move

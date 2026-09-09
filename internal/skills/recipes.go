@@ -73,11 +73,12 @@ var recipes = []Recipe{
 		Services:    []string{"umbraco-media"},
 		Steps: []string{
 			`umbraco media inspect <media-id> --output json`,
-			`umbraco media references <media-id> --output json`,
+			`umbraco media references <media-id> --fields id,name --output json`,
 			`umbraco media replace-file <media-id> ./new-logo.svg --backup --dry-run --output json`,
 			`umbraco media replace-file <media-id> ./new-logo.svg --backup --output json`,
 			`umbraco media inspect <media-id> --output json`,
-			`umbraco media restore-backup ./media-<media-id>-<timestamp>.backup.json --output json   # only if the result is wrong`,
+			`umbraco media restore-backup ./media-<media-id>-<timestamp>-<suffix>.backup.json --dry-run --output json   # only if the result is wrong`,
+			`umbraco media restore-backup ./media-<media-id>-<timestamp>-<suffix>.backup.json --output json`,
 		},
 		Tips: []string{
 			"Never PUT /media/{id} by hand to change a file: a temporaryFileId that does not resolve is accepted with 200 and empties the item. replace-file verifies the item afterwards.",
