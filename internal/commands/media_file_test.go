@@ -347,3 +347,88 @@ func TestBackupAutoNamesAreUniqueAndNeverOverwrite(t *testing.T) {
 		t.Fatalf("expected exclusive create to refuse, got %v", err)
 	}
 }
+
+func TestRenameVariantsOnlyTouchesSelectedVariant(t *testing.T) {
+	var item map[string]any
+	_ = json.Unmarshal([]byte(mediaFileTestVariantItem), &item)
+	selected, err := selectMediaFileValue(item, "umbracoFile", "da-DK", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	renamed := renameVariants(item, "Nyt logo", selected)
+	if renamed[0].(map[string]any)["name"] != "Logo" || renamed[1].(map[string]any)["name"] != "Nyt logo" {
+		t.Fatalf("expected only da-DK renamed, got %#v", renamed)
+	}
+}
+
+func TestBackupBinaryNameIsSanitizedAndEnvelopeReservedFirst(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "x.json")
+	bin := &backupBinary{Property: "umbracoFile", Src: `/media/abc/..\evil.txt`, Content: []byte("a")}
+	if _, err := writeBackup(target, "media", "m-1", "/media/m-1", map[string]any{}, bin); err != nil {
+		t.Fatal(err)
+	}
+	entries, _ := os.ReadDir(filepath.Join(dir, "x.files"))
+	if len(entries) != 1 || strings.ContainsAny(entries[0].Name(), `\/`) || strings.Contains(entries[0].Name(), "..") {
+		t.Fatalf("expected a sanitized single file, got %v", entries)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "evil.txt")); err == nil {
+		t.Fatalf("binary escaped the .files directory")
+	}
+	// Re-using the envelope path must fail before the old binary is touched.
+	before, _ := os.ReadFile(filepath.Join(dir, "x.files", entries[0].Name()))
+	if _, err := writeBackup(target, "media", "m-1", "/media/m-1", map[string]any{}, &backupBinary{Property: "umbracoFile", Src: bin.Src, Content: []byte("zz")}); err == nil {
+		t.Fatalf("expected reuse to fail")
+	}
+	after, _ := os.ReadFile(filepath.Join(dir, "x.files", entries[0].Name()))
+	if string(before) != string(after) {
+		t.Fatalf("old binary was overwritten: %q → %q", before, after)
+	}
+}
+
+func TestMetadataOnlyRestoreChecksEveryFileReference(t *testing.T) {
+	backupPath := filepath.Join(t.TempDir(), "meta.json")
+	envelope := `{"resource":"media","id":"m-3","path":"/media/m-3","entity":` + mediaFileTestVariantItem + `}`
+	if err := os.WriteFile(backupPath, []byte(envelope), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	puts := 0
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/media/abc/en.svg":
+			return &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader("<svg/>"))}, nil
+		default:
+			if req.Method == http.MethodPut {
+				puts++
+			}
+			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+	_, err := execute(buildRootWithCollections(t, deps), "media", "restore-backup", backupPath)
+	if err == nil || !strings.Contains(err.Error(), "da.svg") || puts != 0 {
+		t.Fatalf("expected refusal naming the dead da-DK file with no PUT, got %v (puts=%d)", err, puts)
+	}
+}
+
+func TestUpdateBackupPathSurvivesNonEmptyPutBody(t *testing.T) {
+	backupPath := filepath.Join(t.TempDir(), "b.json")
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch {
+		case req.URL.Path == "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case req.Method == http.MethodGet:
+			return datatypeJSONResponse(http.StatusOK, mediaFileTestItem), nil
+		default:
+			return datatypeJSONResponse(http.StatusOK, `{"id":"m-1"}`), nil
+		}
+	})
+	output, err := execute(buildRootWithCollections(t, deps), "media", "update", "m-1", "--json", `{"variants":[{"name":"X"}],"values":[]}`, "--backup="+backupPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output, `"backup": "`+backupPath+`"`) || !strings.Contains(output, `"id": "m-1"`) {
+		t.Fatalf("expected backup path alongside the server body, got %s", output)
+	}
+}

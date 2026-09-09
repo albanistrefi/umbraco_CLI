@@ -424,8 +424,17 @@ func updateCommand(deps Dependencies, spec updateSpec) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if backupFile != "" && result == nil {
-				return printResult(cmd, deps, map[string]any{"updated": true, "backup": backupFile})
+			if backupFile != "" {
+				// Always surface the backup path: auto names carry a random
+				// suffix, so the caller cannot reconstruct it.
+				if result == nil {
+					return printResult(cmd, deps, map[string]any{"updated": true, "backup": backupFile})
+				}
+				if body, ok := result.(map[string]any); ok {
+					body["backup"] = backupFile
+					return printResult(cmd, deps, body)
+				}
+				return printResult(cmd, deps, map[string]any{"updated": result, "backup": backupFile})
 			}
 			return printMutationResult(cmd, deps, "updated", result, dryRun)
 		},

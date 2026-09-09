@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	pathpkg "path"
@@ -83,21 +84,34 @@ func writeBackup(file string, resource string, id string, path string, entity ma
 			return "", err
 		}
 	}
+	// Reserve the envelope first (exclusive create), so a reused --backup path
+	// fails before any sibling binary of the older backup could be touched.
+	handle, err := os.OpenFile(file, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return "", fmt.Errorf("failed to write backup %s (refusing to overwrite an existing file): %w", file, err)
+	}
+	defer func() { _ = handle.Close() }()
+
 	if binary != nil {
-		// The binary keeps its original file name inside a sibling folder so a
-		// restore re-uploads it under the same name (Umbraco derives the
-		// stored file name from the upload and strips extra dots).
+		// The binary keeps its (sanitized) original file name inside a
+		// sibling folder so a restore re-uploads it under the same name
+		// (Umbraco derives the stored file name from the upload).
 		filesDir := backupFilesDir(file)
 		if err := os.MkdirAll(filesDir, 0o700); err != nil {
 			return "", err
 		}
-		baseName := pathpkg.Base(binary.Src)
-		if baseName == "" || baseName == "." || baseName == "/" {
-			baseName = "file"
+		binaryPath, err := safeChildPath(filesDir, sanitizeFileName(pathpkg.Base(binary.Src), "file"))
+		if err != nil {
+			return "", err
 		}
-		binaryPath := filepath.Join(filesDir, baseName)
-		if err := os.WriteFile(binaryPath, binary.Content, 0o600); err != nil {
-			return "", fmt.Errorf("failed to write backup file %s: %w", binaryPath, err)
+		binaryHandle, err := os.OpenFile(binaryPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+		if err != nil {
+			return "", fmt.Errorf("failed to write backup file %s (refusing to overwrite an existing file): %w", binaryPath, err)
+		}
+		_, writeErr := binaryHandle.Write(binary.Content)
+		closeErr := binaryHandle.Close()
+		if writeErr != nil || closeErr != nil {
+			return "", fmt.Errorf("failed to write backup file %s: %w", binaryPath, errors.Join(writeErr, closeErr))
 		}
 		relative, err := filepath.Rel(filepath.Dir(file), binaryPath)
 		if err != nil {
@@ -109,19 +123,48 @@ func writeBackup(file string, resource string, id string, path string, entity ma
 	if err != nil {
 		return "", err
 	}
-	// Exclusive create: never truncate an existing backup.
-	handle, err := os.OpenFile(file, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err != nil {
-		return "", fmt.Errorf("failed to write backup %s (refusing to overwrite an existing file): %w", file, err)
-	}
 	if _, err := handle.Write(encoded); err != nil {
-		_ = handle.Close()
 		return "", fmt.Errorf("failed to write backup %s: %w", file, err)
 	}
-	if err := handle.Close(); err != nil {
+	return file, nil
+}
+
+// sanitizeFileName reduces a server-provided file name to a single safe path
+// component for any host OS: no separators of either flavour, no traversal,
+// no control characters.
+func sanitizeFileName(name string, fallback string) string {
+	var b strings.Builder
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_', r == '.', r == ' ':
+			b.WriteRune(r)
+		default:
+			b.WriteRune('_')
+		}
+	}
+	cleaned := strings.Trim(b.String(), ". ")
+	if cleaned == "" || strings.Trim(cleaned, ".") == "" {
+		return fallback
+	}
+	return cleaned
+}
+
+// safeChildPath joins name under dir and verifies the result is a direct
+// child of dir under the host OS's path semantics.
+func safeChildPath(dir string, name string) (string, error) {
+	joined := filepath.Join(dir, name)
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
 		return "", err
 	}
-	return file, nil
+	absJoined, err := filepath.Abs(joined)
+	if err != nil {
+		return "", err
+	}
+	if filepath.Dir(absJoined) != absDir {
+		return "", fmt.Errorf("file name %q would escape %s", name, dir)
+	}
+	return joined, nil
 }
 
 // backupBinary is a downloaded media file waiting to be written next to its

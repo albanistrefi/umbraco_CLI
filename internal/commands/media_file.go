@@ -79,7 +79,7 @@ func mediaReplaceFile(deps Dependencies) *cobra.Command {
 				}},
 			}
 			if strings.TrimSpace(name) != "" {
-				patch["variants"] = renameVariants(current, name)
+				patch["variants"] = renameVariants(current, name, selected)
 			}
 			body := mergeAliasPayload(current, patch)
 
@@ -156,13 +156,12 @@ func mediaRestoreBackup(deps Dependencies) *cobra.Command {
 			result := map[string]any{"id": envelope.ID, "savedAt": envelope.SavedAt}
 
 			if envelope.File == nil {
-				// Metadata-only backup: refuse before writing if the file it
+				// Metadata-only backup: refuse before writing if any file it
 				// points at is gone, rather than restoring a dead reference.
-				if fileValue, ok := mediaFileValue(envelope.Entity, "umbracoFile"); ok {
-					if src := strings.TrimSpace(fmt.Sprint(fileValue["src"])); src != "" && src != "<nil>" {
-						if _, _, err := deps.Client.GetBytes(ctx, src, api.RequestOptions{RawPath: true}); err != nil {
-							return fmt.Errorf("refusing to restore: the backup is metadata-only and its file %s is no longer served (%v); only 'media replace-file --backup' captures the binary, use 'media replace-file %s <file>' with a local copy instead", src, err, envelope.ID)
-						}
+				// Every file-valued entry counts (all variants, any alias).
+				for _, ref := range mediaFileReferences(envelope.Entity) {
+					if _, _, err := deps.Client.GetBytes(ctx, ref.src, api.RequestOptions{RawPath: true}); err != nil {
+						return fmt.Errorf("refusing to restore: the backup is metadata-only and its file %s (%s) is no longer served (%v); only 'media replace-file --backup' captures the binary, use 'media replace-file %s <file>' with a local copy instead", ref.src, ref.label, err, envelope.ID)
 					}
 				}
 			} else {
@@ -306,26 +305,11 @@ func mediaValues(entity map[string]any) []any {
 	return values
 }
 
-// mediaFileValue returns the object value of the given property (e.g.
-// {"src": "/media/.../logo.svg"}) and whether the property exists at all.
-func mediaFileValue(entity map[string]any, alias string) (map[string]any, bool) {
-	for _, raw := range mediaValues(entity) {
-		entry, ok := raw.(map[string]any)
-		if !ok || entry["alias"] != alias {
-			continue
-		}
-		value, _ := entry["value"].(map[string]any)
-		if value == nil {
-			value = map[string]any{}
-		}
-		return value, true
-	}
-	return nil, false
-}
-
-// renameVariants copies the current variants with the name replaced, so a
-// rename rides along on the same PUT without touching culture/segment.
-func renameVariants(current map[string]any, name string) []any {
+// renameVariants copies the current variants, renaming only the variant that
+// matches the selected culture/segment (or every variant when the item is
+// invariant), so a rename rides along on the same PUT without clobbering
+// other localized names.
+func renameVariants(current map[string]any, name string, selected mediaFileSelection) []any {
 	variants, _ := current["variants"].([]any)
 	renamed := make([]any, 0, len(variants))
 	for _, raw := range variants {
@@ -338,7 +322,9 @@ func renameVariants(current map[string]any, name string) []any {
 		for key, value := range variant {
 			copied[key] = value
 		}
-		copied["name"] = name
+		if variantString(variant["culture"]) == variantString(selected.Culture) && variantString(variant["segment"]) == variantString(selected.Segment) {
+			copied["name"] = name
+		}
 		renamed = append(renamed, copied)
 	}
 	return renamed
@@ -356,4 +342,35 @@ func downloadMediaBinary(ctx context.Context, client *api.Client, propertyAlias 
 		return nil, err
 	}
 	return &backupBinary{Property: propertyAlias, Culture: variantString(selected.Culture), Segment: variantString(selected.Segment), Src: src, Content: content}, nil
+}
+
+type mediaFileReference struct {
+	src   string
+	label string
+}
+
+// mediaFileReferences lists every value entry whose value carries a file
+// src, across aliases and variants.
+func mediaFileReferences(entity map[string]any) []mediaFileReference {
+	refs := []mediaFileReference{}
+	for _, raw := range mediaValues(entity) {
+		entry, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		value, ok := entry["value"].(map[string]any)
+		if !ok {
+			continue
+		}
+		src := strings.TrimSpace(fmt.Sprint(value["src"]))
+		if src == "" || src == "<nil>" {
+			continue
+		}
+		label := fmt.Sprint(entry["alias"])
+		if culture := variantString(entry["culture"]); culture != "" {
+			label += "/" + culture
+		}
+		refs = append(refs, mediaFileReference{src: src, label: label})
+	}
+	return refs
 }
