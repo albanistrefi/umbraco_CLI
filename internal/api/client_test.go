@@ -629,4 +629,8 @@ func TestNotFoundHintStripsControlCharacters(t *testing.T) {
 	if strings.ContainsAny(hint, "\x1b\x07\r\n") || !strings.Contains(hint, "gone") {
 		t.Fatalf("expected control characters stripped, got %q", hint)
 	}
+	bidi := buildAPIErrorHint(http.StatusNotFound, http.MethodGet, "/umbraco/management/api/v1/document-type/x", map[string]any{"operationStatus": "NotFound", "detail": "ok\u202etxt.exe\u2066hidden\u2069 æøå"})
+	if strings.ContainsAny(bidi, "\u202e\u2066\u2069") || !strings.Contains(bidi, "æøå") {
+		t.Fatalf("expected Unicode format controls stripped and printable text kept, got %q", bidi)
+	}
 }

@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"umbraco-cli/internal/auth"
@@ -368,7 +369,10 @@ const maxHintDetailBytes = 200
 func sanitizeTerminalText(text string) string {
 	var b strings.Builder
 	for _, r := range text {
-		if r < 0x20 || r == 0x7f || (r >= 0x80 && r < 0xa0) {
+		// C0/C1 controls plus Unicode format characters (category Cf:
+		// bidi overrides/isolates, zero-width joiners, BOM ...), which can
+		// reorder or hide terminal text just as effectively as ESC.
+		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || !unicode.IsPrint(r) && r != ' ' {
 			b.WriteRune(' ')
 			continue
 		}
