@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.4.15 - 2026-09-10
+
 - `doctype get`, `mediatype get`, `membertype get` accept an alias as well as a GUID (agent-reported): a non-GUID argument is resolved through the item search (which matches names, so the first camelCase word of the alias is used as the query) and an exact, case-insensitive alias check on the candidates' full models (batch route when available). An unknown alias now says "not a GUID and no document type has that alias; use get <guid> or search --query …" instead of a 404 whose hint blamed the Umbraco version
 - `api --dry-run` previews now include the request headers (`--header`), for JSON and multipart requests alike (agent-reported: a header could not be checked before sending)
 - discoverability (agent-reported "no block command exists" against a build that had `datatype block reorder`/`--group`): the `datatype` and `doctype` groups open with task → command maps, and the doctype map states that allowed blocks, their order and Block Grid groups live on the Block List/Grid data type (`datatype block …`)
