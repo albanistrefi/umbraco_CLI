@@ -166,11 +166,16 @@ func schemaTypeList(deps Dependencies, spec schemaTypeSpec) *cobra.Command {
 func schemaTypeGet(deps Dependencies, spec schemaTypeSpec) *cobra.Command {
 	var fields string
 	cmd := &cobra.Command{
-		Use:   "get <id>",
-		Short: fmt.Sprintf("Get %s by ID", spec.Display),
+		Use:   "get <id-or-alias>",
+		Short: fmt.Sprintf("Get %s by ID (or by exact alias)", spec.Display),
+		Long:  fmt.Sprintf("Fetches a %s by GUID. A non-GUID argument is treated as an alias and resolved through the item search (exact, case-insensitive match); when nothing matches the command says so instead of issuing a request that can only 404.", spec.Display),
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			result, err := deps.Client.Get(cmd.Context(), api.JoinPath("/"+spec.Resource+"/%s", args[0]), api.RequestOptions{Fields: fields})
+			id, err := resolveSchemaTypeID(cmd.Context(), deps.Client, spec.Resource, spec.Use, spec.Display, args[0])
+			if err != nil {
+				return err
+			}
+			result, err := deps.Client.Get(cmd.Context(), api.JoinPath("/"+spec.Resource+"/%s", id), api.RequestOptions{Fields: fields})
 			if err != nil {
 				if isSchemaTypeFolderID(cmd.Context(), deps.Client, spec.Resource, args[0]) {
 					return fmt.Errorf("%s id %s is a folder, not a %s; use `umbraco %s children %s` or `umbraco %s list --recursive --types-only`", spec.Display, args[0], spec.Display, spec.Use, args[0], spec.Use)
@@ -182,6 +187,88 @@ func schemaTypeGet(deps Dependencies, spec schemaTypeSpec) *cobra.Command {
 	}
 	addFieldsFlag(cmd, &fields)
 	return cmd
+}
+
+// resolveSchemaTypeID accepts a GUID as-is; anything else is treated as an
+// alias and resolved via the item search plus a per-candidate fetch (the
+// item model carries no alias). Field report: a non-GUID used to fall
+// through to GET /<resource>/<alias>, whose 404 hint blamed the Umbraco
+// version rather than the argument.
+func resolveSchemaTypeID(ctx context.Context, client *api.Client, resource string, use string, display string, value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if isUUIDLike(value) {
+		return value, nil
+	}
+	if value == "" || strings.ContainsAny(value, "/?#%") {
+		return "", fmt.Errorf("%q is not a GUID or alias; use 'umbraco %s get <guid>' or 'umbraco %s search --query <text>'", value, use, use)
+	}
+	// The item search matches names, not aliases, so query with the first
+	// camelCase word of the alias ("blogCategories" → "blog") and check the
+	// alias on the candidates' full models.
+	result, err := client.Get(ctx, "/item/"+resource+"/search", api.RequestOptions{Params: map[string]any{"query": aliasSearchTerm(value), "skip": 0, "take": 100}})
+	if err != nil {
+		return "", fmt.Errorf("%q is not a GUID and the alias lookup failed: %w", value, err)
+	}
+	ids := []string{}
+	for _, item := range resultItems(result) {
+		if id := itemID(item); id != "" {
+			ids = append(ids, id)
+		}
+	}
+	matches := []string{}
+	for _, detail := range fetchSchemaTypeBatch(ctx, client, resource, ids) {
+		if alias, _ := detail["alias"].(string); strings.EqualFold(alias, value) {
+			if id, _ := detail["id"].(string); id != "" {
+				matches = append(matches, id)
+			}
+		}
+	}
+	switch len(matches) {
+	case 1:
+		return matches[0], nil
+	case 0:
+		return "", fmt.Errorf("%q is not a GUID and no %s has that alias; use 'umbraco %s get <guid>' or 'umbraco %s search --query %s' to find it", value, display, use, use, value)
+	default:
+		return "", fmt.Errorf("alias %q matched %d %ss (%s); pass the GUID", value, len(matches), display, strings.Join(matches, ", "))
+	}
+}
+
+// aliasSearchTerm returns the leading camelCase word of an alias, which is
+// what the name-based item search can match.
+func aliasSearchTerm(alias string) string {
+	for i, r := range alias {
+		if i > 0 && (r >= 'A' && r <= 'Z' || r == '_' || r == '-' || r == ' ') {
+			return alias[:i]
+		}
+	}
+	return alias
+}
+
+// fetchSchemaTypeBatch loads full models for the ids, via the batch route
+// when the server has it and one GET per id otherwise.
+func fetchSchemaTypeBatch(ctx context.Context, client *api.Client, resource string, ids []string) []map[string]any {
+	if len(ids) == 0 {
+		return nil
+	}
+	params := map[string]any{"id": ids}
+	if result, err := client.Get(ctx, "/"+resource+"/batch", api.RequestOptions{Params: params}); err == nil {
+		out := []map[string]any{}
+		for _, item := range resultItems(result) {
+			if entry, ok := item.(map[string]any); ok {
+				out = append(out, entry)
+			}
+		}
+		if len(out) > 0 {
+			return out
+		}
+	}
+	out := []map[string]any{}
+	for _, id := range ids {
+		if detail, err := fetchObject(ctx, client, api.JoinPath("/"+resource+"/%s", id), api.RequestOptions{}); err == nil {
+			out = append(out, detail)
+		}
+	}
+	return out
 }
 
 // The helpers below are shared by document-type, media-type, and member-type:

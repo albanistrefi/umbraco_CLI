@@ -69,10 +69,10 @@ func TestSchemaTypeListRecursiveFlattensFoldersForBothGroups(t *testing.T) {
 func TestSchemaTypeGetExplainsFolderIDs(t *testing.T) {
 	deps := schemaTypeDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
-		case "/umbraco/management/api/v1/media-type/folder-1", "/umbraco/management/api/v1/media-type/missing-1":
+		case "/umbraco/management/api/v1/media-type/f0f0f0f0-0000-4000-8000-000000000001", "/umbraco/management/api/v1/media-type/f0f0f0f0-0000-4000-8000-000000000002":
 			return endpointJSONResponse(http.StatusNotFound, `{"error":"not found"}`), nil
-		case "/umbraco/management/api/v1/media-type/folder/folder-1":
-			return endpointJSONResponse(http.StatusOK, `{"id":"folder-1","name":"Icons"}`), nil
+		case "/umbraco/management/api/v1/media-type/folder/f0f0f0f0-0000-4000-8000-000000000001":
+			return endpointJSONResponse(http.StatusOK, `{"id":"f0f0f0f0-0000-4000-8000-000000000001","name":"Icons"}`), nil
 		case "/umbraco/management/api/v1/tree/media-type/children":
 			return endpointJSONResponse(http.StatusOK, `{"items":[],"total":0}`), nil
 		default:
@@ -80,12 +80,12 @@ func TestSchemaTypeGetExplainsFolderIDs(t *testing.T) {
 		}
 	})
 
-	_, err := execute(buildSchemaTypeRoot(deps), "mediatype", "get", "folder-1")
+	_, err := execute(buildSchemaTypeRoot(deps), "mediatype", "get", "f0f0f0f0-0000-4000-8000-000000000001")
 	if err == nil || !strings.Contains(err.Error(), "is a folder, not a media type") {
 		t.Fatalf("expected folder explanation, got %v", err)
 	}
 
-	_, err = execute(buildSchemaTypeRoot(deps), "mediatype", "get", "missing-1")
+	_, err = execute(buildSchemaTypeRoot(deps), "mediatype", "get", "f0f0f0f0-0000-4000-8000-000000000002")
 	if err == nil || strings.Contains(err.Error(), "is a folder") {
 		t.Fatalf("expected the real API error for a missing media type, got %v", err)
 	}
@@ -199,5 +199,31 @@ func TestSchemaTypeMergeUpdateStripsReadOnlyFields(t *testing.T) {
 	}
 	if !strings.Contains(putBody, `"Image v2"`) || !strings.Contains(putBody, `"allowedAsRoot":true`) {
 		t.Fatalf("expected merged fields preserved, got %s", putBody)
+	}
+}
+
+func TestSchemaTypeGetResolvesAliasOrExplains(t *testing.T) {
+	deps := schemaTypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/item/media-type/search":
+			if req.URL.Query().Get("query") == "hero" {
+				return endpointJSONResponse(http.StatusOK, `{"total":2,"items":[{"id":"aaaaaaaa-0000-4000-8000-000000000001","name":"Hero Image"},{"id":"aaaaaaaa-0000-4000-8000-000000000002","name":"Hero Image Legacy"}]}`), nil
+			}
+			return endpointJSONResponse(http.StatusOK, `{"total":0,"items":[]}`), nil
+		case "/umbraco/management/api/v1/media-type/aaaaaaaa-0000-4000-8000-000000000001":
+			return endpointJSONResponse(http.StatusOK, `{"id":"aaaaaaaa-0000-4000-8000-000000000001","alias":"heroImage","name":"Hero Image"}`), nil
+		case "/umbraco/management/api/v1/media-type/aaaaaaaa-0000-4000-8000-000000000002":
+			return endpointJSONResponse(http.StatusOK, `{"id":"aaaaaaaa-0000-4000-8000-000000000002","alias":"heroImageLegacy","name":"Hero Image Legacy"}`), nil
+		default:
+			return endpointJSONResponse(http.StatusNotFound, `{"error":"not found"}`), nil
+		}
+	})
+	out, err := execute(buildSchemaTypeRoot(deps), "mediatype", "get", "HeroImage")
+	if err != nil || !strings.Contains(out, `"alias": "heroImage"`) {
+		t.Fatalf("expected alias resolution (case-insensitive, exact), got err=%v out=%s", err, out)
+	}
+	_, err = execute(buildSchemaTypeRoot(deps), "mediatype", "get", "someAliasThatDoesNotExist123")
+	if err == nil || !strings.Contains(err.Error(), "not a GUID and no media type has that alias") || strings.Contains(err.Error(), "Umbraco version") {
+		t.Fatalf("expected a clear alias-not-found error, got %v", err)
 	}
 }

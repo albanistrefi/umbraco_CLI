@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- `doctype get`, `mediatype get`, `membertype get` accept an alias as well as a GUID (agent-reported): a non-GUID argument is resolved through the item search (which matches names, so the first camelCase word of the alias is used as the query) and an exact, case-insensitive alias check on the candidates' full models (batch route when available). An unknown alias now says "not a GUID and no document type has that alias; use get <guid> or search --query …" instead of a 404 whose hint blamed the Umbraco version
+- `api --dry-run` previews now include the request headers (`--header`), for JSON and multipart requests alike (agent-reported: a header could not be checked before sending)
+- discoverability (agent-reported "no block command exists" against a build that had `datatype block reorder`/`--group`): the `datatype` and `doctype` groups open with task → command maps, and the doctype map states that allowed blocks, their order and Block Grid groups live on the Block List/Grid data type (`datatype block …`)
+
 ## v0.4.14 - 2026-09-09
 
 - `datatype block reorder <id> --keys a,b,c` reorders the allowed blocks (array order is the picker order): listed keys first, unlisted blocks keep their relative order; idempotent, and the datatype is re-read afterwards so the command fails if the server persisted a different order. `datatype block add|update … --group <name>` places a Block Grid block in a block group, creating the group in `blockGroups` when it does not exist (names matched case-insensitively); `--group ""` on update removes the block from its group. `datatype block groups <id>` lists the groups with block counts. `--group` and `groups` are Block Grid concepts and are rejected on Block List (also when the block already exists, before the idempotent no-op); `reorder` works on both editors. Whitespace-only group names are rejected. Closes the two deferred items from the block round (agent-reported)

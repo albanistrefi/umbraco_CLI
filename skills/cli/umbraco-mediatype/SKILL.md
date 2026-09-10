@@ -24,7 +24,7 @@ umbraco mediatype <command> [flags]
 |---------|-------------|
 | `mediatype children <id>` | Get child media types of a folder (paginated; --skip/--take/--all) |
 | `mediatype export <id>` | Export a media type as a .udt document |
-| `mediatype get <id>` | Get media type by ID |
+| `mediatype get <id-or-alias>` | Get media type by ID (or by exact alias) |
 | `mediatype list` | List media types (paginated; --skip/--take/--all) |
 | `mediatype search` | Search media types |
 
@@ -58,8 +58,10 @@ umbraco mediatype export <id>
 ### get
 
 ```bash
-umbraco mediatype get <id>
+umbraco mediatype get <id-or-alias>
 ```
+
+Fetches a media type by GUID. A non-GUID argument is treated as an alias and resolved through the item search (exact, case-insensitive match); when nothing matches the command says so instead of issuing a request that can only 404.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|

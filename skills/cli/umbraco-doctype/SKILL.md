@@ -18,13 +18,27 @@ metadata:
 umbraco doctype <command> [flags]
 ```
 
+## Overview
+
+```text
+Document type schema operations.
+
+Task → command:
+  Read a type by GUID or alias                         doctype get <id-or-alias>
+  Find types by name                                   doctype search --query <text>
+  Add / reorder properties, add tabs or groups         doctype add-property, reorder-properties, add-container
+  Allowed blocks, block order, Block Grid groups       datatype block add|reorder|groups … (blocks belong to the Block List/Grid DATA TYPE, not the document type)
+  Which data type does a property use?                 doctype get <id> --fields properties
+  Apply a whole schema from Deploy artifacts           deploy apply --uda-dir <dir> --dry-run
+```
+
 ## Read Commands
 
 | Command | Description |
 |---------|-------------|
 | `doctype allowed-in-library` | List document types usable as library elements (Umbraco 18.1+) |
 | `doctype children <id>` | Get child document types (paginated; --skip/--take/--all) |
-| `doctype get <id>` | Get document type by ID |
+| `doctype get <id-or-alias>` | Get document type by ID (or by exact alias) |
 | `doctype list` | List document types (paginated; --skip/--take/--all) |
 | `doctype root` | Get root document types (paginated; --skip/--take/--all) |
 | `doctype search` | Search document types |
@@ -68,8 +82,10 @@ umbraco doctype children <id>
 ### get
 
 ```bash
-umbraco doctype get <id>
+umbraco doctype get <id-or-alias>
 ```
+
+Fetches a document type by GUID. A non-GUID argument is treated as an alias and resolved through the item search (exact, case-insensitive match); when nothing matches the command says so instead of issuing a request that can only 404. Blocks (allowed blocks, their order, Block Grid groups) live on the Block List/Grid data type: see 'umbraco datatype block --help'.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|

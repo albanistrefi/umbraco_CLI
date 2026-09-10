@@ -179,10 +179,10 @@ func TestDoctypeGetFolderIDReturnsFolderDiagnostic(t *testing.T) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
 			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
-		case "/umbraco/management/api/v1/document-type/folder-1", "/umbraco/management/api/v1/document-type/missing-1":
+		case "/umbraco/management/api/v1/document-type/f0f0f0f0-0000-4000-8000-000000000001", "/umbraco/management/api/v1/document-type/f0f0f0f0-0000-4000-8000-000000000002":
 			return datatypeJSONResponse(http.StatusNotFound, `{"title":"Not Found"}`), nil
-		case "/umbraco/management/api/v1/document-type/folder/folder-1":
-			return datatypeJSONResponse(http.StatusOK, `{"id":"folder-1","name":"Compositions"}`), nil
+		case "/umbraco/management/api/v1/document-type/folder/f0f0f0f0-0000-4000-8000-000000000001":
+			return datatypeJSONResponse(http.StatusOK, `{"id":"f0f0f0f0-0000-4000-8000-000000000001","name":"Compositions"}`), nil
 		case "/umbraco/management/api/v1/tree/document-type/children":
 			// The tree answers 200 with an empty page for any parentId; it must
 			// no longer be what decides "folder".
@@ -192,12 +192,12 @@ func TestDoctypeGetFolderIDReturnsFolderDiagnostic(t *testing.T) {
 		}
 	})
 
-	_, err := execute(buildRootWithCollections(t, deps), "doctype", "get", "folder-1")
+	_, err := execute(buildRootWithCollections(t, deps), "doctype", "get", "f0f0f0f0-0000-4000-8000-000000000001")
 	if err == nil || !strings.Contains(err.Error(), "is a folder, not a document type") {
 		t.Fatalf("expected folder-specific diagnostic, got %v", err)
 	}
 
-	_, err = execute(buildRootWithCollections(t, deps), "doctype", "get", "missing-1")
+	_, err = execute(buildRootWithCollections(t, deps), "doctype", "get", "f0f0f0f0-0000-4000-8000-000000000002")
 	if err == nil || strings.Contains(err.Error(), "is a folder") || !strings.Contains(err.Error(), "404") {
 		t.Fatalf("expected the real 404 for a missing document type, got %v", err)
 	}
