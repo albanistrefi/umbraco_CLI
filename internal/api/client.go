@@ -71,11 +71,12 @@ func escapePathSegment(segment string) string {
 }
 
 type DryRunResult struct {
-	DryRun bool   `json:"dryRun"`
-	Valid  bool   `json:"valid"`
-	Method string `json:"method"`
-	Path   string `json:"path"`
-	Body   any    `json:"body"`
+	DryRun  bool              `json:"dryRun"`
+	Valid   bool              `json:"valid"`
+	Method  string            `json:"method"`
+	Path    string            `json:"path"`
+	Headers map[string]string `json:"headers,omitempty"`
+	Body    any               `json:"body"`
 }
 
 type ResponseResult struct {
@@ -259,11 +260,12 @@ func (c *Client) RequestResult(ctx context.Context, method string, path string, 
 
 	if opts.DryRun {
 		return ResponseResult{Body: DryRunResult{
-			DryRun: true,
-			Valid:  true,
-			Method: method,
-			Path:   relativePath,
-			Body:   body,
+			DryRun:  true,
+			Valid:   true,
+			Method:  method,
+			Path:    relativePath,
+			Headers: opts.Headers,
+			Body:    body,
 		}}, nil
 	}
 
@@ -492,10 +494,11 @@ func (c *Client) MultipartResult(ctx context.Context, method string, path string
 
 	if opts.DryRun {
 		return ResponseResult{Body: DryRunResult{
-			DryRun: true,
-			Valid:  true,
-			Method: method,
-			Path:   relativePath,
+			DryRun:  true,
+			Valid:   true,
+			Method:  method,
+			Path:    relativePath,
+			Headers: opts.Headers,
 			Body: map[string]any{
 				"fields": fields,
 				"files":  files,

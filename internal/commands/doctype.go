@@ -15,6 +15,15 @@ func RegisterDoctype(root *cobra.Command, deps Dependencies) {
 		Use:     "doctype",
 		Aliases: []string{"document-type"},
 		Short:   "Document type schema operations",
+		Long: `Document type schema operations.
+
+Task → command:
+  Read a type by GUID or alias                         doctype get <id-or-alias>
+  Find types by name                                   doctype search --query <text>
+  Add / reorder properties, add tabs or groups         doctype add-property, reorder-properties, add-container
+  Allowed blocks, block order, Block Grid groups       datatype block add|reorder|groups … (blocks belong to the Block List/Grid DATA TYPE, not the document type)
+  Which data type does a property use?                 doctype get <id> --fields properties
+  Apply a whole schema from Deploy artifacts           deploy apply --uda-dir <dir> --dry-run`,
 	}
 	doctype.AddCommand(doctypeGet(deps))
 	doctype.AddCommand(doctypeList(deps))
@@ -36,14 +45,19 @@ func RegisterDoctype(root *cobra.Command, deps Dependencies) {
 func doctypeGet(deps Dependencies) *cobra.Command {
 	var fields string
 	cmd := &cobra.Command{
-		Use:   "get <id>",
-		Short: "Get document type by ID",
+		Use:   "get <id-or-alias>",
+		Short: "Get document type by ID (or by exact alias)",
+		Long:  "Fetches a document type by GUID. A non-GUID argument is treated as an alias and resolved through the item search (exact, case-insensitive match); when nothing matches the command says so instead of issuing a request that can only 404. Blocks (allowed blocks, their order, Block Grid groups) live on the Block List/Grid data type: see 'umbraco datatype block --help'.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			result, err := deps.Client.Get(cmd.Context(), api.JoinPath("/document-type/%s", args[0]), api.RequestOptions{Fields: fields})
+			id, err := resolveSchemaTypeID(cmd.Context(), deps.Client, "document-type", "doctype", "document type", args[0])
 			if err != nil {
-				if isSchemaTypeFolderID(cmd.Context(), deps.Client, "document-type", args[0]) {
-					return fmt.Errorf("document type id %s is a folder, not a document type; use `umbraco doctype children %s` or `umbraco doctype list --recursive --types-only`", args[0], args[0])
+				return err
+			}
+			result, err := deps.Client.Get(cmd.Context(), api.JoinPath("/document-type/%s", id), api.RequestOptions{Fields: fields})
+			if err != nil {
+				if isSchemaTypeFolderID(cmd.Context(), deps.Client, "document-type", id) {
+					return fmt.Errorf("document type id %s is a folder, not a document type; use `umbraco doctype children %s` or `umbraco doctype list --recursive --types-only`", id, id)
 				}
 				return err
 			}

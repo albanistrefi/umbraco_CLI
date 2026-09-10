@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -223,5 +224,24 @@ func TestAPIPassthroughOutWritesBinaryBodyVerbatim(t *testing.T) {
 	}
 	if _, err := execute(buildRootWithCollections(t, deps), "api", "POST", "/x", "--out", outPath); err == nil {
 		t.Fatalf("expected --out with POST to be rejected")
+	}
+}
+
+func TestAPIDryRunPreviewIncludesHeaders(t *testing.T) {
+	filePath := filepath.Join(t.TempDir(), "x.svg")
+	_ = os.WriteFile(filePath, []byte("<svg/>"), 0o644)
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+	})
+	output, err := execute(buildRootWithCollections(t, deps), "api", "POST", "/temporary-file", "--dry-run", "--form", "file=@"+filePath, "--header", "X-Test: 1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output, `"X-Test": "1"`) {
+		t.Fatalf("expected headers in the dry-run preview, got %s", output)
+	}
+	output, err = execute(buildRootWithCollections(t, deps), "api", "GET", "/server/status", "--dry-run", "--header", "X-Test: 2")
+	if err != nil || !strings.Contains(output, `"X-Test": "2"`) {
+		t.Fatalf("expected headers in the JSON dry-run preview, got err=%v out=%s", err, output)
 	}
 }

@@ -21,7 +21,20 @@ const (
 )
 
 func RegisterDatatype(root *cobra.Command, deps Dependencies) {
-	datatype := &cobra.Command{Use: "datatype", Short: "Data type operations"}
+	datatype := &cobra.Command{
+		Use:   "datatype",
+		Short: "Data type operations",
+		Long: `Data type operations.
+
+Task → command:
+  Read / find data types                               datatype get <id>, datatype search --query <text>
+  Change editor configuration                          datatype update <id> --merge-json '{...}' --backup
+  Block List / Block Grid: list allowed blocks         datatype block list <id>
+  Register or update a block (Block Grid: --group)     datatype block add|update <id> --content-element-type <guid> [--group <name>]
+  Reorder blocks (picker order)                        datatype block reorder <id> --keys <guid>,<guid>,…
+  Block Grid groups with counts                        datatype block groups <id>
+  Remove a block                                       datatype block remove <id> --content-element-type <guid>`,
+	}
 	datatype.AddCommand(datatypeGet(deps))
 	datatype.AddCommand(datatypeList(deps))
 	datatype.AddCommand(datatypeRoot(deps))

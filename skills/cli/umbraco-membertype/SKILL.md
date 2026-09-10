@@ -24,7 +24,7 @@ umbraco membertype <command> [flags]
 |---------|-------------|
 | `membertype children <id>` | Get child member types of a folder (paginated; --skip/--take/--all) |
 | `membertype export <id>` | Export a member type as a .udt document |
-| `membertype get <id>` | Get member type by ID |
+| `membertype get <id-or-alias>` | Get member type by ID (or by exact alias) |
 | `membertype list` | List member types (paginated; --skip/--take/--all) |
 | `membertype search` | Search member types |
 
@@ -58,8 +58,10 @@ umbraco membertype export <id>
 ### get
 
 ```bash
-umbraco membertype get <id>
+umbraco membertype get <id-or-alias>
 ```
+
+Fetches a member type by GUID. A non-GUID argument is treated as an alias and resolved through the item search (exact, case-insensitive match); when nothing matches the command says so instead of issuing a request that can only 404.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
