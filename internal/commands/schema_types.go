@@ -3,6 +3,7 @@ package commands
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -204,7 +205,9 @@ func resolveSchemaTypeID(ctx context.Context, client *api.Client, resource strin
 	}
 	// The item search matches names, not aliases, so query with the first
 	// camelCase word of the alias ("blogCategories" → "blog") and check the
-	// alias on the candidates' full models.
+	// alias on the candidates' full models. A renamed type whose alias no
+	// longer resembles its name misses that search, so an exhaustive walk
+	// of the type tree is the fallback.
 	result, err := client.Get(ctx, "/item/"+resource+"/search", api.RequestOptions{Params: map[string]any{"query": aliasSearchTerm(value), "skip": 0, "take": 100}})
 	if err != nil {
 		return "", fmt.Errorf("%q is not a GUID and the alias lookup failed: %w", value, err)
@@ -215,12 +218,28 @@ func resolveSchemaTypeID(ctx context.Context, client *api.Client, resource strin
 			ids = append(ids, id)
 		}
 	}
-	matches := []string{}
-	for _, detail := range fetchSchemaTypeBatch(ctx, client, resource, ids) {
-		if alias, _ := detail["alias"].(string); strings.EqualFold(alias, value) {
-			if id, _ := detail["id"].(string); id != "" {
-				matches = append(matches, id)
+	matches, err := matchSchemaTypeAlias(ctx, client, resource, ids, value)
+	if err != nil {
+		return "", fmt.Errorf("%q is not a GUID and the alias lookup failed: %w", value, err)
+	}
+	if len(matches) == 0 {
+		rootResult, err := client.Get(ctx, "/tree/"+resource+"/root", api.RequestOptions{Params: map[string]any{"skip": 0, "take": 500}})
+		if err != nil {
+			return "", fmt.Errorf("%q is not a GUID and the alias lookup failed: %w", value, err)
+		}
+		all, err := flattenSchemaTypeTree(ctx, client, resource, resultItems(rootResult), 500, true, 0)
+		if err != nil {
+			return "", fmt.Errorf("%q is not a GUID and the alias lookup failed: %w", value, err)
+		}
+		allIDs := []string{}
+		for _, item := range all {
+			if id := itemID(item); id != "" {
+				allIDs = append(allIDs, id)
 			}
+		}
+		matches, err = matchSchemaTypeAlias(ctx, client, resource, allIDs, value)
+		if err != nil {
+			return "", fmt.Errorf("%q is not a GUID and the alias lookup failed: %w", value, err)
 		}
 	}
 	switch len(matches) {
@@ -244,14 +263,38 @@ func aliasSearchTerm(alias string) string {
 	return alias
 }
 
-// fetchSchemaTypeBatch loads full models for the ids, via the batch route
-// when the server has it and one GET per id otherwise.
-func fetchSchemaTypeBatch(ctx context.Context, client *api.Client, resource string, ids []string) []map[string]any {
-	if len(ids) == 0 {
-		return nil
+// matchSchemaTypeAlias returns the ids among candidates whose full model
+// carries the alias (exact, case-insensitive).
+func matchSchemaTypeAlias(ctx context.Context, client *api.Client, resource string, ids []string, alias string) ([]string, error) {
+	details, err := fetchSchemaTypeBatch(ctx, client, resource, ids)
+	if err != nil {
+		return nil, err
 	}
-	params := map[string]any{"id": ids}
-	if result, err := client.Get(ctx, "/"+resource+"/batch", api.RequestOptions{Params: params}); err == nil {
+	matches := []string{}
+	for _, detail := range details {
+		if got, _ := detail["alias"].(string); strings.EqualFold(got, alias) {
+			if id, _ := detail["id"].(string); id != "" {
+				matches = append(matches, id)
+			}
+		}
+	}
+	return matches, nil
+}
+
+// fetchSchemaTypeBatch loads full models for the ids, via the batch route
+// when the server has it (ids as repeated query values) and one GET per id
+// otherwise. A 404 for one id means it vanished between calls and is
+// skipped; any other API failure is returned, never mistaken for "absent".
+func fetchSchemaTypeBatch(ctx context.Context, client *api.Client, resource string, ids []string) ([]map[string]any, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	// buildURL repeats []any values as separate query parameters.
+	idParams := make([]any, 0, len(ids))
+	for _, id := range ids {
+		idParams = append(idParams, id)
+	}
+	if result, err := client.Get(ctx, "/"+resource+"/batch", api.RequestOptions{Params: map[string]any{"id": idParams}}); err == nil {
 		out := []map[string]any{}
 		for _, item := range resultItems(result) {
 			if entry, ok := item.(map[string]any); ok {
@@ -259,16 +302,23 @@ func fetchSchemaTypeBatch(ctx context.Context, client *api.Client, resource stri
 			}
 		}
 		if len(out) > 0 {
-			return out
+			return out, nil
 		}
+	} else if !isAPIStatus(err, http.StatusNotFound) {
+		return nil, err
 	}
 	out := []map[string]any{}
 	for _, id := range ids {
-		if detail, err := fetchObject(ctx, client, api.JoinPath("/"+resource+"/%s", id), api.RequestOptions{}); err == nil {
-			out = append(out, detail)
+		detail, err := fetchObject(ctx, client, api.JoinPath("/"+resource+"/%s", id), api.RequestOptions{})
+		if err != nil {
+			if isAPIStatus(err, http.StatusNotFound) {
+				continue
+			}
+			return nil, err
 		}
+		out = append(out, detail)
 	}
-	return out
+	return out, nil
 }
 
 // The helpers below are shared by document-type, media-type, and member-type:

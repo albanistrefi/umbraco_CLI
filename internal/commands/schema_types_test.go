@@ -210,6 +210,8 @@ func TestSchemaTypeGetResolvesAliasOrExplains(t *testing.T) {
 				return endpointJSONResponse(http.StatusOK, `{"total":2,"items":[{"id":"aaaaaaaa-0000-4000-8000-000000000001","name":"Hero Image"},{"id":"aaaaaaaa-0000-4000-8000-000000000002","name":"Hero Image Legacy"}]}`), nil
 			}
 			return endpointJSONResponse(http.StatusOK, `{"total":0,"items":[]}`), nil
+		case "/umbraco/management/api/v1/tree/media-type/root":
+			return endpointJSONResponse(http.StatusOK, `{"total":0,"items":[]}`), nil
 		case "/umbraco/management/api/v1/media-type/aaaaaaaa-0000-4000-8000-000000000001":
 			return endpointJSONResponse(http.StatusOK, `{"id":"aaaaaaaa-0000-4000-8000-000000000001","alias":"heroImage","name":"Hero Image"}`), nil
 		case "/umbraco/management/api/v1/media-type/aaaaaaaa-0000-4000-8000-000000000002":
@@ -225,5 +227,48 @@ func TestSchemaTypeGetResolvesAliasOrExplains(t *testing.T) {
 	_, err = execute(buildSchemaTypeRoot(deps), "mediatype", "get", "someAliasThatDoesNotExist123")
 	if err == nil || !strings.Contains(err.Error(), "not a GUID and no media type has that alias") || strings.Contains(err.Error(), "Umbraco version") {
 		t.Fatalf("expected a clear alias-not-found error, got %v", err)
+	}
+}
+
+func TestSchemaTypeAliasFallsBackToTreeAndUsesBatchAndPropagatesErrors(t *testing.T) {
+	var batchIDs []string
+	deps := schemaTypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/item/media-type/search":
+			return endpointJSONResponse(http.StatusOK, `{"total":0,"items":[]}`), nil // renamed type: name no longer matches the alias
+		case "/umbraco/management/api/v1/tree/media-type/root":
+			return endpointJSONResponse(http.StatusOK, `{"total":1,"items":[{"id":"aaaaaaaa-0000-4000-8000-000000000009","name":"News Article","alias":"x","isFolder":false}]}`), nil
+		case "/umbraco/management/api/v1/media-type/batch":
+			batchIDs = req.URL.Query()["id"]
+			return endpointJSONResponse(http.StatusOK, `[{"id":"aaaaaaaa-0000-4000-8000-000000000009","alias":"blogPost","name":"News Article"}]`), nil
+		case "/umbraco/management/api/v1/media-type/aaaaaaaa-0000-4000-8000-000000000009":
+			return endpointJSONResponse(http.StatusOK, `{"id":"aaaaaaaa-0000-4000-8000-000000000009","alias":"blogPost","name":"News Article"}`), nil
+		default:
+			return endpointJSONResponse(http.StatusNotFound, `{"error":"not found"}`), nil
+		}
+	})
+	out, err := execute(buildSchemaTypeRoot(deps), "mediatype", "get", "blogPost")
+	if err != nil || !strings.Contains(out, `"alias": "blogPost"`) {
+		t.Fatalf("expected tree fallback to resolve a renamed type, got err=%v out=%s", err, out)
+	}
+	if len(batchIDs) != 1 || batchIDs[0] != "aaaaaaaa-0000-4000-8000-000000000009" {
+		t.Fatalf("expected batch ids as repeated query values, got %v", batchIDs)
+	}
+
+	failing := schemaTypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/item/media-type/search":
+			return endpointJSONResponse(http.StatusOK, `{"total":1,"items":[{"id":"aaaaaaaa-0000-4000-8000-000000000009"}]}`), nil
+		case "/umbraco/management/api/v1/media-type/batch":
+			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		case "/umbraco/management/api/v1/media-type/aaaaaaaa-0000-4000-8000-000000000009":
+			return endpointJSONResponse(http.StatusForbidden, `{"title":"Forbidden"}`), nil
+		default:
+			return endpointJSONResponse(http.StatusNotFound, `{"error":"not found"}`), nil
+		}
+	})
+	_, err = execute(buildSchemaTypeRoot(failing), "mediatype", "get", "blogPost")
+	if err == nil || !strings.Contains(err.Error(), "403") || strings.Contains(err.Error(), "no media type has that alias") {
+		t.Fatalf("expected the API failure to propagate rather than a not-found, got %v", err)
 	}
 }
