@@ -206,7 +206,7 @@ func TestSchemaTypeGetResolvesAliasOrExplains(t *testing.T) {
 	deps := schemaTypeDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/item/media-type/search":
-			if req.URL.Query().Get("query") == "hero" {
+			if strings.EqualFold(req.URL.Query().Get("query"), "hero") {
 				return endpointJSONResponse(http.StatusOK, `{"total":2,"items":[{"id":"aaaaaaaa-0000-4000-8000-000000000001","name":"Hero Image"},{"id":"aaaaaaaa-0000-4000-8000-000000000002","name":"Hero Image Legacy"}]}`), nil
 			}
 			return endpointJSONResponse(http.StatusOK, `{"total":0,"items":[]}`), nil
