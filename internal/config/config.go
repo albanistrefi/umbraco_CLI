@@ -60,7 +60,7 @@ func LoadWithOptions(opts LoadOptions) (Config, error) {
 		return cfg, err
 	}
 	if override := strings.TrimSpace(opts.BaseURL); override != "" {
-		cfg.BaseURL = strings.TrimRight(override, "/")
+		cfg.BaseURL = NormalizeBaseURL(override)
 	}
 	return cfg, nil
 }

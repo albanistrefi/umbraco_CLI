@@ -667,11 +667,11 @@ func TestLoadWithOptionsBaseURLOverrideKeepsProfileCredentials(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	cfg, err := LoadWithOptions(LoadOptions{Profile: "dev", BaseURL: "http://127.0.0.1:9/"})
+	cfg, err := LoadWithOptions(LoadOptions{Profile: "dev", BaseURL: "http://127.0.0.1:9/umbraco/"})
 	if err != nil {
 		t.Fatalf("LoadWithOptions failed: %v", err)
 	}
 	if cfg.BaseURL != "http://127.0.0.1:9" || cfg.ClientID != "dev-id" || cfg.ClientSecret != "dev-secret" {
-		t.Fatalf("expected --base-url to replace only the host, got %+v", cfg)
+		t.Fatalf("expected --base-url to be normalized like other sources and replace only the host, got %+v", cfg)
 	}
 }

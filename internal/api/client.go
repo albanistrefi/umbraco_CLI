@@ -282,7 +282,13 @@ func (c *Client) RequestResult(ctx context.Context, method string, path string, 
 		encodedBody = encoded
 	}
 
-	resp, err := c.send(ctx, method, fullURL, "application/json", opts.Headers, func() io.Reader {
+	// A bodiless request carries no Content-Type, matching the dry-run
+	// preview (which promises the exact header set sent).
+	contentType := ""
+	if encodedBody != nil {
+		contentType = "application/json"
+	}
+	resp, err := c.send(ctx, method, fullURL, contentType, opts.Headers, func() io.Reader {
 		if encodedBody == nil {
 			return nil
 		}
@@ -346,7 +352,9 @@ func (c *Client) send(ctx context.Context, method string, fullURL string, conten
 			return nil, err
 		}
 		req.Header.Set("Authorization", "Bearer "+token)
-		req.Header.Set("Content-Type", contentType)
+		if contentType != "" {
+			req.Header.Set("Content-Type", contentType)
+		}
 		req.Header.Set("User-Agent", version.UserAgent())
 		for key, value := range headers {
 			req.Header.Set(key, value)
@@ -656,7 +664,7 @@ func (c *Client) GetStream(ctx context.Context, path string, w io.Writer, opts R
 		return StreamResult{}, err
 	}
 	relativePath := c.relativeAPIPath(fullURL)
-	resp, err := c.send(ctx, http.MethodGet, fullURL, "application/json", opts.Headers, func() io.Reader { return nil })
+	resp, err := c.send(ctx, http.MethodGet, fullURL, "", opts.Headers, func() io.Reader { return nil })
 	if err != nil {
 		return StreamResult{}, err
 	}
