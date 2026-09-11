@@ -2,7 +2,7 @@
 name: recipe-replace-media-file-safely
 description: "Inspect a media item, see which content uses it, swap its file with a backup, verify, and undo if needed."
 metadata:
-  version: 0.4.15
+  version: 0.4.16
   requires:
     bins:
       - umbraco

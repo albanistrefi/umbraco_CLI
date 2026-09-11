@@ -2,7 +2,7 @@
 name: umbraco-document
 description: "Document and content management operations"
 metadata:
-  version: 0.4.15
+  version: 0.4.16
   requires:
     bins:
       - umbraco

@@ -2,7 +2,7 @@
 name: umbraco-tree
 description: "Tree navigation helpers"
 metadata:
-  version: 0.4.15
+  version: 0.4.16
   requires:
     bins:
       - umbraco

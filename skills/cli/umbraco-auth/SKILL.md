@@ -2,7 +2,7 @@
 name: umbraco-auth
 description: "Persistent authentication helpers"
 metadata:
-  version: 0.4.15
+  version: 0.4.16
   requires:
     bins:
       - umbraco
