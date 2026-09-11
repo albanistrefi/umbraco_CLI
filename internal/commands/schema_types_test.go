@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 	"strings"
@@ -270,5 +271,46 @@ func TestSchemaTypeAliasFallsBackToTreeAndUsesBatchAndPropagatesErrors(t *testin
 	_, err = execute(buildSchemaTypeRoot(failing), "mediatype", "get", "blogPost")
 	if err == nil || !strings.Contains(err.Error(), "403") || strings.Contains(err.Error(), "no media type has that alias") {
 		t.Fatalf("expected the API failure to propagate rather than a not-found, got %v", err)
+	}
+}
+
+func TestSchemaTypeTypesOnlyKeepsTreeItemsWithoutAliasAndEnrichesAliases(t *testing.T) {
+	var batchIDs []string
+	deps := schemaTypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/tree/media-type/root":
+			return endpointJSONResponse(http.StatusOK, `{"total":3,"items":[
+				{"id":"f0f0f0f0-0000-4000-8000-000000000001","name":"Icons","isFolder":true,"hasChildren":false},
+				{"id":"aaaaaaaa-0000-4000-8000-000000000001","name":"Image","isFolder":false,"hasChildren":false},
+				{"id":"aaaaaaaa-0000-4000-8000-000000000002","name":"File","isFolder":false,"hasChildren":false}]}`), nil
+		case "/umbraco/management/api/v1/media-type/batch":
+			batchIDs = req.URL.Query()["id"]
+			return endpointJSONResponse(http.StatusOK, `[{"id":"aaaaaaaa-0000-4000-8000-000000000001","alias":"Image","isElement":false},{"id":"aaaaaaaa-0000-4000-8000-000000000002","alias":"File","isElement":false}]`), nil
+		case "/umbraco/management/api/v1/item/media-type/search":
+			return endpointJSONResponse(http.StatusOK, `{"total":1,"items":[{"id":"aaaaaaaa-0000-4000-8000-000000000001","name":"Image","isElement":false}]}`), nil
+		default:
+			return endpointJSONResponse(http.StatusNotFound, `{"error":"not found"}`), nil
+		}
+	})
+	out, err := execute(buildSchemaTypeRoot(deps), "mediatype", "list", "--types-only")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload map[string]any
+	_ = json.Unmarshal([]byte(out), &payload)
+	items := payload["items"].([]any)
+	if len(items) != 2 || items[0].(map[string]any)["alias"] != "Image" || items[1].(map[string]any)["alias"] != "File" {
+		t.Fatalf("expected the two non-folder items with aliases, got %s", out)
+	}
+	if len(batchIDs) != 2 {
+		t.Fatalf("expected one batch call for both ids, got %v", batchIDs)
+	}
+	summary, err := execute(buildSchemaTypeRoot(deps), "mediatype", "list", "--types-only", "--summarize")
+	if err != nil || !strings.Contains(summary, `"alias": "Image"`) {
+		t.Fatalf("expected --summarize to carry alias, got err=%v out=%s", err, summary)
+	}
+	search, err := execute(buildSchemaTypeRoot(deps), "mediatype", "search", "--query", "image")
+	if err != nil || !strings.Contains(search, `"alias": "Image"`) {
+		t.Fatalf("expected search items enriched with alias, got err=%v out=%s", err, search)
 	}
 }

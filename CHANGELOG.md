@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- fixed `doctype|mediatype|membertype list --types-only` (with or without `--recursive`) returning nothing (agent-reported): the folder heuristic treated any item without an alias as a folder, and tree items never carry one. An explicit `isFolder` flag is now authoritative in both directions
+- `doctype|mediatype|membertype list`, `children` and `search` items now carry `alias` (and `isElement`), fetched through the batch route in one extra request per page — the Management API tree/search models omit them (agent-reported: `--summarize` promised alias and `--fields alias` dropped it). Data types have no alias; `--summarize` help now says so (they carry `editorAlias`)
+- `api --dry-run` previews list the complete header set the request will carry: implicit `Authorization: Bearer ***`, `User-Agent`, and `Content-Type` (`application/json` for `--body`, `multipart/form-data; boundary=<generated when sent>` for `--form`), with `--header` values overriding
+- global `--base-url <url>` overrides the resolved base URL while keeping the profile's credentials (agent-reported: no way to exercise failure paths without copying a secret into another config file)
+
 ## v0.4.15 - 2026-09-10
 
 - `doctype get`, `mediatype get`, `membertype get` accept an alias as well as a GUID (agent-reported): a non-GUID argument is resolved through the item search (which matches names, so the first camelCase word of the alias is used as the query) and an exact, case-insensitive alias check on the candidates' full models (batch route when available). An unknown alias now says "not a GUID and no document type has that alias; use get <guid> or search --query …" instead of a 404 whose hint blamed the Umbraco version

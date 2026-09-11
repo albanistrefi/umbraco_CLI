@@ -641,3 +641,27 @@ func TestAPIErrorLeadsWithProblemTitle(t *testing.T) {
 		t.Fatalf("expected the title up front, got %q", err.Error()[:200])
 	}
 }
+
+func TestBodilessRequestsCarryNoContentType(t *testing.T) {
+	observed := map[string]string{}
+	httpClient := newTestHTTPClient(func(r *http.Request) (*http.Response, error) {
+		switch r.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return jsonResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`, nil), nil
+		default:
+			observed[r.Method] = r.Header.Get("Content-Type")
+			return jsonResponse(http.StatusOK, `{}`, nil), nil
+		}
+	})
+	cfg := config.Config{BaseURL: "https://example.test", ClientID: "id", ClientSecret: "secret"}
+	client := NewClient(cfg, httpClient, auth.New(cfg, httpClient))
+	_, _ = client.Get(context.Background(), "/server/status", RequestOptions{})
+	_, _ = client.Request(context.Background(), http.MethodDelete, "/document/x", nil, RequestOptions{})
+	_, _ = client.Put(context.Background(), "/document/x", map[string]any{"a": 1}, RequestOptions{})
+	if observed[http.MethodGet] != "" || observed[http.MethodDelete] != "" {
+		t.Fatalf("bodiless requests must not send Content-Type, got %v", observed)
+	}
+	if observed[http.MethodPut] != "application/json" {
+		t.Fatalf("body requests must send application/json, got %v", observed)
+	}
+}

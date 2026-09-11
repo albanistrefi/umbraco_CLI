@@ -30,6 +30,11 @@ type Config struct {
 type LoadOptions struct {
 	Profile    string
 	ConfigPath string
+	// BaseURL, when set, replaces the resolved base URL from any source —
+	// the global --base-url flag. Credentials are untouched, so a profile
+	// can be pointed at another host (or an unreachable one) without
+	// copying its secret.
+	BaseURL string
 }
 
 type ConfigFileNotFoundError struct {
@@ -50,6 +55,17 @@ func Load() (Config, error) {
 }
 
 func LoadWithOptions(opts LoadOptions) (Config, error) {
+	cfg, err := loadWithOptionsNoOverride(opts)
+	if err != nil {
+		return cfg, err
+	}
+	if override := strings.TrimSpace(opts.BaseURL); override != "" {
+		cfg.BaseURL = NormalizeBaseURL(override)
+	}
+	return cfg, nil
+}
+
+func loadWithOptionsNoOverride(opts LoadOptions) (Config, error) {
 	workingDir, err := os.Getwd()
 	if err != nil {
 		return Config{}, err

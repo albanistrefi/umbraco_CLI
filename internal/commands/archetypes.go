@@ -225,6 +225,9 @@ type searchSpec struct {
 	Extra []paramFlag
 	// Endpoints maps the resolved query params to candidates in fallback order.
 	Endpoints func(params map[string]any) []getRequestCandidate
+	// Enrich, when non-nil, post-processes the fetched result before output
+	// (e.g. adding aliases the item search does not return).
+	Enrich func(ctx context.Context, result any) (any, error)
 }
 
 // searchCommand builds a search read with the uniform parameter contract:
@@ -277,6 +280,11 @@ func searchCommand(deps Dependencies, spec searchSpec) *cobra.Command {
 			result, err := getWithFallback(cmd.Context(), deps.Client, spec.Endpoints(params)...)
 			if err != nil {
 				return err
+			}
+			if spec.Enrich != nil {
+				if result, err = spec.Enrich(cmd.Context(), result); err != nil {
+					return err
+				}
 			}
 			if spec.DocumentOutputTrim {
 				result, err = applyDocumentOutputTrim(result, trim, cmd.ErrOrStderr())

@@ -259,12 +259,16 @@ func (c *Client) RequestResult(ctx context.Context, method string, path string, 
 	relativePath := c.relativeAPIPath(fullURL)
 
 	if opts.DryRun {
+		contentType := ""
+		if body != nil {
+			contentType = "application/json"
+		}
 		return ResponseResult{Body: DryRunResult{
 			DryRun:  true,
 			Valid:   true,
 			Method:  method,
 			Path:    relativePath,
-			Headers: opts.Headers,
+			Headers: previewHeaders(contentType, opts.Headers),
 			Body:    body,
 		}}, nil
 	}
@@ -278,7 +282,13 @@ func (c *Client) RequestResult(ctx context.Context, method string, path string, 
 		encodedBody = encoded
 	}
 
-	resp, err := c.send(ctx, method, fullURL, "application/json", opts.Headers, func() io.Reader {
+	// A bodiless request carries no Content-Type, matching the dry-run
+	// preview (which promises the exact header set sent).
+	contentType := ""
+	if encodedBody != nil {
+		contentType = "application/json"
+	}
+	resp, err := c.send(ctx, method, fullURL, contentType, opts.Headers, func() io.Reader {
 		if encodedBody == nil {
 			return nil
 		}
@@ -307,6 +317,23 @@ func (c *Client) RequestResult(ctx context.Context, method string, path string, 
 	return ResponseResult{StatusCode: resp.StatusCode, Body: result}, nil
 }
 
+// previewHeaders is the complete header set a dry-run request would carry:
+// the implicit ones the client adds (Authorization redacted, User-Agent,
+// Content-Type when a body is sent) plus caller headers, which override.
+func previewHeaders(contentType string, extra map[string]string) map[string]string {
+	headers := map[string]string{
+		"Authorization": "Bearer ***",
+		"User-Agent":    version.UserAgent(),
+	}
+	if contentType != "" {
+		headers["Content-Type"] = contentType
+	}
+	for key, value := range extra {
+		headers[http.CanonicalHeaderKey(key)] = value
+	}
+	return headers
+}
+
 const maxRequestAttempts = 4
 
 // send executes an authenticated request, retrying rate limits (429) with
@@ -325,7 +352,9 @@ func (c *Client) send(ctx context.Context, method string, fullURL string, conten
 			return nil, err
 		}
 		req.Header.Set("Authorization", "Bearer "+token)
-		req.Header.Set("Content-Type", contentType)
+		if contentType != "" {
+			req.Header.Set("Content-Type", contentType)
+		}
 		req.Header.Set("User-Agent", version.UserAgent())
 		for key, value := range headers {
 			req.Header.Set(key, value)
@@ -498,7 +527,7 @@ func (c *Client) MultipartResult(ctx context.Context, method string, path string
 			Valid:   true,
 			Method:  method,
 			Path:    relativePath,
-			Headers: opts.Headers,
+			Headers: previewHeaders("multipart/form-data; boundary=<generated when sent>", opts.Headers),
 			Body: map[string]any{
 				"fields": fields,
 				"files":  files,
@@ -635,7 +664,7 @@ func (c *Client) GetStream(ctx context.Context, path string, w io.Writer, opts R
 		return StreamResult{}, err
 	}
 	relativePath := c.relativeAPIPath(fullURL)
-	resp, err := c.send(ctx, http.MethodGet, fullURL, "application/json", opts.Headers, func() io.Reader { return nil })
+	resp, err := c.send(ctx, http.MethodGet, fullURL, "", opts.Headers, func() io.Reader { return nil })
 	if err != nil {
 		return StreamResult{}, err
 	}

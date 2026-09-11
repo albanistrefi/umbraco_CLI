@@ -13,6 +13,7 @@ func NewRootCommand() *cobra.Command {
 	var outputFormat string
 	var profile string
 	var configPath string
+	var baseURL string
 
 	root := &cobra.Command{
 		Use:           "umbraco",
@@ -21,7 +22,7 @@ func NewRootCommand() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-			opts := config.LoadOptions{Profile: profile, ConfigPath: configPath}
+			opts := config.LoadOptions{Profile: profile, ConfigPath: configPath, BaseURL: baseURL}
 			if err := runtime.Reload(opts); err != nil && (profile != "" || configPath != "") {
 				if config.IsConfigFileNotFound(err) && allowsMissingSelectedConfig(cmd) {
 					return nil
@@ -36,6 +37,7 @@ func NewRootCommand() *cobra.Command {
 	root.PersistentFlags().StringVarP(&outputFormat, "output", "o", "", "Output format: json, table, plain")
 	root.PersistentFlags().StringVar(&profile, "profile", "", "User config profile to load from ~/.umbraco/<profile>.config.json")
 	root.PersistentFlags().StringVar(&configPath, "config", "", "Explicit Umbraco CLI config file path")
+	root.PersistentFlags().StringVar(&baseURL, "base-url", "", "Override the Umbraco base URL from any config source, keeping the resolved credentials (e.g. point a profile at another host)")
 
 	deps := commands.Dependencies{
 		Client:     runtime.Client,
@@ -46,7 +48,7 @@ func NewRootCommand() *cobra.Command {
 		},
 		OutputFlag: &outputFormat,
 		ConfigOptionsProvider: func() config.LoadOptions {
-			return config.LoadOptions{Profile: profile, ConfigPath: configPath}
+			return config.LoadOptions{Profile: profile, ConfigPath: configPath, BaseURL: baseURL}
 		},
 		ConfigProvider: func() config.Config {
 			return runtime.Config

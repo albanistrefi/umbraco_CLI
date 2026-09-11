@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -126,6 +127,9 @@ func doctypeList(deps Dependencies) *cobra.Command {
 			} else if filterFolders {
 				result = filterSchemaTypeFolders(result)
 			}
+			if result, err = enrichSchemaTypeAliases(ctx, deps.Client, "document-type", result); err != nil {
+				return err
+			}
 
 			return printResult(cmd, deps, applyReadTriage(applyFieldsProjection(result, fields), triage))
 		},
@@ -156,7 +160,10 @@ func doctypeRoot(deps Dependencies) *cobra.Command {
 
 func doctypeChildren(deps Dependencies) *cobra.Command {
 	return collectionCommand(deps, collectionSpec{
-		Use:   "children <id>",
+		Use: "children <id>",
+		Enrich: func(ctx context.Context, result any) (any, error) {
+			return enrichSchemaTypeAliases(ctx, deps.Client, "document-type", result)
+		},
 		Short: "Get child document types (paginated; --skip/--take/--all)",
 		NArgs: 1,
 		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
@@ -172,6 +179,9 @@ func doctypeSearch(deps Dependencies) *cobra.Command {
 	return searchCommand(deps, searchSpec{
 		Use:   "search",
 		Short: "Search document types",
+		Enrich: func(ctx context.Context, result any) (any, error) {
+			return enrichSchemaTypeAliases(ctx, deps.Client, "document-type", result)
+		},
 		Endpoints: func(params map[string]any) []getRequestCandidate {
 			return []getRequestCandidate{
 				{path: "/item/document-type/search", opts: api.RequestOptions{Params: params}},

@@ -245,3 +245,25 @@ func TestAPIDryRunPreviewIncludesHeaders(t *testing.T) {
 		t.Fatalf("expected headers in the JSON dry-run preview, got err=%v out=%s", err, output)
 	}
 }
+
+func TestAPIDryRunPreviewIncludesImplicitHeaders(t *testing.T) {
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+	})
+	output, err := execute(buildRootWithCollections(t, deps), "api", "POST", "/server/status", "--dry-run", "--body", `{}`, "--header", "x-test: 1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"Content-Type": "application/json"`, `"Authorization": "Bearer ***"`, `"User-Agent": "umbraco-cli/`, `"X-Test": "1"`} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("expected %s in preview headers, got %s", want, output)
+		}
+	}
+	if strings.Contains(output, "token-123") {
+		t.Fatalf("dry-run must not leak the token")
+	}
+	output, _ = execute(buildRootWithCollections(t, deps), "api", "GET", "/server/status", "--dry-run")
+	if strings.Contains(output, "Content-Type") {
+		t.Fatalf("a bodiless GET must not claim a Content-Type: %s", output)
+	}
+}

@@ -241,6 +241,7 @@ Without `+"`--profile`"+`, `+"`--config`"+`, or an active profile from `+"`umbra
 | `+"`-o, --output <FORMAT>`"+` | Output format: `+"`json`"+`, `+"`table`"+`, `+"`plain`"+` |
 | `+"`--profile <NAME>`"+` | Load `+"`~/.umbraco/<NAME>.config.json`"+` for base URL and credentials |
 | `+"`--config <PATH>`"+` | Load an explicit config file for base URL and credentials |
+| `+"`--base-url <URL>`"+` | Override the base URL from any source while keeping the resolved credentials (point a profile at another host, or an unreachable one to exercise failure paths) |
 
 ## Safety Rules
 
