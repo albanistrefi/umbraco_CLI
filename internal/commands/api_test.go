@@ -254,7 +254,7 @@ func TestAPIDryRunPreviewIncludesImplicitHeaders(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{`"Content-Type": "application/json"`, `"Authorization": "Bearer <redacted>"`, `"User-Agent": "umbraco-cli/`, `"X-Test": "1"`} {
+	for _, want := range []string{`"Content-Type": "application/json"`, `"Authorization": "Bearer ***"`, `"User-Agent": "umbraco-cli/`, `"X-Test": "1"`} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("expected %s in preview headers, got %s", want, output)
 		}

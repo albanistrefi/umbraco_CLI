@@ -316,7 +316,7 @@ func (c *Client) RequestResult(ctx context.Context, method string, path string, 
 // Content-Type when a body is sent) plus caller headers, which override.
 func previewHeaders(contentType string, extra map[string]string) map[string]string {
 	headers := map[string]string{
-		"Authorization": "Bearer <redacted>",
+		"Authorization": "Bearer ***",
 		"User-Agent":    version.UserAgent(),
 	}
 	if contentType != "" {

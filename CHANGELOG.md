@@ -4,7 +4,7 @@
 
 - fixed `doctype|mediatype|membertype list --types-only` (with or without `--recursive`) returning nothing (agent-reported): the folder heuristic treated any item without an alias as a folder, and tree items never carry one. An explicit `isFolder` flag is now authoritative in both directions
 - `doctype|mediatype|membertype list`, `children` and `search` items now carry `alias` (and `isElement`), fetched through the batch route in one extra request per page — the Management API tree/search models omit them (agent-reported: `--summarize` promised alias and `--fields alias` dropped it). Data types have no alias; `--summarize` help now says so (they carry `editorAlias`)
-- `api --dry-run` previews list the complete header set the request will carry: implicit `Authorization: Bearer <redacted>`, `User-Agent`, and `Content-Type` (`application/json` for `--body`, `multipart/form-data; boundary=<generated when sent>` for `--form`), with `--header` values overriding
+- `api --dry-run` previews list the complete header set the request will carry: implicit `Authorization: Bearer ***`, `User-Agent`, and `Content-Type` (`application/json` for `--body`, `multipart/form-data; boundary=<generated when sent>` for `--form`), with `--header` values overriding
 - global `--base-url <url>` overrides the resolved base URL while keeping the profile's credentials (agent-reported: no way to exercise failure paths without copying a secret into another config file)
 
 ## v0.4.15 - 2026-09-10
