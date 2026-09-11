@@ -259,12 +259,16 @@ func (c *Client) RequestResult(ctx context.Context, method string, path string, 
 	relativePath := c.relativeAPIPath(fullURL)
 
 	if opts.DryRun {
+		contentType := ""
+		if body != nil {
+			contentType = "application/json"
+		}
 		return ResponseResult{Body: DryRunResult{
 			DryRun:  true,
 			Valid:   true,
 			Method:  method,
 			Path:    relativePath,
-			Headers: opts.Headers,
+			Headers: previewHeaders(contentType, opts.Headers),
 			Body:    body,
 		}}, nil
 	}
@@ -305,6 +309,23 @@ func (c *Client) RequestResult(ctx context.Context, method string, path string, 
 
 	result = mergeLocationID(result, resp.Header.Get("Location"))
 	return ResponseResult{StatusCode: resp.StatusCode, Body: result}, nil
+}
+
+// previewHeaders is the complete header set a dry-run request would carry:
+// the implicit ones the client adds (Authorization redacted, User-Agent,
+// Content-Type when a body is sent) plus caller headers, which override.
+func previewHeaders(contentType string, extra map[string]string) map[string]string {
+	headers := map[string]string{
+		"Authorization": "Bearer <redacted>",
+		"User-Agent":    version.UserAgent(),
+	}
+	if contentType != "" {
+		headers["Content-Type"] = contentType
+	}
+	for key, value := range extra {
+		headers[http.CanonicalHeaderKey(key)] = value
+	}
+	return headers
 }
 
 const maxRequestAttempts = 4
@@ -498,7 +519,7 @@ func (c *Client) MultipartResult(ctx context.Context, method string, path string
 			Valid:   true,
 			Method:  method,
 			Path:    relativePath,
-			Headers: opts.Headers,
+			Headers: previewHeaders("multipart/form-data; boundary=<generated when sent>", opts.Headers),
 			Body: map[string]any{
 				"fields": fields,
 				"files":  files,

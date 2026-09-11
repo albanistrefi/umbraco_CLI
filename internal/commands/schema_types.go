@@ -44,7 +44,10 @@ func registerSchemaTypeGroup(root *cobra.Command, deps Dependencies, spec schema
 	group.AddCommand(schemaTypeList(deps, spec))
 	group.AddCommand(schemaTypeGet(deps, spec))
 	group.AddCommand(collectionCommand(deps, collectionSpec{
-		Use:   "children <id>",
+		Use: "children <id>",
+		Enrich: func(ctx context.Context, result any) (any, error) {
+			return enrichSchemaTypeAliases(ctx, deps.Client, spec.Resource, result)
+		},
 		Short: fmt.Sprintf("Get child %ss of a folder (paginated; --skip/--take/--all)", spec.Display),
 		NArgs: 1,
 		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
@@ -55,7 +58,10 @@ func registerSchemaTypeGroup(root *cobra.Command, deps Dependencies, spec schema
 		},
 	}))
 	group.AddCommand(searchCommand(deps, searchSpec{
-		Use:   "search",
+		Use: "search",
+		Enrich: func(ctx context.Context, result any) (any, error) {
+			return enrichSchemaTypeAliases(ctx, deps.Client, spec.Resource, result)
+		},
 		Short: fmt.Sprintf("Search %ss", spec.Display),
 		Endpoints: func(params map[string]any) []getRequestCandidate {
 			return []getRequestCandidate{
@@ -148,6 +154,9 @@ func schemaTypeList(deps Dependencies, spec schemaTypeSpec) *cobra.Command {
 				}
 			} else if filterFolders {
 				result = filterSchemaTypeFolders(result)
+			}
+			if result, err = enrichSchemaTypeAliases(ctx, deps.Client, spec.Resource, result); err != nil {
+				return err
 			}
 
 			return printResult(cmd, deps, applyReadTriage(applyFieldsProjection(result, fields), triage))
@@ -400,9 +409,13 @@ func isSchemaTypeFolderItem(item any) bool {
 	if !ok {
 		return false
 	}
+	// An explicit folder flag is authoritative in both directions: tree
+	// items carry isFolder but never an alias, so the alias heuristic below
+	// must only run when no flag is present (it used to classify every
+	// tree item as a folder, making --types-only return nothing).
 	for _, key := range []string{"isFolder", "isContainer"} {
-		if value, ok := entry[key].(bool); ok && value {
-			return true
+		if value, ok := entry[key].(bool); ok {
+			return value
 		}
 	}
 	for _, key := range []string{"type", "nodeType", "kind", "entityType"} {
@@ -412,6 +425,70 @@ func isSchemaTypeFolderItem(item any) bool {
 	}
 	alias, hasAlias := entry["alias"].(string)
 	return !hasAlias || strings.TrimSpace(alias) == ""
+}
+
+// enrichSchemaTypeAliases adds alias (and isElement when missing) to tree
+// and search items, which the Management API returns without an alias.
+// Non-folder items lacking an alias are loaded through the batch route in
+// chunks; folders are left alone. Failures propagate: a silently
+// alias-less list would be indistinguishable from a real one.
+func enrichSchemaTypeAliases(ctx context.Context, client *api.Client, resource string, result any) (any, error) {
+	items := resultItems(result)
+	missing := []string{}
+	for _, item := range items {
+		entry, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		// Only an explicit folder flag excludes an item; search items carry
+		// neither isFolder nor alias and must still be enriched.
+		if folder, ok := entry["isFolder"].(bool); ok && folder {
+			continue
+		}
+		if _, has := entry["alias"]; !has {
+			if id := itemID(entry); id != "" {
+				missing = append(missing, id)
+			}
+		}
+	}
+	if len(missing) == 0 {
+		return result, nil
+	}
+	details := map[string]map[string]any{}
+	for start := 0; start < len(missing); start += 100 {
+		end := start + 100
+		if end > len(missing) {
+			end = len(missing)
+		}
+		batch, err := fetchSchemaTypeBatch(ctx, client, resource, missing[start:end])
+		if err != nil {
+			return nil, fmt.Errorf("resolving aliases for %ss failed: %w", strings.ReplaceAll(resource, "-", " "), err)
+		}
+		for _, detail := range batch {
+			if id, _ := detail["id"].(string); id != "" {
+				details[strings.ToLower(id)] = detail
+			}
+		}
+	}
+	for _, item := range items {
+		entry, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		detail, found := details[strings.ToLower(itemID(entry))]
+		if !found {
+			continue
+		}
+		if _, has := entry["alias"]; !has {
+			entry["alias"] = detail["alias"]
+		}
+		if _, has := entry["isElement"]; !has {
+			if isElement, ok := detail["isElement"]; ok {
+				entry["isElement"] = isElement
+			}
+		}
+	}
+	return result, nil
 }
 
 func filterSchemaTypeFolders(result any) any {

@@ -653,3 +653,25 @@ func TestIsConfigFileNotFound(t *testing.T) {
 		t.Fatalf("expected unrelated error not to match")
 	}
 }
+
+func TestLoadWithOptionsBaseURLOverrideKeepsProfileCredentials(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Chdir(t.TempDir())
+	t.Setenv("UMBRACO_BASE_URL", "")
+	t.Setenv("UMBRACO_CLIENT_ID", "")
+	t.Setenv("UMBRACO_CLIENT_SECRET", "")
+	t.Setenv("UMBRACO_OUTPUT_FORMAT", "")
+	if err := WriteUserConfigWithOptions(LoadOptions{Profile: "dev"}, Config{
+		BaseURL: "https://dev.example.test", ClientID: "dev-id", ClientSecret: "dev-secret",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadWithOptions(LoadOptions{Profile: "dev", BaseURL: "http://127.0.0.1:9/"})
+	if err != nil {
+		t.Fatalf("LoadWithOptions failed: %v", err)
+	}
+	if cfg.BaseURL != "http://127.0.0.1:9" || cfg.ClientID != "dev-id" || cfg.ClientSecret != "dev-secret" {
+		t.Fatalf("expected --base-url to replace only the host, got %+v", cfg)
+	}
+}
