@@ -28,7 +28,7 @@ Read-focused commands for the Umbraco Forms Management API. Useful for resolving
 
 | Command | Description |
 |---------|-------------|
-| `forms children <folderId>` | List forms inside a folder |
+| `forms children <folderId>` | List the forms and sub-folders inside a folder |
 | `forms get <id>` | Get form definition by ID (includes fields, pages, workflows) |
 | `forms list` | List forms (tree root: returns folders and root-level forms) |
 | `forms record <formId> <recordId>` | Get a single form record by its uniqueId (GUID); scans the first --scan records (default 500) |
@@ -41,7 +41,7 @@ Read-focused commands for the Umbraco Forms Management API. Useful for resolving
 umbraco forms children <folderId>
 ```
 
-Forms in Umbraco are organized into folders. 'forms list' returns root-level items (mostly folders); use 'forms children <folderId>' to drill into a folder returned with isFolder=true.
+GET /tree/form/children/{folderId}. Forms in Umbraco are organized into folders. 'forms list' returns root-level items (mostly folders); use 'forms children <folderId>' to drill into a folder returned with isFolder=true. Every item carries isFolder and type ("folder" or "form"), so nested folders can be walked. Note: GET /form?folderId=… is not used — the server ignores the filter and returns every form (verified on Forms 17/18). The tree route is not paged either: it returns the whole folder and ignores skip/take (verified: take=2 still returned all 30 items).
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
@@ -56,6 +56,8 @@ Forms in Umbraco are organized into folders. 'forms list' returns root-level ite
 umbraco forms get <id>
 ```
 
+GET /form/{id}. Folders are not forms: a folder id (isFolder=true in 'forms list'/'forms children') is refused with a pointer to 'forms children <folderId>' instead of a bare 404.
+
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--fields` | string | — | Limit response fields |
@@ -66,7 +68,7 @@ umbraco forms get <id>
 umbraco forms list
 ```
 
-Returns the Forms tree root. On real installs this is mostly folders — use 'forms children <folderId>' to drill into a folder returned with isFolder=true.
+Returns the Forms tree root. On real installs this is mostly folders. Every item carries isFolder and type ("folder" or "form"); use 'forms children <folderId>' to drill into a folder and 'forms get <formId>' only on forms.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|

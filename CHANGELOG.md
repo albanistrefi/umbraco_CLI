@@ -3,6 +3,8 @@
 ## Unreleased
 
 - fixed `doctype|mediatype|membertype get <alias>` failing for types in nested folders (agent-reported: `sharedSector`, `sharedAuthor`, `sharedSectors` under Shared › Sectors/Authors, while a one-level-deep alias worked). Reproduced live on a 208-type tree: the alias's first word (`shared`) matched no names, and the tree-walk fallback sent every type id in one batch URL, which the server never answered, so the alias was reported as unknown. The name search now also tries the alias's trailing word (`sector`) and the whole alias, and batch lookups are capped at 100 ids per request (the same chunking the list enrichment already used). Live: all three aliases resolve in about a second; an unknown alias walks the full tree in one second instead of hanging
+- fixed `forms children <folderId>` returning every form on the install (agent-reported indirectly: a folder read like a form). `GET /form?folderId=…` ignores the filter on Forms 17/18 (verified live: the same 151 forms for any folder id, including a nonexistent one); the command now reads `GET /tree/form/children/{folderId}`, which returns the folder's forms and sub-folders. Because that tree route answers an empty page for any id, a non-folder id (a form id, a typo) is reported as such instead of as an empty folder
+- `forms list` and `forms children` items now always carry `isFolder` and `type` (`"folder"` or `"form"`); form rows previously carried no flag at all, so a folder named like a form was indistinguishable from one. `forms get <folderId>` says "is a Forms folder, not a form; use forms children" instead of a bare 404 (an unknown id keeps the real 404, exit 4)
 
 ## v0.4.16 - 2026-09-11
 
