@@ -3,6 +3,7 @@ package commands
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -17,12 +18,28 @@ import (
 func documentPublish(deps Dependencies) *cobra.Command {
 	var jsonPayload string
 	var culture string
+	var idsCSV string
+	var fromFile string
+	var force bool
 	var dryRun bool
 	cmd := &cobra.Command{
-		Use:   "publish <id>",
-		Short: "Publish a document",
-		Args:  cobra.ExactArgs(1),
+		Use:   "publish <id> | --ids a,b,c | --from-file ids.txt",
+		Short: "Publish a document (or several with --ids/--from-file)",
+		Long: "PUT /document/{id}/publish. With --ids or --from-file the same publish runs for every listed document in sequence, one result row per document (id, name, publish status, error); " +
+			"a failure on one document does not stop the rest, and the command exits 4 when any row failed. Multi-document runs require --force or --dry-run; a dry-run shows the planned requests for the first " + fmt.Sprint(documentBatchPlanWindow) + " documents and counts the rest. " +
+			"To change values and publish in one pass use 'document update --ids … --merge-json … --save-and-publish'.",
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ids, err := resolveDocumentBatchTargets(cmd, args, idsCSV, fromFile, force, dryRun, "publishes every listed document")
+			if err != nil {
+				return err
+			}
+			if ids != nil {
+				if strings.TrimSpace(jsonPayload) != "" {
+					return fmt.Errorf("--json cannot be combined with --ids/--from-file; use --culture")
+				}
+				return printDocumentBatch(cmd, deps, executeDocumentBatch(cmd.Context(), deps.Client, documentBatchOptions{IDs: ids, Publish: true, Culture: culture, DryRun: dryRun}))
+			}
 			body, err := documentPublishBody(jsonPayload, culture)
 			if err != nil {
 				return err
@@ -36,6 +53,7 @@ func documentPublish(deps Dependencies) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Publish payload as JSON")
 	cmd.Flags().StringVar(&culture, "culture", "", "Culture shortcut")
+	addDocumentBatchFlags(cmd, &idsCSV, &fromFile, &force, "publish")
 	addDryRunFlag(cmd, &dryRun)
 	return cmd
 }
