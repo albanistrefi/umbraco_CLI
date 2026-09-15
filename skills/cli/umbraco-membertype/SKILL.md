@@ -111,6 +111,7 @@ umbraco membertype search
 | `membertype delete <id>` | Delete a member type |
 | `membertype delete-folder <id>` | Delete an empty member type folder |
 | `membertype remove-property <id-or-alias>` | Remove a property from a member type by alias |
+| `membertype restore-backup <file>` | Restore a member type from a --backup JSON file |
 | `membertype update <id>` | Update a member type (--json replaces, --merge-json merges) |
 
 ### create
@@ -225,6 +226,28 @@ umbraco membertype remove-property <id-or-alias> [flags] --dry-run
 
 # 2. Execute with the same flags
 umbraco membertype remove-property <id-or-alias> --force [flags]
+```
+
+### restore-backup
+
+```bash
+umbraco membertype restore-backup <file>
+```
+
+Reads a file written by any 'membertype … --backup' command and PUTs the saved member type back to the server, then re-reads it and fails if a saved property is missing afterwards. The endpoint is derived from the id inside the envelope (the file cannot steer the write elsewhere). This restores the entity's fields and values; it does not undo a move, publish state, or delete.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--dry-run` | bool | false | Print the planned request without executing |
+
+**Safe pattern:**
+
+```bash
+# 1. Rehearse with the exact flags you will execute with
+umbraco membertype restore-backup <file> [flags] --dry-run
+
+# 2. Execute with the same flags
+umbraco membertype restore-backup <file> [flags]
 ```
 
 ### update

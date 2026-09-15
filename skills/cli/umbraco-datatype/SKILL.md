@@ -146,6 +146,7 @@ umbraco datatype search
 | `datatype delete-folder <id>` | Delete an empty data type folder |
 | `datatype remove-extension <id> <extension-alias>` | Remove an extension alias from the datatype extensions array |
 | `datatype remove-value <id>` | Remove a string value from a datatype array setting |
+| `datatype restore-backup <file>` | Restore a data type from a --backup JSON file |
 | `datatype update <id>` | Update data type |
 
 ### add-extension
@@ -421,6 +422,28 @@ umbraco datatype remove-value <id> [flags] --dry-run
 
 # 2. Execute with the same flags
 umbraco datatype remove-value <id> [flags]
+```
+
+### restore-backup
+
+```bash
+umbraco datatype restore-backup <file>
+```
+
+Reads a file written by any 'datatype … --backup' command and PUTs the saved data type back to the server, then re-reads it and fails if a saved property is missing afterwards. The endpoint is derived from the id inside the envelope (the file cannot steer the write elsewhere). This restores the entity's fields and values; it does not undo a move, publish state, or delete.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--dry-run` | bool | false | Print the planned request without executing |
+
+**Safe pattern:**
+
+```bash
+# 1. Rehearse with the exact flags you will execute with
+umbraco datatype restore-backup <file> [flags] --dry-run
+
+# 2. Execute with the same flags
+umbraco datatype restore-backup <file> [flags]
 ```
 
 ### update

@@ -52,6 +52,7 @@ Task → command:
 	datatype.AddCommand(datatypeDelete(deps))
 	datatype.AddCommand(schemaTypeCreateFolder(deps, "datatype", "data-type", "data type", false))
 	datatype.AddCommand(schemaTypeDeleteFolder(deps, "datatype", "data-type", "data type"))
+	datatype.AddCommand(restoreBackupCommand(deps, restoreSpec{Use: "datatype", Display: "data type", PathFormat: dataTypeLegacyCollectionPath + "/%s"}))
 	root.AddCommand(datatype)
 }
 

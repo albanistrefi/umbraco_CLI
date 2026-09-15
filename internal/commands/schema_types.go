@@ -92,6 +92,7 @@ func registerSchemaTypeGroup(root *cobra.Command, deps Dependencies, spec schema
 	group.AddCommand(schemaTypeRemoveProperty(deps, spec.Use, spec.Resource, spec.Display, spec.UpdateStripFields))
 	group.AddCommand(schemaTypeCreateFolder(deps, spec.Use, spec.Resource, spec.Display, false))
 	group.AddCommand(schemaTypeDeleteFolder(deps, spec.Use, spec.Resource, spec.Display))
+	group.AddCommand(restoreBackupCommand(deps, restoreSpec{Use: spec.Use, Display: spec.Display, PathFormat: "/" + spec.Resource + "/%s", StripFields: spec.UpdateStripFields}))
 	group.AddCommand(getCommand(deps, getSpec{
 		Use:   "export <id>",
 		Short: fmt.Sprintf("Export a %s as a .udt document", spec.Display),
