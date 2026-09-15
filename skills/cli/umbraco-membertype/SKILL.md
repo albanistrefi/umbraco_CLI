@@ -110,6 +110,7 @@ umbraco membertype search
 | `membertype create-folder` | Create a member type folder (optionally inside another folder) |
 | `membertype delete <id>` | Delete a member type |
 | `membertype delete-folder <id>` | Delete an empty member type folder |
+| `membertype remove-property <id-or-alias>` | Remove a property from a member type by alias |
 | `membertype update <id>` | Update a member type (--json replaces, --merge-json merges) |
 
 ### create
@@ -199,6 +200,31 @@ umbraco membertype delete-folder <id> [flags] --dry-run
 
 # 2. Execute with the same flags
 umbraco membertype delete-folder <id> --force [flags]
+```
+
+### remove-property
+
+```bash
+umbraco membertype remove-property <id-or-alias>
+```
+
+GET /member-type/{id} + PUT /member-type/{id}. Removes the property with --alias and writes the type back otherwise unchanged; the type is re-read afterwards and the command fails if the property is still there. Content of this type loses the property's values, so the command refuses to run without --dry-run (plan) or --force (confirm). The server prunes tabs/groups left without properties on save — the result lists them under prunedContainers. Pass --backup to save the pre-change type first; 'membertype restore-backup <file>' puts it back.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--alias` | string | — | Alias of the property to remove (required; exact match) |
+| `--backup` | string | — | Save the current item to a JSON file before writing; bare --backup writes ./<collection>-<id>-<timestamp>.backup.json, --backup=<path> chooses the file. Undo with '<collection> restore-backup <file>' where available |
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--force` | bool | false | Confirm the removal when not using --dry-run |
+
+**Safe pattern:**
+
+```bash
+# 1. Rehearse with the exact flags you will execute with
+umbraco membertype remove-property <id-or-alias> [flags] --dry-run
+
+# 2. Execute with the same flags
+umbraco membertype remove-property <id-or-alias> --force [flags]
 ```
 
 ### update

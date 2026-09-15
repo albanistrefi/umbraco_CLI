@@ -1341,3 +1341,135 @@ func TestDoctypeCreateNormalizesLegacyHistoryCleanup(t *testing.T) {
 		t.Fatalf("expected cleanup carried over, got %+v", posted)
 	}
 }
+
+func TestDoctypeRemovePropertyWritesBackWithoutPropertyAndVerifies(t *testing.T) {
+	const doctypeID = "aaaaaaaa-0000-4000-8000-0000000000aa"
+	current := `{"id":"` + doctypeID + `","name":"Article","alias":"article","allowedAsRoot":true,"icon":"icon-document",
+		"containers":[{"id":"tab-1","name":"Content","type":"Tab","parent":null,"sortOrder":0},{"id":"group-1","name":"Meta","type":"Group","parent":{"id":"tab-1"},"sortOrder":0},{"id":"group-2","name":"Body","type":"Group","parent":{"id":"tab-1"},"sortOrder":1}],
+		"properties":[{"id":"p-1","alias":"title","name":"Title","container":{"id":"group-2"}},{"id":"p-2","alias":"seoTitle","name":"SEO title","container":{"id":"group-1"}}]}`
+	var putBody map[string]any
+	afterBody := current
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch {
+		case req.URL.Path == "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case req.URL.Path == "/umbraco/management/api/v1/document-type/"+doctypeID && req.Method == http.MethodGet:
+			if putBody != nil {
+				return datatypeJSONResponse(http.StatusOK, afterBody), nil
+			}
+			return datatypeJSONResponse(http.StatusOK, current), nil
+		case req.URL.Path == "/umbraco/management/api/v1/document-type/"+doctypeID && req.Method == http.MethodPut:
+			body, _ := io.ReadAll(req.Body)
+			_ = json.Unmarshal(body, &putBody)
+			encoded, _ := json.Marshal(putBody)
+			afterBody = string(encoded)
+			return &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(""))}, nil
+		default:
+			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	dir := t.TempDir()
+	backupPath := dir + "/article.backup.json"
+	if _, err := execute(buildRootWithCollections(t, deps), "doctype", "remove-property", doctypeID, "--alias", "seoTitle"); err == nil || !strings.Contains(err.Error(), "--force") || putBody != nil {
+		t.Fatalf("expected the force/dry-run gate before any write, got err=%v put=%v", err, putBody != nil)
+	}
+	out, err := execute(buildRootWithCollections(t, deps), "doctype", "remove-property", doctypeID, "--alias", "seoTitle", "--backup="+backupPath, "--force")
+	if err != nil {
+		t.Fatalf("doctype remove-property failed: %v", err)
+	}
+	properties := putBody["properties"].([]any)
+	if len(properties) != 1 || properties[0].(map[string]any)["alias"] != "title" {
+		t.Fatalf("expected the PUT body to carry only the remaining property, got %+v", properties)
+	}
+	if putBody["allowedAsRoot"] != true || putBody["icon"] != "icon-document" || len(putBody["containers"].([]any)) != 3 {
+		t.Fatalf("expected every other field written back unchanged, got %+v", putBody)
+	}
+	var result map[string]any
+	if err := json.Unmarshal([]byte(out), &result); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if result["verified"] != true || result["remainingProperties"] != float64(1) || result["backup"] != backupPath {
+		t.Fatalf("unexpected result: %s", out)
+	}
+	removed := result["removed"].(map[string]any)
+	if removed["alias"] != "seoTitle" || removed["id"] != "p-2" {
+		t.Fatalf("expected the removed property described, got %+v", removed)
+	}
+	// Group "Meta" is left empty (the server will prune it); the tab stays
+	// alive through the still-populated "Body" group.
+	pruned, _ := result["prunedContainers"].([]any)
+	if len(pruned) != 1 || pruned[0] != "Meta" {
+		t.Fatalf("expected the emptied group flagged, got %+v", result["prunedContainers"])
+	}
+	envelope, err := readBackup(backupPath, "doctype")
+	if err != nil || envelope.ID != doctypeID || len(envelope.Entity["properties"].([]any)) != 2 {
+		t.Fatalf("expected the pre-change type in the backup, got err=%v envelope=%+v", err, envelope)
+	}
+}
+
+func TestDoctypeRemovePropertyRejectsUnknownAliasAndFailsWhenNotRemoved(t *testing.T) {
+	const doctypeID = "aaaaaaaa-0000-4000-8000-0000000000ab"
+	current := `{"id":"` + doctypeID + `","name":"Article","alias":"article","containers":[],"properties":[{"id":"p-1","alias":"seoTitle","name":"SEO title","container":null}]}`
+	puts := 0
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch {
+		case req.URL.Path == "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case req.URL.Path == "/umbraco/management/api/v1/document-type/"+doctypeID && req.Method == http.MethodGet:
+			return datatypeJSONResponse(http.StatusOK, current), nil // never changes: the server "kept" the property
+		case req.URL.Path == "/umbraco/management/api/v1/document-type/"+doctypeID && req.Method == http.MethodPut:
+			puts++
+			return &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(""))}, nil
+		default:
+			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+	_, err := execute(buildRootWithCollections(t, deps), "doctype", "remove-property", doctypeID, "--alias", "seotitle", "--force")
+	if err == nil || !strings.Contains(err.Error(), `did you mean "seoTitle"`) || puts != 0 {
+		t.Fatalf("expected a case hint and no write, got err=%v puts=%d", err, puts)
+	}
+	_, err = execute(buildRootWithCollections(t, deps), "doctype", "remove-property", doctypeID, "--alias", "nothere", "--force")
+	if err == nil || !strings.Contains(err.Error(), `has no property with alias "nothere"`) || puts != 0 {
+		t.Fatalf("expected an unknown-alias error and no write, got err=%v puts=%d", err, puts)
+	}
+	_, err = execute(buildRootWithCollections(t, deps), "doctype", "remove-property", doctypeID, "--alias", "seoTitle", "--force")
+	if err == nil || !strings.Contains(err.Error(), `still has property "seoTitle"`) || puts != 1 {
+		t.Fatalf("expected the verify step to fail when the property survives, got err=%v puts=%d", err, puts)
+	}
+	out, err := execute(buildRootWithCollections(t, deps), "doctype", "remove-property", doctypeID, "--alias", "seoTitle", "--dry-run")
+	if err != nil || !strings.Contains(out, `"dryRun": true`) || puts != 1 {
+		t.Fatalf("expected dry-run to plan without writing, got err=%v out=%s puts=%d", err, out, puts)
+	}
+}
+
+func TestSchemaTypeRemovePropertyStripsResponseOnlyFields(t *testing.T) {
+	const typeID = "aaaaaaaa-0000-4000-8000-0000000000ac"
+	var putBody map[string]any
+	deps := schemaTypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch {
+		case req.URL.Path == "/umbraco/management/api/v1/media-type/"+typeID && req.Method == http.MethodGet:
+			if putBody != nil {
+				return endpointJSONResponse(http.StatusOK, `{"id":"`+typeID+`","alias":"image","properties":[]}`), nil
+			}
+			return endpointJSONResponse(http.StatusOK, `{"id":"`+typeID+`","alias":"image","isDeletable":false,"aliasCanBeChanged":true,"containers":[],"properties":[{"id":"p-1","alias":"umbracoFile","name":"File"}]}`), nil
+		case req.URL.Path == "/umbraco/management/api/v1/media-type/"+typeID && req.Method == http.MethodPut:
+			body, _ := io.ReadAll(req.Body)
+			_ = json.Unmarshal(body, &putBody)
+			return endpointJSONResponse(http.StatusOK, `{}`), nil
+		default:
+			return endpointJSONResponse(http.StatusNotFound, `{"error":"not found"}`), nil
+		}
+	})
+	if _, err := execute(buildSchemaTypeRoot(deps), "mediatype", "remove-property", typeID, "--alias", "umbracoFile", "--force"); err != nil {
+		t.Fatalf("mediatype remove-property failed: %v", err)
+	}
+	for _, rejected := range []string{"id", "isDeletable", "aliasCanBeChanged"} {
+		if _, present := putBody[rejected]; present {
+			t.Fatalf("expected %s stripped from the PUT body, got %+v", rejected, putBody)
+		}
+	}
+	if len(putBody["properties"].([]any)) != 0 {
+		t.Fatalf("expected the property removed, got %+v", putBody)
+	}
+}

@@ -26,7 +26,7 @@ Document type schema operations.
 Task → command:
   Read a type by GUID or alias                         doctype get <id-or-alias>
   Find types by name                                   doctype search --query <text>
-  Add / reorder properties, add tabs or groups         doctype add-property, reorder-properties, add-container
+  Add / reorder / remove properties, add tabs/groups   doctype add-property, reorder-properties, remove-property --alias <a> --backup --force, add-container
   Create a folder, put a type in a folder              doctype create-folder --name <n> [--parent <id>]; doctype create --json '{..."parent":{"id":…}}' or doctype move <id> --to <folder>
   Allowed blocks, block order, Block Grid groups       datatype block add|reorder|groups … (blocks belong to the Block List/Grid DATA TYPE, not the document type)
   Which data type does a property use?                 doctype get <id> --fields properties
@@ -155,6 +155,7 @@ umbraco doctype search
 | `doctype create-folder` | Create a document type folder (optionally inside another folder) |
 | `doctype delete-folder <id>` | Delete an empty document type folder |
 | `doctype move <id>` | Move document type |
+| `doctype remove-property <id-or-alias>` | Remove a property from a document type by alias |
 | `doctype reorder-properties <id>` | Change the order of properties on a document type |
 | `doctype update <id>` | Update document type |
 
@@ -325,6 +326,31 @@ umbraco doctype move <id> [flags] --dry-run
 
 # 2. Execute with the same flags
 umbraco doctype move <id> [flags]
+```
+
+### remove-property
+
+```bash
+umbraco doctype remove-property <id-or-alias>
+```
+
+GET /document-type/{id} + PUT /document-type/{id}. Removes the property with --alias and writes the type back otherwise unchanged; the type is re-read afterwards and the command fails if the property is still there. Content of this type loses the property's values, so the command refuses to run without --dry-run (plan) or --force (confirm). The server prunes tabs/groups left without properties on save — the result lists them under prunedContainers. Pass --backup to save the pre-change type first; 'doctype restore-backup <file>' puts it back.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--alias` | string | — | Alias of the property to remove (required; exact match) |
+| `--backup` | string | — | Save the current item to a JSON file before writing; bare --backup writes ./<collection>-<id>-<timestamp>.backup.json, --backup=<path> chooses the file. Undo with '<collection> restore-backup <file>' where available |
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--force` | bool | false | Confirm the removal when not using --dry-run |
+
+**Safe pattern:**
+
+```bash
+# 1. Rehearse with the exact flags you will execute with
+umbraco doctype remove-property <id-or-alias> [flags] --dry-run
+
+# 2. Execute with the same flags
+umbraco doctype remove-property <id-or-alias> --force [flags]
 ```
 
 ### reorder-properties
