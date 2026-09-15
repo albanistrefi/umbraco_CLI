@@ -2034,3 +2034,205 @@ func TestDocumentChildrenAllErrorsOnSafetyCeiling(t *testing.T) {
 		t.Fatalf("error must point caller at the exact next-unread offset (--skip 1000), got: %v", err)
 	}
 }
+
+func TestDocumentUpdateBackupWritesEnvelopeAndReportsPath(t *testing.T) {
+	var putBody map[string]any
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/document/doc-1":
+			if req.Method == http.MethodGet {
+				return endpointJSONResponse(http.StatusOK, `{"id":"doc-1","documentType":{"id":"type-1"},"variants":[{"culture":null,"segment":null,"name":"Toxic"}],"values":[{"alias":"title","culture":null,"segment":null,"value":"Old title"}]}`), nil
+			}
+			if req.Method == http.MethodPut {
+				_ = json.NewDecoder(req.Body).Decode(&putBody)
+				return endpointNoContent(), nil
+			}
+			return endpointJSONResponse(http.StatusMethodNotAllowed, `null`), nil
+		default:
+			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	backupPath := t.TempDir() + "/doc.backup.json"
+	out, err := execute(buildRootWithCollections(t, deps), "document", "update", "doc-1", "--property", "title", "--value", "New title", "--backup="+backupPath)
+	if err != nil {
+		t.Fatalf("document update --backup failed: %v", err)
+	}
+	var result map[string]any
+	if err := json.Unmarshal([]byte(out), &result); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if result["updated"] != true || result["backup"] != backupPath {
+		t.Fatalf("expected updated=true and the backup path, got %s", out)
+	}
+	envelope, err := readBackup(backupPath, "document")
+	if err != nil {
+		t.Fatalf("readBackup: %v", err)
+	}
+	saved := envelope.Entity["values"].([]any)[0].(map[string]any)
+	if envelope.ID != "doc-1" || envelope.Path != "/document/doc-1" || saved["value"] != "Old title" {
+		t.Fatalf("expected the pre-change document in the envelope, got %+v", envelope)
+	}
+	if putBody["values"].([]any)[0].(map[string]any)["value"] != "New title" {
+		t.Fatalf("expected the PUT to carry the new value, got %+v", putBody)
+	}
+
+	// update-properties takes the same flag and never captures the merged body.
+	propsPath := t.TempDir() + "/props.backup.json"
+	out, err = execute(buildRootWithCollections(t, deps), "document", "update-properties", "doc-1", "--json", `{"title":"Third"}`, "--backup="+propsPath)
+	if err != nil || !strings.Contains(out, propsPath) {
+		t.Fatalf("expected update-properties --backup to report the path, got err=%v out=%s", err, out)
+	}
+	envelope, err = readBackup(propsPath, "document")
+	if err != nil || envelope.Entity["values"].([]any)[0].(map[string]any)["value"] != "Old title" {
+		t.Fatalf("expected the pre-change value in the update-properties backup, got err=%v %+v", err, envelope.Entity)
+	}
+
+	// --dry-run writes nothing.
+	dryPath := t.TempDir() + "/dry.backup.json"
+	if _, err := execute(buildRootWithCollections(t, deps), "document", "update", "doc-1", "--property", "title", "--value", "x", "--backup="+dryPath, "--dry-run"); err != nil {
+		t.Fatalf("dry-run failed: %v", err)
+	}
+	if _, err := os.Stat(dryPath); !os.IsNotExist(err) {
+		t.Fatalf("expected no backup on --dry-run, stat err=%v", err)
+	}
+}
+
+func TestDocumentRestoreBackupPutsEntityBackAndVerifies(t *testing.T) {
+	dir := t.TempDir()
+	file := dir + "/doc-1.backup.json"
+	if err := os.WriteFile(file, []byte(`{"resource":"document","id":"doc-1","path":"/document/doc-1","savedAt":"2026-09-15T08:00:00Z","entity":{"id":"doc-1","documentType":{"id":"type-1"},"variants":[{"culture":null,"segment":null,"name":"Toxic"}],"values":[{"alias":"title","culture":null,"segment":null,"value":"Old title"},{"alias":"summary","culture":null,"segment":null,"value":"S"}]}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var putBody map[string]any
+	afterValues := `[]`
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/document/doc-1":
+			if req.Method == http.MethodPut {
+				_ = json.NewDecoder(req.Body).Decode(&putBody)
+				encoded, _ := json.Marshal(putBody["values"])
+				afterValues = string(encoded)
+				return endpointNoContent(), nil
+			}
+			return endpointJSONResponse(http.StatusOK, `{"id":"doc-1","variants":[{"name":"Toxic"}],"values":`+afterValues+`}`), nil
+		default:
+			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+	out, err := execute(buildRootWithCollections(t, deps), "document", "restore-backup", file)
+	if err != nil {
+		t.Fatalf("document restore-backup failed: %v", err)
+	}
+	if putBody["values"].([]any)[0].(map[string]any)["value"] != "Old title" {
+		t.Fatalf("expected the saved entity PUT back, got %+v", putBody)
+	}
+	if !strings.Contains(out, `"restored": true`) || !strings.Contains(out, `"verified": true`) || !strings.Contains(out, `"name": "Toxic"`) {
+		t.Fatalf("unexpected restore result: %s", out)
+	}
+
+	// A media envelope must not be restored onto a document.
+	wrong := dir + "/media.backup.json"
+	_ = os.WriteFile(wrong, []byte(`{"resource":"media","id":"m-1","path":"/media/m-1","entity":{"id":"m-1","values":[{"alias":"umbracoFile"}]}}`), 0o600)
+	if _, err := execute(buildRootWithCollections(t, deps), "document", "restore-backup", wrong); err == nil || !strings.Contains(err.Error(), `holds a "media", not a document`) {
+		t.Fatalf("expected the resource check, got %v", err)
+	}
+
+	// An accepted PUT that leaves values behind is a failure, not a success.
+	wiped := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/document/doc-1":
+			if req.Method == http.MethodPut {
+				return endpointNoContent(), nil
+			}
+			return endpointJSONResponse(http.StatusOK, `{"id":"doc-1","values":[{"alias":"title","value":"Old title"}]}`), nil
+		default:
+			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+	if _, err := execute(buildRootWithCollections(t, wiped), "document", "restore-backup", file); err == nil || !strings.Contains(err.Error(), "value summary is missing") {
+		t.Fatalf("expected the verify step to name the missing alias, got %v", err)
+	}
+
+	// A kept old value under the same alias is a difference, not a success.
+	stale := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/document/doc-1":
+			if req.Method == http.MethodPut {
+				return endpointNoContent(), nil
+			}
+			return endpointJSONResponse(http.StatusOK, `{"id":"doc-1","variants":[{"culture":null,"segment":null,"name":"Toxic"}],"values":[{"alias":"title","culture":null,"segment":null,"value":"Newer"},{"alias":"summary","culture":null,"segment":null,"value":"S"}]}`), nil
+		default:
+			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+	if _, err := execute(buildRootWithCollections(t, stale), "document", "restore-backup", file); err == nil || !strings.Contains(err.Error(), "value title differs from the backup") {
+		t.Fatalf("expected a value mismatch to fail verification, got %v", err)
+	}
+
+	// --id asserts the target before anything is written.
+	if _, err := execute(buildRootWithCollections(t, stale), "document", "restore-backup", file, "--id", "doc-2"); err == nil || !strings.Contains(err.Error(), "belongs to document doc-1, not doc-2") {
+		t.Fatalf("expected the --id assertion to refuse, got %v", err)
+	}
+}
+
+func TestDocumentUpdateSaveAndPublishKeepsBackupPathOnPublishFailure(t *testing.T) {
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/document/doc-1/update-and-publish":
+			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		case "/umbraco/management/api/v1/document/doc-1/publish":
+			return endpointJSONResponse(http.StatusBadRequest, `{"title":"Publish failed","status":400}`), nil
+		case "/umbraco/management/api/v1/document/doc-1":
+			if req.Method == http.MethodPut {
+				return endpointNoContent(), nil
+			}
+			return endpointJSONResponse(http.StatusOK, `{"id":"doc-1","variants":[{"name":"Toxic"}],"values":[{"alias":"title","value":"Old"}]}`), nil
+		default:
+			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+	backupPath := t.TempDir() + "/doc.backup.json"
+	_, err := execute(buildRootWithCollections(t, deps), "document", "update", "doc-1", "--property", "title", "--value", "New", "--save-and-publish", "--backup="+backupPath)
+	if err == nil || !strings.Contains(err.Error(), "400") || !strings.Contains(err.Error(), "restore-backup "+backupPath) {
+		t.Fatalf("expected the publish failure to carry the backup path, got %v", err)
+	}
+}
+
+func TestSchemaTypeRestoreBackupStripsResponseOnlyFieldsAndChecksProperties(t *testing.T) {
+	dir := t.TempDir()
+	file := dir + "/mt.backup.json"
+	_ = os.WriteFile(file, []byte(`{"resource":"mediatype","id":"aaaaaaaa-0000-4000-8000-0000000000ad","path":"/media-type/aaaaaaaa-0000-4000-8000-0000000000ad","entity":{"id":"aaaaaaaa-0000-4000-8000-0000000000ad","alias":"image","isDeletable":false,"aliasCanBeChanged":true,"properties":[{"alias":"umbracoFile"}]}}`), 0o600)
+	var putBody map[string]any
+	deps := schemaTypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/media-type/aaaaaaaa-0000-4000-8000-0000000000ad":
+			if req.Method == http.MethodPut {
+				_ = json.NewDecoder(req.Body).Decode(&putBody)
+				return endpointJSONResponse(http.StatusOK, `{}`), nil
+			}
+			return endpointJSONResponse(http.StatusOK, `{"id":"aaaaaaaa-0000-4000-8000-0000000000ad","name":"Image","alias":"image","properties":[{"alias":"umbracoFile"}]}`), nil
+		default:
+			return endpointJSONResponse(http.StatusNotFound, `{"error":"not found"}`), nil
+		}
+	})
+	out, err := execute(buildSchemaTypeRoot(deps), "mediatype", "restore-backup", file)
+	if err != nil || !strings.Contains(out, `"verified": true`) {
+		t.Fatalf("mediatype restore-backup failed: err=%v out=%s", err, out)
+	}
+	for _, rejected := range []string{"id", "isDeletable", "aliasCanBeChanged"} {
+		if _, present := putBody[rejected]; present {
+			t.Fatalf("expected %s stripped from the restore PUT, got %+v", rejected, putBody)
+		}
+	}
+}

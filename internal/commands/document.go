@@ -31,6 +31,7 @@ func RegisterDocument(root *cobra.Command, deps Dependencies) {
 	document.AddCommand(documentBulkUpdate(deps))
 	document.AddCommand(documentCSVUpdate(deps))
 	document.AddCommand(documentUpdateProperties(deps))
+	document.AddCommand(restoreBackupCommand(deps, restoreSpec{Use: "document", Display: "document", PathFormat: "/document/%s", Notes: "Publish state is not part of the backup: re-publish with 'document publish' if the restored version should go live."}))
 	document.AddCommand(documentPublish(deps))
 	document.AddCommand(documentUnpublish(deps))
 	document.AddCommand(documentPublishDescendants(deps))
@@ -272,10 +273,12 @@ func documentUpdate(deps Dependencies) *cobra.Command {
 	var valueJSON string
 	var saveAndPublish bool
 	var culture string
+	var backup string
 	var dryRun bool
 	cmd := &cobra.Command{
 		Use:   "update <id>",
 		Short: "Update a document",
+		Long:  "PUT /document/{id}. Exactly one of --json (full replacement), --merge-json (fetch and deep-merge), or --property/--value. Pass --backup to save the current document first; 'document restore-backup <file>' puts it back. --save-and-publish publishes in the same operation on Umbraco 18.1+.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
@@ -312,10 +315,27 @@ func documentUpdate(deps Dependencies) *cobra.Command {
 				}
 			}
 
+			// Content writes are the riskiest ones: the backup is taken from
+			// the server right before the PUT (never from the merged body).
+			var backupFile string
+			if cmd.Flags().Changed("backup") && !dryRun {
+				current, err := fetchObject(ctx, deps.Client, path, api.RequestOptions{})
+				if err != nil {
+					return fmt.Errorf("--backup could not read the current document: %w", err)
+				}
+				backupFile, err = writeEntityBackup(cmd, backup, "document", args[0], path, current)
+				if err != nil {
+					return err
+				}
+			}
+
 			if !saveAndPublish {
 				result, err := deps.Client.Put(ctx, path, body, api.RequestOptions{DryRun: dryRun})
 				if err != nil {
 					return err
+				}
+				if backupFile != "" {
+					return printResult(cmd, deps, withBackupPath(result, backupFile, "updated"))
 				}
 				return printMutationResult(cmd, deps, "updated", result, dryRun)
 			}
@@ -332,12 +352,12 @@ func documentUpdate(deps Dependencies) *cobra.Command {
 			}
 			atomicResult, err := deps.Client.Put(ctx, api.JoinPath("/document/%s/update-and-publish", args[0]), atomicBody, api.RequestOptions{DryRun: dryRun})
 			if err == nil {
-				return printResult(cmd, deps, map[string]any{
+				return printResult(cmd, deps, withBackupPath(map[string]any{
 					"saveAndPublish": true,
 					"atomic":         true,
 					"updated":        coalescePutResult(atomicResult, dryRun),
 					"published":      coalescePutResult(atomicResult, dryRun),
-				})
+				}, backupFile, "updated"))
 			}
 			if !isAPIStatus(err, http.StatusNotFound) {
 				return err
@@ -350,18 +370,20 @@ func documentUpdate(deps Dependencies) *cobra.Command {
 			}
 			publishBody, err := documentPublishBody("", culture)
 			if err != nil {
-				return err
+				return withBackupHint(err, "document", backupFile)
 			}
 			publishResult, err := publishWithInvariantRaceRetry(ctx, deps.Client, args[0], publishBody, api.RequestOptions{DryRun: dryRun})
 			if err != nil {
-				return err
+				// The update already landed; the caller must learn which
+				// file undoes it (auto names carry a random suffix).
+				return withBackupHint(err, "document", backupFile)
 			}
 
-			return printResult(cmd, deps, map[string]any{
+			return printResult(cmd, deps, withBackupPath(map[string]any{
 				"saveAndPublish": true,
 				"updated":        coalescePutResult(result, dryRun),
 				"published":      coalescePutResult(publishResult, dryRun),
-			})
+			}, backupFile, "updated"))
 		},
 	}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Full replacement payload as JSON (fields not mentioned are reset by the server)")
@@ -371,12 +393,14 @@ func documentUpdate(deps Dependencies) *cobra.Command {
 	cmd.Flags().StringVar(&valueJSON, "value-json", "", "JSON value used with --property")
 	cmd.Flags().BoolVar(&saveAndPublish, "save-and-publish", false, "Publish the document after a successful update")
 	cmd.Flags().StringVar(&culture, "culture", "", "Culture shortcut for --save-and-publish")
+	addBackupFlag(cmd, &backup)
 	addDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
 func documentUpdateProperties(deps Dependencies) *cobra.Command {
 	var jsonPayload string
+	var backup string
 	var dryRun bool
 	cmd := &cobra.Command{
 		Use:   "update-properties <id>",
@@ -414,14 +438,25 @@ In all shapes the resulting values[] is merged by alias into the current documen
 				return err
 			}
 			merged := mergeAliasPayload(current, patch)
+			var backupFile string
+			if cmd.Flags().Changed("backup") && !dryRun {
+				backupFile, err = writeEntityBackup(cmd, backup, "document", args[0], path, current)
+				if err != nil {
+					return err
+				}
+			}
 			result, err := deps.Client.Put(ctx, path, merged, api.RequestOptions{DryRun: dryRun})
 			if err != nil {
 				return err
+			}
+			if backupFile != "" {
+				return printResult(cmd, deps, withBackupPath(result, backupFile, "updated"))
 			}
 			return printMutationResult(cmd, deps, "updated", result, dryRun)
 		},
 	}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Properties payload as JSON; accepts object {alias: value}, array [{alias, value, culture?, segment?}], or envelope {\"values\":[...]}")
+	addBackupFlag(cmd, &backup)
 	addDryRunFlag(cmd, &dryRun)
 	return cmd
 }

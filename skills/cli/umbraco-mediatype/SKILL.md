@@ -111,6 +111,7 @@ umbraco mediatype search
 | `mediatype delete <id>` | Delete a media type |
 | `mediatype delete-folder <id>` | Delete an empty media type folder |
 | `mediatype remove-property <id-or-alias>` | Remove a property from a media type by alias |
+| `mediatype restore-backup <file>` | Restore a media type from a --backup JSON file |
 | `mediatype update <id>` | Update a media type (--json replaces, --merge-json merges) |
 
 ### create
@@ -225,6 +226,29 @@ umbraco mediatype remove-property <id-or-alias> [flags] --dry-run
 
 # 2. Execute with the same flags
 umbraco mediatype remove-property <id-or-alias> --force [flags]
+```
+
+### restore-backup
+
+```bash
+umbraco mediatype restore-backup <file>
+```
+
+Reads a file written by any 'mediatype … --backup' command and PUTs the saved media type back to the server, then re-reads it and compares the saved values/properties (alias, culture and segment) and names with what the server now holds; any difference fails the command. The write goes to the id recorded in the envelope; pass --id <guid> to assert which media type the file must belong to before anything is written (the file is refused when it names another id), and --dry-run to see the target without writing. This restores the entity's fields and values; it does not undo a move, publish state, or delete.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--id` | string | — | Assert the envelope belongs to this id before writing (refuses otherwise) |
+
+**Safe pattern:**
+
+```bash
+# 1. Rehearse with the exact flags you will execute with
+umbraco mediatype restore-backup <file> [flags] --dry-run
+
+# 2. Execute with the same flags
+umbraco mediatype restore-backup <file> [flags]
 ```
 
 ### update

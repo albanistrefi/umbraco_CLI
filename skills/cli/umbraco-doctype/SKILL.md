@@ -157,6 +157,7 @@ umbraco doctype search
 | `doctype move <id>` | Move document type |
 | `doctype remove-property <id-or-alias>` | Remove a property from a document type by alias |
 | `doctype reorder-properties <id>` | Change the order of properties on a document type |
+| `doctype restore-backup <file>` | Restore a document type from a --backup JSON file |
 | `doctype update <id>` | Update document type |
 
 ### add-container
@@ -376,6 +377,29 @@ umbraco doctype reorder-properties <id> [flags] --dry-run
 
 # 2. Execute with the same flags
 umbraco doctype reorder-properties <id> [flags]
+```
+
+### restore-backup
+
+```bash
+umbraco doctype restore-backup <file>
+```
+
+Reads a file written by any 'doctype … --backup' command and PUTs the saved document type back to the server, then re-reads it and compares the saved values/properties (alias, culture and segment) and names with what the server now holds; any difference fails the command. The write goes to the id recorded in the envelope; pass --id <guid> to assert which document type the file must belong to before anything is written (the file is refused when it names another id), and --dry-run to see the target without writing. This restores the entity's fields and values; it does not undo a move, publish state, or delete.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--id` | string | — | Assert the envelope belongs to this id before writing (refuses otherwise) |
+
+**Safe pattern:**
+
+```bash
+# 1. Rehearse with the exact flags you will execute with
+umbraco doctype restore-backup <file> [flags] --dry-run
+
+# 2. Execute with the same flags
+umbraco doctype restore-backup <file> [flags]
 ```
 
 ### update

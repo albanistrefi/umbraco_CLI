@@ -44,6 +44,7 @@ Task → command:
 	doctype.AddCommand(doctypeDelete(deps))
 	doctype.AddCommand(schemaTypeCreateFolder(deps, "doctype", "document-type", "document type", true))
 	doctype.AddCommand(schemaTypeDeleteFolder(deps, "doctype", "document-type", "document type"))
+	doctype.AddCommand(restoreBackupCommand(deps, restoreSpec{Use: "doctype", Display: "document type", PathFormat: "/document-type/%s"}))
 	root.AddCommand(doctype)
 }
 

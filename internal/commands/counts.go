@@ -1,12 +1,12 @@
 package commands
 
 var ExpectedCollectionCommandCounts = map[string]int{
-	"document":        31,
+	"document":        32,
 	"element":         21,
 	"dictionary":      6,
 	"media":           23,
-	"doctype":         17,
-	"datatype":        16,
+	"doctype":         18,
+	"datatype":        17,
 	"template":        6,
 	"forms":           6,
 	"models-builder":  3,
@@ -19,8 +19,8 @@ var ExpectedCollectionCommandCounts = map[string]int{
 	"published-cache": 3,
 	"redirect":        6,
 	"indexer":         3,
-	"mediatype":       11,
-	"membertype":      11,
+	"mediatype":       12,
+	"membertype":      12,
 	"tree":            1,
 	"auth":            5,
 	"webhook":         7,

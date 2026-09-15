@@ -334,6 +334,7 @@ umbraco document version list <document-id>
 | `document publish <id>` | Publish a document |
 | `document publish-descendants <id>` | Publish a document and its entire subtree |
 | `document restore <id>` | Restore a document item from the recycle bin |
+| `document restore-backup <file>` | Restore a document from a --backup JSON file |
 | `document sort` | Reorder sibling document items into an explicit order |
 | `document sort-children [parent-id]` | Sort all children of a node by a field |
 | `document trash <id>` | Move a document to recycle bin |
@@ -654,6 +655,29 @@ umbraco document restore <id> [flags] --dry-run
 umbraco document restore <id> [flags]
 ```
 
+### restore-backup
+
+```bash
+umbraco document restore-backup <file>
+```
+
+Reads a file written by any 'document … --backup' command and PUTs the saved document back to the server, then re-reads it and compares the saved values/properties (alias, culture and segment) and names with what the server now holds; any difference fails the command. The write goes to the id recorded in the envelope; pass --id <guid> to assert which document the file must belong to before anything is written (the file is refused when it names another id), and --dry-run to see the target without writing. This restores the entity's fields and values; it does not undo a move, publish state, or delete. Publish state is not part of the backup: re-publish with 'document publish' if the restored version should go live.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--id` | string | — | Assert the envelope belongs to this id before writing (refuses otherwise) |
+
+**Safe pattern:**
+
+```bash
+# 1. Rehearse with the exact flags you will execute with
+umbraco document restore-backup <file> [flags] --dry-run
+
+# 2. Execute with the same flags
+umbraco document restore-backup <file> [flags]
+```
+
 ### sort
 
 ```bash
@@ -752,8 +776,11 @@ umbraco document unpublish <id> [flags]
 umbraco document update <id>
 ```
 
+PUT /document/{id}. Exactly one of --json (full replacement), --merge-json (fetch and deep-merge), or --property/--value. Pass --backup to save the current document first; 'document restore-backup <file>' puts it back. --save-and-publish publishes in the same operation on Umbraco 18.1+.
+
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--backup` | string | — | Save the current item to a JSON file before writing; bare --backup writes ./<collection>-<id>-<timestamp>.backup.json, --backup=<path> chooses the file. Undo with '<collection> restore-backup <file>' where available |
 | `--culture` | string | — | Culture shortcut for --save-and-publish |
 | `--dry-run` | bool | false | Print the planned request without executing |
 | `--json` | string | — | Full replacement payload as JSON (fields not mentioned are reset by the server) |
@@ -798,6 +825,7 @@ In all shapes the resulting values[] is merged by alias into the current documen
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--backup` | string | — | Save the current item to a JSON file before writing; bare --backup writes ./<collection>-<id>-<timestamp>.backup.json, --backup=<path> chooses the file. Undo with '<collection> restore-backup <file>' where available |
 | `--dry-run` | bool | false | Print the planned request without executing |
 | `--json` | string | — | Properties payload as JSON; accepts object {alias: value}, array [{alias, value, culture?, segment?}], or envelope {"values":[...]} |
 
