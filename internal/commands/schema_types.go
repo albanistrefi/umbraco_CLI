@@ -89,6 +89,8 @@ func registerSchemaTypeGroup(root *cobra.Command, deps Dependencies, spec schema
 			return api.JoinPath("/"+spec.Resource+"/%s", args[0])
 		},
 	}))
+	group.AddCommand(schemaTypeCreateFolder(deps, spec.Use, spec.Resource, spec.Display))
+	group.AddCommand(schemaTypeDeleteFolder(deps, spec.Use, spec.Resource, spec.Display))
 	group.AddCommand(getCommand(deps, getSpec{
 		Use:   "export <id>",
 		Short: fmt.Sprintf("Export a %s as a .udt document", spec.Display),
@@ -197,6 +199,83 @@ func schemaTypeGet(deps Dependencies, spec schemaTypeSpec) *cobra.Command {
 	}
 	addFieldsFlag(cmd, &fields)
 	return cmd
+}
+
+// schemaTypeCreateFolder builds "<group> create-folder": POST /<resource>/folder.
+// Folders are how the type trees are organized, yet the Management API has
+// no folder concept in the type payloads beyond parent — so this is the
+// only way to create the parent a 'create --json {"parent":{"id":…}}' needs.
+func schemaTypeCreateFolder(deps Dependencies, use string, resource string, display string) *cobra.Command {
+	var name string
+	var parent string
+	var id string
+	var dryRun bool
+	cmd := &cobra.Command{
+		Use:   "create-folder",
+		Short: fmt.Sprintf("Create a %s folder (optionally inside another folder)", display),
+		Long: fmt.Sprintf("POST /%s/folder. Creates a folder in the %s tree; --parent nests it inside an existing folder. "+
+			"Put a type inside it with 'umbraco %s create --json '{..., \"parent\": {\"id\": \"<folder id>\"}}'' or 'umbraco %s move <id> --to <folder id>'. "+
+			"After the create the folder is read back, so the result is the persisted record.", resource, display, use, use),
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := requireValue("--name", name); err != nil {
+				return err
+			}
+			if strings.TrimSpace(parent) != "" && !isUUIDLike(strings.TrimSpace(parent)) {
+				return fmt.Errorf("--parent must be a folder GUID, got %q", parent)
+			}
+			folderID := strings.TrimSpace(id)
+			if folderID == "" {
+				generated, err := newUUIDv4()
+				if err != nil {
+					return fmt.Errorf("failed to generate folder id: %w", err)
+				}
+				folderID = generated
+			} else if !isUUIDLike(folderID) {
+				return fmt.Errorf("--id must be a GUID, got %q", id)
+			}
+			body := map[string]any{"id": folderID, "name": strings.TrimSpace(name)}
+			if strings.TrimSpace(parent) != "" {
+				body["parent"] = map[string]any{"id": strings.TrimSpace(parent)}
+			}
+			ctx := cmd.Context()
+			result, err := deps.Client.Post(ctx, "/"+resource+"/folder", body, api.RequestOptions{DryRun: dryRun})
+			if err != nil {
+				return err
+			}
+			if dryRun {
+				return printResult(cmd, deps, result)
+			}
+			created, err := fetchObject(ctx, deps.Client, api.JoinPath("/"+resource+"/folder/%s", folderID), api.RequestOptions{})
+			if err != nil {
+				return fmt.Errorf("the server accepted the folder but reading it back failed: %w", err)
+			}
+			out := map[string]any{"id": folderID, "name": created["name"], "created": true}
+			if parentRef, ok := body["parent"]; ok {
+				out["parent"] = parentRef
+			} else {
+				out["parent"] = nil
+			}
+			return printResult(cmd, deps, out)
+		},
+	}
+	cmd.Flags().StringVar(&name, "name", "", "Folder name (required)")
+	cmd.Flags().StringVar(&parent, "parent", "", "Parent folder GUID; omit for a root-level folder")
+	cmd.Flags().StringVar(&id, "id", "", "Folder GUID to use (generated when omitted)")
+	addDryRunFlag(cmd, &dryRun)
+	return cmd
+}
+
+// schemaTypeDeleteFolder builds "<group> delete-folder": DELETE /<resource>/folder/{id}.
+// The server refuses to delete a folder that still has children.
+func schemaTypeDeleteFolder(deps Dependencies, use string, resource string, display string) *cobra.Command {
+	return deleteCommand(deps, deleteSpec{
+		Use:   "delete-folder <id>",
+		Short: fmt.Sprintf("Delete an empty %s folder", display),
+		Path: func(args []string) string {
+			return api.JoinPath("/"+resource+"/folder/%s", args[0])
+		},
+	})
 }
 
 // resolveSchemaTypeID accepts a GUID as-is; anything else is treated as an

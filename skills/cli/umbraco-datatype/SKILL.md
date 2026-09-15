@@ -26,6 +26,7 @@ Data type operations.
 Task → command:
   Read / find data types                               datatype get <id>, datatype search --query <text>
   Change editor configuration                          datatype update <id> --merge-json '{...}' --backup
+  Create a folder for data types                       datatype create-folder --name <n> [--parent <id>]
   Block List / Block Grid: list allowed blocks         datatype block list <id>
   Register or update a block (Block Grid: --group)     datatype block add|update <id> --content-element-type <guid> [--group <name>]
   Reorder blocks (picker order)                        datatype block reorder <id> --keys <guid>,<guid>,…
@@ -141,6 +142,8 @@ umbraco datatype search
 | `datatype block reorder <datatypeId>` | Reorder the allowed blocks (array order is the picker order) |
 | `datatype block update <datatypeId>` | Update an existing block's properties (partial; flags only mutate what you pass) |
 | `datatype create` | Create data type |
+| `datatype create-folder` | Create a data type folder (optionally inside another folder) |
+| `datatype delete-folder <id>` | Delete an empty data type folder |
 | `datatype remove-extension <id> <extension-alias>` | Remove an extension alias from the datatype extensions array |
 | `datatype remove-value <id>` | Remove a string value from a datatype array setting |
 | `datatype update <id>` | Update data type |
@@ -329,6 +332,52 @@ umbraco datatype create [flags] --dry-run
 
 # 2. Execute with the same flags
 umbraco datatype create [flags]
+```
+
+### create-folder
+
+```bash
+umbraco datatype create-folder
+```
+
+POST /data-type/folder. Creates a folder in the data type tree; --parent nests it inside an existing folder. Put a type inside it with 'umbraco datatype create --json '{..., "parent": {"id": "<folder id>"}}'' or 'umbraco datatype move <id> --to <folder id>'. After the create the folder is read back, so the result is the persisted record.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--id` | string | — | Folder GUID to use (generated when omitted) |
+| `--name` | string | — | Folder name (required) |
+| `--parent` | string | — | Parent folder GUID; omit for a root-level folder |
+
+**Safe pattern:**
+
+```bash
+# 1. Rehearse with the exact flags you will execute with
+umbraco datatype create-folder [flags] --dry-run
+
+# 2. Execute with the same flags
+umbraco datatype create-folder [flags]
+```
+
+### delete-folder
+
+```bash
+umbraco datatype delete-folder <id>
+```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--force` | bool | false | Confirm permanent deletion |
+
+**Safe pattern:**
+
+```bash
+# 1. Rehearse with the exact flags you will execute with
+umbraco datatype delete-folder <id> [flags] --dry-run
+
+# 2. Execute with the same flags
+umbraco datatype delete-folder <id> --force [flags]
 ```
 
 ### remove-extension

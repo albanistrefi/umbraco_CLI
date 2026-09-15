@@ -29,6 +29,7 @@ func RegisterDatatype(root *cobra.Command, deps Dependencies) {
 Task → command:
   Read / find data types                               datatype get <id>, datatype search --query <text>
   Change editor configuration                          datatype update <id> --merge-json '{...}' --backup
+  Create a folder for data types                       datatype create-folder --name <n> [--parent <id>]
   Block List / Block Grid: list allowed blocks         datatype block list <id>
   Register or update a block (Block Grid: --group)     datatype block add|update <id> --content-element-type <guid> [--group <name>]
   Reorder blocks (picker order)                        datatype block reorder <id> --keys <guid>,<guid>,…
@@ -49,6 +50,8 @@ Task → command:
 	datatype.AddCommand(datatypeRemoveValue(deps))
 	datatype.AddCommand(datatypeBlock(deps))
 	datatype.AddCommand(datatypeDelete(deps))
+	datatype.AddCommand(schemaTypeCreateFolder(deps, "datatype", "data-type", "data type"))
+	datatype.AddCommand(schemaTypeDeleteFolder(deps, "datatype", "data-type", "data type"))
 	root.AddCommand(datatype)
 }
 

@@ -2,6 +2,7 @@ package commands
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -1225,5 +1226,99 @@ func TestDoctypeAddPropertyMissingContainerHintsCreateFlag(t *testing.T) {
 	_, err = execute(buildRootWithCollections(t, deps), "doctype", "add-property", "dt-1", "--alias", "a", "--name", "A", "--data-type", "d", "--container", "Nope", "--container-type", "Tab")
 	if err == nil || !strings.Contains(err.Error(), "--container-type only applies") {
 		t.Fatalf("expected container-type guard, got %v", err)
+	}
+}
+
+func TestDoctypeCreateFolderPostsAndReadsBack(t *testing.T) {
+	var posted map[string]any
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch {
+		case req.URL.Path == "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case req.URL.Path == "/umbraco/management/api/v1/document-type/folder" && req.Method == http.MethodPost:
+			body, _ := io.ReadAll(req.Body)
+			_ = json.Unmarshal(body, &posted)
+			return &http.Response{StatusCode: http.StatusCreated, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(""))}, nil
+		case strings.HasPrefix(req.URL.Path, "/umbraco/management/api/v1/document-type/folder/") && req.Method == http.MethodGet:
+			id := strings.TrimPrefix(req.URL.Path, "/umbraco/management/api/v1/document-type/folder/")
+			return datatypeJSONResponse(http.StatusOK, `{"id":"`+id+`","name":"Sectors","isTrashed":false}`), nil
+		default:
+			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+	out, err := execute(buildRootWithCollections(t, deps), "doctype", "create-folder", "--name", "Sectors", "--parent", "16c53fcd-e119-4c96-a327-898adcbfac27")
+	if err != nil {
+		t.Fatalf("doctype create-folder failed: %v", err)
+	}
+	if posted["name"] != "Sectors" {
+		t.Fatalf("expected the folder name in the POST body, got %+v", posted)
+	}
+	parent, _ := posted["parent"].(map[string]any)
+	if parent["id"] != "16c53fcd-e119-4c96-a327-898adcbfac27" {
+		t.Fatalf("expected parent reference in the POST body, got %+v", posted)
+	}
+	if id, _ := posted["id"].(string); !isUUIDLike(id) {
+		t.Fatalf("expected a generated folder id, got %+v", posted)
+	}
+	var result map[string]any
+	if err := json.Unmarshal([]byte(out), &result); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if result["created"] != true || result["name"] != "Sectors" || result["id"] != posted["id"] {
+		t.Fatalf("expected the read-back folder in the result, got %s", out)
+	}
+
+	if _, err := execute(buildRootWithCollections(t, deps), "doctype", "create-folder", "--name", "X", "--parent", "not-a-guid"); err == nil || !strings.Contains(err.Error(), "--parent must be a folder GUID") {
+		t.Fatalf("expected --parent validation, got %v", err)
+	}
+	if _, err := execute(buildRootWithCollections(t, deps), "doctype", "create-folder"); err == nil || !strings.Contains(err.Error(), "--name") {
+		t.Fatalf("expected --name to be required, got %v", err)
+	}
+}
+
+func TestDoctypeDeleteFolderIsGatedAndHitsFolderRoute(t *testing.T) {
+	var deleted string
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch {
+		case req.URL.Path == "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case req.Method == http.MethodDelete:
+			deleted = req.URL.Path
+			return &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(""))}, nil
+		default:
+			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+	if _, err := execute(buildRootWithCollections(t, deps), "doctype", "delete-folder", "folder-1"); err == nil || !strings.Contains(err.Error(), "--force") {
+		t.Fatalf("expected the force/dry-run gate, got %v", err)
+	}
+	out, err := execute(buildRootWithCollections(t, deps), "datatype", "delete-folder", "folder-1", "--force")
+	if err != nil || deleted != "/umbraco/management/api/v1/data-type/folder/folder-1" || !strings.Contains(out, `"deleted": true`) {
+		t.Fatalf("expected DELETE on the folder route, got err=%v path=%s out=%s", err, deleted, out)
+	}
+}
+
+func TestDoctypeCreateNormalizesLegacyHistoryCleanup(t *testing.T) {
+	var posted map[string]any
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch {
+		case req.URL.Path == "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case req.URL.Path == "/umbraco/management/api/v1/document-type" && req.Method == http.MethodPost:
+			body, _ := io.ReadAll(req.Body)
+			_ = json.Unmarshal(body, &posted)
+			return &http.Response{StatusCode: http.StatusCreated, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(""))}, nil
+		default:
+			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+	if _, err := execute(buildRootWithCollections(t, deps), "doctype", "create", "--json", `{"name":"A","alias":"a","historyCleanup":{"preventCleanup":true}}`); err != nil {
+		t.Fatalf("doctype create failed: %v", err)
+	}
+	if _, legacy := posted["historyCleanup"]; legacy {
+		t.Fatalf("expected historyCleanup renamed to cleanup, got %+v", posted)
+	}
+	if cleanup, _ := posted["cleanup"].(map[string]any); cleanup["preventCleanup"] != true {
+		t.Fatalf("expected cleanup carried over, got %+v", posted)
 	}
 }

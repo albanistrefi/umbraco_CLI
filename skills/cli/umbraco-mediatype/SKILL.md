@@ -107,7 +107,9 @@ umbraco mediatype search
 | Command | Description |
 |---------|-------------|
 | `mediatype create` | Create a media type |
+| `mediatype create-folder` | Create a media type folder (optionally inside another folder) |
 | `mediatype delete <id>` | Delete a media type |
+| `mediatype delete-folder <id>` | Delete an empty media type folder |
 | `mediatype update <id>` | Update a media type (--json replaces, --merge-json merges) |
 
 ### create
@@ -131,6 +133,31 @@ umbraco mediatype create [flags] --dry-run
 umbraco mediatype create [flags]
 ```
 
+### create-folder
+
+```bash
+umbraco mediatype create-folder
+```
+
+POST /media-type/folder. Creates a folder in the media type tree; --parent nests it inside an existing folder. Put a type inside it with 'umbraco mediatype create --json '{..., "parent": {"id": "<folder id>"}}'' or 'umbraco mediatype move <id> --to <folder id>'. After the create the folder is read back, so the result is the persisted record.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--id` | string | — | Folder GUID to use (generated when omitted) |
+| `--name` | string | — | Folder name (required) |
+| `--parent` | string | — | Parent folder GUID; omit for a root-level folder |
+
+**Safe pattern:**
+
+```bash
+# 1. Rehearse with the exact flags you will execute with
+umbraco mediatype create-folder [flags] --dry-run
+
+# 2. Execute with the same flags
+umbraco mediatype create-folder [flags]
+```
+
 ### delete
 
 ```bash
@@ -150,6 +177,27 @@ umbraco mediatype delete <id> [flags] --dry-run
 
 # 2. Execute with the same flags
 umbraco mediatype delete <id> --force [flags]
+```
+
+### delete-folder
+
+```bash
+umbraco mediatype delete-folder <id>
+```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--force` | bool | false | Confirm permanent deletion |
+
+**Safe pattern:**
+
+```bash
+# 1. Rehearse with the exact flags you will execute with
+umbraco mediatype delete-folder <id> [flags] --dry-run
+
+# 2. Execute with the same flags
+umbraco mediatype delete-folder <id> --force [flags]
 ```
 
 ### update
