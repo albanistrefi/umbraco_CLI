@@ -661,11 +661,12 @@ umbraco document restore <id> [flags]
 umbraco document restore-backup <file>
 ```
 
-Reads a file written by any 'document … --backup' command and PUTs the saved document back to the server, then re-reads it and fails if a saved property is missing afterwards. The endpoint is derived from the id inside the envelope (the file cannot steer the write elsewhere). This restores the entity's fields and values; it does not undo a move, publish state, or delete. Publish state is not part of the backup: re-publish with 'document publish' if the restored version should go live.
+Reads a file written by any 'document … --backup' command and PUTs the saved document back to the server, then re-reads it and compares the saved values/properties (alias, culture and segment) and names with what the server now holds; any difference fails the command. The write goes to the id recorded in the envelope; pass --id <guid> to assert which document the file must belong to before anything is written (the file is refused when it names another id), and --dry-run to see the target without writing. This restores the entity's fields and values; it does not undo a move, publish state, or delete. Publish state is not part of the backup: re-publish with 'document publish' if the restored version should go live.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--dry-run` | bool | false | Print the planned request without executing |
+| `--id` | string | — | Assert the envelope belongs to this id before writing (refuses otherwise) |
 
 **Safe pattern:**
 

@@ -2156,8 +2156,56 @@ func TestDocumentRestoreBackupPutsEntityBackAndVerifies(t *testing.T) {
 			return endpointJSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
-	if _, err := execute(buildRootWithCollections(t, wiped), "document", "restore-backup", file); err == nil || !strings.Contains(err.Error(), "missing values afterwards: summary") {
+	if _, err := execute(buildRootWithCollections(t, wiped), "document", "restore-backup", file); err == nil || !strings.Contains(err.Error(), "value summary is missing") {
 		t.Fatalf("expected the verify step to name the missing alias, got %v", err)
+	}
+
+	// A kept old value under the same alias is a difference, not a success.
+	stale := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/document/doc-1":
+			if req.Method == http.MethodPut {
+				return endpointNoContent(), nil
+			}
+			return endpointJSONResponse(http.StatusOK, `{"id":"doc-1","variants":[{"culture":null,"segment":null,"name":"Toxic"}],"values":[{"alias":"title","culture":null,"segment":null,"value":"Newer"},{"alias":"summary","culture":null,"segment":null,"value":"S"}]}`), nil
+		default:
+			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+	if _, err := execute(buildRootWithCollections(t, stale), "document", "restore-backup", file); err == nil || !strings.Contains(err.Error(), "value title differs from the backup") {
+		t.Fatalf("expected a value mismatch to fail verification, got %v", err)
+	}
+
+	// --id asserts the target before anything is written.
+	if _, err := execute(buildRootWithCollections(t, stale), "document", "restore-backup", file, "--id", "doc-2"); err == nil || !strings.Contains(err.Error(), "belongs to document doc-1, not doc-2") {
+		t.Fatalf("expected the --id assertion to refuse, got %v", err)
+	}
+}
+
+func TestDocumentUpdateSaveAndPublishKeepsBackupPathOnPublishFailure(t *testing.T) {
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/document/doc-1/update-and-publish":
+			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		case "/umbraco/management/api/v1/document/doc-1/publish":
+			return endpointJSONResponse(http.StatusBadRequest, `{"title":"Publish failed","status":400}`), nil
+		case "/umbraco/management/api/v1/document/doc-1":
+			if req.Method == http.MethodPut {
+				return endpointNoContent(), nil
+			}
+			return endpointJSONResponse(http.StatusOK, `{"id":"doc-1","variants":[{"name":"Toxic"}],"values":[{"alias":"title","value":"Old"}]}`), nil
+		default:
+			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+	backupPath := t.TempDir() + "/doc.backup.json"
+	_, err := execute(buildRootWithCollections(t, deps), "document", "update", "doc-1", "--property", "title", "--value", "New", "--save-and-publish", "--backup="+backupPath)
+	if err == nil || !strings.Contains(err.Error(), "400") || !strings.Contains(err.Error(), "restore-backup "+backupPath) {
+		t.Fatalf("expected the publish failure to carry the backup path, got %v", err)
 	}
 }
 

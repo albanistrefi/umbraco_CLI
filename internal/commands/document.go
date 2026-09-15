@@ -370,11 +370,13 @@ func documentUpdate(deps Dependencies) *cobra.Command {
 			}
 			publishBody, err := documentPublishBody("", culture)
 			if err != nil {
-				return err
+				return withBackupHint(err, "document", backupFile)
 			}
 			publishResult, err := publishWithInvariantRaceRetry(ctx, deps.Client, args[0], publishBody, api.RequestOptions{DryRun: dryRun})
 			if err != nil {
-				return err
+				// The update already landed; the caller must learn which
+				// file undoes it (auto names carry a random suffix).
+				return withBackupHint(err, "document", backupFile)
 			}
 
 			return printResult(cmd, deps, withBackupPath(map[string]any{

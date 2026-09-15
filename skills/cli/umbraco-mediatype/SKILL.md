@@ -234,11 +234,12 @@ umbraco mediatype remove-property <id-or-alias> --force [flags]
 umbraco mediatype restore-backup <file>
 ```
 
-Reads a file written by any 'mediatype … --backup' command and PUTs the saved media type back to the server, then re-reads it and fails if a saved property is missing afterwards. The endpoint is derived from the id inside the envelope (the file cannot steer the write elsewhere). This restores the entity's fields and values; it does not undo a move, publish state, or delete.
+Reads a file written by any 'mediatype … --backup' command and PUTs the saved media type back to the server, then re-reads it and compares the saved values/properties (alias, culture and segment) and names with what the server now holds; any difference fails the command. The write goes to the id recorded in the envelope; pass --id <guid> to assert which media type the file must belong to before anything is written (the file is refused when it names another id), and --dry-run to see the target without writing. This restores the entity's fields and values; it does not undo a move, publish state, or delete.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--dry-run` | bool | false | Print the planned request without executing |
+| `--id` | string | — | Assert the envelope belongs to this id before writing (refuses otherwise) |
 
 **Safe pattern:**
 
