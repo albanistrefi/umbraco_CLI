@@ -89,6 +89,7 @@ func registerSchemaTypeGroup(root *cobra.Command, deps Dependencies, spec schema
 			return api.JoinPath("/"+spec.Resource+"/%s", args[0])
 		},
 	}))
+	group.AddCommand(schemaTypeRemoveProperty(deps, spec.Use, spec.Resource, spec.Display, spec.UpdateStripFields))
 	group.AddCommand(schemaTypeCreateFolder(deps, spec.Use, spec.Resource, spec.Display, false))
 	group.AddCommand(schemaTypeDeleteFolder(deps, spec.Use, spec.Resource, spec.Display))
 	group.AddCommand(getCommand(deps, getSpec{
@@ -199,6 +200,184 @@ func schemaTypeGet(deps Dependencies, spec schemaTypeSpec) *cobra.Command {
 	}
 	addFieldsFlag(cmd, &fields)
 	return cmd
+}
+
+// schemaTypeRemoveProperty builds "<group> remove-property": GET + PUT of the
+// full type with one property removed. Field report: removing a property
+// meant get → hand-edit → 'update --json', which risks dropping fields such
+// as allowedAsRoot; here the server's own record is written back minus the
+// property, and the type is re-read to confirm the removal.
+func schemaTypeRemoveProperty(deps Dependencies, use string, resource string, display string, stripFields []string) *cobra.Command {
+	var alias string
+	var backup string
+	var force bool
+	var dryRun bool
+	cmd := &cobra.Command{
+		Use:   "remove-property <id-or-alias>",
+		Short: fmt.Sprintf("Remove a property from a %s by alias", display),
+		Long: fmt.Sprintf("GET /%s/{id} + PUT /%s/{id}. Removes the property with --alias and writes the type back otherwise unchanged; the type is re-read afterwards and the command fails if the property is still there. "+
+			"Content of this type loses the property's values, so the command refuses to run without --dry-run (plan) or --force (confirm). The server prunes tabs/groups left without properties on save — the result lists them under prunedContainers. "+
+			"Pass --backup to save the pre-change type first; '%s restore-backup <file>' puts it back.", resource, resource, use),
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := requireValue("--alias", alias); err != nil {
+				return err
+			}
+			if err := requireForceOrDryRun(cmd, "removes the property and every content value stored in it", force, dryRun); err != nil {
+				return err
+			}
+			ctx := cmd.Context()
+			id, err := resolveSchemaTypeID(ctx, deps.Client, resource, use, display, args[0])
+			if err != nil {
+				return err
+			}
+			path := api.JoinPath("/"+resource+"/%s", id)
+			current, err := fetchObject(ctx, deps.Client, path, api.RequestOptions{})
+			if err != nil {
+				return err
+			}
+			removed, remaining, err := removeSchemaTypeProperty(current, alias)
+			if err != nil {
+				return fmt.Errorf("%s %s: %w", display, args[0], err)
+			}
+
+			var backupFile string
+			if cmd.Flags().Changed("backup") && !dryRun {
+				backupFile, err = writeBackup(resolveBackupPath(backup, use, id), use, id, path, current, nil)
+				if err != nil {
+					return err
+				}
+			}
+
+			body := cloneAnyMap(current)
+			body["properties"] = remaining
+			for _, key := range stripFields {
+				delete(body, key)
+			}
+			pruned := emptySchemaTypeContainers(current, remaining)
+
+			result, err := deps.Client.Put(ctx, path, body, api.RequestOptions{DryRun: dryRun})
+			if err != nil {
+				return err
+			}
+			out := map[string]any{
+				"id":                  id,
+				"removed":             map[string]any{"alias": alias, "id": removed["id"], "name": removed["name"]},
+				"remainingProperties": len(remaining),
+			}
+			if len(pruned) > 0 {
+				out["prunedContainers"] = pruned
+				out["warning"] = "the listed tabs/groups have no properties left and are discarded by the server on save"
+			}
+			if dryRun {
+				out["update"] = result
+				return printResult(cmd, deps, out)
+			}
+			after, err := fetchObject(ctx, deps.Client, path, api.RequestOptions{})
+			if err != nil {
+				return fmt.Errorf("the server accepted the update but reading the %s back failed: %w", display, err)
+			}
+			if hasDoctypeProperty(after, alias) {
+				return fmt.Errorf("the server accepted the update but the %s still has property %q", display, alias)
+			}
+			out["verified"] = true
+			if backupFile != "" {
+				out["backup"] = backupFile
+			}
+			return printResult(cmd, deps, out)
+		},
+	}
+	cmd.Flags().StringVar(&alias, "alias", "", "Alias of the property to remove (required; exact match)")
+	cmd.Flags().BoolVar(&force, "force", false, "Confirm the removal when not using --dry-run")
+	addBackupFlag(cmd, &backup)
+	addDryRunFlag(cmd, &dryRun)
+	return cmd
+}
+
+// removeSchemaTypeProperty returns the property matching alias and the
+// properties array without it. Aliases are case-sensitive on the server; a
+// case-only mismatch is pointed out rather than silently accepted.
+func removeSchemaTypeProperty(current map[string]any, alias string) (map[string]any, []any, error) {
+	properties, _ := current["properties"].([]any)
+	remaining := make([]any, 0, len(properties))
+	var removed map[string]any
+	var caseHint string
+	for _, item := range properties {
+		entry, ok := item.(map[string]any)
+		if !ok {
+			remaining = append(remaining, item)
+			continue
+		}
+		got, _ := entry["alias"].(string)
+		if got == alias && removed == nil {
+			removed = entry
+			continue
+		}
+		if strings.EqualFold(got, alias) {
+			caseHint = got
+		}
+		remaining = append(remaining, item)
+	}
+	if removed == nil {
+		if caseHint != "" {
+			return nil, nil, fmt.Errorf("has no property with alias %q (did you mean %q? aliases are case-sensitive)", alias, caseHint)
+		}
+		return nil, nil, fmt.Errorf("has no property with alias %q; 'get <id> --fields properties' lists the aliases", alias)
+	}
+	return removed, remaining, nil
+}
+
+// emptySchemaTypeContainers names the containers that hold no property
+// after the removal and have no child container that does — the ones the
+// server prunes on save.
+func emptySchemaTypeContainers(current map[string]any, remaining []any) []string {
+	containers, _ := current["containers"].([]any)
+	if len(containers) == 0 {
+		return nil
+	}
+	populated := map[string]bool{}
+	for _, item := range remaining {
+		entry, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		if container, ok := entry["container"].(map[string]any); ok {
+			if id, _ := container["id"].(string); id != "" {
+				populated[id] = true
+			}
+		}
+	}
+	parentOf := map[string]string{}
+	nameOf := map[string]string{}
+	for _, item := range containers {
+		entry, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		id, _ := entry["id"].(string)
+		nameOf[id], _ = entry["name"].(string)
+		if parent, ok := entry["parent"].(map[string]any); ok {
+			parentOf[id], _ = parent["id"].(string)
+		}
+	}
+	// A populated group keeps its parent tab alive.
+	for id := range populated {
+		for parent := parentOf[id]; parent != ""; parent = parentOf[parent] {
+			populated[parent] = true
+		}
+	}
+	pruned := []string{}
+	for _, item := range containers {
+		entry, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		id, _ := entry["id"].(string)
+		if !populated[id] {
+			pruned = append(pruned, nameOf[id])
+		}
+	}
+	return pruned
 }
 
 // schemaTypeCreateFolder builds "<group> create-folder": POST /<resource>/folder.

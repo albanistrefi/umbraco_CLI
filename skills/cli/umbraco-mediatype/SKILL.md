@@ -110,6 +110,7 @@ umbraco mediatype search
 | `mediatype create-folder` | Create a media type folder (optionally inside another folder) |
 | `mediatype delete <id>` | Delete a media type |
 | `mediatype delete-folder <id>` | Delete an empty media type folder |
+| `mediatype remove-property <id-or-alias>` | Remove a property from a media type by alias |
 | `mediatype update <id>` | Update a media type (--json replaces, --merge-json merges) |
 
 ### create
@@ -199,6 +200,31 @@ umbraco mediatype delete-folder <id> [flags] --dry-run
 
 # 2. Execute with the same flags
 umbraco mediatype delete-folder <id> --force [flags]
+```
+
+### remove-property
+
+```bash
+umbraco mediatype remove-property <id-or-alias>
+```
+
+GET /media-type/{id} + PUT /media-type/{id}. Removes the property with --alias and writes the type back otherwise unchanged; the type is re-read afterwards and the command fails if the property is still there. Content of this type loses the property's values, so the command refuses to run without --dry-run (plan) or --force (confirm). The server prunes tabs/groups left without properties on save — the result lists them under prunedContainers. Pass --backup to save the pre-change type first; 'mediatype restore-backup <file>' puts it back.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--alias` | string | — | Alias of the property to remove (required; exact match) |
+| `--backup` | string | — | Save the current item to a JSON file before writing; bare --backup writes ./<collection>-<id>-<timestamp>.backup.json, --backup=<path> chooses the file. Undo with '<collection> restore-backup <file>' where available |
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--force` | bool | false | Confirm the removal when not using --dry-run |
+
+**Safe pattern:**
+
+```bash
+# 1. Rehearse with the exact flags you will execute with
+umbraco mediatype remove-property <id-or-alias> [flags] --dry-run
+
+# 2. Execute with the same flags
+umbraco mediatype remove-property <id-or-alias> --force [flags]
 ```
 
 ### update
