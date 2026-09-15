@@ -78,41 +78,129 @@ func TestFormsListFallsBackToFlatEndpoint(t *testing.T) {
 	}
 }
 
-func TestFormsChildrenQueriesFormsByFolderId(t *testing.T) {
-	var observedQuery string
+func TestFormsChildrenUsesTreeChildrenAndAnnotatesFolders(t *testing.T) {
+	var observedPath string
 
 	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
 			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/forms/management/api/v1/tree/form/children/folder-1":
+			observedPath = req.URL.String()
+			return datatypeJSONResponse(http.StatusOK, `{"total":2,"items":[
+				{"id":"folder-2","name":"Nested","isFolder":true,"hasChildren":true},
+				{"id":"f-2","name":"Event Form","isFolder":false,"entries":3}
+			]}`), nil
 		case "/umbraco/forms/management/api/v1/form":
-			observedQuery = req.URL.RawQuery
-			return datatypeJSONResponse(http.StatusOK, `[
-				{"id":"f-1","name":"Albans cool form","entries":0,"summary":"2 page form with 4 fields"},
-				{"id":"f-2","name":"Event Form","entries":3,"summary":"1 page form with 16 fields"}
-			]`), nil
+			// The folderId filter is ignored by the server (returns every
+			// form), so children must never fall back to it.
+			t.Fatalf("forms children must not query /form?folderId")
+			return nil, nil
 		default:
 			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	output, err := execute(buildRootWithCollections(t, deps), "forms", "children", "folder-1", "--fields", "id,name")
+	output, err := execute(buildRootWithCollections(t, deps), "forms", "children", "folder-1", "--fields", "id,name,isFolder,type")
 	if err != nil {
 		t.Fatalf("forms children failed: %v", err)
 	}
-	if !strings.Contains(observedQuery, "folderId=folder-1") {
-		t.Fatalf("expected folderId query param, got %q", observedQuery)
+	if !strings.HasSuffix(observedPath, "/tree/form/children/folder-1") {
+		t.Fatalf("expected the tree children route, got %q", observedPath)
 	}
 
-	var items []map[string]any
-	if err := json.Unmarshal([]byte(output), &items); err != nil {
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
 		t.Fatalf("failed to decode children payload: %v", err)
 	}
-	if len(items) != 2 || items[0]["id"] != "f-1" || items[0]["name"] != "Albans cool form" {
-		t.Fatalf("unexpected projected items: %+v", items)
+	items := payload["items"].([]any)
+	if len(items) != 2 {
+		t.Fatalf("expected two items, got %+v", items)
 	}
-	if _, hasSummary := items[0]["summary"]; hasSummary {
-		t.Fatalf("expected --fields projection to drop summary, got %+v", items[0])
+	folder := items[0].(map[string]any)
+	form := items[1].(map[string]any)
+	if folder["isFolder"] != true || folder["type"] != "folder" {
+		t.Fatalf("expected folder annotation, got %+v", folder)
+	}
+	if form["isFolder"] != false || form["type"] != "form" {
+		t.Fatalf("expected form annotation, got %+v", form)
+	}
+}
+
+func TestFormsChildrenExplainsNonFolderID(t *testing.T) {
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/forms/management/api/v1/tree/form/children/f-1", "/umbraco/forms/management/api/v1/tree/form/children/empty-folder":
+			// The tree answers an empty page for any id, folder or not.
+			return datatypeJSONResponse(http.StatusOK, `{"total":0,"items":[]}`), nil
+		case "/umbraco/forms/management/api/v1/folder/empty-folder":
+			return datatypeJSONResponse(http.StatusOK, `{"id":"empty-folder","name":"Empty"}`), nil
+		default:
+			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+	_, err := execute(buildRootWithCollections(t, deps), "forms", "children", "f-1")
+	if err == nil || !strings.Contains(err.Error(), "is not a Forms folder id") || !strings.Contains(err.Error(), "forms get f-1") {
+		t.Fatalf("expected a not-a-folder explanation, got %v", err)
+	}
+	out, err := execute(buildRootWithCollections(t, deps), "forms", "children", "empty-folder")
+	if err != nil || !strings.Contains(out, `"total": 0`) {
+		t.Fatalf("expected an actual empty folder to list as empty, got err=%v out=%s", err, out)
+	}
+}
+
+func TestFormsListAnnotatesFormsWithoutFolderFlag(t *testing.T) {
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/forms/management/api/v1/tree/form/root":
+			return datatypeJSONResponse(http.StatusOK, `{"total":2,"items":[
+				{"id":"folder-1","name":"Contact sales","isFolder":true},
+				{"id":"f-1","name":"Contact"}
+			]}`), nil
+		default:
+			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+	output, err := execute(buildRootWithCollections(t, deps), "forms", "list")
+	if err != nil {
+		t.Fatalf("forms list failed: %v", err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("failed to decode forms list payload: %v", err)
+	}
+	items := payload["items"].([]any)
+	if items[0].(map[string]any)["type"] != "folder" || items[1].(map[string]any)["type"] != "form" || items[1].(map[string]any)["isFolder"] != false {
+		t.Fatalf("expected isFolder/type on every item, got %+v", items)
+	}
+}
+
+func TestFormsGetOnFolderExplains(t *testing.T) {
+	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/forms/management/api/v1/form/folder-1":
+			return datatypeJSONResponse(http.StatusNotFound, `{"title":"Not found","status":404}`), nil
+		case "/umbraco/forms/management/api/v1/folder/folder-1":
+			return datatypeJSONResponse(http.StatusOK, `{"id":"folder-1","name":"Contact sales","parentId":null}`), nil
+		default:
+			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+	_, err := execute(buildRootWithCollections(t, deps), "forms", "get", "folder-1")
+	if err == nil || !strings.Contains(err.Error(), "is a Forms folder, not a form") || !strings.Contains(err.Error(), "forms children folder-1") {
+		t.Fatalf("expected a folder explanation, got %v", err)
+	}
+
+	// An id that is neither keeps the real 404 (exit 4).
+	_, err = execute(buildRootWithCollections(t, deps), "forms", "get", "missing")
+	if err == nil || !strings.Contains(err.Error(), "404") || strings.Contains(err.Error(), "is a Forms folder") {
+		t.Fatalf("expected the plain 404 for an unknown id, got %v", err)
 	}
 }
 
