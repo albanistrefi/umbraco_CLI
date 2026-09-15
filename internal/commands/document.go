@@ -17,6 +17,17 @@ func RegisterDocument(root *cobra.Command, deps Dependencies) {
 		Use:     "document",
 		Aliases: []string{"doc"},
 		Short:   "Document and content management operations",
+		Long: `Document and content management operations.
+
+Task → command:
+  Read a document, find documents                      document get <id>, document search --query <text>, document grep
+  Change one property                                  document update <id> --property <alias> --value <v> --backup
+  Change many documents the same way                   document update --ids a,b,c --merge-json '{...}' --force   (or --from-file ids.txt)
+  Publish one / many                                   document publish <id>; document publish --ids a,b,c --force
+  Change and publish many in one pass                  document update --ids … --merge-json … --save-and-publish --force
+  Per-row values from a spreadsheet                    document csv-update --file rows.csv --property <alias>
+  Undo a write                                         document restore-backup <file>   (from any --backup)
+  Publish a whole subtree                              document publish-descendants <id>`,
 	}
 
 	document.AddCommand(documentGet(deps))
@@ -274,15 +285,19 @@ func documentUpdate(deps Dependencies) *cobra.Command {
 	var saveAndPublish bool
 	var culture string
 	var backup string
+	var idsCSV string
+	var fromFile string
+	var force bool
 	var dryRun bool
 	cmd := &cobra.Command{
-		Use:   "update <id>",
-		Short: "Update a document",
-		Long:  "PUT /document/{id}. Exactly one of --json (full replacement), --merge-json (fetch and deep-merge), or --property/--value. Pass --backup to save the current document first; 'document restore-backup <file>' puts it back. --save-and-publish publishes in the same operation on Umbraco 18.1+.",
-		Args:  cobra.ExactArgs(1),
+		Use:   "update <id> | --ids a,b,c | --from-file ids.txt",
+		Short: "Update a document (or several with --ids/--from-file)",
+		Long: "PUT /document/{id}. Exactly one of --json (full replacement), --merge-json (fetch and deep-merge), or --property/--value. Pass --backup to save the current document first; 'document restore-backup <file>' puts it back. --save-and-publish publishes in the same operation on Umbraco 18.1+.\n\n" +
+			"With --ids or --from-file the same change is applied to every listed document in sequence (--merge-json and --property merge into each document's own current state), one result row per document (id, name, update status, publish status, error). " +
+			"A failure on one document does not stop the rest; the command exits 4 when any row failed. Multi-document runs require --force or --dry-run; a dry-run shows the planned requests for the first " + fmt.Sprint(documentBatchPlanWindow) + " documents and counts the rest. With --backup each document is saved first (bare --backup: auto-named files in the working directory; --backup=<dir>: inside that directory).",
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			path := api.JoinPath("/document/%s", args[0])
 			hasProperty := strings.TrimSpace(property) != ""
 			hasJSON := strings.TrimSpace(jsonPayload) != ""
 			hasMergeJSON := strings.TrimSpace(mergeJSON) != ""
@@ -296,8 +311,34 @@ func documentUpdate(deps Dependencies) *cobra.Command {
 				return fmt.Errorf("document update requires exactly one of --json, --merge-json, or --property")
 			}
 
+			ids, err := resolveDocumentBatchTargets(cmd, args, idsCSV, fromFile, force, dryRun, "mutates every listed document")
+			if err != nil {
+				return err
+			}
+			if ids != nil {
+				opts := documentBatchOptions{IDs: ids, Update: true, Publish: saveAndPublish, Culture: culture, DryRun: dryRun}
+				if cmd.Flags().Changed("backup") {
+					opts.Backup = backup
+					if strings.TrimSpace(opts.Backup) == "" {
+						opts.Backup = backupAutoValue
+					}
+				}
+				switch {
+				case hasJSON:
+					opts.FullBody, err = parsePayload(jsonPayload)
+				case hasMergeJSON:
+					opts.MergePatch, err = parseJSONObject(mergeJSON, "--merge-json")
+				default:
+					opts.MergePatch, err = documentPropertyPatch(property, value, valueJSON)
+				}
+				if err != nil {
+					return err
+				}
+				return printDocumentBatch(cmd, deps, executeDocumentBatch(ctx, deps.Client, opts))
+			}
+			path := api.JoinPath("/document/%s", args[0])
+
 			var body map[string]any
-			var err error
 			if hasProperty {
 				patch, err := documentPropertyPatch(property, value, valueJSON)
 				if err != nil {
@@ -394,6 +435,7 @@ func documentUpdate(deps Dependencies) *cobra.Command {
 	cmd.Flags().BoolVar(&saveAndPublish, "save-and-publish", false, "Publish the document after a successful update")
 	cmd.Flags().StringVar(&culture, "culture", "", "Culture shortcut for --save-and-publish")
 	addBackupFlag(cmd, &backup)
+	addDocumentBatchFlags(cmd, &idsCSV, &fromFile, &force, "update")
 	addDryRunFlag(cmd, &dryRun)
 	return cmd
 }

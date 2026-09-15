@@ -18,6 +18,22 @@ metadata:
 umbraco document <command> [flags]
 ```
 
+## Overview
+
+```text
+Document and content management operations.
+
+Task → command:
+  Read a document, find documents                      document get <id>, document search --query <text>, document grep
+  Change one property                                  document update <id> --property <alias> --value <v> --backup
+  Change many documents the same way                   document update --ids a,b,c --merge-json '{...}' --force   (or --from-file ids.txt)
+  Publish one / many                                   document publish <id>; document publish --ids a,b,c --force
+  Change and publish many in one pass                  document update --ids … --merge-json … --save-and-publish --force
+  Per-row values from a spreadsheet                    document csv-update --file rows.csv --property <alias>
+  Undo a write                                         document restore-backup <file>   (from any --backup)
+  Publish a whole subtree                              document publish-descendants <id>
+```
+
 ## Read Commands
 
 | Command | Description |
@@ -323,7 +339,7 @@ umbraco document version list <document-id>
 |---------|-------------|
 | `document bin delete <id>` | Permanently delete one document item from the recycle bin |
 | `document bin empty` | Permanently delete everything in the document recycle bin |
-| `document bulk-update` | Update multiple documents from an explicit ID list |
+| `document bulk-update` | Update multiple documents from an explicit ID list (see also 'document update --ids') |
 | `document copy <id>` | Copy a document |
 | `document create` | Create a document |
 | `document csv-update` | Update multiple documents from a CSV file |
@@ -331,7 +347,7 @@ umbraco document version list <document-id>
 | `document move <id>` | Move a document |
 | `document public-access remove <id>` | Remove the public-access rules from a document (makes it publicly visible again) |
 | `document public-access set <id>` | Create or replace the public-access rules on a document |
-| `document publish <id>` | Publish a document |
+| `document publish <id> | --ids a,b,c | --from-file ids.txt` | Publish a document (or several with --ids/--from-file) |
 | `document publish-descendants <id>` | Publish a document and its entire subtree |
 | `document restore <id>` | Restore a document item from the recycle bin |
 | `document restore-backup <file>` | Restore a document from a --backup JSON file |
@@ -339,7 +355,7 @@ umbraco document version list <document-id>
 | `document sort-children [parent-id]` | Sort all children of a node by a field |
 | `document trash <id>` | Move a document to recycle bin |
 | `document unpublish <id>` | Unpublish a document |
-| `document update <id>` | Update a document |
+| `document update <id> | --ids a,b,c | --from-file ids.txt` | Update a document (or several with --ids/--from-file) |
 | `document update-properties <id>` | Update document properties (merges into values[] by alias) |
 | `document version prevent-cleanup <version-id>` | Pin a version so scheduled history cleanup never deletes it |
 | `document version rollback <version-id>` | Roll the document back to this version |
@@ -400,6 +416,7 @@ umbraco document bulk-update
 | `--force` | bool | false | Confirm the bulk update when not using --dry-run |
 | `--id` | stringArray | [] | Document ID to update; repeat for multiple documents |
 | `--id-file` | string | — | Path to a file containing document IDs, one per line |
+| `--ids` | string | — | Comma-separated document IDs (same as repeating --id) |
 | `--json` | string | — | Full JSON payload applied to every document |
 | `--merge-json` | string | — | Partial JSON payload merged into each current document before update |
 
@@ -586,23 +603,28 @@ umbraco document public-access set <id> [flags]
 ### publish
 
 ```bash
-umbraco document publish <id>
+umbraco document publish <id> | --ids a,b,c | --from-file ids.txt
 ```
+
+PUT /document/{id}/publish. With --ids or --from-file the same publish runs for every listed document in sequence, one result row per document (id, name, publish status, error); a failure on one document does not stop the rest, and the command exits 4 when any row failed. Multi-document runs require --force or --dry-run; a dry-run shows the planned requests for the first 3 documents and counts the rest. To change values and publish in one pass use 'document update --ids … --merge-json … --save-and-publish'.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--culture` | string | — | Culture shortcut |
 | `--dry-run` | bool | false | Print the planned request without executing |
+| `--force` | bool | false | Confirm a multi-document run when not using --dry-run |
+| `--from-file` | string | — | Path to a file with document GUIDs, one per line (combines with --ids) |
+| `--ids` | string | — | Comma-separated document GUIDs to publish instead of one positional id (runs sequentially; one result row per document) |
 | `--json` | string | — | Publish payload as JSON |
 
 **Safe pattern:**
 
 ```bash
 # 1. Rehearse with the exact flags you will execute with
-umbraco document publish <id> [flags] --dry-run
+umbraco document publish <id> | --ids a,b,c | --from-file ids.txt [flags] --dry-run
 
 # 2. Execute with the same flags
-umbraco document publish <id> [flags]
+umbraco document publish <id> | --ids a,b,c | --from-file ids.txt --force [flags]
 ```
 
 ### publish-descendants
@@ -773,16 +795,21 @@ umbraco document unpublish <id> [flags]
 ### update
 
 ```bash
-umbraco document update <id>
+umbraco document update <id> | --ids a,b,c | --from-file ids.txt
 ```
 
 PUT /document/{id}. Exactly one of --json (full replacement), --merge-json (fetch and deep-merge), or --property/--value. Pass --backup to save the current document first; 'document restore-backup <file>' puts it back. --save-and-publish publishes in the same operation on Umbraco 18.1+.
+
+With --ids or --from-file the same change is applied to every listed document in sequence (--merge-json and --property merge into each document's own current state), one result row per document (id, name, update status, publish status, error). A failure on one document does not stop the rest; the command exits 4 when any row failed. Multi-document runs require --force or --dry-run; a dry-run shows the planned requests for the first 3 documents and counts the rest. With --backup each document is saved first (bare --backup: auto-named files in the working directory; --backup=<dir>: inside that directory).
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--backup` | string | — | Save the current item to a JSON file before writing; bare --backup writes ./<collection>-<id>-<timestamp>.backup.json, --backup=<path> chooses the file. Undo with '<collection> restore-backup <file>' where available |
 | `--culture` | string | — | Culture shortcut for --save-and-publish |
 | `--dry-run` | bool | false | Print the planned request without executing |
+| `--force` | bool | false | Confirm a multi-document run when not using --dry-run |
+| `--from-file` | string | — | Path to a file with document GUIDs, one per line (combines with --ids) |
+| `--ids` | string | — | Comma-separated document GUIDs to update instead of one positional id (runs sequentially; one result row per document) |
 | `--json` | string | — | Full replacement payload as JSON (fields not mentioned are reset by the server) |
 | `--merge-json` | string | — | Partial JSON deep-merged into the current document before update (fields not mentioned are preserved) |
 | `--property` | string | — | Update a single property alias without constructing the full payload |
@@ -794,10 +821,10 @@ PUT /document/{id}. Exactly one of --json (full replacement), --merge-json (fetc
 
 ```bash
 # 1. Rehearse with the exact flags you will execute with
-umbraco document update <id> [flags] --dry-run
+umbraco document update <id> | --ids a,b,c | --from-file ids.txt [flags] --dry-run
 
 # 2. Execute with the same flags
-umbraco document update <id> [flags]
+umbraco document update <id> | --ids a,b,c | --from-file ids.txt --force [flags]
 ```
 
 ### update-properties

@@ -12,6 +12,7 @@ import (
 
 func documentBulkUpdate(deps Dependencies) *cobra.Command {
 	var ids []string
+	var idsCSV string
 	var idFile string
 	var jsonPayload string
 	var mergeJSON string
@@ -20,7 +21,7 @@ func documentBulkUpdate(deps Dependencies) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "bulk-update",
-		Short: "Update multiple documents from an explicit ID list",
+		Short: "Update multiple documents from an explicit ID list (see also 'document update --ids')",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := requireForceOrDryRun(cmd, "mutates every listed document", force, dryRun); err != nil {
@@ -33,7 +34,7 @@ func documentBulkUpdate(deps Dependencies) *cobra.Command {
 				return fmt.Errorf("document bulk-update requires exactly one of --json or --merge-json")
 			}
 
-			resolvedIDs, err := loadDocumentIDs(ids, idFile)
+			resolvedIDs, err := loadDocumentIDs(append(append([]string{}, ids...), uniqueCSV(idsCSV)...), idFile)
 			if err != nil {
 				return err
 			}
@@ -61,6 +62,7 @@ func documentBulkUpdate(deps Dependencies) *cobra.Command {
 	}
 
 	cmd.Flags().StringArrayVar(&ids, "id", nil, "Document ID to update; repeat for multiple documents")
+	cmd.Flags().StringVar(&idsCSV, "ids", "", "Comma-separated document IDs (same as repeating --id)")
 	cmd.Flags().StringVar(&idFile, "id-file", "", "Path to a file containing document IDs, one per line")
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Full JSON payload applied to every document")
 	cmd.Flags().StringVar(&mergeJSON, "merge-json", "", "Partial JSON payload merged into each current document before update")
