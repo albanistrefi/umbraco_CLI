@@ -145,6 +145,24 @@ func TestFormsChildrenExplainsNonFolderID(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "is not a Forms folder id") || !strings.Contains(err.Error(), "forms get f-1") {
 		t.Fatalf("expected a not-a-folder explanation, got %v", err)
 	}
+	// A probe failure other than 404 must surface as the API error (exit 4),
+	// not as "not a folder".
+	forbidden := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/forms/management/api/v1/tree/form/children/f-1":
+			return datatypeJSONResponse(http.StatusOK, `{"total":0,"items":[]}`), nil
+		case "/umbraco/forms/management/api/v1/folder/f-1":
+			return datatypeJSONResponse(http.StatusForbidden, `{"title":"Forbidden","status":403}`), nil
+		default:
+			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+	_, err = execute(buildRootWithCollections(t, forbidden), "forms", "children", "f-1")
+	if err == nil || !strings.Contains(err.Error(), "403") || strings.Contains(err.Error(), "is not a Forms folder id") {
+		t.Fatalf("expected the probe's 403 to propagate, got %v", err)
+	}
 	out, err := execute(buildRootWithCollections(t, deps), "forms", "children", "empty-folder")
 	if err != nil || !strings.Contains(out, `"total": 0`) {
 		t.Fatalf("expected an actual empty folder to list as empty, got err=%v out=%s", err, out)

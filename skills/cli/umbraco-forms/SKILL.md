@@ -41,7 +41,7 @@ Read-focused commands for the Umbraco Forms Management API. Useful for resolving
 umbraco forms children <folderId>
 ```
 
-GET /tree/form/children/{folderId}. Forms in Umbraco are organized into folders. 'forms list' returns root-level items (mostly folders); use 'forms children <folderId>' to drill into a folder returned with isFolder=true. Every item carries isFolder and type ("folder" or "form"), so nested folders can be walked. Note: GET /form?folderId=… is not used — the server ignores the filter and returns every form (verified on Forms 17/18).
+GET /tree/form/children/{folderId}. Forms in Umbraco are organized into folders. 'forms list' returns root-level items (mostly folders); use 'forms children <folderId>' to drill into a folder returned with isFolder=true. Every item carries isFolder and type ("folder" or "form"), so nested folders can be walked. Note: GET /form?folderId=… is not used — the server ignores the filter and returns every form (verified on Forms 17/18). The tree route is not paged either: it returns the whole folder and ignores skip/take (verified: take=2 still returned all 30 items).
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|

@@ -157,13 +157,19 @@ func formsNotAFolderError(id string) error {
 }
 
 // isFormsFolderID reports whether the Forms API knows the id as a folder.
-func isFormsFolderID(ctx context.Context, client *api.Client, id string) bool {
+// Only a 404 means "not a folder"; any other failure (403, 500, network) is
+// returned so the caller keeps the API error and its exit code instead of
+// misreporting the id.
+func isFormsFolderID(ctx context.Context, client *api.Client, id string) (bool, error) {
 	result, err := client.Get(ctx, api.JoinPath("/folder/%s", id), formsRequestOpts("", nil))
 	if err != nil {
-		return false
+		if isAPIStatus(err, http.StatusNotFound) {
+			return false, nil
+		}
+		return false, err
 	}
 	folder, ok := result.(map[string]any)
-	return ok && folder["id"] != nil
+	return ok && folder["id"] != nil, nil
 }
 
 func formsChildren(deps Dependencies) *cobra.Command {
@@ -174,7 +180,7 @@ func formsChildren(deps Dependencies) *cobra.Command {
 		Short: "List the forms and sub-folders inside a folder",
 		Long: "GET /tree/form/children/{folderId}. Forms in Umbraco are organized into folders. 'forms list' returns root-level items (mostly folders); use 'forms children <folderId>' to drill into a folder returned with isFolder=true. " +
 			"Every item carries isFolder and type (\"folder\" or \"form\"), so nested folders can be walked. " +
-			"Note: GET /form?folderId=… is not used — the server ignores the filter and returns every form (verified on Forms 17/18).",
+			"Note: GET /form?folderId=… is not used — the server ignores the filter and returns every form (verified on Forms 17/18). The tree route is not paged either: it returns the whole folder and ignores skip/take (verified: take=2 still returned all 30 items).",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			result, err := deps.Client.Get(
@@ -183,16 +189,28 @@ func formsChildren(deps Dependencies) *cobra.Command {
 				formsRequestOpts(fields, nil),
 			)
 			if err != nil {
-				if isAPIStatus(err, http.StatusNotFound) && !isFormsFolderID(cmd.Context(), deps.Client, args[0]) {
-					return formsNotAFolderError(args[0])
+				if isAPIStatus(err, http.StatusNotFound) {
+					folder, probeErr := isFormsFolderID(cmd.Context(), deps.Client, args[0])
+					if probeErr != nil {
+						return probeErr
+					}
+					if !folder {
+						return formsNotAFolderError(args[0])
+					}
 				}
 				return err
 			}
 			// The tree answers 200 with an empty page for any id (a form id,
 			// a typo), which would read as "empty folder"; only an actual
 			// folder record may be reported as empty.
-			if len(resultItems(result)) == 0 && !isFormsFolderID(cmd.Context(), deps.Client, args[0]) {
-				return formsNotAFolderError(args[0])
+			if len(resultItems(result)) == 0 {
+				folder, probeErr := isFormsFolderID(cmd.Context(), deps.Client, args[0])
+				if probeErr != nil {
+					return probeErr
+				}
+				if !folder {
+					return formsNotAFolderError(args[0])
+				}
 			}
 			return printResult(cmd, deps, applyReadTriage(applyFieldsProjection(annotateFormsItems(result), fields), triage))
 		},
@@ -212,8 +230,14 @@ func formsGet(deps Dependencies) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			result, err := deps.Client.Get(cmd.Context(), api.JoinPath("/form/%s", args[0]), formsRequestOpts(fields, nil))
 			if err != nil {
-				if isAPIStatus(err, http.StatusNotFound) && isFormsFolderID(cmd.Context(), deps.Client, args[0]) {
-					return fmt.Errorf("%s is a Forms folder, not a form; use 'umbraco forms children %s' to list the forms inside it", args[0], args[0])
+				if isAPIStatus(err, http.StatusNotFound) {
+					folder, probeErr := isFormsFolderID(cmd.Context(), deps.Client, args[0])
+					if probeErr != nil {
+						return probeErr
+					}
+					if folder {
+						return fmt.Errorf("%s is a Forms folder, not a form; use 'umbraco forms children %s' to list the forms inside it", args[0], args[0])
+					}
 				}
 				return err
 			}
