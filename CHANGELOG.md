@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- fixed `doctype|mediatype|membertype get <alias>` failing for types in nested folders (agent-reported: `sharedSector`, `sharedAuthor`, `sharedSectors` under Shared › Sectors/Authors, while a one-level-deep alias worked). Reproduced live on a 208-type tree: the alias's first word (`shared`) matched no names, and the tree-walk fallback sent every type id in one batch URL, which the server never answered, so the alias was reported as unknown. The name search now also tries the alias's trailing word (`sector`) and the whole alias, and batch lookups are capped at 100 ids per request (the same chunking the list enrichment already used). Live: all three aliases resolve in about a second; an unknown alias walks the full tree in one second instead of hanging
+
 ## v0.4.16 - 2026-09-11
 
 - fixed `doctype|mediatype|membertype list --types-only` (with or without `--recursive`) returning nothing (agent-reported): the folder heuristic treated any item without an alias as a folder, and tree items never carry one. An explicit `isFolder` flag is now authoritative in both directions

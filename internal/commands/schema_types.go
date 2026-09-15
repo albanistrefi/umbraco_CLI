@@ -212,18 +212,28 @@ func resolveSchemaTypeID(ctx context.Context, client *api.Client, resource strin
 	if value == "" || strings.ContainsAny(value, "/?#%") {
 		return "", fmt.Errorf("%q is not a GUID or alias; use 'umbraco %s get <guid>' or 'umbraco %s search --query <text>'", value, use, use)
 	}
-	// The item search matches names, not aliases, so query with the first
-	// camelCase word of the alias ("blogCategories" → "blog") and check the
-	// alias on the candidates' full models. A renamed type whose alias no
-	// longer resembles its name misses that search, so an exhaustive walk
-	// of the type tree is the fallback.
-	result, err := client.Get(ctx, "/item/"+resource+"/search", api.RequestOptions{Params: map[string]any{"query": aliasSearchTerm(value), "skip": 0, "take": 100}})
-	if err != nil {
-		return "", fmt.Errorf("%q is not a GUID and the alias lookup failed: %w", value, err)
-	}
+	// The item search matches names, not aliases, so query with words of
+	// the alias ("sharedSector" → "shared", then "sector": types in a
+	// folder often carry the folder as an alias prefix their name lacks)
+	// and check the alias on the candidates' full models. A renamed type
+	// whose alias no longer resembles its name misses every search, so an
+	// exhaustive walk of the type tree is the fallback.
 	ids := []string{}
-	for _, item := range resultItems(result) {
-		if id := itemID(item); id != "" {
+	seen := map[string]struct{}{}
+	for _, term := range aliasSearchTerms(value) {
+		result, err := client.Get(ctx, "/item/"+resource+"/search", api.RequestOptions{Params: map[string]any{"query": term, "skip": 0, "take": 100}})
+		if err != nil {
+			return "", fmt.Errorf("%q is not a GUID and the alias lookup failed: %w", value, err)
+		}
+		for _, item := range resultItems(result) {
+			id := itemID(item)
+			if id == "" {
+				continue
+			}
+			if _, dup := seen[strings.ToLower(id)]; dup {
+				continue
+			}
+			seen[strings.ToLower(id)] = struct{}{}
 			ids = append(ids, id)
 		}
 	}
@@ -261,15 +271,52 @@ func resolveSchemaTypeID(ctx context.Context, client *api.Client, resource strin
 	}
 }
 
-// aliasSearchTerm returns the leading camelCase word of an alias, which is
-// what the name-based item search can match.
-func aliasSearchTerm(alias string) string {
-	for i, r := range alias {
-		if i > 0 && (r >= 'A' && r <= 'Z' || r == '_' || r == '-' || r == ' ') {
-			return alias[:i]
+// aliasSearchTerms returns the words the name-based item search should be
+// tried with, in order: the leading camelCase word, the trailing word, and
+// the whole alias (each once). "sharedSector" → shared, sector.
+func aliasSearchTerms(alias string) []string {
+	words := aliasWords(alias)
+	candidates := []string{}
+	if len(words) > 0 {
+		candidates = append(candidates, words[0])
+		if len(words) > 1 {
+			candidates = append(candidates, words[len(words)-1])
 		}
 	}
-	return alias
+	candidates = append(candidates, alias)
+	terms := make([]string, 0, len(candidates))
+	seen := map[string]struct{}{}
+	for _, term := range candidates {
+		key := strings.ToLower(term)
+		if term == "" {
+			continue
+		}
+		if _, dup := seen[key]; dup {
+			continue
+		}
+		seen[key] = struct{}{}
+		terms = append(terms, term)
+	}
+	return terms
+}
+
+// aliasWords splits an alias on camelCase boundaries and separators.
+func aliasWords(alias string) []string {
+	words := []string{}
+	start := 0
+	flush := func(end int) {
+		if word := strings.Trim(alias[start:end], "_- "); word != "" {
+			words = append(words, word)
+		}
+	}
+	for i, r := range alias {
+		if i > 0 && (r >= 'A' && r <= 'Z' || r == '_' || r == '-' || r == ' ') {
+			flush(i)
+			start = i
+		}
+	}
+	flush(len(alias))
+	return words
 }
 
 // matchSchemaTypeAlias returns the ids among candidates whose full model
@@ -290,13 +337,35 @@ func matchSchemaTypeAlias(ctx context.Context, client *api.Client, resource stri
 	return matches, nil
 }
 
+// schemaTypeBatchSize caps the ids per batch request. Field report: the
+// alias fallback once sent every type in the tree (200+) as one query
+// string and the server never answered — the request timed out client-side
+// and the alias was reported as unknown.
+const schemaTypeBatchSize = 100
+
 // fetchSchemaTypeBatch loads full models for the ids, via the batch route
-// when the server has it (ids as repeated query values) and one GET per id
-// otherwise. A 404 for one id means it vanished between calls and is
-// skipped; any other API failure is returned, never mistaken for "absent".
+// when the server has it (ids as repeated query values, at most
+// schemaTypeBatchSize per request) and one GET per id otherwise. A 404 for
+// one id means it vanished between calls and is skipped; any other API
+// failure is returned, never mistaken for "absent".
 func fetchSchemaTypeBatch(ctx context.Context, client *api.Client, resource string, ids []string) ([]map[string]any, error) {
 	if len(ids) == 0 {
 		return nil, nil
+	}
+	if len(ids) > schemaTypeBatchSize {
+		out := make([]map[string]any, 0, len(ids))
+		for start := 0; start < len(ids); start += schemaTypeBatchSize {
+			end := start + schemaTypeBatchSize
+			if end > len(ids) {
+				end = len(ids)
+			}
+			chunk, err := fetchSchemaTypeBatch(ctx, client, resource, ids[start:end])
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, chunk...)
+		}
+		return out, nil
 	}
 	// buildURL repeats []any values as separate query parameters.
 	idParams := make([]any, 0, len(ids))
@@ -455,19 +524,13 @@ func enrichSchemaTypeAliases(ctx context.Context, client *api.Client, resource s
 		return result, nil
 	}
 	details := map[string]map[string]any{}
-	for start := 0; start < len(missing); start += 100 {
-		end := start + 100
-		if end > len(missing) {
-			end = len(missing)
-		}
-		batch, err := fetchSchemaTypeBatch(ctx, client, resource, missing[start:end])
-		if err != nil {
-			return nil, fmt.Errorf("resolving aliases for %ss failed: %w", strings.ReplaceAll(resource, "-", " "), err)
-		}
-		for _, detail := range batch {
-			if id, _ := detail["id"].(string); id != "" {
-				details[strings.ToLower(id)] = detail
-			}
+	batch, err := fetchSchemaTypeBatch(ctx, client, resource, missing)
+	if err != nil {
+		return nil, fmt.Errorf("resolving aliases for %ss failed: %w", strings.ReplaceAll(resource, "-", " "), err)
+	}
+	for _, detail := range batch {
+		if id, _ := detail["id"].(string); id != "" {
+			details[strings.ToLower(id)] = detail
 		}
 	}
 	for _, item := range items {

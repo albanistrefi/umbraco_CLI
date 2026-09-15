@@ -2,6 +2,7 @@ package commands
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -312,5 +313,104 @@ func TestSchemaTypeTypesOnlyKeepsTreeItemsWithoutAliasAndEnrichesAliases(t *test
 	search, err := execute(buildSchemaTypeRoot(deps), "mediatype", "search", "--query", "image")
 	if err != nil || !strings.Contains(search, `"alias": "Image"`) {
 		t.Fatalf("expected search items enriched with alias, got err=%v out=%s", err, search)
+	}
+}
+
+func TestSchemaTypeAliasSearchesTrailingWordWhenLeadingWordMissesName(t *testing.T) {
+	queries := []string{}
+	deps := schemaTypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/item/media-type/search":
+			query := req.URL.Query().Get("query")
+			queries = append(queries, query)
+			// Field report: "sharedSector" lives in a Shared folder whose
+			// name the type does not carry — the name is just "Sector".
+			if strings.EqualFold(query, "sector") {
+				return endpointJSONResponse(http.StatusOK, `{"total":1,"items":[{"id":"aaaaaaaa-0000-4000-8000-000000000021","name":"Sector"}]}`), nil
+			}
+			return endpointJSONResponse(http.StatusOK, `{"total":0,"items":[]}`), nil
+		case "/umbraco/management/api/v1/media-type/batch":
+			return endpointJSONResponse(http.StatusOK, `[{"id":"aaaaaaaa-0000-4000-8000-000000000021","alias":"sharedSector","name":"Sector"}]`), nil
+		case "/umbraco/management/api/v1/media-type/aaaaaaaa-0000-4000-8000-000000000021":
+			return endpointJSONResponse(http.StatusOK, `{"id":"aaaaaaaa-0000-4000-8000-000000000021","alias":"sharedSector","name":"Sector"}`), nil
+		case "/umbraco/management/api/v1/tree/media-type/root":
+			t.Fatalf("the trailing-word search should resolve the alias before the tree walk")
+			return nil, nil
+		default:
+			return endpointJSONResponse(http.StatusNotFound, `{"error":"not found"}`), nil
+		}
+	})
+	out, err := execute(buildSchemaTypeRoot(deps), "mediatype", "get", "sharedSector")
+	if err != nil || !strings.Contains(out, `"alias": "sharedSector"`) {
+		t.Fatalf("expected alias resolution via the trailing word, got err=%v out=%s", err, out)
+	}
+	if len(queries) != 3 || !strings.EqualFold(queries[0], "shared") || !strings.EqualFold(queries[1], "sector") || queries[2] != "sharedSector" {
+		t.Fatalf("expected searches for the leading word, trailing word, and whole alias, got %v", queries)
+	}
+}
+
+func TestSchemaTypeAliasTreeFallbackChunksBatchRequests(t *testing.T) {
+	const total = 250
+	items := make([]string, 0, total)
+	for i := 0; i < total; i++ {
+		items = append(items, fmt.Sprintf(`{"id":"aaaaaaaa-0000-4000-8000-%012d","name":"Type %d","isFolder":false}`, i, i))
+	}
+	batchSizes := []int{}
+	batched := map[string]bool{}
+	deps := schemaTypeDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/item/media-type/search":
+			return endpointJSONResponse(http.StatusOK, `{"total":0,"items":[]}`), nil
+		case "/umbraco/management/api/v1/tree/media-type/root":
+			return endpointJSONResponse(http.StatusOK, fmt.Sprintf(`{"total":%d,"items":[%s]}`, total, strings.Join(items, ","))), nil
+		case "/umbraco/management/api/v1/media-type/batch":
+			ids := req.URL.Query()["id"]
+			batchSizes = append(batchSizes, len(ids))
+			rows := make([]string, 0, len(ids))
+			for _, id := range ids {
+				batched[id] = true
+				alias := "type" + id[len(id)-3:]
+				if id == fmt.Sprintf("aaaaaaaa-0000-4000-8000-%012d", total-1) {
+					alias = "deepRenamedType"
+				}
+				rows = append(rows, fmt.Sprintf(`{"id":"%s","alias":"%s","name":"x"}`, id, alias))
+			}
+			return endpointJSONResponse(http.StatusOK, "["+strings.Join(rows, ",")+"]"), nil
+		default:
+			if strings.HasPrefix(req.URL.Path, "/umbraco/management/api/v1/media-type/aaaaaaaa-0000-4000-8000-") && strings.HasSuffix(req.URL.Path, fmt.Sprintf("%012d", total-1)) {
+				return endpointJSONResponse(http.StatusOK, `{"id":"resolved","alias":"deepRenamedType"}`), nil
+			}
+			return endpointJSONResponse(http.StatusNotFound, `{"error":"not found"}`), nil
+		}
+	})
+	out, err := execute(buildSchemaTypeRoot(deps), "mediatype", "get", "deepRenamedType")
+	if err != nil || !strings.Contains(out, `"alias": "deepRenamedType"`) {
+		t.Fatalf("expected the tree fallback to resolve the last type, got err=%v out=%s", err, out)
+	}
+	if len(batched) != total {
+		t.Fatalf("expected every tree type to be looked up, got %d of %d", len(batched), total)
+	}
+	for _, size := range batchSizes {
+		if size > schemaTypeBatchSize {
+			t.Fatalf("expected batch requests capped at %d ids, got sizes %v", schemaTypeBatchSize, batchSizes)
+		}
+	}
+	if len(batchSizes) < 3 {
+		t.Fatalf("expected %d ids split across several batch requests, got %v", total, batchSizes)
+	}
+}
+
+func TestAliasSearchTerms(t *testing.T) {
+	cases := map[string][]string{
+		"sharedSector":      {"shared", "Sector", "sharedSector"},
+		"fAQsBlockSettings": {"f", "Settings", "fAQsBlockSettings"},
+		"article":           {"article"},
+		"blog_post-item":    {"blog", "item", "blog_post-item"},
+	}
+	for alias, want := range cases {
+		got := aliasSearchTerms(alias)
+		if strings.Join(got, ",") != strings.Join(want, ",") {
+			t.Fatalf("aliasSearchTerms(%q) = %v, want %v", alias, got, want)
+		}
 	}
 }
