@@ -27,6 +27,7 @@ Task → command:
   Read a type by GUID or alias                         doctype get <id-or-alias>
   Find types by name                                   doctype search --query <text>
   Add / reorder properties, add tabs or groups         doctype add-property, reorder-properties, add-container
+  Create a folder, put a type in a folder              doctype create-folder --name <n> [--parent <id>]; doctype create --json '{..."parent":{"id":…}}' or doctype move <id> --to <folder>
   Allowed blocks, block order, Block Grid groups       datatype block add|reorder|groups … (blocks belong to the Block List/Grid DATA TYPE, not the document type)
   Which data type does a property use?                 doctype get <id> --fields properties
   Apply a whole schema from Deploy artifacts           deploy apply --uda-dir <dir> --dry-run
@@ -151,6 +152,8 @@ umbraco doctype search
 | `doctype add-property <id>` | Append a property to a document type, creating its container with it if needed |
 | `doctype copy <id>` | Copy document type |
 | `doctype create` | Create document type (pass --element to create an element type) |
+| `doctype create-folder` | Create a document type folder (optionally inside another folder) |
+| `doctype delete-folder <id>` | Delete an empty document type folder |
 | `doctype move <id>` | Move document type |
 | `doctype reorder-properties <id>` | Change the order of properties on a document type |
 | `doctype update <id>` | Update document type |
@@ -253,6 +256,53 @@ umbraco doctype create [flags] --dry-run
 
 # 2. Execute with the same flags
 umbraco doctype create [flags]
+```
+
+### create-folder
+
+```bash
+umbraco doctype create-folder
+```
+
+POST /document-type/folder. Creates a folder in the document type tree; --parent nests it inside an existing folder. Pass the folder as --json '{"name": …, "parent": {"id": …}}' or through --name/--parent (flags fill fields the payload omits; the id is generated when neither supplies one). Put a type inside it with 'umbraco doctype create --json '{..., "parent": {"id": "<folder id>"}}'' or 'umbraco doctype move <id> --to <folder id>'. After the create the folder is read back, so the result is the persisted record.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--id` | string | — | Folder GUID to use (generated when omitted) |
+| `--json` | string | — | Folder payload as JSON: {"id"?, "name", "parent"?: {"id"}} |
+| `--name` | string | — | Folder name (fills name when --json omits it) |
+| `--parent` | string | — | Parent folder GUID; omit for a root-level folder |
+
+**Safe pattern:**
+
+```bash
+# 1. Rehearse with the exact flags you will execute with
+umbraco doctype create-folder [flags] --dry-run
+
+# 2. Execute with the same flags
+umbraco doctype create-folder [flags]
+```
+
+### delete-folder
+
+```bash
+umbraco doctype delete-folder <id>
+```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--force` | bool | false | Confirm permanent deletion |
+
+**Safe pattern:**
+
+```bash
+# 1. Rehearse with the exact flags you will execute with
+umbraco doctype delete-folder <id> [flags] --dry-run
+
+# 2. Execute with the same flags
+umbraco doctype delete-folder <id> --force [flags]
 ```
 
 ### move

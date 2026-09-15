@@ -104,8 +104,8 @@ func TestCommandCountsMatchMVP(t *testing.T) {
 		total += len(found.Commands())
 	}
 
-	if total != 230 {
-		t.Fatalf("expected 230 collection commands, got %d", total)
+	if total != 238 {
+		t.Fatalf("expected 238 collection commands, got %d", total)
 	}
 }
 
@@ -150,11 +150,23 @@ func TestSchemaTemplatePrintsPayloadSkeleton(t *testing.T) {
 	if payload["name"] == "" || payload["properties"] == nil {
 		t.Fatalf("expected doctype create template fields, got %+v", payload)
 	}
-	// Fields agents were missing in v0.3.14 — the template should advertise them
-	// so element types and history-cleanup config are discoverable from --print-template.
-	for _, field := range []string{"isElement", "allowedTemplates", "defaultTemplate", "historyCleanup", "collection"} {
+	// Fields agents were missing in v0.3.14 and again in the 0.4.16 report —
+	// the template should advertise every accepted top-level field so folder
+	// placement, allowed children and cleanup are discoverable from
+	// --print-template. The cleanup block is named after the Management API
+	// field (cleanup), not Deploy's historyCleanup.
+	for _, field := range []string{"isElement", "allowedTemplates", "defaultTemplate", "cleanup", "collection", "parent", "allowedDocumentTypes", "allowedInLibrary"} {
 		if _, ok := payload[field]; !ok {
 			t.Fatalf("doctype create template missing %q (agents need it to know the field is accepted)", field)
+		}
+	}
+	if _, ok := payload["historyCleanup"]; ok {
+		t.Fatalf("doctype create template must name the cleanup block after the API field, got historyCleanup")
+	}
+	property := payload["properties"].([]any)[0].(map[string]any)
+	for _, field := range []string{"description", "validation", "appearance", "variesByCulture", "variesBySegment"} {
+		if _, ok := property[field]; !ok {
+			t.Fatalf("doctype create template property missing %q", field)
 		}
 	}
 }

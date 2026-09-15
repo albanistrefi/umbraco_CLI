@@ -107,7 +107,9 @@ umbraco membertype search
 | Command | Description |
 |---------|-------------|
 | `membertype create` | Create a member type |
+| `membertype create-folder` | Create a member type folder (optionally inside another folder) |
 | `membertype delete <id>` | Delete a member type |
+| `membertype delete-folder <id>` | Delete an empty member type folder |
 | `membertype update <id>` | Update a member type (--json replaces, --merge-json merges) |
 
 ### create
@@ -131,6 +133,32 @@ umbraco membertype create [flags] --dry-run
 umbraco membertype create [flags]
 ```
 
+### create-folder
+
+```bash
+umbraco membertype create-folder
+```
+
+POST /member-type/folder. Creates a folder in the member type tree; --parent nests it inside an existing folder. Pass the folder as --json '{"name": …, "parent": {"id": …}}' or through --name/--parent (flags fill fields the payload omits; the id is generated when neither supplies one). Put a type inside it with 'umbraco membertype create --json '{..., "parent": {"id": "<folder id>"}}''. After the create the folder is read back, so the result is the persisted record.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--id` | string | — | Folder GUID to use (generated when omitted) |
+| `--json` | string | — | Folder payload as JSON: {"id"?, "name", "parent"?: {"id"}} |
+| `--name` | string | — | Folder name (fills name when --json omits it) |
+| `--parent` | string | — | Parent folder GUID; omit for a root-level folder |
+
+**Safe pattern:**
+
+```bash
+# 1. Rehearse with the exact flags you will execute with
+umbraco membertype create-folder [flags] --dry-run
+
+# 2. Execute with the same flags
+umbraco membertype create-folder [flags]
+```
+
 ### delete
 
 ```bash
@@ -150,6 +178,27 @@ umbraco membertype delete <id> [flags] --dry-run
 
 # 2. Execute with the same flags
 umbraco membertype delete <id> --force [flags]
+```
+
+### delete-folder
+
+```bash
+umbraco membertype delete-folder <id>
+```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--force` | bool | false | Confirm permanent deletion |
+
+**Safe pattern:**
+
+```bash
+# 1. Rehearse with the exact flags you will execute with
+umbraco membertype delete-folder <id> [flags] --dry-run
+
+# 2. Execute with the same flags
+umbraco membertype delete-folder <id> --force [flags]
 ```
 
 ### update

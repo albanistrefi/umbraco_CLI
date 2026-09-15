@@ -3,7 +3,7 @@
 The agent-first command line for Umbraco — CMS, Forms, and Automate. Built on
 the Management APIs, it goes beyond them: exhaustive content search,
 cross-environment schema diff, log tailing, and safe, rehearsable bulk
-operations — 263 commands with a scriptable exit-code contract.
+operations — 271 commands with a scriptable exit-code contract.
 
 Core behavior:
 - `--json` and `--params` are primary machine inputs
@@ -353,8 +353,8 @@ testing) are not part of this repo — get those from
 - `document` (30) — incl. `urls`, `version` history/rollback, `audit-log`, `publish-descendants`, `sort`, `domains`, `public-access`, and the `bin` recycle-bin subgroup
 - `element` (21) — the Umbraco 18.1+ element library: CRUD with atomic `create --publish`/`update --save-and-publish`, publish lifecycle, `version` history/rollback, references, and the `bin` recycle-bin subgroup
 - `media` (23) — incl. `inspect`, `download`, `upload`, `replace-file`/`restore-backup`, `references`, `restore` and the `bin` recycle-bin subgroup
-- `doctype` (14) / `mediatype` (8) / `membertype` (8) — the full schema type family, all with `--recursive --types-only` folder handling
-- `datatype` (14)
+- `doctype` (16) / `mediatype` (10) / `membertype` (10) — the full schema type family, all with `--recursive --types-only` folder handling and `create-folder`/`delete-folder`
+- `datatype` (16) — incl. `block` subgroup and `create-folder`/`delete-folder`
 - `dictionary` (6)
 - `template` (6)
 - `member` (8) / `member-group` (2)
@@ -376,7 +376,7 @@ testing) are not part of this repo — get those from
 - `schema` — runtime schema introspection (`umbraco schema <command>`) plus `schema diff <envA> <envB>` cross-environment comparison across doctype, datatype, mediatype, membertype, template, language, and dictionary
 - `automate` (8 subgroups) — requires [Umbraco Automate](https://docs.umbraco.com/umbraco-automate) on the target instance; see below
 
-Total: **263 runnable commands** counting every nested subcommand. Group counts above are direct subcommands; nested subgroups like `document version`, `document bin`, and the `automate` subgroups add the rest.
+Total: **271 runnable commands** counting every nested subcommand. Group counts above are direct subcommands; nested subgroups like `document version`, `document bin`, and the `automate` subgroups add the rest.
 
 ## Umbraco Automate
 

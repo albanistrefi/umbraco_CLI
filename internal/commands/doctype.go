@@ -22,6 +22,7 @@ Task → command:
   Read a type by GUID or alias                         doctype get <id-or-alias>
   Find types by name                                   doctype search --query <text>
   Add / reorder properties, add tabs or groups         doctype add-property, reorder-properties, add-container
+  Create a folder, put a type in a folder              doctype create-folder --name <n> [--parent <id>]; doctype create --json '{..."parent":{"id":…}}' or doctype move <id> --to <folder>
   Allowed blocks, block order, Block Grid groups       datatype block add|reorder|groups … (blocks belong to the Block List/Grid DATA TYPE, not the document type)
   Which data type does a property use?                 doctype get <id> --fields properties
   Apply a whole schema from Deploy artifacts           deploy apply --uda-dir <dir> --dry-run`,
@@ -40,6 +41,8 @@ Task → command:
 	doctype.AddCommand(doctypeCopy(deps))
 	doctype.AddCommand(doctypeMove(deps))
 	doctype.AddCommand(doctypeDelete(deps))
+	doctype.AddCommand(schemaTypeCreateFolder(deps, "doctype", "document-type", "document type", true))
+	doctype.AddCommand(schemaTypeDeleteFolder(deps, "doctype", "document-type", "document type"))
 	root.AddCommand(doctype)
 }
 

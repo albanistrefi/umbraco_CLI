@@ -60,6 +60,14 @@ func createResult(result any, body map[string]any, keys ...string) any {
 
 func normalizeDoctypePayload(body map[string]any) {
 	normalizeDoctypeProperties(body["properties"])
+	// Earlier --print-template skeletons called the version-cleanup block
+	// historyCleanup (Deploy's name); the Management API field is cleanup.
+	if legacy, ok := body["historyCleanup"]; ok {
+		if _, exists := body["cleanup"]; !exists {
+			body["cleanup"] = legacy
+		}
+		delete(body, "historyCleanup")
+	}
 }
 
 // normalizeDoctypePayloadHook adapts normalizeDoctypePayload to the
