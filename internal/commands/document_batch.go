@@ -2,6 +2,7 @@ package commands
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"reflect"
@@ -22,19 +23,40 @@ import (
 // (with the exact requests); the rest are counted.
 const documentBatchPlanWindow = 3
 
-// documentBatchFailedError makes a batch with failed rows exit 4 — the code
-// for API errors, which is what a failed write is — after the rows have
-// been printed.
+// documentBatchFailedError makes a batch with failed rows exit non-zero
+// after the rows have been printed, keeping the documented code of the
+// underlying failures: 3 when any row hit an auth failure (the whole run is
+// unusable), otherwise the API code 4 when any row failed on a request,
+// otherwise 1 (local failures such as a backup file that could not be
+// written).
 type documentBatchFailedError struct {
 	failed int
 	total  int
+	code   int
 }
 
 func (e documentBatchFailedError) Error() string {
 	return fmt.Sprintf("%d of %d documents failed; see the items above", e.failed, e.total)
 }
 
-func (documentBatchFailedError) ExitCode() int { return 4 }
+func (e documentBatchFailedError) ExitCode() int { return e.code }
+
+// batchExitCodeFor folds one row's error into the run's exit code.
+func batchExitCodeFor(current int, err error) int {
+	var coder interface{ ExitCode() int }
+	code := 1
+	if errors.As(err, &coder) {
+		code = coder.ExitCode()
+	}
+	switch {
+	case code == 3 || current == 3:
+		return 3
+	case code > current:
+		return code
+	default:
+		return current
+	}
+}
 
 type documentBatchOptions struct {
 	IDs []string
@@ -47,6 +69,9 @@ type documentBatchOptions struct {
 	// both are set; atomic update-and-publish on 18.1+).
 	Publish bool
 	Culture string
+	// PublishBody, when set, is the full publish payload (--json) used
+	// instead of the --culture shortcut.
+	PublishBody map[string]any
 	// Backup, when set, saves each document before its PUT ("auto" or a
 	// directory).
 	Backup string
@@ -54,6 +79,7 @@ type documentBatchOptions struct {
 }
 
 type documentBatchRow struct {
+	err     error
 	ID      string `json:"id"`
 	Name    string `json:"name,omitempty"`
 	Update  string `json:"update,omitempty"`
@@ -64,6 +90,7 @@ type documentBatchRow struct {
 }
 
 type documentBatchResult struct {
+	exitCode  int
 	DryRun    bool               `json:"dryRun"`
 	Total     int                `json:"total"`
 	Updated   int                `json:"updated"`
@@ -141,6 +168,7 @@ func executeDocumentBatch(ctx context.Context, client *api.Client, opts document
 		}
 		if row.Error != "" {
 			result.Failed++
+			result.exitCode = batchExitCodeFor(result.exitCode, row.err)
 		} else if opts.DryRun {
 			result.Planned++
 		}
@@ -154,6 +182,7 @@ func documentBatchOne(ctx context.Context, client *api.Client, opts documentBatc
 	reqOpts := api.RequestOptions{DryRun: opts.DryRun}
 	plan := map[string]any{}
 	fail := func(stage string, err error) {
+		row.err = err
 		row.Error = err.Error()
 		if stage == "update" {
 			row.Update = "failed"
@@ -240,10 +269,13 @@ func documentBatchOne(ctx context.Context, client *api.Client, opts documentBatc
 		}
 	}
 	if opts.Publish {
-		publishBody, err := documentPublishBody("", opts.Culture)
-		if err != nil {
-			fail("publish", err)
-			return
+		publishBody := opts.PublishBody
+		if publishBody == nil {
+			publishBody, err = documentPublishBody("", opts.Culture)
+			if err != nil {
+				fail("publish", err)
+				return
+			}
 		}
 		publishResult, err := publishWithInvariantRaceRetry(ctx, client, row.ID, publishBody, reqOpts)
 		if err != nil {
@@ -273,7 +305,7 @@ func printDocumentBatch(cmd *cobra.Command, deps Dependencies, result documentBa
 		return err
 	}
 	if result.Failed > 0 {
-		return documentBatchFailedError{failed: result.Failed, total: result.Total}
+		return documentBatchFailedError{failed: result.Failed, total: result.Total, code: result.exitCode}
 	}
 	return nil
 }

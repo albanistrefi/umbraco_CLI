@@ -35,10 +35,17 @@ func documentPublish(deps Dependencies) *cobra.Command {
 				return err
 			}
 			if ids != nil {
+				opts := documentBatchOptions{IDs: ids, Publish: true, Culture: culture, DryRun: dryRun}
 				if strings.TrimSpace(jsonPayload) != "" {
-					return fmt.Errorf("--json cannot be combined with --ids/--from-file; use --culture")
+					// The same payload single-document publish takes
+					// (publishSchedules with several cultures, scheduled
+					// entries), sent as-is to every listed document.
+					opts.PublishBody, err = parsePayload(jsonPayload)
+					if err != nil {
+						return err
+					}
 				}
-				return printDocumentBatch(cmd, deps, executeDocumentBatch(cmd.Context(), deps.Client, documentBatchOptions{IDs: ids, Publish: true, Culture: culture, DryRun: dryRun}))
+				return printDocumentBatch(cmd, deps, executeDocumentBatch(cmd.Context(), deps.Client, opts))
 			}
 			body, err := documentPublishBody(jsonPayload, culture)
 			if err != nil {

@@ -3,6 +3,7 @@ package commands
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -148,5 +149,38 @@ func TestDocumentUpdateIDsDryRunPlansFirstThreeAndCountsTheRest(t *testing.T) {
 	}
 	if result.Items[0].Plan == nil || result.Items[0].Update != "planned" || result.Items[4].Plan != nil || result.Items[4].Update != "planned" {
 		t.Fatalf("expected plans on the first three rows and counted rows after, got %+v", result.Items)
+	}
+}
+
+func TestDocumentPublishIDsPassesFullJSONBodyAndKeepsAuthExitCode(t *testing.T) {
+	var bodies []string
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch {
+		case req.URL.Path == "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case strings.HasSuffix(req.URL.Path, "/publish") && req.Method == http.MethodPut:
+			body, _ := io.ReadAll(req.Body)
+			bodies = append(bodies, string(body))
+			return endpointNoContent(), nil
+		case strings.HasPrefix(req.URL.Path, "/umbraco/management/api/v1/document/") && req.Method == http.MethodGet:
+			return endpointJSONResponse(http.StatusOK, `{"id":"x","variants":[{"name":"P"}],"values":[]}`), nil
+		}
+		return endpointJSONResponse(http.StatusNotFound, `null`), nil
+	})
+	payload := `{"publishSchedules":[{"culture":"en-US"},{"culture":"da-DK"}]}`
+	if _, err := execute(buildRootWithCollections(t, deps), "document", "publish", "--ids", "a,b", "--json", payload, "--force"); err != nil {
+		t.Fatalf("publish --ids --json failed: %v", err)
+	}
+	if len(bodies) != 2 || !strings.Contains(bodies[0], `"da-DK"`) || !strings.Contains(bodies[1], `"da-DK"`) {
+		t.Fatalf("expected the --json body sent to every document, got %v", bodies)
+	}
+
+	// An auth failure keeps exit 3 instead of being flattened to 4.
+	unauthorized := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		return endpointJSONResponse(http.StatusUnauthorized, `{"error":"invalid_client"}`), nil
+	})
+	_, err := execute(buildRootWithCollections(t, unauthorized), "document", "publish", "--ids", "a,b", "--force")
+	if err == nil || batchExitCode(err) != 3 {
+		t.Fatalf("expected the auth exit code 3 to survive the batch, got %v (code %d)", err, batchExitCode(err))
 	}
 }
