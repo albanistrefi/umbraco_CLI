@@ -41,7 +41,7 @@ Task → command:
 	doctype.AddCommand(doctypeCopy(deps))
 	doctype.AddCommand(doctypeMove(deps))
 	doctype.AddCommand(doctypeDelete(deps))
-	doctype.AddCommand(schemaTypeCreateFolder(deps, "doctype", "document-type", "document type"))
+	doctype.AddCommand(schemaTypeCreateFolder(deps, "doctype", "document-type", "document type", true))
 	doctype.AddCommand(schemaTypeDeleteFolder(deps, "doctype", "document-type", "document type"))
 	root.AddCommand(doctype)
 }

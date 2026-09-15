@@ -3,7 +3,7 @@
 The agent-first command line for Umbraco — CMS, Forms, and Automate. Built on
 the Management APIs, it goes beyond them: exhaustive content search,
 cross-environment schema diff, log tailing, and safe, rehearsable bulk
-operations — 263 commands with a scriptable exit-code contract.
+operations — 271 commands with a scriptable exit-code contract.
 
 Core behavior:
 - `--json` and `--params` are primary machine inputs
@@ -376,7 +376,7 @@ testing) are not part of this repo — get those from
 - `schema` — runtime schema introspection (`umbraco schema <command>`) plus `schema diff <envA> <envB>` cross-environment comparison across doctype, datatype, mediatype, membertype, template, language, and dictionary
 - `automate` (8 subgroups) — requires [Umbraco Automate](https://docs.umbraco.com/umbraco-automate) on the target instance; see below
 
-Total: **263 runnable commands** counting every nested subcommand. Group counts above are direct subcommands; nested subgroups like `document version`, `document bin`, and the `automate` subgroups add the rest.
+Total: **271 runnable commands** counting every nested subcommand. Group counts above are direct subcommands; nested subgroups like `document version`, `document bin`, and the `automate` subgroups add the rest.
 
 ## Umbraco Automate
 

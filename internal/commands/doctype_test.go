@@ -1268,11 +1268,30 @@ func TestDoctypeCreateFolderPostsAndReadsBack(t *testing.T) {
 		t.Fatalf("expected the read-back folder in the result, got %s", out)
 	}
 
-	if _, err := execute(buildRootWithCollections(t, deps), "doctype", "create-folder", "--name", "X", "--parent", "not-a-guid"); err == nil || !strings.Contains(err.Error(), "--parent must be a folder GUID") {
-		t.Fatalf("expected --parent validation, got %v", err)
+	if _, err := execute(buildRootWithCollections(t, deps), "doctype", "create-folder", "--name", "X", "--parent", "not-a-guid"); err == nil || !strings.Contains(err.Error(), "parent must be") {
+		t.Fatalf("expected parent validation, got %v", err)
 	}
-	if _, err := execute(buildRootWithCollections(t, deps), "doctype", "create-folder"); err == nil || !strings.Contains(err.Error(), "--name") {
-		t.Fatalf("expected --name to be required, got %v", err)
+	if _, err := execute(buildRootWithCollections(t, deps), "doctype", "create-folder"); err == nil || !strings.Contains(err.Error(), "requires a folder name") {
+		t.Fatalf("expected the name to be required, got %v", err)
+	}
+
+	// --json is the primary path; flags fill only what the payload omits.
+	posted = nil
+	out, err = execute(buildRootWithCollections(t, deps), "doctype", "create-folder", "--json", `{"id":"bbbbbbbb-0000-4000-8000-000000000001","name":"From JSON"}`, "--name", "Ignored", "--parent", "16c53fcd-e119-4c96-a327-898adcbfac27")
+	if err != nil {
+		t.Fatalf("doctype create-folder --json failed: %v", err)
+	}
+	if posted["id"] != "bbbbbbbb-0000-4000-8000-000000000001" || posted["name"] != "From JSON" {
+		t.Fatalf("expected the --json id and name to win, got %+v", posted)
+	}
+	if parent, _ := posted["parent"].(map[string]any); parent["id"] != "16c53fcd-e119-4c96-a327-898adcbfac27" {
+		t.Fatalf("expected --parent to fill the omitted parent, got %+v", posted)
+	}
+	if !strings.Contains(out, `"bbbbbbbb-0000-4000-8000-000000000001"`) || !strings.Contains(out, `"created": true`) {
+		t.Fatalf("expected the read-back folder, got %s", out)
+	}
+	if _, err := execute(buildRootWithCollections(t, deps), "doctype", "create-folder", "--json", `{"name":"X","parent":"16c53fcd-e119-4c96-a327-898adcbfac27"}`); err == nil || !strings.Contains(err.Error(), "parent must be") {
+		t.Fatalf("expected a non-object parent to be rejected, got %v", err)
 	}
 }
 

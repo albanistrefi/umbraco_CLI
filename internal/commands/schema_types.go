@@ -89,7 +89,7 @@ func registerSchemaTypeGroup(root *cobra.Command, deps Dependencies, spec schema
 			return api.JoinPath("/"+spec.Resource+"/%s", args[0])
 		},
 	}))
-	group.AddCommand(schemaTypeCreateFolder(deps, spec.Use, spec.Resource, spec.Display))
+	group.AddCommand(schemaTypeCreateFolder(deps, spec.Use, spec.Resource, spec.Display, false))
 	group.AddCommand(schemaTypeDeleteFolder(deps, spec.Use, spec.Resource, spec.Display))
 	group.AddCommand(getCommand(deps, getSpec{
 		Use:   "export <id>",
@@ -205,38 +205,66 @@ func schemaTypeGet(deps Dependencies, spec schemaTypeSpec) *cobra.Command {
 // Folders are how the type trees are organized, yet the Management API has
 // no folder concept in the type payloads beyond parent — so this is the
 // only way to create the parent a 'create --json {"parent":{"id":…}}' needs.
-func schemaTypeCreateFolder(deps Dependencies, use string, resource string, display string) *cobra.Command {
+// Like every create, a --json payload is accepted; --name/--parent/--id fill
+// fields the payload leaves out.
+func schemaTypeCreateFolder(deps Dependencies, use string, resource string, display string, hasMove bool) *cobra.Command {
+	var jsonPayload string
 	var name string
 	var parent string
 	var id string
 	var dryRun bool
+	placement := fmt.Sprintf("Put a type inside it with 'umbraco %s create --json '{..., \"parent\": {\"id\": \"<folder id>\"}}''", use)
+	if hasMove {
+		placement += fmt.Sprintf(" or 'umbraco %s move <id> --to <folder id>'", use)
+	}
 	cmd := &cobra.Command{
 		Use:   "create-folder",
 		Short: fmt.Sprintf("Create a %s folder (optionally inside another folder)", display),
 		Long: fmt.Sprintf("POST /%s/folder. Creates a folder in the %s tree; --parent nests it inside an existing folder. "+
-			"Put a type inside it with 'umbraco %s create --json '{..., \"parent\": {\"id\": \"<folder id>\"}}'' or 'umbraco %s move <id> --to <folder id>'. "+
-			"After the create the folder is read back, so the result is the persisted record.", resource, display, use, use),
+			"Pass the folder as --json '{\"name\": …, \"parent\": {\"id\": …}}' or through --name/--parent (flags fill fields the payload omits; the id is generated when neither supplies one). "+
+			"%s. After the create the folder is read back, so the result is the persisted record.", resource, display, placement),
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := requireValue("--name", name); err != nil {
+			body := map[string]any{}
+			if strings.TrimSpace(jsonPayload) != "" {
+				parsed, err := parseJSONObject(jsonPayload, "--json")
+				if err != nil {
+					return err
+				}
+				body = parsed
+			}
+			if strings.TrimSpace(name) != "" {
+				if _, set := body["name"]; !set {
+					body["name"] = strings.TrimSpace(name)
+				}
+			}
+			if strings.TrimSpace(parent) != "" {
+				if _, set := body["parent"]; !set {
+					body["parent"] = map[string]any{"id": strings.TrimSpace(parent)}
+				}
+			}
+			if strings.TrimSpace(id) != "" {
+				if _, set := body["id"]; !set {
+					body["id"] = strings.TrimSpace(id)
+				}
+			}
+			folderName, _ := body["name"].(string)
+			if strings.TrimSpace(folderName) == "" {
+				return fmt.Errorf("create-folder requires a folder name: pass --name or a --json payload with \"name\"")
+			}
+			if parentRef, set := body["parent"]; set && parentRef != nil {
+				parentMap, ok := parentRef.(map[string]any)
+				parentID, _ := parentMap["id"].(string)
+				if !ok || !isUUIDLike(strings.TrimSpace(parentID)) {
+					return fmt.Errorf("parent must be {\"id\": \"<folder GUID>\"}, got %v", parentRef)
+				}
+			}
+			folderID, err := ensurePayloadID(body)
+			if err != nil {
 				return err
 			}
-			if strings.TrimSpace(parent) != "" && !isUUIDLike(strings.TrimSpace(parent)) {
-				return fmt.Errorf("--parent must be a folder GUID, got %q", parent)
-			}
-			folderID := strings.TrimSpace(id)
-			if folderID == "" {
-				generated, err := newUUIDv4()
-				if err != nil {
-					return fmt.Errorf("failed to generate folder id: %w", err)
-				}
-				folderID = generated
-			} else if !isUUIDLike(folderID) {
-				return fmt.Errorf("--id must be a GUID, got %q", id)
-			}
-			body := map[string]any{"id": folderID, "name": strings.TrimSpace(name)}
-			if strings.TrimSpace(parent) != "" {
-				body["parent"] = map[string]any{"id": strings.TrimSpace(parent)}
+			if !isUUIDLike(folderID) {
+				return fmt.Errorf("id must be a GUID, got %q", folderID)
 			}
 			ctx := cmd.Context()
 			result, err := deps.Client.Post(ctx, "/"+resource+"/folder", body, api.RequestOptions{DryRun: dryRun})
@@ -250,16 +278,15 @@ func schemaTypeCreateFolder(deps Dependencies, use string, resource string, disp
 			if err != nil {
 				return fmt.Errorf("the server accepted the folder but reading it back failed: %w", err)
 			}
-			out := map[string]any{"id": folderID, "name": created["name"], "created": true}
-			if parentRef, ok := body["parent"]; ok {
+			out := map[string]any{"id": folderID, "name": created["name"], "created": true, "parent": nil}
+			if parentRef, ok := body["parent"]; ok && parentRef != nil {
 				out["parent"] = parentRef
-			} else {
-				out["parent"] = nil
 			}
 			return printResult(cmd, deps, out)
 		},
 	}
-	cmd.Flags().StringVar(&name, "name", "", "Folder name (required)")
+	cmd.Flags().StringVar(&jsonPayload, "json", "", "Folder payload as JSON: {\"id\"?, \"name\", \"parent\"?: {\"id\"}}")
+	cmd.Flags().StringVar(&name, "name", "", "Folder name (fills name when --json omits it)")
 	cmd.Flags().StringVar(&parent, "parent", "", "Parent folder GUID; omit for a root-level folder")
 	cmd.Flags().StringVar(&id, "id", "", "Folder GUID to use (generated when omitted)")
 	addDryRunFlag(cmd, &dryRun)

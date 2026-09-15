@@ -50,7 +50,7 @@ Task → command:
 	datatype.AddCommand(datatypeRemoveValue(deps))
 	datatype.AddCommand(datatypeBlock(deps))
 	datatype.AddCommand(datatypeDelete(deps))
-	datatype.AddCommand(schemaTypeCreateFolder(deps, "datatype", "data-type", "data type"))
+	datatype.AddCommand(schemaTypeCreateFolder(deps, "datatype", "data-type", "data type", false))
 	datatype.AddCommand(schemaTypeDeleteFolder(deps, "datatype", "data-type", "data type"))
 	root.AddCommand(datatype)
 }

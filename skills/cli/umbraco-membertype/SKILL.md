@@ -139,13 +139,14 @@ umbraco membertype create [flags]
 umbraco membertype create-folder
 ```
 
-POST /member-type/folder. Creates a folder in the member type tree; --parent nests it inside an existing folder. Put a type inside it with 'umbraco membertype create --json '{..., "parent": {"id": "<folder id>"}}'' or 'umbraco membertype move <id> --to <folder id>'. After the create the folder is read back, so the result is the persisted record.
+POST /member-type/folder. Creates a folder in the member type tree; --parent nests it inside an existing folder. Pass the folder as --json '{"name": …, "parent": {"id": …}}' or through --name/--parent (flags fill fields the payload omits; the id is generated when neither supplies one). Put a type inside it with 'umbraco membertype create --json '{..., "parent": {"id": "<folder id>"}}''. After the create the folder is read back, so the result is the persisted record.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--dry-run` | bool | false | Print the planned request without executing |
 | `--id` | string | — | Folder GUID to use (generated when omitted) |
-| `--name` | string | — | Folder name (required) |
+| `--json` | string | — | Folder payload as JSON: {"id"?, "name", "parent"?: {"id"}} |
+| `--name` | string | — | Folder name (fills name when --json omits it) |
 | `--parent` | string | — | Parent folder GUID; omit for a root-level folder |
 
 **Safe pattern:**
