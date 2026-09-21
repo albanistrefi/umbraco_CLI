@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -198,8 +199,7 @@ func TestLogsTailPagesBackThroughBurstsWithSkip(t *testing.T) {
 	deps := logsTailDeps(func(poll int64, req *http.Request) (*http.Response, error) {
 		q := req.URL.Query()
 		skips = append(skips, q.Get("skip"))
-		skip := 0
-		fmt.Sscanf(q.Get("skip"), "%d", &skip)
+		skip, _ := strconv.Atoi(q.Get("skip"))
 		remaining := burst - skip
 		if remaining <= 0 {
 			return endpointJSONResponse(http.StatusOK, `{"items":[],"total":0}`), nil
@@ -253,5 +253,27 @@ func TestLogsTailJSONFlagAndHeartbeat(t *testing.T) {
 	}
 	if !strings.Contains(status, "no new entries since 2026-07-03T10:00:00Z (0 printed so far; newest entry on the server: 2026-07-03T09:00:00Z)") {
 		t.Fatalf("expected a heartbeat naming the newest server entry, got %q", status)
+	}
+}
+
+func TestLogsTailStopsInsteadOfSkippingWhenBacklogExceedsPageCap(t *testing.T) {
+	// Every page is full and never reaches the cursor: advancing would skip
+	// the unread remainder, so tail must stop with a clear error, print
+	// nothing partial, and never make a second poll.
+	polls := 0
+	deps := logsTailDeps(func(poll int64, req *http.Request) (*http.Response, error) {
+		polls++
+		skip, _ := strconv.Atoi(req.URL.Query().Get("skip"))
+		return endpointJSONResponse(http.StatusOK, logPage(20000-skip-tailPageSize+1, tailPageSize, true)), nil
+	})
+	out, err := execute(buildLogsRoot(deps), "logs", "tail", "--since", "2026-07-03T10:00:00Z", "--interval", "1ms", "--for", "1s")
+	if err == nil || !strings.Contains(err.Error(), "more than 10000 entries have arrived since 2026-07-03T10:00:00Z") || !strings.Contains(err.Error(), "logs search --from") {
+		t.Fatalf("expected a backlog error naming the remedy, got %v", err)
+	}
+	if strings.TrimSpace(out) != "" {
+		t.Fatalf("expected no partial output, got %d bytes", len(out))
+	}
+	if polls != tailMaxPagesPerPoll {
+		t.Fatalf("expected exactly one poll of %d pages, got %d requests", tailMaxPagesPerPoll, polls)
 	}
 }

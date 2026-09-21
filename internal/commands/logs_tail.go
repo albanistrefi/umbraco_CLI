@@ -3,6 +3,7 @@ package commands
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -124,6 +125,9 @@ interrupted or --for elapses; exits 0 on both.`,
 					if ctx.Err() != nil {
 						return nil
 					}
+					if errors.Is(err, errTailBacklogTooLarge) {
+						return fmt.Errorf("more than %d entries have arrived since %s; tail replays at most that many per poll and will not skip silently — start from a later --since, or read the backlog with 'umbraco logs search --from %s'", tailPageSize*tailMaxPagesPerPoll, cursor.Format(time.RFC3339), cursor.Format(time.RFC3339))
+					}
 					return friendlyLogViewerError(err)
 				}
 				if newest.After(newestSeen) {
@@ -214,11 +218,16 @@ type tailEntry struct {
 	ts    time.Time
 }
 
+// errTailBacklogTooLarge is returned when a poll pages through the cap
+// without reaching the cursor: advancing past what was fetched would skip
+// the unread remainder for good, so the run stops and says so instead.
+var errTailBacklogTooLarge = errors.New("tail backlog exceeds the per-poll page cap")
+
 // tailPoll fetches every entry stamped at or after cursor, oldest first,
 // paging newest-first through the log-viewer with skip until it meets an
-// entry older than the cursor (or an incomplete page, or the page cap). It
-// also reports the newest timestamp it saw, so a heartbeat can say whether
-// the server has anything at all.
+// entry older than the cursor or an incomplete page. Hitting the page cap
+// first is errTailBacklogTooLarge. It also reports the newest timestamp it
+// saw, so a heartbeat can say whether the server has anything at all.
 func tailPoll(ctx context.Context, client *api.Client, baseParams map[string]any, cursor time.Time) ([]tailEntry, time.Time, error) {
 	fresh := make([]tailEntry, 0)
 	var newest time.Time
@@ -259,6 +268,9 @@ func tailPoll(ctx context.Context, client *api.Client, baseParams map[string]any
 		}
 		if reachedCursor || len(items) < tailPageSize {
 			break
+		}
+		if page == tailMaxPagesPerPoll-1 {
+			return nil, newest, errTailBacklogTooLarge
 		}
 	}
 	sort.SliceStable(fresh, func(i, j int) bool { return fresh[i].ts.Before(fresh[j].ts) })
