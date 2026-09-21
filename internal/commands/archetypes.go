@@ -2,6 +2,7 @@ package commands
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -47,7 +48,54 @@ func fetchObject(ctx context.Context, client *api.Client, path string, opts api.
 	if err != nil {
 		return nil, err
 	}
-	return decodeResult[map[string]any](result)
+	return objectFromResult("GET "+path, result)
+}
+
+// objectFromResult turns a decoded response into an object. A JSON string
+// that itself holds an object is unwrapped (some endpoints double-encode
+// their payload — seen on Umbraco Cloud for Deploy's client configuration);
+// anything else is reported with the request and the shape received, so a
+// surprising body reads as "GET /x returned an array" rather than a bare
+// json.Unmarshal error.
+func objectFromResult(request string, result any) (map[string]any, error) {
+	switch value := result.(type) {
+	case map[string]any:
+		return value, nil
+	case string:
+		var nested any
+		if json.Unmarshal([]byte(value), &nested) == nil {
+			if object, ok := nested.(map[string]any); ok {
+				return object, nil
+			}
+		}
+		return nil, fmt.Errorf("%s returned a string, not a JSON object: %s", request, truncateForError(value, 200))
+	case nil:
+		return nil, fmt.Errorf("%s returned an empty body where a JSON object was expected", request)
+	default:
+		encoded, _ := json.Marshal(value)
+		return nil, fmt.Errorf("%s returned %s, not a JSON object: %s", request, jsonShapeName(value), truncateForError(string(encoded), 200))
+	}
+}
+
+func jsonShapeName(value any) string {
+	switch value.(type) {
+	case []any:
+		return "an array"
+	case float64:
+		return "a number"
+	case bool:
+		return "a boolean"
+	default:
+		return fmt.Sprintf("%T", value)
+	}
+}
+
+func truncateForError(text string, limit int) string {
+	text = strings.TrimSpace(text)
+	if len(text) <= limit {
+		return text
+	}
+	return text[:limit] + "…"
 }
 
 // mergeParams folds convenience-flag values into a --params map. The

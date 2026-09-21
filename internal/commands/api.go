@@ -28,7 +28,7 @@ func RegisterAPI(root *cobra.Command, deps Dependencies) {
 		Short: "Call an authenticated raw Umbraco Management API endpoint",
 		Long: "Call a core Umbraco Management API endpoint that does not have a curated CLI command yet.\n\n" +
 			"Pass paths relative to /umbraco/management/api/v1, for example /item/document/ancestors?id=a&id=b.\n" +
-			"Full Management API paths are also accepted and normalized to the core API root.\n\n" +
+			"Full Management API paths are also accepted and normalized to the core API root. Any other absolute /umbraco/… path (Deploy, Forms, Automate management APIs, e.g. /umbraco/deploy/management/api/v1/configuration/client) is sent as-is, relative to the host root, without --raw-path.\n\n" +
 			"--raw-path sends the path relative to the host root instead (any endpoint on the same host, e.g. /umbraco/automate/management/api/v1/automations or /media/abc/logo.svg).\n" +
 			"--form field=value / field=@path sends multipart/form-data instead of JSON (e.g. POST /temporary-file with --form id=<uuid> --form file=@./logo.svg).\n" +
 			"--header 'Key: Value' adds or overrides request headers. Every request already carries User-Agent umbraco-cli/<version>.\n\n" +
@@ -39,10 +39,11 @@ func RegisterAPI(root *cobra.Command, deps Dependencies) {
 			if err != nil {
 				return err
 			}
-			path, params, err := parseAPIRequestPathMode(args[1], rawPath)
+			path, params, autoRaw, err := parseAPIRequestPathMode(args[1], rawPath)
 			if err != nil {
 				return err
 			}
+			rawPath = rawPath || autoRaw
 			body, err := parseAPIBody(bodyRaw)
 			if err != nil {
 				return err
@@ -179,12 +180,18 @@ func parseAPIForm(raw []string) (map[string]string, map[string]string, error) {
 	return fields, files, nil
 }
 
-// parseAPIRequestPathMode parses the path argument. In raw mode the path is
+// parseAPIRequestPathMode parses the path argument and reports whether it
+// must be sent relative to the host root. Explicit --raw-path always does;
+// so does any absolute path under another /umbraco/ mount (Deploy, Forms,
+// Automate management APIs — /umbraco/deploy/management/api/v1/…), which
+// prefixing with the core API root could only turn into a 404. Field
+// report: an agent had to mint a token with curl to read Deploy's client
+// configuration because --raw-path was not found. In raw mode the path is
 // kept host-relative (no Management API prefix stripping or re-rooting).
-func parseAPIRequestPathMode(raw string, rawMode bool) (string, map[string]any, error) {
+func parseAPIRequestPathMode(raw string, rawMode bool) (string, map[string]any, bool, error) {
 	value := strings.TrimSpace(raw)
 	if value == "" {
-		return "", nil, fmt.Errorf("api path cannot be empty")
+		return "", nil, false, fmt.Errorf("api path cannot be empty")
 	}
 
 	var parsed *url.URL
@@ -193,18 +200,23 @@ func parseAPIRequestPathMode(raw string, rawMode bool) (string, map[string]any, 
 		parsed, err = url.Parse(value)
 	} else {
 		if !strings.HasPrefix(value, "/") {
-			return "", nil, fmt.Errorf("api path must start with /")
+			return "", nil, false, fmt.Errorf("api path must start with /")
 		}
 		parsed, err = url.ParseRequestURI(value)
 	}
 	if err != nil {
-		return "", nil, fmt.Errorf("invalid api path %q: %w", raw, err)
+		return "", nil, false, fmt.Errorf("invalid api path %q: %w", raw, err)
 	}
 
 	path := parsed.Path
 	const apiPrefix = "/umbraco/management/api/v1"
+	autoRaw := false
 	if !rawMode {
-		path = strings.TrimPrefix(path, apiPrefix)
+		if strings.HasPrefix(path, apiPrefix+"/") || path == apiPrefix {
+			path = strings.TrimPrefix(path, apiPrefix)
+		} else if strings.HasPrefix(path, "/umbraco/") {
+			autoRaw = true
+		}
 	}
 	if path == "" {
 		path = "/"
@@ -214,15 +226,15 @@ func parseAPIRequestPathMode(raw string, rawMode bool) (string, map[string]any, 
 	}
 	for _, segment := range strings.Split(path, "/") {
 		if segment == "." || segment == ".." {
-			return "", nil, fmt.Errorf("api path cannot contain relative segment %q", segment)
+			return "", nil, false, fmt.Errorf("api path cannot contain relative segment %q", segment)
 		}
 	}
 
 	params, err := parseAPIQuery(parsed.RawQuery)
 	if err != nil {
-		return "", nil, err
+		return "", nil, false, err
 	}
-	return path, params, nil
+	return path, params, autoRaw, nil
 }
 
 func parseAPIQuery(rawQuery string) (map[string]any, error) {
