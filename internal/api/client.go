@@ -298,6 +298,9 @@ func (c *Client) RequestResult(ctx context.Context, method string, path string, 
 		return ResponseResult{}, err
 	}
 
+	if err := rejectLoginPage(resp, method, relativePath); err != nil {
+		return ResponseResult{}, err
+	}
 	result, err := parseResponse(resp)
 	if err != nil {
 		return ResponseResult{}, err
@@ -360,9 +363,25 @@ func (c *Client) send(ctx context.Context, method string, fullURL string, conten
 			req.Header.Set(key, value)
 		}
 
-		resp, err := c.httpClient.Do(req)
+		// Never follow redirects: an API answers JSON, and the only
+		// redirect an Umbraco API endpoint issues is to the backoffice
+		// login when it does not accept the bearer token. Following it
+		// (Go's default) fetched login HTML that was then parsed as JSON,
+		// or looped until "stopped after 10 redirects" as returnPath
+		// nested — both hid the real cause.
+		httpClient := *c.httpClient
+		httpClient.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+		resp, err := httpClient.Do(req)
 		if err != nil {
 			return nil, err
+		}
+		if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+			if location := resp.Header.Get("Location"); looksLikeLoginRedirect(location) {
+				drainAndClose(resp)
+				return nil, &AuthRedirectError{Method: method, Path: c.relativeAPIPath(fullURL), Location: location, StatusCode: resp.StatusCode}
+			}
+			// Any other redirect surfaces as its 3xx status: the caller
+			// asked one URL and gets told where the server pointed.
 		}
 
 		if resp.StatusCode == http.StatusTooManyRequests && attempt < maxRequestAttempts-1 {
@@ -388,6 +407,73 @@ func (c *Client) send(ctx context.Context, method string, fullURL string, conten
 	}
 
 	return nil, fmt.Errorf("request retry budget exhausted")
+}
+
+// AuthRedirectError is returned when an API endpoint answers with a
+// redirect (or an HTML page) instead of JSON. On Umbraco that means the
+// endpoint did not accept the bearer token and sent the caller to the
+// backoffice login — seen on Umbraco Cloud for Umbraco Deploy's management
+// API, where the same token works for the core Management API. It exits 3
+// (authentication), like a rejected token.
+type AuthRedirectError struct {
+	Method     string
+	Path       string
+	Location   string
+	StatusCode int
+	HTML       bool
+}
+
+func (e *AuthRedirectError) Error() string {
+	target := ""
+	if e.Location != "" {
+		target = fmt.Sprintf(" to %s", SanitizeTerminalText(e.Location))
+	}
+	what := fmt.Sprintf("redirected (%d)%s", e.StatusCode, target)
+	if e.StatusCode < 300 || e.StatusCode >= 400 {
+		what = "returned an HTML page instead of JSON"
+		if e.HTML {
+			what = "returned the backoffice login page instead of JSON"
+		}
+	}
+	return fmt.Sprintf("authentication required: %s %s %s — the environment did not accept the bearer token for this endpoint (the core Management API accepts it when 'umbraco server status' works; Umbraco Deploy's own API on Umbraco Cloud is known not to). Nothing was sent past the redirect", e.Method, e.Path, what)
+}
+
+func (*AuthRedirectError) ExitCode() int { return 3 }
+
+// looksLikeLoginRedirect recognizes the backoffice login redirect Umbraco
+// issues for an unauthenticated request: /umbraco (or /umbraco/login) with
+// a returnPath back to the endpoint.
+func looksLikeLoginRedirect(location string) bool {
+	lower := strings.ToLower(location)
+	if strings.Contains(lower, "returnpath=") {
+		return true
+	}
+	parsed, err := url.Parse(location)
+	if err != nil {
+		return false
+	}
+	path := strings.TrimRight(strings.ToLower(parsed.Path), "/")
+	return path == "/umbraco" || path == "umbraco" || strings.HasSuffix(path, "/umbraco/login")
+}
+
+// rejectLoginPage turns a 2xx HTML body that is the backoffice login page
+// into an AuthRedirectError on JSON-expecting paths. Other HTML bodies pass
+// through as text (api can legitimately read HTML endpoints).
+func rejectLoginPage(resp *http.Response, method string, relativePath string) error {
+	if !strings.Contains(strings.ToLower(resp.Header.Get("Content-Type")), "text/html") {
+		return nil
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 256*1024))
+	if err != nil {
+		return err
+	}
+	_ = resp.Body.Close()
+	resp.Body = io.NopCloser(bytes.NewReader(body))
+	lower := strings.ToLower(string(body))
+	if strings.Contains(lower, "returnpath") || strings.Contains(lower, "umb-auth") || strings.Contains(lower, "<umb-app") || strings.Contains(lower, "umbraco backoffice") {
+		return &AuthRedirectError{Method: method, Path: relativePath, StatusCode: resp.StatusCode, HTML: true}
+	}
+	return nil
 }
 
 func drainAndClose(resp *http.Response) {
@@ -556,6 +642,9 @@ func (c *Client) MultipartResult(ctx context.Context, method string, path string
 		return bytes.NewReader(encodedBody)
 	})
 	if err != nil {
+		return ResponseResult{}, err
+	}
+	if err := rejectLoginPage(resp, method, relativePath); err != nil {
 		return ResponseResult{}, err
 	}
 	result, err := parseResponse(resp)

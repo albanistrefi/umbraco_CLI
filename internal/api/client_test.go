@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -663,5 +664,76 @@ func TestBodilessRequestsCarryNoContentType(t *testing.T) {
 	}
 	if observed[http.MethodPut] != "application/json" {
 		t.Fatalf("body requests must send application/json, got %v", observed)
+	}
+}
+
+func TestRequestStopsAtLoginRedirectWithAuthError(t *testing.T) {
+	// Field report: Deploy's API on Umbraco Cloud answered 302 → /umbraco?returnPath=…;
+	// Go followed it, the login page redirected again with a nested
+	// returnPath, and the CLI died with "stopped after 10 redirects" (or,
+	// when the login HTML came back 200, "cannot unmarshal string").
+	apiCalls := 0
+	httpClient := newTestHTTPClient(func(r *http.Request) (*http.Response, error) {
+		switch {
+		case r.URL.Path == "/umbraco/management/api/v1/security/back-office/token":
+			return jsonResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`, nil), nil
+		case strings.HasPrefix(r.URL.Path, "/umbraco/deploy/"):
+			apiCalls++
+			return &http.Response{StatusCode: http.StatusFound, Header: http.Header{"Location": []string{"/umbraco?returnPath=%2Fumbraco%2Fdeploy%2Fmanagement%2Fapi%2Fv1%2Fqueue"}}, Body: io.NopCloser(strings.NewReader(""))}, nil
+		case r.URL.Path == "/umbraco":
+			t.Fatalf("the login redirect must not be followed")
+		}
+		return jsonResponse(http.StatusNotFound, `{}`, nil), nil
+	})
+	cfg := config.Config{BaseURL: "https://example.test", ClientID: "client-id", ClientSecret: "client-secret"}
+	client := NewClient(cfg, httpClient, auth.New(cfg, httpClient))
+
+	_, err := client.Get(context.Background(), "/queue", RequestOptions{APIPrefix: "/umbraco/deploy/management/api/v1"})
+	var authErr *AuthRedirectError
+	if !errors.As(err, &authErr) {
+		t.Fatalf("expected AuthRedirectError, got %v", err)
+	}
+	if authErr.ExitCode() != 3 || !strings.Contains(err.Error(), "authentication required: GET /umbraco/deploy/management/api/v1/queue redirected (302) to /umbraco?returnPath=") || !strings.Contains(err.Error(), "did not accept the bearer token") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if apiCalls != 1 {
+		t.Fatalf("expected exactly one request, got %d", apiCalls)
+	}
+
+	// A 200 that is the login page (HTML) is the same failure.
+	htmlClient := newTestHTTPClient(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Path == "/umbraco/management/api/v1/security/back-office/token" {
+			return jsonResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`, nil), nil
+		}
+		header := http.Header{"Content-Type": []string{"text/html; charset=utf-8"}}
+		return &http.Response{StatusCode: http.StatusOK, Header: header, Body: io.NopCloser(strings.NewReader(`<html><body><umb-auth return-path="/umbraco"></umb-auth></body></html>`))}, nil
+	})
+	client = NewClient(cfg, htmlClient, auth.New(cfg, htmlClient))
+	_, err = client.Get(context.Background(), "/configuration/client", RequestOptions{APIPrefix: "/umbraco/deploy/management/api/v1"})
+	if !errors.As(err, &authErr) || !strings.Contains(err.Error(), "returned the backoffice login page instead of JSON") {
+		t.Fatalf("expected the login-page error, got %v", err)
+	}
+
+	// Other redirects and other HTML are not authentication failures: a 3xx
+	// elsewhere is reported as that status, plain HTML comes back as text.
+	otherClient := newTestHTTPClient(func(r *http.Request) (*http.Response, error) {
+		switch r.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return jsonResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`, nil), nil
+		case "/umbraco/management/api/v1/moved":
+			return &http.Response{StatusCode: http.StatusMovedPermanently, Header: http.Header{"Location": []string{"https://cdn.example.test/file"}}, Body: io.NopCloser(strings.NewReader(""))}, nil
+		default:
+			return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"text/html"}}, Body: io.NopCloser(strings.NewReader("<html><title>Swagger UI</title></html>"))}, nil
+		}
+	})
+	client = NewClient(cfg, otherClient, auth.New(cfg, otherClient))
+	_, err = client.Get(context.Background(), "/moved", RequestOptions{})
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) || apiErr.StatusCode != 301 {
+		t.Fatalf("expected a plain 301 API error, got %v", err)
+	}
+	result, err := client.Get(context.Background(), "/umbraco/swagger/index.html", RequestOptions{RawPath: true})
+	if err != nil || !strings.Contains(fmt.Sprint(result), "Swagger UI") {
+		t.Fatalf("expected non-login HTML to pass through as text, got err=%v result=%v", err, result)
 	}
 }
