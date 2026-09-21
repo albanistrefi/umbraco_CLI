@@ -304,4 +304,10 @@ func TestDeployTransferAcceptsDoubleEncodedClientConfiguration(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "GET /configuration/client returned an array, not a JSON object") {
 		t.Fatalf("expected a shape error naming the request, got %v", err)
 	}
+	// Server text in the error is sanitized: terminal controls are stripped
+	// and the value is quoted.
+	_, err = execute(buildRootWithCollections(t, serve(`"[31mred[0m ‮bidi"`)), "deploy", "transfer", "--node", "aaaaaaaa-0000-4000-8000-000000000001", "--dry-run")
+	if err == nil || strings.Contains(err.Error(), "") || strings.Contains(err.Error(), "‮") || !strings.Contains(err.Error(), `returned a string, not a JSON object: "`) {
+		t.Fatalf("expected a sanitized, quoted string error, got %q", err)
+	}
 }

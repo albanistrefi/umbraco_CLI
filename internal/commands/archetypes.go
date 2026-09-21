@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -90,12 +91,16 @@ func jsonShapeName(value any) string {
 	}
 }
 
+// truncateForError bounds and sanitizes server-provided text before it is
+// interpolated into an error: control characters and Unicode format
+// characters are stripped (as API error text already is) so a response
+// cannot steer the terminal, and the value is quoted.
 func truncateForError(text string, limit int) string {
-	text = strings.TrimSpace(text)
-	if len(text) <= limit {
-		return text
+	text = api.SanitizeTerminalText(strings.TrimSpace(text))
+	if len(text) > limit {
+		text = text[:limit] + "…"
 	}
-	return text[:limit] + "…"
+	return strconv.Quote(text)
 }
 
 // mergeParams folds convenience-flag values into a --params map. The
