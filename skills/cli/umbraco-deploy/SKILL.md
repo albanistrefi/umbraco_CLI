@@ -233,7 +233,7 @@ command requires --force: it writes to another environment.
 By default the command waits for the transfer session, prints progress on
 stderr, and exits 0 on Completed, 5 on Failed/Cancelled/Mismatch (with the
 server's log), and 6 when --timeout elapses first (status unknown; the
-transfer keeps running). --no-wait returns the session id immediately.
+transfer keeps running). --wait=false returns the session id immediately.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|

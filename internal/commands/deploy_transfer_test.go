@@ -211,6 +211,9 @@ func TestDeployTransferQueueModeAndNoWait(t *testing.T) {
 	if _, err := execute(buildRootWithCollections(t, deps), "deploy", "transfer", "--queue", "--node", "aaaaaaaa-0000-4000-8000-000000000001", "--dry-run"); err == nil || !strings.Contains(err.Error(), "not both") {
 		t.Fatalf("expected --queue and --node to be exclusive, got %v", err)
 	}
+	if _, err := execute(buildRootWithCollections(t, deps), "deploy", "transfer", "--queue", "--culture", "en-US", "--dry-run"); err == nil || !strings.Contains(err.Error(), "--culture applies to --node items") {
+		t.Fatalf("expected node-only flags rejected in queue mode, got %v", err)
+	}
 }
 
 func TestDeployQueueCommands(t *testing.T) {
@@ -223,6 +226,13 @@ func TestDeployQueueCommands(t *testing.T) {
 	added := (*bodies)[len(*bodies)-1]
 	if added["entityType"] != "media" || added["includeDescendants"] != true || added["culture"] != "*" {
 		t.Fatalf("unexpected add body: %+v", added)
+	}
+	before := len(*requests)
+	if _, err := execute(buildRootWithCollections(t, deps), "deploy", "queue", "add", "aaaaaaaa-0000-4000-8000-00000000000a", "not-a-guid"); err == nil || !strings.Contains(err.Error(), "nothing was queued") {
+		t.Fatalf("expected batch validation before any write, got %v", err)
+	}
+	if len(*requests) != before {
+		t.Fatalf("expected no queue/add request for an invalid batch, got %v", (*requests)[before:])
 	}
 	out, err = execute(buildRootWithCollections(t, deps), "deploy", "queue", "list")
 	if err != nil || !strings.Contains(out, `"total": 1`) || !strings.Contains(out, "Queued") {

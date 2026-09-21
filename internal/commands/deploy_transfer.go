@@ -330,12 +330,22 @@ command requires --force: it writes to another environment.
 By default the command waits for the transfer session, prints progress on
 stderr, and exits 0 on Completed, 5 on Failed/Cancelled/Mismatch (with the
 server's log), and 6 when --timeout elapses first (status unknown; the
-transfer keeps running). --no-wait returns the session id immediately.`,
+transfer keeps running). --wait=false returns the session id immediately.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			if useQueue && len(nodes) > 0 {
 				return fmt.Errorf("pass either --node (transfer these items now) or --queue (transfer the accumulated queue), not both")
+			}
+			if useQueue {
+				// Queue items carry their own type, culture and descendants
+				// (set at 'queue add'); accepting these here would silently
+				// transfer the whole queue regardless of the narrowing asked.
+				for _, name := range []string{"type", "culture", "descendants"} {
+					if cmd.Flags().Changed(name) {
+						return fmt.Errorf("--%s applies to --node items; queued items keep the type, culture and descendants they were queued with ('deploy queue list' shows them)", name)
+					}
+				}
 			}
 			if !useQueue && len(nodes) == 0 {
 				return fmt.Errorf("deploy transfer needs --node <id> (repeatable) or --queue")
@@ -446,7 +456,7 @@ transfer keeps running). --no-wait returns the session id immediately.`,
 			started, _ := result.(map[string]any)
 			sessionID := stringValue(started["sessionId"])
 			if sessionID == "" {
-				return fmt.Errorf("Deploy accepted the transfer but returned no session id: %v", result)
+				return fmt.Errorf("the transfer was accepted but Deploy returned no session id: %v", result)
 			}
 			plan["sessionId"] = sessionID
 			if !wait {
@@ -555,19 +565,25 @@ func deployQueue(deps Dependencies) *cobra.Command {
 			if cultureValue == "" {
 				cultureValue = "*"
 			}
-			queued := make([]any, 0, len(args))
+			// Validate the whole batch before the first write so a typo in
+			// the third id does not leave the first two queued.
+			ids := []string{}
 			for _, raw := range args {
 				for _, id := range uniqueCSV(raw) {
 					if !isUUIDLike(id) {
-						return fmt.Errorf("%q is not a GUID", id)
+						return fmt.Errorf("%q is not a GUID; nothing was queued", id)
 					}
-					item := deployQueueItem{ID: id, EntityType: resolvedType, Culture: cultureValue, IncludeDescendants: addDescendants}
-					result, err := deps.Client.Post(cmd.Context(), "/queue/add", item.body(), api.RequestOptions{APIPrefix: deployAPIPrefix, DryRun: addDryRun})
-					if err != nil {
-						return friendlyDeployAPIError(err)
-					}
-					queued = append(queued, result)
+					ids = append(ids, id)
 				}
+			}
+			queued := make([]any, 0, len(ids))
+			for _, id := range ids {
+				item := deployQueueItem{ID: id, EntityType: resolvedType, Culture: cultureValue, IncludeDescendants: addDescendants}
+				result, err := deps.Client.Post(cmd.Context(), "/queue/add", item.body(), api.RequestOptions{APIPrefix: deployAPIPrefix, DryRun: addDryRun})
+				if err != nil {
+					return friendlyDeployAPIError(err)
+				}
+				queued = append(queued, result)
 			}
 			return printResult(cmd, deps, map[string]any{"queued": queued, "count": len(queued), "dryRun": addDryRun})
 		},
