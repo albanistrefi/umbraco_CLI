@@ -138,49 +138,120 @@ func TestLogsTailRejectsInvalidSince(t *testing.T) {
 	}
 }
 
-func TestLogsTailRequestsAscendingOrderAndDrainsBursts(t *testing.T) {
-	// A burst larger than one page: the first poll returns a full ascending
-	// page; the cursor must advance only past fetched entries so the second
-	// poll picks up the remainder instead of skipping it.
-	burstPage := func(start, count int) string {
-		var b strings.Builder
-		b.WriteString(`{"items":[`)
-		for i := 0; i < count; i++ {
-			if i > 0 {
-				b.WriteString(",")
-			}
-			fmt.Fprintf(&b, `{"timestamp":"2026-07-03T10:%02d:%02dZ","level":"Information","renderedMessage":"entry-%d"}`, (start+i)/60, (start+i)%60, start+i)
+// logPage renders count entries stamped one second apart starting at
+// 10:00:<start>, newest first when descending is set.
+func logPage(start, count int, descending bool) string {
+	var b strings.Builder
+	b.WriteString(`{"items":[`)
+	for i := 0; i < count; i++ {
+		n := start + i
+		if descending {
+			n = start + count - 1 - i
 		}
-		fmt.Fprintf(&b, `],"total":%d}`, count)
-		return b.String()
+		if i > 0 {
+			b.WriteString(",")
+		}
+		fmt.Fprintf(&b, `{"timestamp":"2026-07-03T%02d:%02d:%02dZ","level":"Information","renderedMessage":"entry-%d"}`, 10+n/3600, (n/60)%60, n%60, n)
 	}
+	fmt.Fprintf(&b, `],"total":%d}`, count)
+	return b.String()
+}
 
-	var orderDirections []string
-	var startDates []string
+func TestLogsTailPrintsNewEntriesWhenServerIgnoresStartDate(t *testing.T) {
+	// Field report (0.4.17): the log-viewer's startDate selects daily log
+	// files, not entries, so a page always includes the day's older entries.
+	// The mock ignores startDate entirely and serves a day with 700 entries,
+	// of which only the newest 5 are after --since. Newest-first paging must
+	// print exactly those 5, stop at the first older entry, and not spin.
+	var requests []string
 	deps := logsTailDeps(func(poll int64, req *http.Request) (*http.Response, error) {
-		orderDirections = append(orderDirections, req.URL.Query().Get("orderDirection"))
-		startDates = append(startDates, req.URL.Query().Get("startDate"))
-		if poll == 1 {
-			return endpointJSONResponse(http.StatusOK, burstPage(1, tailPageSize)), nil
+		q := req.URL.Query()
+		requests = append(requests, q.Get("orderDirection")+"/skip="+q.Get("skip"))
+		if q.Get("orderDirection") != "Descending" {
+			return endpointJSONResponse(http.StatusOK, logPage(0, tailPageSize, false)), nil // the day's oldest 500: the bug
 		}
-		return endpointJSONResponse(http.StatusOK, burstPage(tailPageSize, 3)), nil
+		return endpointJSONResponse(http.StatusOK, logPage(200, tailPageSize, true)), nil // newest 500 of 700
 	})
 
-	out, err := execute(buildLogsRoot(deps), "logs", "tail", "--since", "2026-07-03T10:00:00Z", "--interval", "1h", "--for", "50ms")
+	// --since 10:11:35 = second 695; entries 695..699 are new.
+	out, err := execute(buildLogsRoot(deps), "logs", "tail", "--since", "2026-07-03T10:11:35Z", "--interval", "1h", "--for", "50ms")
 	if err != nil {
 		t.Fatalf("logs tail failed: %v", err)
 	}
-	for _, direction := range orderDirections {
-		if direction != "Ascending" {
-			t.Fatalf("expected every poll to request ascending order, got %v", orderDirections)
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if len(lines) != 5 {
+		t.Fatalf("expected the 5 entries after --since, got %d:\n%s", len(lines), out)
+	}
+	if !strings.Contains(lines[0], "entry-695") || !strings.Contains(lines[4], "entry-699") {
+		t.Fatalf("expected entries 695..699 oldest first, got:\n%s", out)
+	}
+	if len(requests) != 1 || requests[0] != "Descending/skip=0" {
+		t.Fatalf("expected one newest-first request (no re-poll loop despite the full page), got %v", requests)
+	}
+}
+
+func TestLogsTailPagesBackThroughBurstsWithSkip(t *testing.T) {
+	// 1200 new entries since the cursor: three descending pages (500, 500,
+	// 200); the short third page ends the drain. Every entry prints once.
+	var skips []string
+	const burst = 1200
+	deps := logsTailDeps(func(poll int64, req *http.Request) (*http.Response, error) {
+		q := req.URL.Query()
+		skips = append(skips, q.Get("skip"))
+		skip := 0
+		fmt.Sscanf(q.Get("skip"), "%d", &skip)
+		remaining := burst - skip
+		if remaining <= 0 {
+			return endpointJSONResponse(http.StatusOK, `{"items":[],"total":0}`), nil
 		}
+		count := tailPageSize
+		if remaining < count {
+			count = remaining
+		}
+		// Entries 1..1200; page at skip covers the newest-first slice.
+		start := burst - skip - count + 1
+		return endpointJSONResponse(http.StatusOK, logPage(start, count, true)), nil
+	})
+
+	out, err := execute(buildLogsRoot(deps), "logs", "tail", "--since", "2026-07-03T10:00:01Z", "--interval", "1h", "--for", "50ms")
+	if err != nil {
+		t.Fatalf("logs tail failed: %v", err)
 	}
-	if len(startDates) < 2 {
-		t.Fatalf("expected the full page to trigger an immediate drain poll despite the 1h interval, got %d polls", len(startDates))
+	if strings.Join(skips, ",") != "0,500,1000" {
+		t.Fatalf("expected skip paging 0,500,1000 within one poll, got %v", skips)
 	}
-	printed := strings.Count(out, "entry-")
-	if printed != tailPageSize+2 {
-		// entry-500 appears in both pages (boundary) and must print once.
-		t.Fatalf("expected %d unique entries printed, got %d", tailPageSize+2, printed)
+	if printed := strings.Count(out, "entry-"); printed != burst {
+		t.Fatalf("expected %d unique entries printed, got %d", burst, printed)
+	}
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if !strings.Contains(lines[0], `"entry-1"`) || !strings.Contains(lines[burst-1], `"entry-1200"`) {
+		t.Fatalf("expected oldest-first output across pages, got first=%s last=%s", lines[0], lines[burst-1])
+	}
+}
+
+func TestLogsTailJSONFlagAndHeartbeat(t *testing.T) {
+	jsonDeps := logsTailDeps(func(poll int64, req *http.Request) (*http.Response, error) {
+		return endpointJSONResponse(http.StatusOK, `{"items":[{"timestamp":"2026-07-03T10:00:01Z","level":"Information","renderedMessage":"fresh"}],"total":1}`), nil
+	})
+	out, err := execute(buildLogsRoot(jsonDeps), "logs", "tail", "-o", "plain", "--json", "--since", "2026-07-03T10:00:00Z", "--interval", "1ms", "--for", "20ms")
+	if err != nil || !strings.HasPrefix(strings.TrimSpace(out), "{") || !strings.Contains(out, `"renderedMessage":"fresh"`) {
+		t.Fatalf("expected --json to force NDJSON like deploy watch --json, got err=%v out=%s", err, out)
+	}
+
+	deps := logsTailDeps(func(poll int64, req *http.Request) (*http.Response, error) {
+		return endpointJSONResponse(http.StatusOK, `{"items":[{"timestamp":"2026-07-03T09:00:00Z","level":"Information","renderedMessage":"old"}],"total":1}`), nil
+	})
+	out, status, err := executeWithErr(buildLogsRoot(deps), "logs", "tail", "-o", "plain", "--json", "--since", "2026-07-03T10:00:00Z", "--interval", "1ms", "--heartbeat", "5ms", "--for", "60ms")
+	if err != nil {
+		t.Fatalf("logs tail failed: %v", err)
+	}
+	if strings.TrimSpace(out) != "" {
+		t.Fatalf("expected nothing on stdout (only an old entry exists), got %s", out)
+	}
+	if !strings.Contains(status, "tailing log entries after 2026-07-03T10:00:00Z") {
+		t.Fatalf("expected a startup line on stderr, got %q", status)
+	}
+	if !strings.Contains(status, "no new entries since 2026-07-03T10:00:00Z (0 printed so far; newest entry on the server: 2026-07-03T09:00:00Z)") {
+		t.Fatalf("expected a heartbeat naming the newest server entry, got %q", status)
 	}
 }

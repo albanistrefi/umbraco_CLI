@@ -119,10 +119,14 @@ umbraco logs tail
 ```
 
 The Management API has no streaming endpoint, so tail polls the log-viewer
-with a moving startDate cursor, deduplicates boundary entries, and prints
-each new entry exactly once: NDJSON (one JSON object per line) for json
-output, one formatted line per entry otherwise. Runs until interrupted or
---for elapses; exits 0 on both.
+newest-first, keeps the entries after its timestamp cursor (the server's
+startDate/endDate pick daily log files, not entries, so the cut is made
+client-side), pages back through bursts, deduplicates boundary entries, and
+prints each new entry exactly once: NDJSON (one JSON object per line) for
+json output (-o json or --json), one formatted line per entry otherwise.
+A startup line and optional --heartbeat lines go to stderr so a quiet
+environment is distinguishable from a tail that sees nothing. Runs until
+interrupted or --for elapses; exits 0 on both.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
@@ -131,7 +135,9 @@ output, one formatted line per entry otherwise. Runs until interrupted or
 | `--filter-expression` | string | — | Serilog filter expression (server-side) |
 | `--flat` | bool | false | Flatten entries (timestamp, level, message, sourceContext, ...) |
 | `--for` | duration | 0s | Stop after this duration (0 = run until interrupted); exits 0 |
+| `--heartbeat` | duration | 0s | Print a still-alive line on stderr after this long without new entries (0 = off) |
 | `--interval` | duration | 2s | Poll interval |
+| `--json` | bool | false | Emit entries as NDJSON (same as -o json; matches 'deploy watch --json') |
 | `--level` | string | — | Only entries at this level (Verbose, Debug, Information, Warning, Error, Fatal) |
 | `--path` | string | — | Only entries whose RequestPath contains this value |
 | `--redact` | string | — | Redact matching value kinds: emails,secrets,tokens (comma-separated) |
