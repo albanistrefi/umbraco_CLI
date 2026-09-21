@@ -306,8 +306,8 @@ func TestDeployTransferAcceptsDoubleEncodedClientConfiguration(t *testing.T) {
 	}
 	// Server text in the error is sanitized: terminal controls are stripped
 	// and the value is quoted.
-	_, err = execute(buildRootWithCollections(t, serve(`"[31mred[0m ‮bidi"`)), "deploy", "transfer", "--node", "aaaaaaaa-0000-4000-8000-000000000001", "--dry-run")
-	if err == nil || strings.Contains(err.Error(), "") || strings.Contains(err.Error(), "‮") || !strings.Contains(err.Error(), `returned a string, not a JSON object: "`) {
+	_, err = execute(buildRootWithCollections(t, serve(`"\u001b[31mred\u001b[0m \u202ebidi"`)), "deploy", "transfer", "--node", "aaaaaaaa-0000-4000-8000-000000000001", "--dry-run")
+	if err == nil || strings.Contains(err.Error(), "\x1b") || strings.Contains(err.Error(), "\u202e") || !strings.Contains(err.Error(), `returned a string, not a JSON object: "`) {
 		t.Fatalf("expected a sanitized, quoted string error, got %q", err)
 	}
 }
