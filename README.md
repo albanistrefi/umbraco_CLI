@@ -3,7 +3,7 @@
 The agent-first command line for Umbraco — CMS, Forms, and Automate. Built on
 the Management APIs, it goes beyond them: exhaustive content search,
 cross-environment schema diff, log tailing, and safe, rehearsable bulk
-operations — 271 commands with a scriptable exit-code contract.
+operations — 277 commands with a scriptable exit-code contract.
 
 Core behavior:
 - `--json` and `--params` are primary machine inputs
@@ -366,7 +366,7 @@ testing) are not part of this repo — get those from
 - `logs` (6) — incl. `tail` for following new entries as they arrive
 - `server` (5)
 - `health` (4)
-- `deploy` (3) — effect-based deployment observation plus schema application: `watch` polls an environment for state deltas only a deploy can cause (app recycle via ProcessId, 503→401→200 recovery, index rebuilds) and emits phase transitions; `status` compares local Deploy `.uda` artifacts against the environment per entity as a pre-flight drift check; `apply` is its write side — Deploy's "Update schema" from the CLI: creates missing entities with their artifact GUIDs and full-replaces drifted ones in dependency order, backs up every updated entity, re-verifies each write, and refuses to run without `--dry-run` or `--force`
+- `deploy` (5) — effect-based deployment observation, schema application, and Umbraco Deploy content transfer (`transfer --node <id> [--descendants] --dry-run`, `queue list|add|remove|clear`; keeps GUIDs identical across environments, waits on the session with exit 5/6 on failure/timeout): `watch` polls an environment for state deltas only a deploy can cause (app recycle via ProcessId, 503→401→200 recovery, index rebuilds) and emits phase transitions; `status` compares local Deploy `.uda` artifacts against the environment per entity as a pre-flight drift check; `apply` is its write side — Deploy's "Update schema" from the CLI: creates missing entities with their artifact GUIDs and full-replaces drifted ones in dependency order, backs up every updated entity, re-verifies each write, and refuses to run without `--dry-run` or `--force`
 - `published-cache` (3) — status / rebuild / reload, for stale-content incident response
 - `indexer` (3) — Examine index health and rebuilds, with `--wait` polling
 - `redirect` (6) — the redirect URL tracker: list/get/delete, status, enable/disable
@@ -376,7 +376,7 @@ testing) are not part of this repo — get those from
 - `schema` — runtime schema introspection (`umbraco schema <command>`) plus `schema diff <envA> <envB>` cross-environment comparison across doctype, datatype, mediatype, membertype, template, language, and dictionary
 - `automate` (8 subgroups) — requires [Umbraco Automate](https://docs.umbraco.com/umbraco-automate) on the target instance; see below
 
-Total: **271 runnable commands** counting every nested subcommand. Group counts above are direct subcommands; nested subgroups like `document version`, `document bin`, and the `automate` subgroups add the rest.
+Total: **277 runnable commands** counting every nested subcommand. Group counts above are direct subcommands; nested subgroups like `document version`, `document bin`, and the `automate` subgroups add the rest.
 
 ## Umbraco Automate
 
