@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand/v2"
@@ -343,7 +344,24 @@ const maxRequestAttempts = 4
 // Retry-After/backoff and refreshing the token once per 401, within a fixed
 // attempt budget. makeBody must return a fresh reader per call so retries
 // never replay a consumed reader.
+// redirectPolicy says what send does with a 3xx that is not the backoffice
+// login redirect (which is always an authentication error).
+type redirectPolicy int
+
+const (
+	// redirectStop returns the 3xx to the caller: API endpoints answer
+	// JSON, and a redirect is news the caller should see as its status.
+	redirectStop redirectPolicy = iota
+	// redirectFollow follows the chain, for raw downloads that may sit
+	// behind a CDN or object-storage redirect.
+	redirectFollow
+)
+
 func (c *Client) send(ctx context.Context, method string, fullURL string, contentType string, headers map[string]string, makeBody func() io.Reader) (*http.Response, error) {
+	return c.sendWithRedirects(ctx, method, fullURL, contentType, headers, makeBody, redirectStop)
+}
+
+func (c *Client) sendWithRedirects(ctx context.Context, method string, fullURL string, contentType string, headers map[string]string, makeBody func() io.Reader, policy redirectPolicy) (*http.Response, error) {
 	token, err := c.tokenProvider.AccessToken(ctx)
 	if err != nil {
 		return nil, err
@@ -363,25 +381,40 @@ func (c *Client) send(ctx context.Context, method string, fullURL string, conten
 			req.Header.Set(key, value)
 		}
 
-		// Never follow redirects: an API answers JSON, and the only
-		// redirect an Umbraco API endpoint issues is to the backoffice
-		// login when it does not accept the bearer token. Following it
-		// (Go's default) fetched login HTML that was then parsed as JSON,
-		// or looped until "stopped after 10 redirects" as returnPath
-		// nested — both hid the real cause.
+		// A redirect to the backoffice login means the endpoint did not
+		// accept the bearer token. Following it (Go's default) fetched
+		// login HTML that was then parsed as JSON, or looped until
+		// "stopped after 10 redirects" as returnPath nested — both hid the
+		// real cause. Other redirects follow the caller's policy.
+		relativePath := c.relativeAPIPath(fullURL)
 		httpClient := *c.httpClient
-		httpClient.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+		httpClient.CheckRedirect = func(next *http.Request, via []*http.Request) error {
+			if looksLikeLoginRedirect(next.URL.String()) {
+				// next.Response is the redirect that produced this request.
+				status := http.StatusFound
+				if next.Response != nil {
+					status = next.Response.StatusCode
+				}
+				return &AuthRedirectError{Method: method, Path: relativePath, Location: next.URL.String(), StatusCode: status}
+			}
+			if policy == redirectFollow {
+				if len(via) >= 10 {
+					return fmt.Errorf("stopped after 10 redirects")
+				}
+				return nil
+			}
+			return http.ErrUseLastResponse
+		}
 		resp, err := httpClient.Do(req)
 		if err != nil {
-			return nil, err
-		}
-		if resp.StatusCode >= 300 && resp.StatusCode < 400 {
-			if location := resp.Header.Get("Location"); looksLikeLoginRedirect(location) {
-				drainAndClose(resp)
-				return nil, &AuthRedirectError{Method: method, Path: c.relativeAPIPath(fullURL), Location: location, StatusCode: resp.StatusCode}
+			var authErr *AuthRedirectError
+			if errors.As(err, &authErr) {
+				if resp != nil {
+					drainAndClose(resp)
+				}
+				return nil, authErr
 			}
-			// Any other redirect surfaces as its 3xx status: the caller
-			// asked one URL and gets told where the server pointed.
+			return nil, err
 		}
 
 		if resp.StatusCode == http.StatusTooManyRequests && attempt < maxRequestAttempts-1 {
@@ -463,17 +496,24 @@ func rejectLoginPage(resp *http.Response, method string, relativePath string) er
 	if !strings.Contains(strings.ToLower(resp.Header.Get("Content-Type")), "text/html") {
 		return nil
 	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 256*1024))
+	// HTML bodies are read whole (an HTML page is small; nothing is
+	// truncated) and handed back on a fresh reader when they pass.
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return err
 	}
 	_ = resp.Body.Close()
 	resp.Body = io.NopCloser(bytes.NewReader(body))
-	lower := strings.ToLower(string(body))
-	if strings.Contains(lower, "returnpath") || strings.Contains(lower, "umb-auth") || strings.Contains(lower, "<umb-app") || strings.Contains(lower, "umbraco backoffice") {
+	if isLoginPage(body) {
 		return &AuthRedirectError{Method: method, Path: relativePath, StatusCode: resp.StatusCode, HTML: true}
 	}
 	return nil
+}
+
+// isLoginPage recognizes the backoffice login/shell markup.
+func isLoginPage(body []byte) bool {
+	lower := strings.ToLower(string(body))
+	return strings.Contains(lower, "returnpath") || strings.Contains(lower, "umb-auth") || strings.Contains(lower, "<umb-app") || strings.Contains(lower, "umbraco backoffice")
 }
 
 func drainAndClose(resp *http.Response) {
@@ -753,7 +793,9 @@ func (c *Client) GetStream(ctx context.Context, path string, w io.Writer, opts R
 		return StreamResult{}, err
 	}
 	relativePath := c.relativeAPIPath(fullURL)
-	resp, err := c.send(ctx, http.MethodGet, fullURL, "", opts.Headers, func() io.Reader { return nil })
+	// Downloads may sit behind a CDN/object-storage redirect, so the chain
+	// is followed; a login redirect is still an authentication error.
+	resp, err := c.sendWithRedirects(ctx, http.MethodGet, fullURL, "", opts.Headers, func() io.Reader { return nil }, redirectFollow)
 	if err != nil {
 		return StreamResult{}, err
 	}
@@ -767,6 +809,10 @@ func (c *Client) GetStream(ctx context.Context, path string, w io.Writer, opts R
 			Payload:    strings.TrimSpace(string(body)),
 			Hint:       buildAPIErrorHint(resp.StatusCode, http.MethodGet, relativePath, nil),
 		}
+	}
+	// A 200 login page must not be written to disk as if it were the file.
+	if err := rejectLoginPage(resp, http.MethodGet, relativePath); err != nil {
+		return StreamResult{StatusCode: resp.StatusCode}, err
 	}
 	n, err := io.Copy(w, resp.Body)
 	if err != nil {

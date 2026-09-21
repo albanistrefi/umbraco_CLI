@@ -693,7 +693,7 @@ func TestRequestStopsAtLoginRedirectWithAuthError(t *testing.T) {
 	if !errors.As(err, &authErr) {
 		t.Fatalf("expected AuthRedirectError, got %v", err)
 	}
-	if authErr.ExitCode() != 3 || !strings.Contains(err.Error(), "authentication required: GET /umbraco/deploy/management/api/v1/queue redirected (302) to /umbraco?returnPath=") || !strings.Contains(err.Error(), "did not accept the bearer token") {
+	if authErr.ExitCode() != 3 || !strings.Contains(err.Error(), "authentication required: GET /umbraco/deploy/management/api/v1/queue redirected (302) to https://example.test/umbraco?returnPath=") || !strings.Contains(err.Error(), "did not accept the bearer token") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if apiCalls != 1 {
@@ -735,5 +735,82 @@ func TestRequestStopsAtLoginRedirectWithAuthError(t *testing.T) {
 	result, err := client.Get(context.Background(), "/umbraco/swagger/index.html", RequestOptions{RawPath: true})
 	if err != nil || !strings.Contains(fmt.Sprint(result), "Swagger UI") {
 		t.Fatalf("expected non-login HTML to pass through as text, got err=%v result=%v", err, result)
+	}
+}
+
+func TestGetStreamFollowsAssetRedirectsButRejectsLoginPages(t *testing.T) {
+	cfg := config.Config{BaseURL: "https://example.test", ClientID: "client-id", ClientSecret: "client-secret"}
+	token := func(r *http.Request) (*http.Response, bool) {
+		if r.URL.Path == "/umbraco/management/api/v1/security/back-office/token" {
+			return jsonResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`, nil), true
+		}
+		return nil, false
+	}
+
+	// A media asset behind a CDN redirect still downloads (the JSON paths stop at 3xx; downloads follow).
+	cdnClient := newTestHTTPClient(func(r *http.Request) (*http.Response, error) {
+		if resp, ok := token(r); ok {
+			return resp, nil
+		}
+		switch r.URL.Host + r.URL.Path {
+		case "example.test/media/abc/logo.png":
+			return &http.Response{StatusCode: http.StatusFound, Header: http.Header{"Location": []string{"https://cdn.example.test/blob/logo.png"}}, Body: io.NopCloser(strings.NewReader(""))}, nil
+		case "cdn.example.test/blob/logo.png":
+			return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"image/png"}}, Body: io.NopCloser(strings.NewReader("PNGDATA"))}, nil
+		}
+		return jsonResponse(http.StatusNotFound, `{}`, nil), nil
+	})
+	client := NewClient(cfg, cdnClient, auth.New(cfg, cdnClient))
+	var out strings.Builder
+	result, err := client.GetStream(context.Background(), "/media/abc/logo.png", &out, RequestOptions{RawPath: true})
+	if err != nil || out.String() != "PNGDATA" || result.StatusCode != 200 {
+		t.Fatalf("expected the redirect to be followed for a download, got err=%v body=%q", err, out.String())
+	}
+
+	// A 200 login page is never written as if it were the file.
+	loginClient := newTestHTTPClient(func(r *http.Request) (*http.Response, error) {
+		if resp, ok := token(r); ok {
+			return resp, nil
+		}
+		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"text/html"}}, Body: io.NopCloser(strings.NewReader(`<html><umb-auth return-path="/x"></umb-auth></html>`))}, nil
+	})
+	client = NewClient(cfg, loginClient, auth.New(cfg, loginClient))
+	out.Reset()
+	_, err = client.GetStream(context.Background(), "/media/abc/logo.png", &out, RequestOptions{RawPath: true})
+	var authErr *AuthRedirectError
+	if !errors.As(err, &authErr) || out.Len() != 0 {
+		t.Fatalf("expected the login page rejected before writing, got err=%v written=%d", err, out.Len())
+	}
+
+	// A download redirected to the login is the same failure, one hop in.
+	redirectClient := newTestHTTPClient(func(r *http.Request) (*http.Response, error) {
+		if resp, ok := token(r); ok {
+			return resp, nil
+		}
+		if r.URL.Path == "/umbraco" {
+			t.Fatalf("login redirect must not be followed")
+		}
+		return &http.Response{StatusCode: http.StatusFound, Header: http.Header{"Location": []string{"/umbraco?returnPath=%2Fmedia%2Fabc%2Flogo.png"}}, Body: io.NopCloser(strings.NewReader(""))}, nil
+	})
+	client = NewClient(cfg, redirectClient, auth.New(cfg, redirectClient))
+	_, err = client.GetStream(context.Background(), "/media/abc/logo.png", &out, RequestOptions{RawPath: true})
+	if !errors.As(err, &authErr) || authErr.StatusCode != 302 || !strings.Contains(err.Error(), "redirected (302) to") {
+		t.Fatalf("expected an authentication error for the login redirect, got %v", err)
+	}
+}
+
+func TestRequestPassesLargeNonLoginHTMLThroughUntruncated(t *testing.T) {
+	cfg := config.Config{BaseURL: "https://example.test", ClientID: "client-id", ClientSecret: "client-secret"}
+	page := "<html><title>Docs</title>" + strings.Repeat("x", 300*1024) + "</html>"
+	httpClient := newTestHTTPClient(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Path == "/umbraco/management/api/v1/security/back-office/token" {
+			return jsonResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`, nil), nil
+		}
+		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"text/html"}}, Body: io.NopCloser(strings.NewReader(page))}, nil
+	})
+	client := NewClient(cfg, httpClient, auth.New(cfg, httpClient))
+	result, err := client.Get(context.Background(), "/docs/index.html", RequestOptions{RawPath: true})
+	if err != nil || len(fmt.Sprint(result)) != len(page) {
+		t.Fatalf("expected the full HTML body, got err=%v len=%d want %d", err, len(fmt.Sprint(result)), len(page))
 	}
 }
