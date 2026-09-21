@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.4.20 - 2026-09-21
+
 - fixed `deploy transfer --dry-run` failing against an Umbraco Cloud environment with `json: cannot unmarshal string into Go value of type map[string]interface {}` while working locally (agent-reported on 0.4.19). Deploy's `GET /configuration/client` came back as a JSON string holding the object rather than the object itself; every fetch-an-object path now unwraps a double-encoded body, and a body of the wrong shape is reported as "GET /configuration/client returned an array, not a JSON object: …" naming the request instead of a bare decoder error. Not reproducible locally (the local instance returns the object), so the fix is verified against a mocked double-encoded response; the informative error would have made the original report actionable in one step
 - `api` sends any absolute path under another `/umbraco/…` mount (Deploy, Forms, Automate management APIs) relative to the host root automatically, so `api GET /umbraco/deploy/management/api/v1/configuration/client` works without `--raw-path` (agent-reported: the path got the core `/umbraco/management/api/v1` prefix and 404ed, and `--raw-path` was not discovered). Full core Management API paths are still normalized and relative paths still get the prefix; `--raw-path` remains for paths outside `/umbraco/` (e.g. `/media/…`)
 
