@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.4.18 - 2026-09-21
+
 - fixed `logs tail` printing nothing, forever, on a busy environment (agent-reported on 0.4.17; reproduced on 18.1). The log-viewer's `startDate`/`endDate` select which daily log *files* are read and do not filter entries by timestamp (a `startDate` an hour in the future still returns today's entries), so tail's ascending page was always the day's oldest 500 entries; every one was older than the cursor, and a full page triggered an immediate re-poll of the same page: zero output and a tight request loop. Tail now polls newest-first, keeps entries at or after its cursor client-side, pages back with `skip` through bursts (up to 20 pages per poll; a backlog larger than that stops the run with an error naming `logs search --from` rather than skipping entries), and prints oldest-first exactly once. A startup line on stderr states the cursor and interval, and `--heartbeat <duration>` adds still-alive lines naming the newest entry the server has, so a quiet environment is distinguishable from a blind tail. `--json` is accepted as on `deploy watch` (same as `-o json`). Live: the 0.4.17 binary printed 0 lines in 14 s against the local instance; the fix printed the 4 new entries once, in order
 
 ## v0.4.17 - 2026-09-15
