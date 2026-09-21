@@ -1,6 +1,6 @@
 ---
 name: umbraco-deploy
-description: "Deployment observation and schema application (watch, status, apply)"
+description: "Deployment observation, schema application, and content transfer (watch, status, apply, transfer, queue)"
 metadata:
   version: 0.4.18
   requires:
@@ -18,12 +18,32 @@ metadata:
 umbraco deploy <command> [flags]
 ```
 
+## Overview
+
+```text
+Deployment commands.
+
+Task → command:
+  Watch an environment while a deploy lands              deploy watch
+  Compare .uda schema artifacts with an environment      deploy status --uda-dir <dir>
+  Apply .uda schema ("Update schema")                    deploy apply --uda-dir <dir> --dry-run
+  Move content to the next environment, GUIDs intact     deploy transfer --node <id> [--descendants] --dry-run   (Umbraco Deploy required)
+  Queue content and transfer it together                 deploy queue add <id>; deploy queue list; deploy transfer --queue --force
+```
+
 ## Read Commands
 
 | Command | Description |
 |---------|-------------|
+| `deploy queue list` | List the items queued for transfer |
 | `deploy status` | Compare local .uda deploy artifacts against the environment, read-only |
 | `deploy watch` | Watch an environment for the effects of a deployment and report phase transitions |
+
+### queue list
+
+```bash
+umbraco deploy queue list
+```
 
 ### status
 
@@ -76,6 +96,10 @@ Phases: baseline → restarting → app-alive → serving → landed → settlin
 | Command | Description |
 |---------|-------------|
 | `deploy apply` | Apply local .uda deploy artifacts to the environment (Deploy's "Update schema" from the CLI) |
+| `deploy queue add <id> [<id>…]` | Queue content for transfer (the backoffice's "Queue for transfer") |
+| `deploy queue clear` | Empty the transfer queue |
+| `deploy queue remove <id-or-udi>` | Remove one item from the transfer queue |
+| `deploy transfer --node <id> [--node <id>…] [--descendants] | --queue` | Transfer content to the next environment with Umbraco Deploy (the backoffice's "Transfer now" / "Transfer queue") |
 
 ### apply
 
@@ -113,6 +137,126 @@ umbraco deploy apply [flags] --dry-run
 
 # 2. Execute with the same flags
 umbraco deploy apply --force [flags]
+```
+
+### queue add
+
+```bash
+umbraco deploy queue add <id> [<id>…]
+```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--culture` | string | — | Only this culture's variant (default: all cultures) |
+| `--descendants` | bool | false | Queue the whole subtree under each id |
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--type` | string | document | Entity type: document, media, member, dictionary-item, form |
+
+**Safe pattern:**
+
+```bash
+# 1. Rehearse with the exact flags you will execute with
+umbraco deploy queue add <id> [<id>…] [flags] --dry-run
+
+# 2. Execute with the same flags
+umbraco deploy queue add <id> [<id>…] [flags]
+```
+
+### queue clear
+
+```bash
+umbraco deploy queue clear
+```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--force` | bool | false | Confirm clearing the queue |
+
+**Safe pattern:**
+
+```bash
+# 1. Rehearse with the exact flags you will execute with
+umbraco deploy queue clear [flags] --dry-run
+
+# 2. Execute with the same flags
+umbraco deploy queue clear --force [flags]
+```
+
+### queue remove
+
+```bash
+umbraco deploy queue remove <id-or-udi>
+```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--culture` | string | — | Culture the item was queued with (default: all cultures) |
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--type` | string | document | Entity type when passing a GUID: document, media, member, dictionary-item, form |
+
+**Safe pattern:**
+
+```bash
+# 1. Rehearse with the exact flags you will execute with
+umbraco deploy queue remove <id-or-udi> [flags] --dry-run
+
+# 2. Execute with the same flags
+umbraco deploy queue remove <id-or-udi> [flags]
+```
+
+### transfer
+
+```bash
+umbraco deploy transfer --node <id> [--node <id>…] [--descendants] | --queue
+```
+
+Moves content (documents, media, members, dictionary items, forms) to the
+environment Umbraco Deploy is configured to transfer to, keeping GUIDs
+identical — so pickers and start nodes that store a content id resolve on
+the target. Schema travels in .uda files; content does not, hence this
+command.
+
+Two sources: --node <id> (repeatable; --descendants carries the subtree)
+transfers those items directly (POST /deploy/instant); --queue transfers
+whatever 'deploy queue add' has accumulated (POST /deploy). Deploy resolves
+dependencies at transfer time (picked content, media, members and their
+schema) and includes them automatically; --ignore-dependencies turns that
+off where the environment allows it.
+
+--dry-run resolves the target and each item's name, counts descendants, and
+shows the exact request; nothing is sent. Dependencies are computed
+server-side during the transfer, so a dry-run cannot list them — the
+completed session reports what actually moved. Without --dry-run the
+command requires --force: it writes to another environment.
+
+By default the command waits for the transfer session, prints progress on
+stderr, and exits 0 on Completed, 5 on Failed/Cancelled/Mismatch (with the
+server's log), and 6 when --timeout elapses first (status unknown; the
+transfer keeps running). --wait=false returns the session id immediately.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--culture` | string | — | Only this culture's variant (default: all cultures) |
+| `--descendants` | bool | false | Also transfer everything under each --node |
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--force` | bool | false | Confirm the transfer when not using --dry-run |
+| `--ignore-dependencies` | bool | false | Do not include dependencies (only when the environment allows it) |
+| `--interval` | duration | 3s | Session poll interval while waiting |
+| `--node` | stringArray | [] | Content id to transfer (GUID; repeatable, or comma-separated) |
+| `--queue` | bool | false | Transfer the accumulated Deploy queue ('deploy queue list') instead of --node |
+| `--timeout` | duration | 30m0s | Give up waiting after this long (exit 6; the transfer keeps running) |
+| `--type` | string | document | Entity type of --node: document, media, member, dictionary-item, form |
+| `--wait` | bool | true | Wait for the transfer session to finish (--wait=false returns the session id immediately) |
+
+**Safe pattern:**
+
+```bash
+# 1. Rehearse with the exact flags you will execute with
+umbraco deploy transfer --node <id> [--node <id>…] [--descendants] | --queue [flags] --dry-run
+
+# 2. Execute with the same flags
+umbraco deploy transfer --node <id> [--node <id>…] [--descendants] | --queue --force [flags]
 ```
 
 ## Discovering Commands

@@ -14,10 +14,20 @@ import (
 func RegisterDeploy(root *cobra.Command, deps Dependencies) {
 	deploy := &cobra.Command{
 		Use:   "deploy",
-		Short: "Deployment observation and schema application (watch, status, apply)",
+		Short: "Deployment observation, schema application, and content transfer (watch, status, apply, transfer, queue)",
+		Long: `Deployment commands.
+
+Task → command:
+  Watch an environment while a deploy lands              deploy watch
+  Compare .uda schema artifacts with an environment      deploy status --uda-dir <dir>
+  Apply .uda schema ("Update schema")                    deploy apply --uda-dir <dir> --dry-run
+  Move content to the next environment, GUIDs intact     deploy transfer --node <id> [--descendants] --dry-run   (Umbraco Deploy required)
+  Queue content and transfer it together                 deploy queue add <id>; deploy queue list; deploy transfer --queue --force`,
 	}
 	deploy.AddCommand(deployWatch(deps))
 	deploy.AddCommand(deployStatus(deps))
 	deploy.AddCommand(deployApply(deps))
+	deploy.AddCommand(deployTransfer(deps))
+	deploy.AddCommand(deployQueue(deps))
 	root.AddCommand(deploy)
 }

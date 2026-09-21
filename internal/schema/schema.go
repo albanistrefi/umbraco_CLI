@@ -251,6 +251,23 @@ var endpointBindings = map[string]endpointBinding{
 	"deploy.watch":  {Manual: deployWatchSchema},
 	"deploy.status": {Manual: deployStatusSchema},
 	"deploy.apply":  {Manual: deployApplySchema},
+	"deploy.transfer": {Manual: &rawSchema{Method: "POST", Path: "/umbraco/deploy/management/api/v1/deploy/instant (or /deploy with --queue), then POST /status/status until terminal", QueryParams: map[string]ParamSchema{
+		"node":                {Type: "array", Description: "Content GUID to transfer; repeatable"},
+		"type":                {Type: "string", Description: "document (default), media, member, dictionary-item, form"},
+		"descendants":         {Type: "boolean", Description: "Include the subtree under each node"},
+		"culture":             {Type: "string", Description: "Only this culture (default all)"},
+		"queue":               {Type: "boolean", Description: "Transfer the accumulated Deploy queue instead of --node"},
+		"ignore-dependencies": {Type: "boolean", Description: "Skip dependency resolution where the environment allows it"},
+		"wait":                {Type: "boolean", Description: "Wait for the session (default true); exit 5 on failure, 6 on timeout"},
+		"timeout":             {Type: "string", Description: "Wait limit (Go duration, default 30m)"},
+		"dry-run":             {Type: "boolean", Description: "Resolve target, names and descendant counts; show the request; send nothing"},
+		"force":               {Type: "boolean", Description: "Required to transfer without --dry-run"},
+	}}},
+	"deploy.queue": {Manual: &rawSchema{Method: "GET|POST", Path: "/umbraco/deploy/management/api/v1/queue, /queue/add, /queue/remove, /queue/clear", QueryParams: map[string]ParamSchema{
+		"type":        {Type: "string", Description: "Entity type for add/remove (default document)"},
+		"descendants": {Type: "boolean", Description: "add: queue the subtree"},
+		"culture":     {Type: "string", Description: "Culture variant (default all)"},
+	}}},
 
 	// document
 	"document.get":                        {Method: "GET", Path: "/document/{id}", ExtraQuery: documentGetQuery},

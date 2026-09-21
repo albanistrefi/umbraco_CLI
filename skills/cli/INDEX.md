@@ -20,7 +20,7 @@ Per-resource CLI command skills.
 | [umbraco-auth](umbraco-auth/SKILL.md) | Persistent authentication helpers |
 | [umbraco-automate](umbraco-automate/SKILL.md) | Umbraco Automate operations (event-driven workflow automation) |
 | [umbraco-datatype](umbraco-datatype/SKILL.md) | Data type operations |
-| [umbraco-deploy](umbraco-deploy/SKILL.md) | Deployment observation and schema application (watch, status, apply) |
+| [umbraco-deploy](umbraco-deploy/SKILL.md) | Deployment observation, schema application, and content transfer (watch, status, apply, transfer, queue) |
 | [umbraco-dictionary](umbraco-dictionary/SKILL.md) | Dictionary item and translation key operations |
 | [umbraco-doctype](umbraco-doctype/SKILL.md) | Document type schema operations |
 | [umbraco-document](umbraco-document/SKILL.md) | Document and content management operations |
