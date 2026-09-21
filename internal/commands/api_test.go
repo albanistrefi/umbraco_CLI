@@ -267,3 +267,31 @@ func TestAPIDryRunPreviewIncludesImplicitHeaders(t *testing.T) {
 		t.Fatalf("a bodiless GET must not claim a Content-Type: %s", output)
 	}
 }
+
+func TestAPIPassthroughSendsOtherUmbracoMountsRelativeToHostRoot(t *testing.T) {
+	var observed []string
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		if req.URL.Path == "/umbraco/management/api/v1/security/back-office/token" {
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		}
+		observed = append(observed, req.URL.Path)
+		return endpointJSONResponse(http.StatusOK, `[]`), nil
+	})
+	// Field report: the Deploy API path was prefixed with the core API root
+	// and 404ed; another /umbraco/ mount must go out as-is without --raw-path.
+	if _, err := execute(buildRootWithCollections(t, deps), "api", "GET", "/umbraco/deploy/management/api/v1/configuration/client"); err != nil {
+		t.Fatalf("api failed: %v", err)
+	}
+	// A full core Management API path is still normalized, and a relative
+	// path still gets the prefix.
+	if _, err := execute(buildRootWithCollections(t, deps), "api", "GET", "/umbraco/management/api/v1/server/status"); err != nil {
+		t.Fatalf("api failed: %v", err)
+	}
+	if _, err := execute(buildRootWithCollections(t, deps), "api", "GET", "/server/status"); err != nil {
+		t.Fatalf("api failed: %v", err)
+	}
+	want := []string{"/umbraco/deploy/management/api/v1/configuration/client", "/umbraco/management/api/v1/server/status", "/umbraco/management/api/v1/server/status"}
+	if strings.Join(observed, ",") != strings.Join(want, ",") {
+		t.Fatalf("unexpected request paths: %v", observed)
+	}
+}

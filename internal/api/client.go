@@ -121,7 +121,7 @@ func (e *APIError) Error() string {
 	// hide the message behind the stack, so lead with the title.
 	if problem, ok := e.Payload.(map[string]any); ok {
 		if title, _ := problem["title"].(string); strings.TrimSpace(title) != "" {
-			encoded = append([]byte(strconv.Quote(sanitizeTerminalText(title))+" "), encoded...)
+			encoded = append([]byte(strconv.Quote(SanitizeTerminalText(title))+" "), encoded...)
 		}
 	}
 	encoded = truncatePayload(encoded, maxErrorPayloadBytes)
@@ -402,10 +402,10 @@ func (c *Client) relativeAPIPath(fullURL string) string {
 // maxHintDetailBytes caps server-provided detail text quoted into hints.
 const maxHintDetailBytes = 200
 
-// sanitizeTerminalText strips control characters (ANSI/OSC sequences, CR/LF,
+// SanitizeTerminalText strips control characters (ANSI/OSC sequences, CR/LF,
 // tabs) from untrusted server text before it is printed unescaped, so a
 // hostile ProblemDetails cannot manipulate the terminal.
-func sanitizeTerminalText(text string) string {
+func SanitizeTerminalText(text string) string {
 	var b strings.Builder
 	for _, r := range text {
 		// C0/C1 controls plus Unicode format characters (category Cf:
@@ -440,7 +440,7 @@ func buildAPIErrorHint(statusCode int, method string, path string, payload any) 
 			}
 			// Server-controlled text: keep it inside the same budget the
 			// payload gets so a pathological detail cannot flood the terminal.
-			detail = string(truncatePayload([]byte(sanitizeTerminalText(detail)), maxHintDetailBytes))
+			detail = string(truncatePayload([]byte(SanitizeTerminalText(detail)), maxHintDetailBytes))
 			return fmt.Sprintf("%s — the id does not exist in this environment; check the id and the active profile (umbraco auth list)", detail)
 		}
 	}

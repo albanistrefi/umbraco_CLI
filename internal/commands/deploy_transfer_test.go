@@ -268,3 +268,46 @@ func TestDeployTransferExplainsMissingDeployPackage(t *testing.T) {
 		t.Fatalf("expected a missing-package explanation, got %v", err)
 	}
 }
+
+func TestDeployTransferAcceptsDoubleEncodedClientConfiguration(t *testing.T) {
+	// Field report: against a Cloud environment the dry-run failed with
+	// "json: cannot unmarshal string into Go value of type map" while the
+	// same command worked locally and 'deploy queue list' worked on both.
+	// The client configuration came back as a JSON string holding the
+	// object; it must be unwrapped, and a genuinely wrong shape must name
+	// the request instead of leaking a bare decoder error.
+	config := `{"clientConfiguration":{"currentWorkspace":"Development","allowDeployIgnoreDependencies":false,"target":{"name":"Live","type":"live","deployUrl":"https://live.example.test/umbraco/backoffice/deploy/environment"}}}`
+	encoded, _ := json.Marshal(config)
+	serve := func(configBody string) Dependencies {
+		return endpointDeps(func(req *http.Request) (*http.Response, error) {
+			switch {
+			case req.URL.Path == "/umbraco/management/api/v1/security/back-office/token":
+				return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			case req.URL.Path == "/umbraco/deploy/management/api/v1/configuration/client":
+				return endpointJSONResponse(http.StatusOK, configBody), nil
+			case req.URL.Path == "/umbraco/deploy/management/api/v1/entity/name":
+				return endpointJSONResponse(http.StatusOK, `"Page"`), nil
+			case strings.HasPrefix(req.URL.Path, "/umbraco/management/api/v1/document/"):
+				return endpointJSONResponse(http.StatusOK, `{"id":"x"}`), nil
+			}
+			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		})
+	}
+	out, err := execute(buildRootWithCollections(t, serve(string(encoded))), "deploy", "transfer", "--node", "aaaaaaaa-0000-4000-8000-000000000001", "--dry-run")
+	if err != nil {
+		t.Fatalf("dry-run with a double-encoded configuration failed: %v", err)
+	}
+	if !strings.Contains(out, `"name": "Live"`) {
+		t.Fatalf("expected the unwrapped target, got %s", out)
+	}
+	_, err = execute(buildRootWithCollections(t, serve(`["not","an","object"]`)), "deploy", "transfer", "--node", "aaaaaaaa-0000-4000-8000-000000000001", "--dry-run")
+	if err == nil || !strings.Contains(err.Error(), "GET /configuration/client returned an array, not a JSON object") {
+		t.Fatalf("expected a shape error naming the request, got %v", err)
+	}
+	// Server text in the error is sanitized: terminal controls are stripped
+	// and the value is quoted.
+	_, err = execute(buildRootWithCollections(t, serve(`"\u001b[31mred\u001b[0m \u202ebidi"`)), "deploy", "transfer", "--node", "aaaaaaaa-0000-4000-8000-000000000001", "--dry-run")
+	if err == nil || strings.Contains(err.Error(), "\x1b") || strings.Contains(err.Error(), "\u202e") || !strings.Contains(err.Error(), `returned a string, not a JSON object: "`) {
+		t.Fatalf("expected a sanitized, quoted string error, got %q", err)
+	}
+}

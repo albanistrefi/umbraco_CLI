@@ -29,7 +29,7 @@ umbraco api <method> <path>
 Call a core Umbraco Management API endpoint that does not have a curated CLI command yet.
 
 Pass paths relative to /umbraco/management/api/v1, for example /item/document/ancestors?id=a&id=b.
-Full Management API paths are also accepted and normalized to the core API root.
+Full Management API paths are also accepted and normalized to the core API root. Any other absolute /umbraco/… path (Deploy, Forms, Automate management APIs, e.g. /umbraco/deploy/management/api/v1/configuration/client) is sent as-is, relative to the host root, without --raw-path.
 
 --raw-path sends the path relative to the host root instead (any endpoint on the same host, e.g. /umbraco/automate/management/api/v1/automations or /media/abc/logo.svg).
 --form field=value / field=@path sends multipart/form-data instead of JSON (e.g. POST /temporary-file with --form id=<uuid> --form file=@./logo.svg).
