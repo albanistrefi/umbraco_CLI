@@ -30,6 +30,7 @@ Task → command:
   Create a folder, put a type in a folder              doctype create-folder --name <n> [--parent <id>]; doctype create --json '{..."parent":{"id":…}}' or doctype move <id> --to <folder>
   Allowed blocks, block order, Block Grid groups       datatype block add|reorder|groups … (blocks belong to the Block List/Grid DATA TYPE, not the document type)
   Which data type does a property use?                 doctype get <id> --fields properties
+  Is a property actually filled in anywhere?           doctype property-is-used <id-or-alias> --alias <propertyAlias>
   Apply a whole schema from Deploy artifacts           deploy apply --uda-dir <dir> --dry-run
 ```
 
@@ -41,6 +42,7 @@ Task → command:
 | `doctype children <id>` | Get child document types (paginated; --skip/--take/--all) |
 | `doctype get <id-or-alias>` | Get document type by ID (or by exact alias) |
 | `doctype list` | List document types (paginated; --skip/--take/--all) |
+| `doctype property-is-used <id-or-alias>` | Check whether a property of this document type holds a value anywhere |
 | `doctype root` | Get root document types (paginated; --skip/--take/--all) |
 | `doctype search` | Search document types |
 
@@ -111,6 +113,18 @@ umbraco doctype list
 | `--summarize` | bool | false | Return only id/name/alias fields for item collections |
 | `--take` | int | -1 | Take count (passes through as ?take=N; combine with --skip to page) |
 | `--types-only` | bool | false | Return document types only, excluding folders |
+
+### property-is-used
+
+```bash
+umbraco doctype property-is-used <id-or-alias>
+```
+
+GET /property-type/is-used?contentTypeId=&propertyAlias=. The document type is addressed by GUID or by exact alias; --alias names the property on it. The response is a bare boolean: true means removing the property would discard stored values.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--alias` | string | — | Property alias on the document type (required) |
 
 ### root
 

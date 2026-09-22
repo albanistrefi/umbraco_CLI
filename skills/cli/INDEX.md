@@ -41,9 +41,11 @@ Per-resource CLI command skills.
 | [umbraco-relation](umbraco-relation/SKILL.md) | Relations and relation types |
 | [umbraco-searcher](umbraco-searcher/SKILL.md) | Examine searcher queries |
 | [umbraco-server](umbraco-server/SKILL.md) | Server information and diagnostics |
+| [umbraco-tag](umbraco-tag/SKILL.md) | Tag reads across tagged content |
 | [umbraco-template](umbraco-template/SKILL.md) | Template operations |
 | [umbraco-tree](umbraco-tree/SKILL.md) | Tree navigation helpers |
 | [umbraco-user](umbraco-user/SKILL.md) | Backoffice user management (accounts, state, groups, API credentials) |
+| [umbraco-user-data](umbraco-user-data/SKILL.md) | Key/value data stored for the authenticated user |
 | [umbraco-user-group](umbraco-user-group/SKILL.md) | Backoffice user group management (permission sets) |
 | [umbraco-webhook](umbraco-webhook/SKILL.md) | Webhook management (the Management API's outbound event notifications) |
 

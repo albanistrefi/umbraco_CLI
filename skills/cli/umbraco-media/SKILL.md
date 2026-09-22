@@ -33,6 +33,7 @@ Task → command:
   Undo a bad write                                             media restore-backup <backup.json>
   Change name/values without touching the file                 media update <id> --merge-json '{...}' --backup
   Where is it served from?                                     media urls <id>
+  What URL serves it at a given size?                          media resize-urls --ids <id> --width 200
 ```
 
 ## Read Commands
@@ -48,6 +49,7 @@ Task → command:
 | `media inspect <id>` | Summarize a media item: name, type, file src/URL, extension, size, dimensions |
 | `media referenced-descendants <id>` | List items that reference this media item or any of its descendants |
 | `media references <id>` | List items that reference this media item (paginated; --skip/--take/--all) |
+| `media resize-urls` | Get resized image URLs for media items (--ids, --width, --height, --mode) |
 | `media root` | Get root media items (paginated; --skip/--take/--all) |
 | `media search` | Search media items |
 | `media urls <id>` | Get media URLs |
@@ -189,6 +191,21 @@ Wraps GET /media/{id}/referenced-by. Same content-audit role as 'document refere
 | `--skip` | int | -1 | Skip count (passes through as ?skip=N; lets you walk past the server page size on large children/root collections) |
 | `--summarize` | bool | false | Return only id/name/alias fields for item collections |
 | `--take` | int | -1 | Take count (passes through as ?take=N; combine with --skip to page) |
+
+### resize-urls
+
+```bash
+umbraco media resize-urls
+```
+
+GET /imaging/resize/urls. Each ID is sent as a repeated ?id= value, so one call covers many media items. --width/--height default to the server's 200x200; --mode is one of Crop, Max, Stretch, Pad, BoxPad, Min.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--height` | int | 0 | Target height in pixels (server default 200 when omitted) |
+| `--ids` | string | — | Comma-separated media GUIDs to resize (required) |
+| `--mode` | string | — | Crop mode: Crop, Max, Stretch, Pad, BoxPad or Min |
+| `--width` | int | 0 | Target width in pixels (server default 200 when omitted) |
 
 ### root
 

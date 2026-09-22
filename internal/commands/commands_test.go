@@ -43,8 +43,10 @@ func buildRootWithCollections(t *testing.T, deps Dependencies) *cobra.Command {
 	RegisterMemberGroup(root, deps)
 	RegisterWebhook(root, deps)
 	RegisterLanguage(root, deps)
+	RegisterTag(root, deps)
 	RegisterUser(root, deps)
 	RegisterUserGroup(root, deps)
+	RegisterUserData(root, deps)
 	RegisterLogs(root, deps)
 	RegisterServer(root, deps)
 	RegisterHealth(root, deps)
@@ -106,8 +108,8 @@ func TestCommandCountsMatchMVP(t *testing.T) {
 		total += len(found.Commands())
 	}
 
-	if total != 252 {
-		t.Fatalf("expected 252 collection commands, got %d", total)
+	if total != 259 {
+		t.Fatalf("expected 259 collection commands, got %d", total)
 	}
 }
 
@@ -191,6 +193,8 @@ func TestRegisteredAPICommandsHaveSchemas(t *testing.T) {
 		"member-group":   {},
 		"webhook":        {},
 		"language":       {},
+		"tag":            {},
+		"user-data":      {},
 		"user":           {},
 		"user-group":     {},
 		"mediatype":      {},

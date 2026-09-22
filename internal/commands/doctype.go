@@ -25,6 +25,7 @@ Task → command:
   Create a folder, put a type in a folder              doctype create-folder --name <n> [--parent <id>]; doctype create --json '{..."parent":{"id":…}}' or doctype move <id> --to <folder>
   Allowed blocks, block order, Block Grid groups       datatype block add|reorder|groups … (blocks belong to the Block List/Grid DATA TYPE, not the document type)
   Which data type does a property use?                 doctype get <id> --fields properties
+  Is a property actually filled in anywhere?           doctype property-is-used <id-or-alias> --alias <propertyAlias>
   Apply a whole schema from Deploy artifacts           deploy apply --uda-dir <dir> --dry-run`,
 	}
 	doctype.AddCommand(doctypeGet(deps))
@@ -33,6 +34,7 @@ Task → command:
 	doctype.AddCommand(doctypeChildren(deps))
 	doctype.AddCommand(doctypeSearch(deps))
 	doctype.AddCommand(doctypeAllowedInLibrary(deps))
+	doctype.AddCommand(doctypePropertyIsUsed(deps))
 	doctype.AddCommand(doctypeCreate(deps))
 	doctype.AddCommand(doctypeUpdate(deps))
 	doctype.AddCommand(doctypeAddProperty(deps))
@@ -71,6 +73,36 @@ func doctypeGet(deps Dependencies) *cobra.Command {
 		},
 	}
 	addFieldsFlag(cmd, &fields)
+	return cmd
+}
+
+// doctypePropertyIsUsed answers the question that gates removing a property:
+// does any content, media or member actually store a value for it? The
+// endpoint takes the owning content type id, so a non-GUID argument is
+// resolved as an alias first, the same way doctype get does.
+func doctypePropertyIsUsed(deps Dependencies) *cobra.Command {
+	var alias string
+	cmd := &cobra.Command{
+		Use:   "property-is-used <id-or-alias>",
+		Short: "Check whether a property of this document type holds a value anywhere",
+		Long:  "GET /property-type/is-used?contentTypeId=&propertyAlias=. The document type is addressed by GUID or by exact alias; --alias names the property on it. The response is a bare boolean: true means removing the property would discard stored values.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := requireValue("--alias", alias); err != nil {
+				return err
+			}
+			id, err := resolveSchemaTypeID(cmd.Context(), deps.Client, "document-type", "doctype", "document type", args[0])
+			if err != nil {
+				return err
+			}
+			result, err := deps.Client.Get(cmd.Context(), "/property-type/is-used", api.RequestOptions{Params: map[string]any{"contentTypeId": id, "propertyAlias": alias}})
+			if err != nil {
+				return err
+			}
+			return printResult(cmd, deps, result)
+		},
+	}
+	cmd.Flags().StringVar(&alias, "alias", "", "Property alias on the document type (required)")
 	return cmd
 }
 
