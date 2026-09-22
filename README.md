@@ -3,7 +3,7 @@
 The agent-first command line for Umbraco — CMS, Forms, and Automate. Built on
 the Management APIs, it goes beyond them: exhaustive content search,
 cross-environment schema diff, log tailing, and safe, rehearsable bulk
-operations — 333 commands with a scriptable exit-code contract.
+operations — 385 commands with a scriptable exit-code contract.
 
 Core behavior:
 - `--json` and `--params` are primary machine inputs
@@ -354,14 +354,14 @@ testing) are not part of this repo — get those from
 - `element` (21) — the Umbraco 18.1+ element library: CRUD with atomic `create --publish`/`update --save-and-publish`, publish lifecycle, `version` history/rollback, references, and the `bin` recycle-bin subgroup
 - `blueprint` (11) — document blueprints: the reusable content presets an editor picks when creating a document; tree browsing, CRUD, folders, `create-from-document`, and `scaffold` behind `document create --from-blueprint`
 - `media` (24) — incl. `inspect`, `download`, `upload`, `replace-file`/`restore-backup`, `references`, `restore` and the `bin` recycle-bin subgroup
-- `doctype` (17) / `mediatype` (10) / `membertype` (10) — the full schema type family, all with `--recursive --types-only` folder handling and `create-folder`/`delete-folder`
-- `datatype` (16) — incl. `block` subgroup and `create-folder`/`delete-folder`
+- `doctype` (19) / `mediatype` (12) / `membertype` (12) — the full schema type family, all with `--recursive --types-only` folder handling and `create-folder`/`delete-folder`
+- `datatype` (17) — incl. `block` subgroup and `create-folder`/`delete-folder`
 - `dictionary` (6)
 - `template` (6)
 - `partial-view` (11) / `script` (9) / `stylesheet` (9) — the file-based assets, keyed by path instead of by GUID: tree `list`/`children`, `get` (with `--out <file>` to save the content verbatim), `create`/`update` (`--content` or `--content-file`), `rename`, force-gated `delete`, plus `create-folder`/`delete-folder`; `partial-view` adds the built-in `snippets`/`snippet <id>` catalogue
 - `static-file` (3, read-only) — `list`/`children`/`get` over the static file tree (App_Plugins, wwwroot); the Management API exposes no write side
 - `member` (8) / `member-group` (2)
-- `user` (13) / `user-group` (7)
+- `user` (14) / `user-group` (7)
 - `webhook` (7)
 - `language` (7) — incl. `cultures` for the ISO codes new languages can use
 - `tag` (1) — `tag list` across tagged content, filterable by `--query`/`--group`/`--culture`
@@ -383,7 +383,7 @@ testing) are not part of this repo — get those from
 - `schema` — runtime schema introspection (`umbraco schema <command>`) plus `schema diff <envA> <envB>` cross-environment comparison across doctype, datatype, mediatype, membertype, template, language, and dictionary
 - `automate` (8 subgroups) — requires [Umbraco Automate](https://docs.umbraco.com/umbraco-automate) on the target instance; see below
 
-Total: **333 runnable commands** counting every nested subcommand. Group counts above are direct subcommands; nested subgroups like `document version`, `document bin`, and the `automate` subgroups add the rest.
+Total: **385 runnable commands** counting every nested subcommand. Group counts above are direct subcommands; nested subgroups like `document version`, `document bin`, and the `automate` subgroups add the rest.
 
 ## Umbraco Automate
 
