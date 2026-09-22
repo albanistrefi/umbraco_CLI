@@ -176,3 +176,30 @@ func TestUserDataUpdateDryRunPrintsThePlannedRequest(t *testing.T) {
 		t.Fatalf("unexpected dry-run payload: %+v", payload)
 	}
 }
+
+func TestUserDataDeleteRequiresForceAndHitsTheKeyRoute(t *testing.T) {
+	var observed string
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		if req.URL.Path == "/umbraco/management/api/v1/security/back-office/token" {
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		}
+		observed = req.Method + " " + req.URL.Path
+		return endpointJSONResponse(http.StatusOK, `null`), nil
+	})
+
+	if _, err := execute(buildRootWithCollections(t, deps), "user-data", "delete", "key-1"); err == nil {
+		t.Fatal("expected user-data delete without --force to fail")
+	}
+	if observed != "" {
+		t.Fatalf("expected no request before the force gate, got %q", observed)
+	}
+
+	if _, err := execute(buildRootWithCollections(t, deps), "user-data", "delete", "key-1", "--force"); err != nil {
+		t.Fatalf("user-data delete --force failed: %v", err)
+	}
+	// The delete is keyed on the entry key in the path, unlike the update,
+	// which carries the key in the body of a collection PUT.
+	if observed != "DELETE /umbraco/management/api/v1/user-data/key-1" {
+		t.Fatalf("unexpected request %q", observed)
+	}
+}
