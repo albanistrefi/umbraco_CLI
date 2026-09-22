@@ -102,6 +102,36 @@ func TestSearcherQueryProjectsFields(t *testing.T) {
 	}
 }
 
+func TestSearcherQueryParamsTermWinsOverFlag(t *testing.T) {
+	var requestedURI string
+	deps := searcherDeps(func(req *http.Request) (*http.Response, error) {
+		requestedURI = req.URL.RequestURI()
+		return endpointJSONResponse(http.StatusOK, `{"items":[],"total":0}`), nil
+	})
+
+	if _, err := execute(buildSearcherRoot(deps), "searcher", "query", "ExternalSearcher", "--params", `{"term":"raw"}`, "--term", "x"); err != nil {
+		t.Fatalf("searcher query with --params failed: %v", err)
+	}
+	if !strings.Contains(requestedURI, "term=raw") || strings.Contains(requestedURI, "term=x") {
+		t.Fatalf("expected --params term to win over --term, got %q", requestedURI)
+	}
+}
+
+func TestSearcherQueryAcceptsTermFromParamsAlone(t *testing.T) {
+	var requestedURI string
+	deps := searcherDeps(func(req *http.Request) (*http.Response, error) {
+		requestedURI = req.URL.RequestURI()
+		return endpointJSONResponse(http.StatusOK, `{"items":[],"total":0}`), nil
+	})
+
+	if _, err := execute(buildSearcherRoot(deps), "searcher", "query", "ExternalSearcher", "--params", `{"term":"raw"}`); err != nil {
+		t.Fatalf("searcher query with only a params term failed: %v", err)
+	}
+	if !strings.Contains(requestedURI, "term=raw") {
+		t.Fatalf("expected params term to be sent, got %q", requestedURI)
+	}
+}
+
 func TestSearcherQueryRequiresTerm(t *testing.T) {
 	deps := searcherDeps(func(req *http.Request) (*http.Response, error) {
 		t.Fatalf("no HTTP request expected without a term")
