@@ -418,7 +418,7 @@ umbraco document bulk-update
 | `--id-file` | string | — | Path to a file containing document IDs, one per line |
 | `--ids` | string | — | Comma-separated document IDs (same as repeating --id) |
 | `--json` | string | — | Full JSON payload applied to every document |
-| `--merge-json` | string | — | Partial JSON payload merged into each current document before update |
+| `--merge-json` | string | — | Partial JSON payload merged into each current document before update: values merge by alias+culture+segment and variants by culture+segment, so naming one culture leaves the others untouched. --json replaces each payload wholesale instead |
 
 **Safe pattern:**
 
@@ -815,7 +815,7 @@ With --ids or --from-file the same change is applied to every listed document in
 | `--from-file` | string | — | Path to a file with document GUIDs, one per line (combines with --ids) |
 | `--ids` | string | — | Comma-separated document GUIDs to update instead of one positional id (runs sequentially; one result row per document) |
 | `--json` | string | — | Full replacement payload as JSON (fields not mentioned are reset by the server) |
-| `--merge-json` | string | — | Partial JSON deep-merged into the current document before update (fields not mentioned are preserved) |
+| `--merge-json` | string | — | Partial JSON deep-merged into the current document before update (fields not mentioned are preserved): values merge by alias+culture+segment and variants by culture+segment, so naming one culture leaves the others untouched. --json replaces the payload wholesale instead |
 | `--property` | string | — | Update a single property alias without constructing the full payload |
 | `--save-and-publish` | bool | false | Publish the document after a successful update |
 | `--value` | string | — | String value used with --property |
