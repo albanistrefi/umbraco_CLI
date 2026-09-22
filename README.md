@@ -3,7 +3,7 @@
 The agent-first command line for Umbraco — CMS, Forms, and Automate. Built on
 the Management APIs, it goes beyond them: exhaustive content search,
 cross-environment schema diff, log tailing, and safe, rehearsable bulk
-operations — 277 commands with a scriptable exit-code contract.
+operations — 283 commands with a scriptable exit-code contract.
 
 Core behavior:
 - `--json` and `--params` are primary machine inputs
@@ -369,6 +369,8 @@ testing) are not part of this repo — get those from
 - `deploy` (5) — effect-based deployment observation, schema application, and Umbraco Deploy content transfer (`transfer --node <id> [--descendants] --dry-run`, `queue list|add|remove|clear`; keeps GUIDs identical across environments, waits on the session with exit 5/6 on failure/timeout): `watch` polls an environment for state deltas only a deploy can cause (app recycle via ProcessId, 503→401→200 recovery, index rebuilds) and emits phase transitions; `status` compares local Deploy `.uda` artifacts against the environment per entity as a pre-flight drift check; `apply` is its write side — Deploy's "Update schema" from the CLI: creates missing entities with their artifact GUIDs and full-replaces drifted ones in dependency order, backs up every updated entity, re-verifies each write, and refuses to run without `--dry-run` or `--force`
 - `published-cache` (3) — status / rebuild / reload, for stale-content incident response
 - `indexer` (3) — Examine index health and rebuilds, with `--wait` polling
+- `searcher` (2) — the read side of Examine: `list` the searchers, `query <searcher-name> --term <text>` for the raw hits behind a missing search result
+- `relation` (2) — `list --type <id>` for the relations of a relation type, plus the `type` subgroup (`list`/`get`/`items`) over the relation-type catalogue
 - `redirect` (6) — the redirect URL tracker: list/get/delete, status, enable/disable
 - `tree` (1)
 - `api` (1)
@@ -376,7 +378,7 @@ testing) are not part of this repo — get those from
 - `schema` — runtime schema introspection (`umbraco schema <command>`) plus `schema diff <envA> <envB>` cross-environment comparison across doctype, datatype, mediatype, membertype, template, language, and dictionary
 - `automate` (8 subgroups) — requires [Umbraco Automate](https://docs.umbraco.com/umbraco-automate) on the target instance; see below
 
-Total: **277 runnable commands** counting every nested subcommand. Group counts above are direct subcommands; nested subgroups like `document version`, `document bin`, and the `automate` subgroups add the rest.
+Total: **283 runnable commands** counting every nested subcommand. Group counts above are direct subcommands; nested subgroups like `document version`, `document bin`, and the `automate` subgroups add the rest.
 
 ## Umbraco Automate
 
