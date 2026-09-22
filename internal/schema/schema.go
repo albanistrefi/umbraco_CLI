@@ -78,6 +78,12 @@ var (
 		"with-urls": {Type: "boolean", Description: "Fetch GET /document/urls for the document and include the returned urlInfos as urls"},
 	}
 	withFields = map[string]ParamSchema{"fields": fieldsQuery}
+	// filePathGetQuery documents the CLI-side --out on the file asset get
+	// commands, which writes the returned content to disk verbatim.
+	filePathGetQuery = map[string]ParamSchema{
+		"fields": fieldsQuery,
+		"out":    {Type: "string", Description: "Write the returned content verbatim to this local file instead of printing it"},
+	}
 )
 
 var documentGrepSchema = &rawSchema{
@@ -391,6 +397,43 @@ var endpointBindings = map[string]endpointBinding{
 	"template.create": {Method: "POST", Path: "/template"},
 	"template.update": {Method: "PUT", Path: "/template/{id}"},
 	"template.delete": {Method: "DELETE", Path: "/template/{id}"},
+
+	// file-based assets keyed by path (partial-view / script / stylesheet
+	// read+write, static-file read only). {path} is the virtual file-system
+	// path, not a GUID: GET/PUT/DELETE take it with its separators intact,
+	// while the rename route needs it as one doubly-escaped segment.
+	"partial-view.list":          {Method: "GET", Path: "/tree/partial-view/root"},
+	"partial-view.children":      {Method: "GET", Path: "/tree/partial-view/children"},
+	"partial-view.get":           {Method: "GET", Path: "/partial-view/{path}", ExtraQuery: filePathGetQuery},
+	"partial-view.create":        {Method: "POST", Path: "/partial-view"},
+	"partial-view.update":        {Method: "PUT", Path: "/partial-view/{path}"},
+	"partial-view.rename":        {Method: "PUT", Path: "/partial-view/{path}/rename"},
+	"partial-view.delete":        {Method: "DELETE", Path: "/partial-view/{path}"},
+	"partial-view.create-folder": {Method: "POST", Path: "/partial-view/folder"},
+	"partial-view.delete-folder": {Method: "DELETE", Path: "/partial-view/folder/{path}"},
+	"script.list":                {Method: "GET", Path: "/tree/script/root"},
+	"script.children":            {Method: "GET", Path: "/tree/script/children"},
+	"script.get":                 {Method: "GET", Path: "/script/{path}", ExtraQuery: filePathGetQuery},
+	"script.create":              {Method: "POST", Path: "/script"},
+	"script.update":              {Method: "PUT", Path: "/script/{path}"},
+	"script.rename":              {Method: "PUT", Path: "/script/{path}/rename"},
+	"script.delete":              {Method: "DELETE", Path: "/script/{path}"},
+	"script.create-folder":       {Method: "POST", Path: "/script/folder"},
+	"script.delete-folder":       {Method: "DELETE", Path: "/script/folder/{path}"},
+	"stylesheet.list":            {Method: "GET", Path: "/tree/stylesheet/root"},
+	"stylesheet.children":        {Method: "GET", Path: "/tree/stylesheet/children"},
+	"stylesheet.get":             {Method: "GET", Path: "/stylesheet/{path}", ExtraQuery: filePathGetQuery},
+	"stylesheet.create":          {Method: "POST", Path: "/stylesheet"},
+	"stylesheet.update":          {Method: "PUT", Path: "/stylesheet/{path}"},
+	"stylesheet.rename":          {Method: "PUT", Path: "/stylesheet/{path}/rename"},
+	"stylesheet.delete":          {Method: "DELETE", Path: "/stylesheet/{path}"},
+	"stylesheet.create-folder":   {Method: "POST", Path: "/stylesheet/folder"},
+	"stylesheet.delete-folder":   {Method: "DELETE", Path: "/stylesheet/folder/{path}"},
+	"partial-view.snippets":      {Method: "GET", Path: "/partial-view/snippet"},
+	"partial-view.snippet":       {Method: "GET", Path: "/partial-view/snippet/{id}", ExtraQuery: withFields},
+	"static-file.list":           {Method: "GET", Path: "/tree/static-file/root"},
+	"static-file.children":       {Method: "GET", Path: "/tree/static-file/children"},
+	"static-file.get":            {Method: "GET", Path: "/item/static-file", ExtraQuery: withFields},
 
 	// logs
 	"logs.list":        {Method: "GET", Path: "/log-viewer/log"},

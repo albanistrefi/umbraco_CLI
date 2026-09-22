@@ -38,6 +38,10 @@ func buildRootWithCollections(t *testing.T, deps Dependencies) *cobra.Command {
 	RegisterDoctype(root, deps)
 	RegisterDatatype(root, deps)
 	RegisterTemplate(root, deps)
+	RegisterPartialView(root, deps)
+	RegisterScript(root, deps)
+	RegisterStylesheet(root, deps)
+	RegisterStaticFile(root, deps)
 	RegisterForms(root, deps)
 	RegisterModelsBuilder(root, deps)
 	RegisterMember(root, deps)
@@ -109,8 +113,8 @@ func TestCommandCountsMatchMVP(t *testing.T) {
 		total += len(found.Commands())
 	}
 
-	if total != 270 {
-		t.Fatalf("expected 270 collection commands, got %d", total)
+	if total != 302 {
+		t.Fatalf("expected 302 collection commands, got %d", total)
 	}
 }
 
@@ -187,6 +191,10 @@ func TestRegisteredAPICommandsHaveSchemas(t *testing.T) {
 		"doctype":        {},
 		"datatype":       {},
 		"template":       {},
+		"partial-view":   {},
+		"script":         {},
+		"stylesheet":     {},
+		"static-file":    {},
 		"logs":           {},
 		"server":         {},
 		"health":         {},
