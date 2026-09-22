@@ -142,11 +142,20 @@ func mediaResizeURLs(deps Dependencies) *cobra.Command {
 				return fmt.Errorf("media resize-urls requires --ids <comma-separated guids>")
 			}
 			params := map[string]any{"id": stringsToAny(ids)}
-			if width > 0 {
-				params["width"] = width
-			}
-			if height > 0 {
-				params["height"] = height
+			// An unset dimension is left to the server default; an
+			// explicitly passed one must be usable, so --width=0 is an
+			// error rather than a silently ignored value.
+			for _, dimension := range []struct {
+				name string
+				size int
+			}{{"width", width}, {"height", height}} {
+				if !cmd.Flags().Changed(dimension.name) {
+					continue
+				}
+				if dimension.size <= 0 {
+					return fmt.Errorf("media resize-urls --%s must be a positive pixel count, got %d; omit the flag to use the server default", dimension.name, dimension.size)
+				}
+				params[dimension.name] = dimension.size
 			}
 			if strings.TrimSpace(mode) != "" {
 				params["mode"] = mode

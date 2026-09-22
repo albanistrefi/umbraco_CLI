@@ -67,3 +67,28 @@ func TestMediaResizeURLsOmitsUnsetDimensionsAndRequiresIDs(t *testing.T) {
 		t.Fatalf("expected no dimension parameters when the flags are unset, got %q", observed)
 	}
 }
+
+func TestMediaResizeURLsRejectsNonPositiveDimensions(t *testing.T) {
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		if req.URL.Path == "/umbraco/management/api/v1/security/back-office/token" {
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		}
+		t.Fatalf("a rejected dimension must not reach %s %s", req.Method, req.URL.Path)
+		return nil, nil
+	})
+
+	// An explicit 0 or negative size is a mistake, not a request for the
+	// server default, so it must not be silently dropped.
+	for _, args := range [][]string{
+		{"media", "resize-urls", "--ids", "m-1", "--width", "0"},
+		{"media", "resize-urls", "--ids", "m-1", "--height", "-10"},
+	} {
+		output, err := execute(buildRootWithCollections(t, deps), args...)
+		if err == nil {
+			t.Fatalf("expected %v to be rejected, got output %q", args, output)
+		}
+		if !strings.Contains(err.Error(), "positive pixel count") {
+			t.Fatalf("unexpected error for %v: %v", args, err)
+		}
+	}
+}

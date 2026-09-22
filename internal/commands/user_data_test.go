@@ -109,6 +109,52 @@ func TestUserDataUpdatePutsKeyInTheBody(t *testing.T) {
 	}
 }
 
+func TestUserDataUpdateJSONTakesTheKeyFromThePositionalArgument(t *testing.T) {
+	var body map[string]any
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch {
+		case req.URL.Path == "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case req.Method == http.MethodPut:
+			raw, _ := io.ReadAll(req.Body)
+			if err := json.Unmarshal(raw, &body); err != nil {
+				t.Fatalf("failed to decode update body: %v", err)
+			}
+			return endpointJSONResponse(http.StatusOK, `null`), nil
+		default:
+			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	// A --json body without a key inherits the positional one.
+	if _, err := execute(buildRootWithCollections(t, deps), "user-data", "update", "key-1", "--json", `{"group":"g1","identifier":"i1","value":"v2"}`); err != nil {
+		t.Fatalf("user-data update --json failed: %v", err)
+	}
+	if body["key"] != "key-1" {
+		t.Fatalf("expected the positional key in the body, got %+v", body)
+	}
+}
+
+func TestUserDataUpdateRefusesAJSONKeyNamingAnotherEntry(t *testing.T) {
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		if req.URL.Path == "/umbraco/management/api/v1/security/back-office/token" {
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		}
+		// Updating the entry the argument does not name would be a silent
+		// write to the wrong row.
+		t.Fatalf("a mismatched key must not reach %s %s", req.Method, req.URL.Path)
+		return nil, nil
+	})
+
+	_, err := execute(buildRootWithCollections(t, deps), "user-data", "update", "key-a", "--json", `{"key":"key-b","group":"g1","identifier":"i1","value":"v2"}`)
+	if err == nil {
+		t.Fatalf("expected a mismatched --json key to be rejected")
+	}
+	if !strings.Contains(err.Error(), "key-b") || !strings.Contains(err.Error(), "key-a") {
+		t.Fatalf("expected the error to name both keys, got %v", err)
+	}
+}
+
 func TestUserDataUpdateDryRunPrintsThePlannedRequest(t *testing.T) {
 	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
 		if req.URL.Path == "/umbraco/management/api/v1/security/back-office/token" {

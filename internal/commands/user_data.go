@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -143,24 +144,27 @@ func userDataUpdate(deps Dependencies) *cobra.Command {
 
 // userDataBody resolves the --json / convenience-flag pair shared by create
 // and update. requireKey marks the update contract, where the key is a
-// required body field taken from the positional argument.
+// required body field taken from the positional argument. On update the
+// positional key is authoritative: a --json body naming a different entry
+// is refused rather than silently rewriting that other entry.
 func userDataBody(jsonPayload string, key string, group string, identifier string, value string, requireKey bool) (map[string]any, error) {
+	if requireKey {
+		if err := requireValue("<key>", key); err != nil {
+			return nil, err
+		}
+	}
 	if strings.TrimSpace(jsonPayload) != "" {
 		body, err := parsePayload(jsonPayload)
 		if err != nil {
 			return nil, err
 		}
 		if requireKey {
-			if _, ok := body["key"]; !ok {
-				body["key"] = key
+			if bodyKey, ok := body["key"].(string); ok && strings.TrimSpace(bodyKey) != "" && !strings.EqualFold(strings.TrimSpace(bodyKey), strings.TrimSpace(key)) {
+				return nil, fmt.Errorf("--json key %s does not match the positional key %s; the argument names the entry to update, so drop the key from --json or correct it", bodyKey, key)
 			}
+			body["key"] = key
 		}
 		return body, nil
-	}
-	if requireKey {
-		if err := requireValue("<key>", key); err != nil {
-			return nil, err
-		}
 	}
 	// Ordered, so a caller missing several flags always hears about the
 	// first one in flag order rather than a random one.
