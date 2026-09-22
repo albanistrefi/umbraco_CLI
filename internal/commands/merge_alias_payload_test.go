@@ -84,3 +84,88 @@ func TestMergeAliasObjectArraysInvariantPatchDoesNotMatchVariantCurrent(t *testi
 		t.Fatalf("invariant and variant entries with the same alias must coexist after merge, got %d: %+v", len(merged), merged)
 	}
 }
+
+// Regression: variant objects carry no alias, so the merge used to treat
+// variants[] as unidentifiable and replace the whole array — renaming one
+// culture dropped every other culture from the payload.
+func TestMergeAliasObjectArraysKeysAliaslessVariantsByCultureAndSegment(t *testing.T) {
+	current := []any{
+		map[string]any{"culture": "en-US", "segment": nil, "name": "English name", "state": "Draft"},
+		map[string]any{"culture": "da-DK", "segment": nil, "name": "Danish name", "state": "Draft"},
+	}
+	patch := []any{
+		map[string]any{"culture": "da-DK", "name": "New Danish name"},
+	}
+
+	merged := mergeAliasObjectArrays(current, patch)
+	if len(merged) != 2 {
+		t.Fatalf("expected both variants to survive, got %d: %+v", len(merged), merged)
+	}
+
+	byCulture := map[string]map[string]any{}
+	for _, entry := range merged {
+		object, ok := entry.(map[string]any)
+		if !ok {
+			t.Fatalf("expected object entries, got %+v", entry)
+		}
+		culture, _ := object["culture"].(string)
+		byCulture[culture] = object
+	}
+	if byCulture["da-DK"]["name"] != "New Danish name" {
+		t.Fatalf("expected the patched culture to be renamed, got %+v", byCulture["da-DK"])
+	}
+	if byCulture["en-US"]["name"] != "English name" {
+		t.Fatalf("expected the untouched culture to keep its name, got %+v", byCulture["en-US"])
+	}
+	// The patch names one field of one variant; everything else on that
+	// variant is preserved, exactly as it is for an alias-keyed entry.
+	if byCulture["da-DK"]["state"] != "Draft" {
+		t.Fatalf("expected unmentioned fields of the patched variant to survive, got %+v", byCulture["da-DK"])
+	}
+}
+
+// Segments are the other half of the variant key: two entries for the same
+// culture but different segments are distinct rows.
+func TestMergeAliasObjectArraysKeysAliaslessEntriesBySegment(t *testing.T) {
+	current := []any{
+		map[string]any{"culture": "en-US", "segment": nil, "name": "Default"},
+		map[string]any{"culture": "en-US", "segment": "mobile", "name": "Mobile"},
+	}
+	patch := []any{
+		map[string]any{"culture": "en-US", "segment": "mobile", "name": "Mobile renamed"},
+	}
+
+	merged := mergeAliasObjectArrays(current, patch)
+	if len(merged) != 2 {
+		t.Fatalf("expected both segments to survive, got %d: %+v", len(merged), merged)
+	}
+	first, _ := merged[0].(map[string]any)
+	second, _ := merged[1].(map[string]any)
+	if first["name"] != "Default" || second["name"] != "Mobile renamed" {
+		t.Fatalf("expected only the mobile segment to change, got %+v", merged)
+	}
+}
+
+// An alias-less patch entry that names neither culture nor segment is not
+// identifiable, so the array keeps the wholesale-replacement contract it
+// had before. This is what holds a doctype's containers[] — keyed by an id
+// the caller does not restate — to its existing behaviour.
+func TestMergeAliasObjectArraysReplacesUnidentifiableArrays(t *testing.T) {
+	current := map[string]any{
+		"containers": []any{
+			map[string]any{"id": "c1", "name": "Content", "type": "Tab", "sortOrder": float64(0)},
+			map[string]any{"id": "c2", "name": "Settings", "type": "Tab", "sortOrder": float64(1)},
+		},
+	}
+	patch := map[string]any{
+		"containers": []any{
+			map[string]any{"id": "c1", "name": "Content", "type": "Tab", "sortOrder": float64(0)},
+		},
+	}
+
+	merged := mergeAliasPayload(current, patch)
+	containers, _ := merged["containers"].([]any)
+	if len(containers) != 1 {
+		t.Fatalf("expected containers to be replaced wholesale, got %d: %+v", len(containers), containers)
+	}
+}

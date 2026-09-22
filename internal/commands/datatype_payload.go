@@ -27,8 +27,9 @@ func fetchDatatypeObject(ctx context.Context, client *api.Client, id string) (ma
 }
 
 // mergeAliasPayload deep-merges a partial patch into a current Management API payload, preserving
-// fields the patch does not mention and merging alias-keyed arrays (`properties`, `containers`,
-// `values`, …) entry-wise. Used by the merge-json flows for documents, doctypes, and datatypes.
+// fields the patch does not mention and merging identifiable object arrays (`properties`,
+// `values`, `variants`, …) entry-wise — see mergeIdentityKey for what counts as identifiable.
+// Used by the merge-json flows for documents, doctypes, and datatypes.
 func mergeAliasPayload(current map[string]any, patch map[string]any) map[string]any {
 	merged := cloneObject(current)
 	for key, value := range patch {
@@ -52,7 +53,7 @@ func mergeAliasValue(current any, patch any) any {
 
 	currentArray, currentIsArray := current.([]any)
 	patchArray, patchIsArray := patch.([]any)
-	if currentIsArray && patchIsArray && isAliasObjectArray(currentArray) && isAliasObjectArray(patchArray) {
+	if currentIsArray && patchIsArray && isMergeableObjectArray(currentArray) && isMergeableObjectArray(patchArray) {
 		return mergeAliasObjectArrays(currentArray, patchArray)
 	}
 
@@ -63,7 +64,7 @@ func mergeAliasObjectArrays(current []any, patch []any) []any {
 	merged := make([]any, 0, len(current)+len(patch))
 	patchByKey := make(map[string]map[string]any, len(patch))
 	for _, item := range patch {
-		key, itemMap, ok := aliasMergeKey(item)
+		key, itemMap, ok := mergeIdentityKey(item)
 		if !ok {
 			continue
 		}
@@ -72,7 +73,7 @@ func mergeAliasObjectArrays(current []any, patch []any) []any {
 
 	seen := make(map[string]struct{}, len(patchByKey))
 	for _, item := range current {
-		key, itemMap, ok := aliasMergeKey(item)
+		key, itemMap, ok := mergeIdentityKey(item)
 		if !ok {
 			merged = append(merged, cloneAliasValue(item))
 			continue
@@ -89,7 +90,7 @@ func mergeAliasObjectArrays(current []any, patch []any) []any {
 	}
 
 	for _, item := range patch {
-		key, itemMap, ok := aliasMergeKey(item)
+		key, itemMap, ok := mergeIdentityKey(item)
 		if !ok {
 			merged = append(merged, cloneAliasValue(item))
 			continue
@@ -103,30 +104,50 @@ func mergeAliasObjectArrays(current []any, patch []any) []any {
 	return merged
 }
 
-// aliasMergeKey returns the compound key used to match patch entries against
-// current entries inside an alias-keyed object array (e.g. a document's
-// values[]).
+// mergeIdentityKey returns the compound key used to match patch entries
+// against current entries inside an object array, and reports whether the
+// entry is identifiable at all.
 //
-// For Umbraco "values entry" shapes the legitimate identity is the triple
-// (alias, culture, segment) — the same alias appears once per culture on a
-// variant property, so keying on alias alone collapses culture-specific
-// entries into one another. For shapes that don't carry culture/segment
-// (e.g. doctype properties, where alias alone is the identity), both fields
-// default to the empty string and the behaviour is identical to the old
-// alias-only key.
-func aliasMergeKey(item any) (string, map[string]any, bool) {
-	alias, itemMap, ok := aliasObject(item)
+// Two identities are recognized, both taken from how the Management API
+// keys the arrays it repeats:
+//
+//   - alias + culture + segment — a document's values[], a doctype's
+//     properties[]. The same alias appears once per culture on a variant
+//     property, so keying on alias alone collapses culture-specific entries
+//     into one another. Shapes that carry no culture/segment (doctype
+//     properties, where the alias alone is the identity) leave both parts
+//     empty, which is exactly the old alias-only key.
+//   - culture + segment alone — a document's variants[], which carry no
+//     alias. Without this an array of variants has nothing to match on, so
+//     a patch naming one culture replaced every variant and silently
+//     dropped the cultures it did not mention.
+//
+// An entry with no alias and neither key present is not identifiable, so
+// its array keeps the wholesale-replacement behaviour. That is what holds
+// a doctype's containers[] — keyed by an id the caller does not restate —
+// to its existing contract, and it also means a variants patch that names
+// no culture still replaces, as it did before.
+func mergeIdentityKey(item any) (string, map[string]any, bool) {
+	itemMap, ok := item.(map[string]any)
 	if !ok {
 		return "", nil, false
 	}
+	alias, _ := itemMap["alias"].(string)
+	_, hasCulture := itemMap["culture"]
+	_, hasSegment := itemMap["segment"]
+	if alias == "" && !hasCulture && !hasSegment {
+		return "", nil, false
+	}
+	// A null culture or segment is the invariant case and keys as the
+	// empty string, the same as an absent one.
 	culture, _ := itemMap["culture"].(string)
 	segment, _ := itemMap["segment"].(string)
 	return alias + "\x00" + culture + "\x00" + segment, itemMap, true
 }
 
-func isAliasObjectArray(items []any) bool {
+func isMergeableObjectArray(items []any) bool {
 	for _, item := range items {
-		if _, _, ok := aliasObject(item); !ok {
+		if _, _, ok := mergeIdentityKey(item); !ok {
 			return false
 		}
 	}
