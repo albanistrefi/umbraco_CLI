@@ -256,6 +256,10 @@ var endpointBindings = map[string]endpointBinding{
 	// blueprint (document blueprints: reusable content presets)
 	"blueprint.list":                 {Method: "GET", Path: "/tree/document-blueprint/root"},
 	"blueprint.children":             {Method: "GET", Path: "/tree/document-blueprint/children"},
+	"blueprint.ancestors":            {Method: "GET", Path: "/tree/document-blueprint/ancestors", ExtraQuery: withFields},
+	"blueprint.siblings":             {Method: "GET", Path: "/tree/document-blueprint/siblings", ExtraQuery: withFields},
+	"blueprint.items":                {Method: "GET", Path: "/item/document-blueprint", ExtraQuery: withFields},
+	"blueprint.audit-log":            {Method: "GET", Path: "/document-blueprint/{id}/audit-log"},
 	"blueprint.get":                  {Method: "GET", Path: "/document-blueprint/{id}", ExtraQuery: withFields},
 	"blueprint.scaffold":             {Method: "GET", Path: "/document-blueprint/{id}/scaffold", ExtraQuery: withFields, Response: &ObjectSchema{Type: "object", Description: "The document payload skeleton the blueprint seeds; 'document create --from-blueprint <id>' consumes it"}},
 	"blueprint.create":               {Method: "POST", Path: "/document-blueprint"},
@@ -565,6 +569,7 @@ var endpointBindings = map[string]endpointBinding{
 	"user-data.get":    {Method: "GET", Path: "/user-data/{id}"},
 	"user-data.create": {Method: "POST", Path: "/user-data"},
 	"user-data.update": {Method: "PUT", Path: "/user-data"},
+	"user-data.delete": {Method: "DELETE", Path: "/user-data/{id}"},
 
 	// user
 	"user.list":         {Method: "GET", Path: "/filter/user"},
