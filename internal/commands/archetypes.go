@@ -518,6 +518,11 @@ type createSpec struct {
 	TemplateKey string
 	// PayloadUsage overrides the --json flag help text.
 	PayloadUsage string
+	// Base, when non-nil, is consulted at run time for a starting payload
+	// fetched from the server (e.g. a blueprint scaffold). Returning a
+	// non-nil body makes --json optional and deep-merges the caller's JSON
+	// on top of that base; returning nil keeps the plain --json contract.
+	Base func(ctx context.Context) (map[string]any, error)
 	// Normalize, when non-nil, adjusts or rejects the parsed payload before
 	// the CLI ensures an id (input conveniences, shape rejection).
 	Normalize func(map[string]any) error
@@ -552,12 +557,29 @@ func createCommand(deps Dependencies, spec createSpec) *cobra.Command {
 			if printTemplate {
 				return printResult(cmd, deps, schema.Templates[spec.TemplateKey])
 			}
-			if err := requireValue("--json", jsonPayload); err != nil {
-				return err
+			var base map[string]any
+			if spec.Base != nil {
+				fetched, err := spec.Base(cmd.Context())
+				if err != nil {
+					return err
+				}
+				base = fetched
 			}
-			body, err := parsePayload(jsonPayload)
-			if err != nil {
-				return err
+			if base == nil {
+				if err := requireValue("--json", jsonPayload); err != nil {
+					return err
+				}
+			}
+			body := map[string]any{}
+			if strings.TrimSpace(jsonPayload) != "" {
+				parsed, err := parsePayload(jsonPayload)
+				if err != nil {
+					return err
+				}
+				body = parsed
+			}
+			if base != nil {
+				body = mergeAliasPayload(base, body)
 			}
 			if spec.Normalize != nil {
 				if err := spec.Normalize(body); err != nil {
