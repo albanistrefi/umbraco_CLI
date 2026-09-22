@@ -37,11 +37,15 @@ Per-resource CLI command skills.
 | [umbraco-member-group](umbraco-member-group/SKILL.md) | Member group lookups (for 'member set-groups' GUID discovery) |
 | [umbraco-membertype](umbraco-membertype/SKILL.md) | Member type operations |
 | [umbraco-models-builder](umbraco-models-builder/SKILL.md) | Trigger and inspect ModelsBuilder source generation |
+| [umbraco-partial-view](umbraco-partial-view/SKILL.md) | Partial view operations |
 | [umbraco-published-cache](umbraco-published-cache/SKILL.md) | Published content cache operations |
 | [umbraco-redirect](umbraco-redirect/SKILL.md) | Redirect URL management (tracked 301s from renamed/moved documents) |
 | [umbraco-relation](umbraco-relation/SKILL.md) | Relations and relation types |
+| [umbraco-script](umbraco-script/SKILL.md) | Script operations |
 | [umbraco-searcher](umbraco-searcher/SKILL.md) | Examine searcher queries |
 | [umbraco-server](umbraco-server/SKILL.md) | Server information and diagnostics |
+| [umbraco-static-file](umbraco-static-file/SKILL.md) | Static file operations |
+| [umbraco-stylesheet](umbraco-stylesheet/SKILL.md) | Stylesheet operations |
 | [umbraco-tag](umbraco-tag/SKILL.md) | Tag reads across tagged content |
 | [umbraco-template](umbraco-template/SKILL.md) | Template operations |
 | [umbraco-tree](umbraco-tree/SKILL.md) | Tree navigation helpers |
