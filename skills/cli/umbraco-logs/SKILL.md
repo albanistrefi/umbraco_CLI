@@ -2,7 +2,7 @@
 name: umbraco-logs
 description: "Log and diagnostics operations"
 metadata:
-  version: 0.4.21
+  version: 0.4.22
   requires:
     bins:
       - umbraco

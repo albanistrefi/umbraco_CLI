@@ -2,7 +2,7 @@
 name: umbraco-member-group
 description: "Member group lookups (for 'member set-groups' GUID discovery)"
 metadata:
-  version: 0.4.21
+  version: 0.4.22
   requires:
     bins:
       - umbraco

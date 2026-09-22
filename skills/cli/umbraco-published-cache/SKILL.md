@@ -2,7 +2,7 @@
 name: umbraco-published-cache
 description: "Published content cache operations"
 metadata:
-  version: 0.4.21
+  version: 0.4.22
   requires:
     bins:
       - umbraco
