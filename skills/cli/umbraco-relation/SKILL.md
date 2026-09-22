@@ -2,7 +2,7 @@
 name: umbraco-relation
 description: "Relations and relation types"
 metadata:
-  version: 0.4.22
+  version: 0.4.23
   requires:
     bins:
       - umbraco
