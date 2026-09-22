@@ -445,9 +445,10 @@ func (c *Client) sendWithRedirects(ctx context.Context, method string, fullURL s
 // AuthRedirectError is returned when an API endpoint answers with a
 // redirect (or an HTML page) instead of JSON. On Umbraco that means the
 // endpoint did not accept the bearer token and sent the caller to the
-// backoffice login — seen on Umbraco Cloud for Umbraco Deploy's management
-// API, where the same token works for the core Management API. It exits 3
-// (authentication), like a rejected token.
+// backoffice login. First seen against a Cloud environment's Deploy API
+// during a transient hiccup (the same environment accepted the token once
+// healthy), so the message asks for a retry before blaming permissions.
+// It exits 3 (authentication), like a rejected token.
 type AuthRedirectError struct {
 	Method     string
 	Path       string
@@ -468,7 +469,7 @@ func (e *AuthRedirectError) Error() string {
 			what = "returned the backoffice login page instead of JSON"
 		}
 	}
-	return fmt.Sprintf("authentication required: %s %s %s — the environment did not accept the bearer token for this endpoint (the core Management API accepts it when 'umbraco server status' works; Umbraco Deploy's own API on Umbraco Cloud is known not to). Nothing was sent past the redirect", e.Method, e.Path, what)
+	return fmt.Sprintf("authentication required: %s %s %s — the environment did not accept the bearer token for this endpoint. Check that 'umbraco server status' works with the same profile (token and base URL), that the API user may access this area, and that the environment is healthy (a transient backoffice hiccup can produce this too); retry before assuming a permission problem. Nothing was sent past the redirect", e.Method, e.Path, what)
 }
 
 func (*AuthRedirectError) ExitCode() int { return 3 }
