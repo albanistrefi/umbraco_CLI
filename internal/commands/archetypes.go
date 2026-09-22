@@ -518,11 +518,22 @@ type createSpec struct {
 	TemplateKey string
 	// PayloadUsage overrides the --json flag help text.
 	PayloadUsage string
-	// Normalize, when non-nil, adjusts or rejects the parsed payload before
-	// the CLI ensures an id (input conveniences, shape rejection).
+	// Base, when non-nil, is consulted at run time for a starting payload
+	// fetched from the server (e.g. a blueprint scaffold). Returning a
+	// non-nil body makes --json optional and deep-merges the caller's JSON
+	// on top of that base; returning nil keeps the plain --json contract.
+	Base func(ctx context.Context) (map[string]any, error)
+	// Validate, when non-nil, checks the flag values on their own. It runs
+	// before Base, so a rejected flag combination costs no request. Checks
+	// that need the payload belong in the Flags hook instead.
+	Validate func() error
+	// Normalize, when non-nil, adjusts or rejects the parsed --json payload
+	// (input conveniences, shape rejection). It sees the caller's input, not
+	// the Base payload it is later merged onto, and is skipped when no
+	// --json was given.
 	Normalize func(map[string]any) error
 	// Flags, when non-nil, registers extra convenience flags on the command
-	// and returns a hook applied to the parsed payload after Normalize.
+	// and returns a hook applied to the final payload (after any Base merge).
 	Flags func(cmd *cobra.Command) func(map[string]any) error
 	// RouteOverride, when non-nil, is consulted after the flag hook and may
 	// return a sibling collection endpoint for the POST; returning "" keeps
@@ -552,17 +563,48 @@ func createCommand(deps Dependencies, spec createSpec) *cobra.Command {
 			if printTemplate {
 				return printResult(cmd, deps, schema.Templates[spec.TemplateKey])
 			}
-			if err := requireValue("--json", jsonPayload); err != nil {
-				return err
-			}
-			body, err := parsePayload(jsonPayload)
-			if err != nil {
-				return err
-			}
-			if spec.Normalize != nil {
-				if err := spec.Normalize(body); err != nil {
+			// Everything that can be decided from the command line alone
+			// runs before Base: a Base fetch is a network round trip, and a
+			// malformed --json or a rejected flag combination must surface
+			// as a usage error rather than as whatever the server (or the
+			// token request in front of it) says first.
+			var userBody map[string]any
+			if strings.TrimSpace(jsonPayload) != "" {
+				parsed, err := parsePayload(jsonPayload)
+				if err != nil {
 					return err
 				}
+				userBody = parsed
+			}
+			if spec.Validate != nil {
+				if err := spec.Validate(); err != nil {
+					return err
+				}
+			}
+			if userBody != nil && spec.Normalize != nil {
+				if err := spec.Normalize(userBody); err != nil {
+					return err
+				}
+			}
+			var base map[string]any
+			if spec.Base != nil {
+				fetched, err := spec.Base(cmd.Context())
+				if err != nil {
+					return err
+				}
+				base = fetched
+			}
+			if base == nil {
+				if err := requireValue("--json", jsonPayload); err != nil {
+					return err
+				}
+			}
+			body := userBody
+			if body == nil {
+				body = map[string]any{}
+			}
+			if base != nil {
+				body = mergeAliasPayload(base, body)
 			}
 			if applyFlags != nil {
 				if err := applyFlags(body); err != nil {

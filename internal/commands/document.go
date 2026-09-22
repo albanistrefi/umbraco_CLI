@@ -231,21 +231,43 @@ func documentSearch(deps Dependencies) *cobra.Command {
 func documentCreate(deps Dependencies) *cobra.Command {
 	var publish bool
 	var cultures string
+	var fromBlueprint string
+	var parent string
 	return createCommand(deps, createSpec{
-		Use:          "create",
-		Short:        "Create a document",
-		Long:         "POST /document, or POST /document/create-and-publish with --publish (requires Umbraco 18.1+): the document is created and published in one atomic server-side operation, with --culture naming the cultures to publish (omit for invariant content).",
+		Use:   "create",
+		Short: "Create a document",
+		Long: "POST /document, or POST /document/create-and-publish with --publish (requires Umbraco 18.1+): the document is created and published in one atomic server-side operation, with --culture naming the cultures to publish (omit for invariant content).\n\n" +
+			"--from-blueprint <id> seeds the payload from a document blueprint (GET /document-blueprint/{id}/scaffold, see 'umbraco blueprint'): the blueprint's document type, property values and variant names become the base payload and --json is then optional, deep-merged on top of it to override single values or rename the document. Pass --parent for the target parent, or omit it to create at the content root.",
 		Path:         "/document",
 		TemplateKey:  "document.create",
-		PayloadUsage: "Full JSON payload",
+		PayloadUsage: "Full JSON payload (optional with --from-blueprint, where it is merged into the blueprint scaffold)",
+		Base: func(ctx context.Context) (map[string]any, error) {
+			if strings.TrimSpace(fromBlueprint) == "" {
+				return nil, nil
+			}
+			return blueprintDocumentPayload(ctx, deps.Client, strings.TrimSpace(fromBlueprint))
+		},
+		Validate: func() error {
+			if !publish && strings.TrimSpace(cultures) != "" {
+				return fmt.Errorf("--culture requires --publish")
+			}
+			return nil
+		},
 		Flags: func(cmd *cobra.Command) func(map[string]any) error {
 			cmd.Flags().BoolVar(&publish, "publish", false, "Create and publish atomically via POST /document/create-and-publish (Umbraco 18.1+)")
 			cmd.Flags().StringVar(&cultures, "culture", "", "Comma-separated cultures to publish with --publish; omit for invariant content")
+			cmd.Flags().StringVar(&fromBlueprint, "from-blueprint", "", "Seed the payload from this document blueprint's scaffold; --json is then optional and merged on top")
+			cmd.Flags().StringVar(&parent, "parent", "", "Parent document GUID; omit to create at the content root (fills parent when the payload does not)")
 			return func(body map[string]any) error {
-				if !publish {
-					if strings.TrimSpace(cultures) != "" {
-						return fmt.Errorf("--culture requires --publish")
+				if trimmed := strings.TrimSpace(parent); trimmed != "" {
+					if _, set := body["parent"]; !set {
+						body["parent"] = map[string]any{"id": trimmed}
 					}
+				}
+				if strings.TrimSpace(fromBlueprint) != "" && len(blueprintVariantNames(body)) == 0 {
+					return fmt.Errorf("blueprint %s carries no variant name: supply one with --json '{\"variants\":[{\"name\":\"…\"}]}'", strings.TrimSpace(fromBlueprint))
+				}
+				if !publish {
 					return nil
 				}
 				if _, ok := body["culturesToPublish"]; !ok {

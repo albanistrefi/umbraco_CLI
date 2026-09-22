@@ -462,11 +462,15 @@ umbraco document create
 
 POST /document, or POST /document/create-and-publish with --publish (requires Umbraco 18.1+): the document is created and published in one atomic server-side operation, with --culture naming the cultures to publish (omit for invariant content).
 
+--from-blueprint <id> seeds the payload from a document blueprint (GET /document-blueprint/{id}/scaffold, see 'umbraco blueprint'): the blueprint's document type, property values and variant names become the base payload and --json is then optional, deep-merged on top of it to override single values or rename the document. Pass --parent for the target parent, or omit it to create at the content root.
+
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--culture` | string | — | Comma-separated cultures to publish with --publish; omit for invariant content |
 | `--dry-run` | bool | false | Print the planned request without executing |
-| `--json` | string | — | Full JSON payload |
+| `--from-blueprint` | string | — | Seed the payload from this document blueprint's scaffold; --json is then optional and merged on top |
+| `--json` | string | — | Full JSON payload (optional with --from-blueprint, where it is merged into the blueprint scaffold) |
+| `--parent` | string | — | Parent document GUID; omit to create at the content root (fills parent when the payload does not) |
 | `--print-template` | bool | false | Print an annotated JSON skeleton; substitute placeholders before passing to --json |
 | `--publish` | bool | false | Create and publish atomically via POST /document/create-and-publish (Umbraco 18.1+) |
 

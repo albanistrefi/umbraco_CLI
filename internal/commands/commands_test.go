@@ -32,6 +32,7 @@ func buildRootWithCollections(t *testing.T, deps Dependencies) *cobra.Command {
 	}
 	RegisterDocument(root, deps)
 	RegisterElement(root, deps)
+	RegisterBlueprint(root, deps)
 	RegisterDictionary(root, deps)
 	RegisterMedia(root, deps)
 	RegisterDoctype(root, deps)
@@ -108,8 +109,8 @@ func TestCommandCountsMatchMVP(t *testing.T) {
 		total += len(found.Commands())
 	}
 
-	if total != 259 {
-		t.Fatalf("expected 259 collection commands, got %d", total)
+	if total != 270 {
+		t.Fatalf("expected 270 collection commands, got %d", total)
 	}
 }
 
@@ -180,6 +181,7 @@ func TestRegisteredAPICommandsHaveSchemas(t *testing.T) {
 	schemaBackedCollections := map[string]struct{}{
 		"document":       {},
 		"element":        {},
+		"blueprint":      {},
 		"dictionary":     {},
 		"media":          {},
 		"doctype":        {},
