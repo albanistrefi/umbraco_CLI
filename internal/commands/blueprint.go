@@ -28,7 +28,10 @@ same thing is 'document create --from-blueprint <id>'.
 
 Task → command:
   Browse the blueprint tree                            blueprint list; blueprint children <folder-id>
+  Locate one in the tree                               blueprint ancestors <id>; blueprint siblings <id>
   Read one blueprint and its values                    blueprint get <id>
+  Resolve several GUIDs to names in one call           blueprint items --ids <a,b>
+  See who changed one, and when                        blueprint audit-log <id>
   Turn an existing document into a blueprint           blueprint create-from-document <document-id> --name <n> [--parent <folder-id>]
   Build a blueprint from scratch                       blueprint create --print-template, then blueprint create --json '{...}'
   Change the stored values                             blueprint update <id> --merge-json '{...}' --backup
@@ -39,7 +42,11 @@ Task → command:
 	}
 	blueprint.AddCommand(blueprintList(deps))
 	blueprint.AddCommand(blueprintChildren(deps))
+	blueprint.AddCommand(blueprintAncestors(deps))
+	blueprint.AddCommand(blueprintSiblings(deps))
 	blueprint.AddCommand(blueprintGet(deps))
+	blueprint.AddCommand(blueprintItems(deps))
+	blueprint.AddCommand(blueprintAuditLog(deps))
 	blueprint.AddCommand(blueprintScaffold(deps))
 	blueprint.AddCommand(blueprintCreate(deps))
 	blueprint.AddCommand(blueprintCreateFromDocument(deps))
@@ -73,6 +80,99 @@ func blueprintChildren(deps Dependencies) *cobra.Command {
 		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
 			return []getRequestCandidate{
 				{path: "/tree/document-blueprint/children", opts: api.RequestOptions{Params: withParam(params, "parentId", args[0])}},
+			}
+		},
+	})
+}
+
+// blueprintAncestors is a plain read rather than a collectionCommand: the
+// ancestors route answers with a bare array, not the {items, total}
+// envelope pagination and triage are built on.
+func blueprintAncestors(deps Dependencies) *cobra.Command {
+	var fields string
+	cmd := &cobra.Command{
+		Use:   "ancestors <id>",
+		Short: "List the folders a blueprint sits under, root first",
+		Long:  "GET /tree/document-blueprint/ancestors?descendantId={id}. Answers with the folder chain above the blueprint (or folder), root first and ending with the entry itself, so an id seen in a payload can be placed in the tree without walking it from the root.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			result, err := deps.Client.Get(cmd.Context(), "/tree/document-blueprint/ancestors", api.RequestOptions{Params: map[string]any{"descendantId": args[0]}, Fields: fields})
+			if err != nil {
+				return err
+			}
+			return printResult(cmd, deps, applyFieldsProjection(result, fields))
+		},
+	}
+	addFieldsFlag(cmd, &fields)
+	return cmd
+}
+
+// blueprintSiblings is a plain read rather than a collectionCommand: the
+// route is windowed with --before/--after around the target instead of
+// skip/take, and answers with {totalBefore, totalAfter, items}.
+func blueprintSiblings(deps Dependencies) *cobra.Command {
+	var before int
+	var after int
+	var foldersOnly bool
+	var fields string
+	cmd := &cobra.Command{
+		Use:   "siblings <id>",
+		Short: "List the tree entries around a blueprint or folder",
+		Long:  "GET /tree/document-blueprint/siblings?target={id}. The window is counted from the target: --before entries above it and --after below it. The response carries totalBefore/totalAfter alongside items, so a wider window is only worth asking for when those are non-zero.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			params := map[string]any{"target": args[0], "before": before, "after": after}
+			if foldersOnly {
+				params["foldersOnly"] = true
+			}
+			result, err := deps.Client.Get(cmd.Context(), "/tree/document-blueprint/siblings", api.RequestOptions{Params: params, Fields: fields})
+			if err != nil {
+				return err
+			}
+			return printResult(cmd, deps, applyFieldsProjection(result, fields))
+		},
+	}
+	cmd.Flags().IntVar(&before, "before", 10, "How many siblings above the target to return")
+	cmd.Flags().IntVar(&after, "after", 10, "How many siblings below the target to return")
+	cmd.Flags().BoolVar(&foldersOnly, "folders-only", false, "Return only folders, skipping the blueprints themselves")
+	addFieldsFlag(cmd, &fields)
+	return cmd
+}
+
+func blueprintItems(deps Dependencies) *cobra.Command {
+	var idsCSV string
+	var fields string
+	cmd := &cobra.Command{
+		Use:   "items",
+		Short: "Resolve blueprint GUIDs to names in one call",
+		Long:  "GET /item/document-blueprint?id=…. The item read for blueprints: pass the GUIDs seen in other payloads and get their names and document types back without one request per ID.",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ids := uniqueCSV(idsCSV)
+			if len(ids) == 0 {
+				return fmt.Errorf("blueprint items requires --ids <comma-separated guids>")
+			}
+			result, err := deps.Client.Get(cmd.Context(), "/item/document-blueprint", api.RequestOptions{Params: map[string]any{"id": stringsToAny(ids)}, Fields: fields})
+			if err != nil {
+				return err
+			}
+			return printResult(cmd, deps, applyFieldsProjection(result, fields))
+		},
+	}
+	cmd.Flags().StringVar(&idsCSV, "ids", "", "Comma-separated blueprint GUIDs (required)")
+	addFieldsFlag(cmd, &fields)
+	return cmd
+}
+
+func blueprintAuditLog(deps Dependencies) *cobra.Command {
+	return collectionCommand(deps, collectionSpec{
+		Use:   "audit-log <id>",
+		Short: "List the audit trail for a blueprint (who did what, when)",
+		Long:  "GET /document-blueprint/{id}/audit-log. Pass --params for orderDirection or sinceDate filters, e.g. --params '{\"sinceDate\":\"2026-01-01T00:00:00Z\"}'.",
+		NArgs: 1,
+		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
+			return []getRequestCandidate{
+				{path: api.JoinPath("/document-blueprint/%s/audit-log", args[0]), opts: api.RequestOptions{Params: params}},
 			}
 		},
 	})

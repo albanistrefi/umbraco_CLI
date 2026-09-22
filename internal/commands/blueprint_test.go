@@ -97,6 +97,109 @@ func TestBlueprintChildrenPassesParentID(t *testing.T) {
 	}
 }
 
+func TestBlueprintAncestorsPassesDescendantID(t *testing.T) {
+	recorder := &blueprintRecorder{}
+	deps := blueprintDeps(t, recorder, map[string]string{
+		"/umbraco/management/api/v1/tree/document-blueprint/ancestors": `[]`,
+	})
+
+	if _, err := execute(buildBlueprintRoot(deps), "blueprint", "ancestors", "bp-1"); err != nil {
+		t.Fatalf("blueprint ancestors failed: %v", err)
+	}
+	if recorder.path != "/umbraco/management/api/v1/tree/document-blueprint/ancestors" {
+		t.Fatalf("unexpected path %q", recorder.path)
+	}
+	if !strings.Contains(recorder.query, "descendantId=bp-1") {
+		t.Fatalf("expected descendantId in query, got %q", recorder.query)
+	}
+}
+
+func TestBlueprintSiblingsWindowsAroundTheTarget(t *testing.T) {
+	recorder := &blueprintRecorder{}
+	deps := blueprintDeps(t, recorder, map[string]string{
+		"/umbraco/management/api/v1/tree/document-blueprint/siblings": `{"totalBefore":0,"totalAfter":0,"items":[]}`,
+	})
+
+	if _, err := execute(buildBlueprintRoot(deps), "blueprint", "siblings", "bp-1"); err != nil {
+		t.Fatalf("blueprint siblings failed: %v", err)
+	}
+	if recorder.path != "/umbraco/management/api/v1/tree/document-blueprint/siblings" {
+		t.Fatalf("unexpected path %q", recorder.path)
+	}
+	// The route is windowed, not paginated: the id travels as target and
+	// both sides of the window are always sent.
+	for _, expected := range []string{"target=bp-1", "before=10", "after=10"} {
+		if !strings.Contains(recorder.query, expected) {
+			t.Fatalf("expected %q in the siblings query, got %q", expected, recorder.query)
+		}
+	}
+	if strings.Contains(recorder.query, "foldersOnly") {
+		t.Fatalf("expected foldersOnly to stay off by default, got %q", recorder.query)
+	}
+
+	if _, err := execute(buildBlueprintRoot(deps), "blueprint", "siblings", "bp-1", "--before", "2", "--after", "3", "--folders-only"); err != nil {
+		t.Fatalf("blueprint siblings with a window failed: %v", err)
+	}
+	for _, expected := range []string{"before=2", "after=3", "foldersOnly=true"} {
+		if !strings.Contains(recorder.query, expected) {
+			t.Fatalf("expected %q in the siblings query, got %q", expected, recorder.query)
+		}
+	}
+}
+
+func TestBlueprintItemsSendsRepeatedIDs(t *testing.T) {
+	recorder := &blueprintRecorder{}
+	deps := blueprintDeps(t, recorder, map[string]string{
+		"/umbraco/management/api/v1/item/document-blueprint": `[]`,
+	})
+
+	if _, err := execute(buildBlueprintRoot(deps), "blueprint", "items", "--ids", "bp-1,bp-2,bp-1"); err != nil {
+		t.Fatalf("blueprint items failed: %v", err)
+	}
+	if recorder.path != "/umbraco/management/api/v1/item/document-blueprint" {
+		t.Fatalf("unexpected path %q", recorder.path)
+	}
+	if strings.Count(recorder.query, "id=") != 2 {
+		t.Fatalf("expected two deduplicated repeated id values, got %q", recorder.query)
+	}
+	for _, expected := range []string{"id=bp-1", "id=bp-2"} {
+		if !strings.Contains(recorder.query, expected) {
+			t.Fatalf("expected %q in the items query, got %q", expected, recorder.query)
+		}
+	}
+}
+
+func TestBlueprintItemsRequiresIDs(t *testing.T) {
+	recorder := &blueprintRecorder{}
+	deps := blueprintDeps(t, recorder, nil)
+
+	if _, err := execute(buildBlueprintRoot(deps), "blueprint", "items"); err == nil {
+		t.Fatal("expected blueprint items without --ids to fail")
+	}
+	if recorder.path != "" {
+		t.Fatalf("expected no request, got %q", recorder.path)
+	}
+}
+
+func TestBlueprintAuditLogPaginatesOverTheBlueprintRoute(t *testing.T) {
+	recorder := &blueprintRecorder{}
+	deps := blueprintDeps(t, recorder, map[string]string{
+		"/umbraco/management/api/v1/document-blueprint/bp-1/audit-log": `{"items":[],"total":0}`,
+	})
+
+	if _, err := execute(buildBlueprintRoot(deps), "blueprint", "audit-log", "bp-1", "--take", "5", "--params", `{"orderDirection":"Ascending"}`); err != nil {
+		t.Fatalf("blueprint audit-log failed: %v", err)
+	}
+	if recorder.path != "/umbraco/management/api/v1/document-blueprint/bp-1/audit-log" {
+		t.Fatalf("unexpected path %q", recorder.path)
+	}
+	for _, expected := range []string{"take=5", "orderDirection=Ascending"} {
+		if !strings.Contains(recorder.query, expected) {
+			t.Fatalf("expected %q in the audit-log query, got %q", expected, recorder.query)
+		}
+	}
+}
+
 func TestBlueprintCreatePostsPayloadWithGeneratedID(t *testing.T) {
 	recorder := &blueprintRecorder{}
 	deps := blueprintDeps(t, recorder, nil)
