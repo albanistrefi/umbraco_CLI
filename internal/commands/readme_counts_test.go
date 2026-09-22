@@ -30,6 +30,17 @@ import (
 
 var readmeGroupCountPattern = regexp.MustCompile("`([a-z][a-z0-9-]*)` \\((\\d+)")
 
+// countFreeCommands are the root commands that intentionally carry no count in
+// the Collections list. Everything else registered on the root must have one.
+var countFreeCommands = map[string]bool{
+	// Documented in the Collections list without a number, because its surface
+	// is a set of schema lookups rather than a fixed list of subcommands.
+	"schema": true,
+	// A build-time helper for regenerating skills/cli, documented in its own
+	// README section rather than as a content collection.
+	"generate-skills": true,
+}
+
 func isDocumentedCommand(cmd *cobra.Command) bool {
 	if cmd.Hidden {
 		return false
@@ -122,22 +133,29 @@ func TestREADMECommandCountsMatchRegisteredCommands(t *testing.T) {
 		}
 	}
 
-	// Every registered group has to be documented somewhere in the README. Most
-	// belong in the Collections list; a few (`schema`, `generate-skills`) have a
-	// section of their own instead, so a mention anywhere is enough here.
+	// Every registered group needs a counted entry in the Collections list,
+	// except the ones on countForFreeCommands below.
 	var missing []string
 	for name := range groups {
-		if documented[name] {
-			continue
-		}
-		if regexp.MustCompile(`\b` + regexp.QuoteMeta(name) + `\b`).MatchString(readme) {
+		if documented[name] || countFreeCommands[name] {
 			continue
 		}
 		missing = append(missing, name)
 	}
 	sort.Strings(missing)
 	if len(missing) > 0 {
-		t.Errorf("command groups missing from the README: %s", strings.Join(missing, ", "))
+		t.Errorf("command groups with no counted entry in the README Collections list: %s "+
+			"(add a \"- `<name>` (N) — …\" line, or add the command to countFreeCommands with a reason)",
+			strings.Join(missing, ", "))
+	}
+
+	for name := range countFreeCommands {
+		if _, ok := groups[name]; !ok {
+			t.Errorf("countFreeCommands lists %q, which is not a registered root command", name)
+		}
+		if documented[name] {
+			t.Errorf("countFreeCommands lists %q, but the README now gives it a count; drop it from the allowlist", name)
+		}
 	}
 
 	total := countRunnableLeaves(root)
