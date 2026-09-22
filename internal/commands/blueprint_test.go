@@ -396,6 +396,48 @@ func TestDocumentCreateFromBlueprintRejectsNamelessScaffold(t *testing.T) {
 	}
 }
 
+// The scaffold fetch is a network round trip, so anything decidable from
+// the command line alone must fail before it.
+func TestDocumentCreateFromBlueprintValidatesLocallyBeforeFetching(t *testing.T) {
+	cases := []struct {
+		name     string
+		args     []string
+		contains string
+	}{
+		{
+			name:     "malformed --json",
+			args:     []string{"document", "create", "--from-blueprint", "bp-1", "--json", `{bad`},
+			contains: "JSON",
+		},
+		{
+			name:     "--culture without --publish",
+			args:     []string{"document", "create", "--from-blueprint", "bp-1", "--culture", "en-US"},
+			contains: "--culture requires --publish",
+		},
+	}
+
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			var requested []string
+			deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+				requested = append(requested, req.URL.Path)
+				return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			})
+
+			_, err := execute(buildBlueprintRoot(deps), testCase.args...)
+			if err == nil {
+				t.Fatal("expected the command to fail before any request")
+			}
+			if !strings.Contains(err.Error(), testCase.contains) {
+				t.Fatalf("expected the error to mention %q, got %v", testCase.contains, err)
+			}
+			if len(requested) != 0 {
+				t.Fatalf("expected no request, got %v", requested)
+			}
+		})
+	}
+}
+
 func TestDocumentCreateStillRequiresJSONWithoutBlueprint(t *testing.T) {
 	recorder := &blueprintRecorder{}
 	deps := blueprintDeps(t, recorder, nil)

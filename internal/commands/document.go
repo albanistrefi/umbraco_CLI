@@ -247,6 +247,12 @@ func documentCreate(deps Dependencies) *cobra.Command {
 			}
 			return blueprintDocumentPayload(ctx, deps.Client, strings.TrimSpace(fromBlueprint))
 		},
+		Validate: func() error {
+			if !publish && strings.TrimSpace(cultures) != "" {
+				return fmt.Errorf("--culture requires --publish")
+			}
+			return nil
+		},
 		Flags: func(cmd *cobra.Command) func(map[string]any) error {
 			cmd.Flags().BoolVar(&publish, "publish", false, "Create and publish atomically via POST /document/create-and-publish (Umbraco 18.1+)")
 			cmd.Flags().StringVar(&cultures, "culture", "", "Comma-separated cultures to publish with --publish; omit for invariant content")
@@ -262,9 +268,6 @@ func documentCreate(deps Dependencies) *cobra.Command {
 					return fmt.Errorf("blueprint %s carries no variant name: supply one with --json '{\"variants\":[{\"name\":\"…\"}]}'", strings.TrimSpace(fromBlueprint))
 				}
 				if !publish {
-					if strings.TrimSpace(cultures) != "" {
-						return fmt.Errorf("--culture requires --publish")
-					}
 					return nil
 				}
 				if _, ok := body["culturesToPublish"]; !ok {
