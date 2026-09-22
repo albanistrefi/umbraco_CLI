@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- README command counts are now asserted by a test against the registered commands; drifted per-group counts corrected; totals now count runnable leaf commands
+
 ## v0.4.22 - 2026-09-22
 
 - `searcher` and `relation` command groups. `searcher list` and `searcher query <searcher-name> --term <text>` (with `--query` as an alias, plus `--skip`/`--take`/`--all`/`--fields`) read Examine's search side, completing the `indexer` group's index side: "is the index healthy" now has a companion "what does the index actually return". `relation list --type <id>` lists the relations recorded for one relation type, and `relation type list|get|items` read the relation-type catalogue; the Management API exposes relations per relation type only (no by-parent or by-child route), and the group help says so instead of implying a lookup that does not exist. Live on 18.1: `searcher query <index-name> --term home` returned 216 hits (5 read back with `--fields id,score`), `relation type list` returned the instance's relation types, `relation type get`/`items` resolved them, and `relation list --type <id> --take 5` returned 5 of 121 rows. Two API surprises are documented in the command help: `GET /searcher` can return an empty list on an instance whose indexes are registered without standalone searchers, and the name `GET /searcher/{searcherName}/query` accepts is often the *index* name (`ExternalIndex`) rather than the `searcherName` the indexer reports (`ExternalSearcher`), which 404s with "Could not find a valid searcher" — so the help points at `indexer list --fields name,searcherName` and says to try both
