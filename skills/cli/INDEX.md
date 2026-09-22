@@ -19,6 +19,7 @@ Per-resource CLI command skills.
 | [umbraco-api](umbraco-api/SKILL.md) | Call an authenticated raw Umbraco Management API endpoint |
 | [umbraco-auth](umbraco-auth/SKILL.md) | Persistent authentication helpers |
 | [umbraco-automate](umbraco-automate/SKILL.md) | Umbraco Automate operations (event-driven workflow automation) |
+| [umbraco-blueprint](umbraco-blueprint/SKILL.md) | Document blueprints: reusable content presets for new documents |
 | [umbraco-datatype](umbraco-datatype/SKILL.md) | Data type operations |
 | [umbraco-deploy](umbraco-deploy/SKILL.md) | Deployment observation, schema application, and content transfer (watch, status, apply, transfer, queue) |
 | [umbraco-dictionary](umbraco-dictionary/SKILL.md) | Dictionary item and translation key operations |
