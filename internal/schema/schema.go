@@ -463,6 +463,16 @@ var endpointBindings = map[string]endpointBinding{
 	"indexer.get":     {Method: "GET", Path: "/indexer/{indexName}"},
 	"indexer.rebuild": {Method: "POST", Path: "/indexer/{indexName}/rebuild"},
 
+	// searcher
+	"searcher.list":  {Method: "GET", Path: "/searcher"},
+	"searcher.query": {Method: "GET", Path: "/searcher/{searcherName}/query"},
+
+	// relation / relation type
+	"relation.list":       {Method: "GET", Path: "/relation/type/{id}"},
+	"relation.type.list":  {Method: "GET", Path: "/relation-type"},
+	"relation.type.get":   {Method: "GET", Path: "/relation-type/{id}"},
+	"relation.type.items": {Method: "GET", Path: "/item/relation-type"},
+
 	// redirect
 	"redirect.list":    {Method: "GET", Path: "/redirect-management"},
 	"redirect.get":     {Method: "GET", Path: "/redirect-management/{id}"},

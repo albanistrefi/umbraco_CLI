@@ -52,6 +52,8 @@ func buildRootWithCollections(t *testing.T, deps Dependencies) *cobra.Command {
 	RegisterPublishedCache(root, deps)
 	RegisterRedirect(root, deps)
 	RegisterIndexer(root, deps)
+	RegisterSearcher(root, deps)
+	RegisterRelation(root, deps)
 	RegisterMediaType(root, deps)
 	RegisterMemberType(root, deps)
 	RegisterTree(root, deps)
@@ -104,8 +106,8 @@ func TestCommandCountsMatchMVP(t *testing.T) {
 		total += len(found.Commands())
 	}
 
-	if total != 248 {
-		t.Fatalf("expected 248 collection commands, got %d", total)
+	if total != 252 {
+		t.Fatalf("expected 252 collection commands, got %d", total)
 	}
 }
 
@@ -193,6 +195,8 @@ func TestRegisteredAPICommandsHaveSchemas(t *testing.T) {
 		"user-group":     {},
 		"mediatype":      {},
 		"membertype":     {},
+		"searcher":       {},
+		"relation":       {},
 	}
 	convenienceCommands := map[string]string{
 		"document.bulk-update":       "batch convenience command",
@@ -222,6 +226,7 @@ func TestRegisteredAPICommandsHaveSchemas(t *testing.T) {
 		"media.bin":                  "recycle bin subgroup (list/children/original-parent/delete/empty)",
 		"element.bin":                "recycle bin subgroup (list/children/original-parent/delete/empty)",
 		"element.version":            "version history subgroup (list/get/rollback/prevent-cleanup)",
+		"relation.type":              "relation type subgroup (list/get/items)",
 	}
 
 	missing := make([]string, 0)
