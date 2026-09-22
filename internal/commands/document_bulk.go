@@ -65,7 +65,7 @@ func documentBulkUpdate(deps Dependencies) *cobra.Command {
 	cmd.Flags().StringVar(&idsCSV, "ids", "", "Comma-separated document IDs (same as repeating --id)")
 	cmd.Flags().StringVar(&idFile, "id-file", "", "Path to a file containing document IDs, one per line")
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Full JSON payload applied to every document")
-	cmd.Flags().StringVar(&mergeJSON, "merge-json", "", "Partial JSON payload merged into each current document before update")
+	cmd.Flags().StringVar(&mergeJSON, "merge-json", "", "Partial JSON payload merged into each current document before update: values merge by alias+culture+segment and variants by culture+segment, so naming one culture leaves the others untouched. --json replaces each payload wholesale instead")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the planned requests without executing")
 	cmd.Flags().BoolVar(&force, "force", false, "Confirm the bulk update when not using --dry-run")
 	return cmd

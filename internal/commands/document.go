@@ -450,7 +450,7 @@ func documentUpdate(deps Dependencies) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Full replacement payload as JSON (fields not mentioned are reset by the server)")
-	cmd.Flags().StringVar(&mergeJSON, "merge-json", "", "Partial JSON deep-merged into the current document before update (fields not mentioned are preserved)")
+	cmd.Flags().StringVar(&mergeJSON, "merge-json", "", "Partial JSON deep-merged into the current document before update (fields not mentioned are preserved): values merge by alias+culture+segment and variants by culture+segment, so naming one culture leaves the others untouched. --json replaces the payload wholesale instead")
 	cmd.Flags().StringVar(&property, "property", "", "Update a single property alias without constructing the full payload")
 	cmd.Flags().StringVar(&value, "value", "", "String value used with --property")
 	cmd.Flags().StringVar(&valueJSON, "value-json", "", "JSON value used with --property")

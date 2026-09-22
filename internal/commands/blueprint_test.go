@@ -453,6 +453,71 @@ func TestDocumentCreateFromBlueprintMergesScaffold(t *testing.T) {
 	}
 }
 
+// Regression: --json on top of a variant blueprint's scaffold used to
+// replace the whole variants array, so renaming one culture created a
+// document missing every other culture.
+func TestDocumentCreateFromBlueprintMergesVariantsPerCulture(t *testing.T) {
+	const variantScaffoldBody = `{
+	"documentType": {"id": "dt-1"},
+	"values": [
+		{"alias": "title", "culture": "en-US", "segment": null, "editorAlias": "Umbraco.TextBox", "value": "English preset"},
+		{"alias": "title", "culture": "da-DK", "segment": null, "editorAlias": "Umbraco.TextBox", "value": "Danish preset"}
+	],
+	"variants": [
+		{"culture": "en-US", "segment": null, "name": "English preset name", "state": "Draft"},
+		{"culture": "da-DK", "segment": null, "name": "Danish preset name", "state": "Draft"}
+	]
+}`
+
+	var createBody string
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/document-blueprint/bp-1/scaffold":
+			return endpointJSONResponse(http.StatusOK, variantScaffoldBody), nil
+		default:
+			payload, _ := io.ReadAll(req.Body)
+			createBody = string(payload)
+			return endpointJSONResponse(http.StatusCreated, `null`), nil
+		}
+	})
+
+	if _, err := execute(
+		buildBlueprintRoot(deps),
+		"document", "create", "--from-blueprint", "bp-1",
+		"--json", `{"variants":[{"culture":"da-DK","name":"zz probe Danish name"}]}`,
+	); err != nil {
+		t.Fatalf("document create --from-blueprint with a variant patch failed: %v", err)
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal([]byte(createBody), &body); err != nil {
+		t.Fatalf("failed to parse create body: %v", err)
+	}
+	variants, ok := body["variants"].([]any)
+	if !ok || len(variants) != 2 {
+		t.Fatalf("expected both cultures in the create payload, got %q", createBody)
+	}
+	byCulture := map[string]map[string]any{}
+	for _, variant := range variants {
+		object, _ := variant.(map[string]any)
+		culture, _ := object["culture"].(string)
+		byCulture[culture] = object
+	}
+	if byCulture["da-DK"]["name"] != "zz probe Danish name" {
+		t.Fatalf("expected --json to rename the Danish variant, got %+v", byCulture["da-DK"])
+	}
+	if byCulture["en-US"]["name"] != "English preset name" {
+		t.Fatalf("expected the English variant to survive the merge, got %+v", byCulture["en-US"])
+	}
+	// The scaffold normalisation still runs first, so response-only
+	// variant fields never reach the create payload.
+	if _, present := byCulture["en-US"]["state"]; present {
+		t.Fatalf("expected response-only variant fields to stay dropped, got %+v", byCulture["en-US"])
+	}
+}
+
 func TestDocumentCreateFromBlueprintKeepsScaffoldName(t *testing.T) {
 	var createBody string
 	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
