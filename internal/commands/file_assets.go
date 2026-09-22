@@ -152,6 +152,13 @@ func normalizeFilePath(path string) (string, error) {
 	if trimmed == "" {
 		return "", fmt.Errorf("path must not be empty; pass a path like /Blog/Header.cshtml")
 	}
+	// Umbraco's virtual paths always use forward slashes, but a
+	// Windows-hosted instance treats a backslash as a separator too — which
+	// would let "vendor\..\secret.js" slip past the segment checks below,
+	// since they only split on "/". Backslashes are rejected outright.
+	if strings.ContainsRune(trimmed, '\\') {
+		return "", fmt.Errorf(`invalid path %q: backslashes are not allowed, use / as the separator`, path)
+	}
 	for _, segment := range strings.Split(trimmed, "/") {
 		if segment == "" {
 			return "", fmt.Errorf("invalid path %q: it contains an empty segment", path)
@@ -315,16 +322,44 @@ func fileAssetFetch(cmd *cobra.Command, deps Dependencies, spec fileAssetSpec, p
 		if err != nil {
 			return nil, err
 		}
-		return deps.Client.Get(cmd.Context(), spec.ItemEndpoint, api.RequestOptions{
+		result, err := deps.Client.Get(cmd.Context(), spec.ItemEndpoint, api.RequestOptions{
 			Fields: fields,
 			Params: map[string]any{"path": normalized},
 		})
+		if err != nil {
+			return nil, err
+		}
+		return unwrapFileAssetItem(spec, normalized, result)
 	}
 	escaped, err := escapeFilePath(path)
 	if err != nil {
 		return nil, err
 	}
 	return deps.Client.Get(cmd.Context(), "/"+spec.Resource+"/"+escaped, api.RequestOptions{Fields: fields})
+}
+
+// unwrapFileAssetItem turns the /item/<resource> array into the single
+// entry that was asked for. The endpoint takes a repeatable path parameter
+// and answers with an array, so a get of one path would otherwise print a
+// one-element array — and, worse, report success with [] for a path that
+// does not exist.
+func unwrapFileAssetItem(spec fileAssetSpec, path string, result any) (any, error) {
+	items, ok := result.([]any)
+	if !ok {
+		// A single object means the endpoint answered in its non-array
+		// shape; nothing to unwrap.
+		return result, nil
+	}
+	for _, item := range items {
+		object, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		if itemPath, ok := object["path"].(string); ok && itemPath == path {
+			return object, nil
+		}
+	}
+	return nil, fmt.Errorf("%s %s not found", spec.Display, path)
 }
 
 // writeFileAssetContent writes the content field of a fetched file asset to

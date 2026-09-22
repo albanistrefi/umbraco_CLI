@@ -339,6 +339,70 @@ func TestStaticFileGetUsesItemEndpoint(t *testing.T) {
 	}
 }
 
+func TestStaticFileGetUnwrapsTheMatchingItem(t *testing.T) {
+	// /item/static-file takes a repeatable path parameter and answers with
+	// an array. A get of one path must return that entry, not a
+	// one-element array, so --fields and downstream parsing see an object.
+	deps := fileAssetDeps(func(req *http.Request) (*http.Response, error) {
+		return endpointJSONResponse(http.StatusOK, `[
+			{"name":"other.css","path":"/wwwroot/css/other.css","isFolder":false},
+			{"name":"RTE.css","path":"/wwwroot/css/RTE.css","isFolder":false}
+		]`), nil
+	})
+
+	out, err := execute(buildFileAssetRoot(deps), "static-file", "get", "/wwwroot/css/RTE.css", "--fields", "name")
+	if err != nil {
+		t.Fatalf("static-file get failed: %v", err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("expected a single object, got %s (%v)", out, err)
+	}
+	if payload["name"] != "RTE.css" {
+		t.Fatalf("expected the requested entry, got %+v", payload)
+	}
+	if _, ok := payload["path"]; ok {
+		t.Fatalf("--fields must project the unwrapped item, got %+v", payload)
+	}
+}
+
+func TestStaticFileGetReportsMissingPath(t *testing.T) {
+	// An unknown path answers 200 with [], which must not read as success.
+	deps := fileAssetDeps(func(req *http.Request) (*http.Response, error) {
+		return endpointJSONResponse(http.StatusOK, `[]`), nil
+	})
+
+	out, err := execute(buildFileAssetRoot(deps), "static-file", "get", "/wwwroot/css/nope.css")
+	if err == nil {
+		t.Fatalf("expected a not-found error, got output %s", out)
+	}
+	if !strings.Contains(err.Error(), "static file /wwwroot/css/nope.css not found") {
+		t.Fatalf("expected the path in the error, got %v", err)
+	}
+}
+
+func TestFileAssetPathsRejectBackslashes(t *testing.T) {
+	// Only "/" is split on, so a backslash would sneak ".." past the
+	// relative-segment check on a Windows-hosted instance.
+	deps := fileAssetDeps(func(req *http.Request) (*http.Response, error) {
+		t.Fatalf("no request expected, got %s", req.URL.Path)
+		return nil, nil
+	})
+	root := buildFileAssetRoot(deps)
+
+	for _, args := range [][]string{
+		{"script", "get", `/vendor\..\secret.js`},
+		{"partial-view", "delete", `/Blog\..\..\appsettings.json`, "--force"},
+		{"stylesheet", "children", `/theme\..`},
+		{"static-file", "get", `/wwwroot\..\appsettings.json`},
+	} {
+		_, err := execute(root, args...)
+		if err == nil || !strings.Contains(err.Error(), "backslashes are not allowed") {
+			t.Fatalf("%v: expected a backslash rejection, got %v", args, err)
+		}
+	}
+}
+
 func TestFileAssetSnippetsOnlyOnPartialView(t *testing.T) {
 	root := buildFileAssetRoot(makeDeps())
 	for _, group := range []string{"script", "stylesheet", "static-file"} {
