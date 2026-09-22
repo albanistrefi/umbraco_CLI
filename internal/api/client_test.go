@@ -693,7 +693,7 @@ func TestRequestStopsAtLoginRedirectWithAuthError(t *testing.T) {
 	if !errors.As(err, &authErr) {
 		t.Fatalf("expected AuthRedirectError, got %v", err)
 	}
-	if authErr.ExitCode() != 3 || !strings.Contains(err.Error(), "authentication required: GET /umbraco/deploy/management/api/v1/queue redirected (302) to https://example.test/umbraco?returnPath=") || !strings.Contains(err.Error(), "did not accept the bearer token") {
+	if authErr.ExitCode() != 3 || !strings.Contains(err.Error(), "authentication required: GET /umbraco/deploy/management/api/v1/queue redirected (302) to https://example.test/umbraco?returnPath=") || !strings.Contains(err.Error(), "did not accept the bearer token") || strings.Contains(err.Error(), "known not to") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if apiCalls != 1 {
