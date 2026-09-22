@@ -29,7 +29,10 @@ same thing is 'document create --from-blueprint <id>'.
 
 Task → command:
   Browse the blueprint tree                            blueprint list; blueprint children <folder-id>
+  Locate one in the tree                               blueprint ancestors <id>; blueprint siblings <id>
   Read one blueprint and its values                    blueprint get <id>
+  Resolve several GUIDs to names in one call           blueprint items --ids <a,b>
+  See who changed one, and when                        blueprint audit-log <id>
   Turn an existing document into a blueprint           blueprint create-from-document <document-id> --name <n> [--parent <folder-id>]
   Build a blueprint from scratch                       blueprint create --print-template, then blueprint create --json '{...}'
   Change the stored values                             blueprint update <id> --merge-json '{...}' --backup
@@ -43,10 +46,45 @@ Task → command:
 
 | Command | Description |
 |---------|-------------|
+| `blueprint ancestors <id>` | List the folders a blueprint sits under, root first |
+| `blueprint audit-log <id>` | List the audit trail for a blueprint (who did what, when) |
 | `blueprint children <parent-id>` | List blueprints inside a folder (paginated; --skip/--take/--all) |
 | `blueprint get <id>` | Get a blueprint by ID |
+| `blueprint items` | Resolve blueprint GUIDs to names in one call |
 | `blueprint list` | List blueprints and folders at the tree root (paginated; --skip/--take/--all) |
 | `blueprint scaffold <id>` | Print the document skeleton a blueprint produces |
+| `blueprint siblings <id>` | List the tree entries around a blueprint or folder |
+
+### ancestors
+
+```bash
+umbraco blueprint ancestors <id>
+```
+
+GET /tree/document-blueprint/ancestors?descendantId={id}. Answers with the folder chain above the blueprint (or folder), root first and ending with the entry itself, so an id seen in a payload can be placed in the tree without walking it from the root.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--fields` | string | — | Limit response fields (comma-separated top-level keys) |
+
+### audit-log
+
+```bash
+umbraco blueprint audit-log <id>
+```
+
+GET /document-blueprint/{id}/audit-log. Pass --params for orderDirection or sinceDate filters, e.g. --params '{"sinceDate":"2026-01-01T00:00:00Z"}'.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--all` | bool | false | Walk every page until exhausted (auto-paginates with --take as the page size, default 500; combine with --skip to start partway through). Bounded by an internal 100k-item ceiling. |
+| `--fields` | string | — | Limit response fields (comma-separated top-level keys) |
+| `--first-n` | int | 0 | Return only the first N items from item collections |
+| `--ids-only` | bool | false | Return only item IDs for item collections |
+| `--params` | string | — | Query parameters as JSON |
+| `--skip` | int | -1 | Skip count (passes through as ?skip=N; lets you walk past the server page size on large children/root collections) |
+| `--summarize` | bool | false | Return only id/name/alias fields for item collections |
+| `--take` | int | -1 | Take count (passes through as ?take=N; combine with --skip to page) |
 
 ### children
 
@@ -76,6 +114,19 @@ GET /document-blueprint/{id}. The response carries documentType, values and vari
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--fields` | string | — | Limit response fields (comma-separated top-level keys) |
+
+### items
+
+```bash
+umbraco blueprint items
+```
+
+GET /item/document-blueprint?id=…. The item read for blueprints: pass the GUIDs seen in other payloads and get their names and document types back without one request per ID.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--fields` | string | — | Limit response fields (comma-separated top-level keys) |
+| `--ids` | string | — | Comma-separated blueprint GUIDs (required) |
 
 ### list
 
@@ -107,6 +158,21 @@ GET /document-blueprint/{id}/scaffold. Returns the blueprint's values and varian
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--fields` | string | — | Limit response fields (comma-separated top-level keys) |
+
+### siblings
+
+```bash
+umbraco blueprint siblings <id>
+```
+
+GET /tree/document-blueprint/siblings?target={id}. The window is counted from the target: --before entries above it and --after below it. The response carries totalBefore/totalAfter alongside items, so a wider window is only worth asking for when those are non-zero.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--after` | int | 10 | How many siblings below the target to return |
+| `--before` | int | 10 | How many siblings above the target to return |
+| `--fields` | string | — | Limit response fields (comma-separated top-level keys) |
+| `--folders-only` | bool | false | Return only folders, skipping the blueprints themselves |
 
 ## Mutation Commands
 

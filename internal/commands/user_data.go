@@ -23,12 +23,14 @@ Task → command:
   Narrow to one group or identifier            user-data list --groups <g> --identifiers <i>
   Read one entry by key                        user-data get <key>
   Store a new entry                            user-data create --group <g> --identifier <i> --value <v>
-  Replace an entry (all fields required)       user-data update <key> --group <g> --identifier <i> --value <v>`,
+  Replace an entry (all fields required)       user-data update <key> --group <g> --identifier <i> --value <v>
+  Remove an entry                              user-data delete <key> --force`,
 	}
 	userData.AddCommand(userDataList(deps))
 	userData.AddCommand(userDataGet(deps))
 	userData.AddCommand(userDataCreate(deps))
 	userData.AddCommand(userDataUpdate(deps))
+	userData.AddCommand(userDataDelete(deps))
 	root.AddCommand(userData)
 }
 
@@ -66,6 +68,14 @@ func userDataGet(deps Dependencies) *cobra.Command {
 	return getCommand(deps, getSpec{
 		Use:   "get <key>",
 		Short: "Get one user data entry by key (GUID)",
+		Path:  func(args []string) string { return api.JoinPath("/user-data/%s", args[0]) },
+	})
+}
+
+func userDataDelete(deps Dependencies) *cobra.Command {
+	return deleteCommand(deps, deleteSpec{
+		Use:   "delete <key>",
+		Short: "Permanently delete one user data entry by key (GUID)",
 		Path:  func(args []string) string { return api.JoinPath("/user-data/%s", args[0]) },
 	})
 }

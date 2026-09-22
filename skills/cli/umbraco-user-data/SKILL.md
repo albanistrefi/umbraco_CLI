@@ -32,6 +32,7 @@ Task → command:
   Read one entry by key                        user-data get <key>
   Store a new entry                            user-data create --group <g> --identifier <i> --value <v>
   Replace an entry (all fields required)       user-data update <key> --group <g> --identifier <i> --value <v>
+  Remove an entry                              user-data delete <key> --force
 ```
 
 ## Read Commands
@@ -79,6 +80,7 @@ GET /user-data. --groups and --identifiers are comma-separated lists sent as rep
 | Command | Description |
 |---------|-------------|
 | `user-data create` | Create a user data entry |
+| `user-data delete <key>` | Permanently delete one user data entry by key (GUID) |
 | `user-data update <key>` | Replace a user data entry (all fields required) |
 
 ### create
@@ -106,6 +108,27 @@ umbraco user-data create [flags] --dry-run
 
 # 2. Execute with the same flags
 umbraco user-data create [flags]
+```
+
+### delete
+
+```bash
+umbraco user-data delete <key>
+```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--force` | bool | false | Confirm permanent deletion |
+
+**Safe pattern:**
+
+```bash
+# 1. Rehearse with the exact flags you will execute with
+umbraco user-data delete <key> [flags] --dry-run
+
+# 2. Execute with the same flags
+umbraco user-data delete <key> --force [flags]
 ```
 
 ### update

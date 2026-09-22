@@ -2,7 +2,7 @@ package commands
 
 var ExpectedCollectionCommandCounts = map[string]int{
 	"document":        32,
-	"blueprint":       11,
+	"blueprint":       15,
 	"element":         21,
 	"dictionary":      6,
 	"media":           24,
@@ -33,7 +33,7 @@ var ExpectedCollectionCommandCounts = map[string]int{
 	"webhook":         7,
 	"language":        7,
 	"tag":             1,
-	"user-data":       4,
+	"user-data":       5,
 	"user":            14,
 	"user-group":      7,
 	"automate":        8,
