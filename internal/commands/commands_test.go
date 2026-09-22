@@ -32,6 +32,7 @@ func buildRootWithCollections(t *testing.T, deps Dependencies) *cobra.Command {
 	}
 	RegisterDocument(root, deps)
 	RegisterElement(root, deps)
+	RegisterBlueprint(root, deps)
 	RegisterDictionary(root, deps)
 	RegisterMedia(root, deps)
 	RegisterDoctype(root, deps)
@@ -180,6 +181,7 @@ func TestRegisteredAPICommandsHaveSchemas(t *testing.T) {
 	schemaBackedCollections := map[string]struct{}{
 		"document":       {},
 		"element":        {},
+		"blueprint":      {},
 		"dictionary":     {},
 		"media":          {},
 		"doctype":        {},

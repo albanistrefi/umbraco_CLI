@@ -247,6 +247,19 @@ var endpointBindings = map[string]endpointBinding{
 	"element.version.rollback":        {Method: "POST", Path: "/element-version/{id}/rollback"},
 	"element.version.prevent-cleanup": {Method: "PUT", Path: "/element-version/{id}/prevent-cleanup"},
 
+	// blueprint (document blueprints: reusable content presets)
+	"blueprint.list":                 {Method: "GET", Path: "/tree/document-blueprint/root"},
+	"blueprint.children":             {Method: "GET", Path: "/tree/document-blueprint/children"},
+	"blueprint.get":                  {Method: "GET", Path: "/document-blueprint/{id}", ExtraQuery: withFields},
+	"blueprint.scaffold":             {Method: "GET", Path: "/document-blueprint/{id}/scaffold", ExtraQuery: withFields, Response: &ObjectSchema{Type: "object", Description: "The document payload skeleton the blueprint seeds; 'document create --from-blueprint <id>' consumes it"}},
+	"blueprint.create":               {Method: "POST", Path: "/document-blueprint"},
+	"blueprint.create-from-document": {Method: "POST", Path: "/document-blueprint/from-document"},
+	"blueprint.update":               {Method: "PUT", Path: "/document-blueprint/{id}"},
+	"blueprint.move":                 {Method: "PUT", Path: "/document-blueprint/{id}/move"},
+	"blueprint.delete":               {Method: "DELETE", Path: "/document-blueprint/{id}"},
+	"blueprint.create-folder":        {Method: "POST", Path: "/document-blueprint/folder"},
+	"blueprint.delete-folder":        {Method: "DELETE", Path: "/document-blueprint/folder/{id}"},
+
 	// deploy (effect-based observation composites)
 	"deploy.watch":  {Manual: deployWatchSchema},
 	"deploy.status": {Manual: deployStatusSchema},
@@ -277,7 +290,7 @@ var endpointBindings = map[string]endpointBinding{
 	"document.ancestors":                  {Method: "GET", Path: "/tree/document/ancestors"},
 	"document.search":                     {Method: "GET", Path: "/item/document/search", ExtraQuery: documentTrimQuery},
 	"document.grep":                       {Manual: documentGrepSchema},
-	"document.create":                     {Method: "POST", Path: "/document", Response: &ObjectSchema{Type: "object", Description: "--publish posts to POST /document/create-and-publish instead (Umbraco 18.1+), with --culture filling culturesToPublish (empty list = invariant)"}},
+	"document.create":                     {Method: "POST", Path: "/document", Response: &ObjectSchema{Type: "object", Description: "--publish posts to POST /document/create-and-publish instead (Umbraco 18.1+), with --culture filling culturesToPublish (empty list = invariant); --from-blueprint seeds the payload from GET /document-blueprint/{id}/scaffold and makes --json optional (merged on top), --parent fills parent when the payload omits it"}},
 	"document.update":                     {Method: "PUT", Path: "/document/{id}", Response: &ObjectSchema{Type: "object", Description: "--save-and-publish targets PUT /document/{id}/update-and-publish atomically (Umbraco 18.1+), falling back to separate update+publish calls on older servers"}},
 	"document.update-properties":          {Method: "PUT", Path: "/document/{id}", Response: &ObjectSchema{Type: "object", Description: "CLI convenience wrapper that fetches, merges, and writes the full document payload"}},
 	"document.restore-backup":             {Manual: &rawSchema{Method: "PUT", Path: "/document/{id}", RequestBody: &ObjectSchema{Type: "object", Description: "CLI workflow: PUT the document captured by --backup back, then re-read and verify its values are present"}}},
