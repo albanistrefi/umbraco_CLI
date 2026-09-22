@@ -895,6 +895,80 @@ func TestDocumentUpdateMergeJSONFetchesAndMergesCurrentDocument(t *testing.T) {
 	}
 }
 
+// Regression: variants carry no alias, so --merge-json used to replace the
+// whole variants array — renaming one culture dropped every other culture
+// from the document.
+func TestDocumentUpdateMergeJSONRenamesOneVariantWithoutDroppingTheOthers(t *testing.T) {
+	var observedPutBody map[string]any
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case "/umbraco/management/api/v1/document/doc-1":
+			if req.Method == http.MethodGet {
+				return endpointJSONResponse(http.StatusOK, `{
+  "id":"doc-1",
+  "documentType":{"id":"type-1"},
+  "values":[
+    {"alias":"title","culture":"en-US","segment":null,"value":"English title"},
+    {"alias":"title","culture":"da-DK","segment":null,"value":"Danish title"}
+  ],
+  "variants":[
+    {"culture":"en-US","segment":null,"name":"English name"},
+    {"culture":"da-DK","segment":null,"name":"Danish name"}
+  ]
+}`), nil
+			}
+			if req.Method == http.MethodPut {
+				if err := json.NewDecoder(req.Body).Decode(&observedPutBody); err != nil {
+					t.Fatalf("failed to decode merged document payload: %v", err)
+				}
+				return endpointJSONResponse(http.StatusOK, `{"ok":true}`), nil
+			}
+			return endpointJSONResponse(http.StatusMethodNotAllowed, `null`), nil
+		default:
+			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		}
+	})
+
+	if _, err := execute(
+		buildRootWithCollections(t, deps),
+		"document", "update", "doc-1",
+		"--merge-json", `{"variants":[{"culture":"da-DK","name":"New Danish name"}],"values":[{"alias":"title","culture":"da-DK","segment":null,"value":"New Danish title"}]}`,
+	); err != nil {
+		t.Fatalf("document update --merge-json failed: %v", err)
+	}
+
+	variants, ok := observedPutBody["variants"].([]any)
+	if !ok || len(variants) != 2 {
+		t.Fatalf("expected both variants in the merged payload, got %+v", observedPutBody["variants"])
+	}
+	byCulture := map[string]map[string]any{}
+	for _, variant := range variants {
+		object, _ := variant.(map[string]any)
+		culture, _ := object["culture"].(string)
+		byCulture[culture] = object
+	}
+	if byCulture["da-DK"]["name"] != "New Danish name" {
+		t.Fatalf("expected the patched variant to be renamed, got %+v", byCulture["da-DK"])
+	}
+	if byCulture["en-US"]["name"] != "English name" {
+		t.Fatalf("expected the untouched variant to survive the merge, got %+v", byCulture["en-US"])
+	}
+
+	// The values half of the same patch keeps its alias+culture+segment
+	// behaviour: only the named culture changes.
+	values, _ := observedPutBody["values"].([]any)
+	if len(values) != 2 {
+		t.Fatalf("expected both values in the merged payload, got %+v", observedPutBody["values"])
+	}
+	first, _ := values[0].(map[string]any)
+	second, _ := values[1].(map[string]any)
+	if first["value"] != "English title" || second["value"] != "New Danish title" {
+		t.Fatalf("expected only the Danish value to change, got %+v", observedPutBody["values"])
+	}
+}
+
 func TestDocumentUpdateMergeJSONAllowsExistingControlCharactersInFetchedDocument(t *testing.T) {
 	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {

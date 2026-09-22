@@ -123,6 +123,63 @@ func TestDocumentUpdateIDsMergesPerDocumentAndPublishes(t *testing.T) {
 	}
 }
 
+// The per-document merge in the batch path runs through the same
+// mergeAliasPayload as the single-document one, so the variant regression
+// has to be pinned here too: renaming one culture across several documents
+// must not drop the others from any of them.
+func TestDocumentUpdateIDsMergesVariantsPerCulture(t *testing.T) {
+	bodies := map[string]map[string]any{}
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch {
+		case req.URL.Path == "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case strings.HasPrefix(req.URL.Path, "/umbraco/management/api/v1/document/"):
+			rest := strings.TrimPrefix(req.URL.Path, "/umbraco/management/api/v1/document/")
+			id := strings.SplitN(rest, "/", 2)[0]
+			if req.Method == http.MethodGet {
+				return endpointJSONResponse(http.StatusOK, `{"id":"`+id+`","variants":[{"culture":"en-US","segment":null,"name":"English `+id+`"},{"culture":"da-DK","segment":null,"name":"Danish `+id+`"}],"values":[]}`), nil
+			}
+			if req.Method == http.MethodPut {
+				if rest == id {
+					var body map[string]any
+					if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+						t.Fatalf("failed to decode merged payload for %s: %v", id, err)
+					}
+					bodies[id] = body
+				}
+				return endpointNoContent(), nil
+			}
+		}
+		return endpointJSONResponse(http.StatusNotFound, `null`), nil
+	})
+
+	if _, err := execute(
+		buildRootWithCollections(t, deps),
+		"document", "update", "--ids", "a,b",
+		"--merge-json", `{"variants":[{"culture":"da-DK","name":"Renamed"}]}`,
+		"--force",
+	); err != nil {
+		t.Fatalf("document update --ids --merge-json failed: %v", err)
+	}
+
+	for _, id := range []string{"a", "b"} {
+		variants, ok := bodies[id]["variants"].([]any)
+		if !ok || len(variants) != 2 {
+			t.Fatalf("expected both variants on document %s, got %+v", id, bodies[id]["variants"])
+		}
+		byCulture := map[string]string{}
+		for _, variant := range variants {
+			object, _ := variant.(map[string]any)
+			culture, _ := object["culture"].(string)
+			name, _ := object["name"].(string)
+			byCulture[culture] = name
+		}
+		if byCulture["da-DK"] != "Renamed" || byCulture["en-US"] != "English "+id {
+			t.Fatalf("expected only the Danish variant of %s renamed, got %+v", id, byCulture)
+		}
+	}
+}
+
 func TestDocumentUpdateIDsDryRunPlansFirstThreeAndCountsTheRest(t *testing.T) {
 	var puts []string
 	gets := 0
