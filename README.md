@@ -3,7 +3,7 @@
 The agent-first command line for Umbraco — CMS, Forms, and Automate. Built on
 the Management APIs, it goes beyond them: exhaustive content search,
 cross-environment schema diff, log tailing, and safe, rehearsable bulk
-operations — 301 commands with a scriptable exit-code contract.
+operations — 333 commands with a scriptable exit-code contract.
 
 Core behavior:
 - `--json` and `--params` are primary machine inputs
@@ -358,6 +358,8 @@ testing) are not part of this repo — get those from
 - `datatype` (16) — incl. `block` subgroup and `create-folder`/`delete-folder`
 - `dictionary` (6)
 - `template` (6)
+- `partial-view` (11) / `script` (9) / `stylesheet` (9) — the file-based assets, keyed by path instead of by GUID: tree `list`/`children`, `get` (with `--out <file>` to save the content verbatim), `create`/`update` (`--content` or `--content-file`), `rename`, force-gated `delete`, plus `create-folder`/`delete-folder`; `partial-view` adds the built-in `snippets`/`snippet <id>` catalogue
+- `static-file` (3, read-only) — `list`/`children`/`get` over the static file tree (App_Plugins, wwwroot); the Management API exposes no write side
 - `member` (8) / `member-group` (2)
 - `user` (13) / `user-group` (7)
 - `webhook` (7)
@@ -381,7 +383,7 @@ testing) are not part of this repo — get those from
 - `schema` — runtime schema introspection (`umbraco schema <command>`) plus `schema diff <envA> <envB>` cross-environment comparison across doctype, datatype, mediatype, membertype, template, language, and dictionary
 - `automate` (8 subgroups) — requires [Umbraco Automate](https://docs.umbraco.com/umbraco-automate) on the target instance; see below
 
-Total: **301 runnable commands** counting every nested subcommand. Group counts above are direct subcommands; nested subgroups like `document version`, `document bin`, and the `automate` subgroups add the rest.
+Total: **333 runnable commands** counting every nested subcommand. Group counts above are direct subcommands; nested subgroups like `document version`, `document bin`, and the `automate` subgroups add the rest.
 
 ## Umbraco Automate
 
