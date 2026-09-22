@@ -19,6 +19,8 @@ var ExpectedCollectionCommandCounts = map[string]int{
 	"published-cache": 3,
 	"redirect":        6,
 	"indexer":         3,
+	"searcher":        2,
+	"relation":        2,
 	"mediatype":       12,
 	"membertype":      12,
 	"tree":            1,
