@@ -2,7 +2,7 @@
 name: umbraco-forms
 description: "Umbraco Forms operations (read-only)"
 metadata:
-  version: 0.4.20
+  version: 0.4.21
   requires:
     bins:
       - umbraco

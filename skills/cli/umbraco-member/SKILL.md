@@ -2,7 +2,7 @@
 name: umbraco-member
 description: "Front-office member operations (login, profile, groups)"
 metadata:
-  version: 0.4.20
+  version: 0.4.21
   requires:
     bins:
       - umbraco

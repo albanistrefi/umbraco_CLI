@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.4.21 - 2026-09-22
+
 - fixed the redirect loop against Umbraco Cloud when an endpoint sends the caller to the backoffice login (agent-reported on 0.4.20: `deploy queue list --profile dev` died with `stopped after 10 redirects` as `returnPath` nested; the earlier `cannot unmarshal string` on the same profile was the login HTML being parsed as JSON). The API client no longer follows redirects: a redirect to `/umbraco?returnPath=…` (or a 200 that is the login page) is reported as `authentication required: GET <path> redirected (302) to … — the environment did not accept the bearer token for this endpoint` and exits 3, after exactly one request. Other redirects surface as their 3xx status; non-login HTML still passes through as text for `api`. Context from the report, not a CLI defect: on Umbraco Cloud, Deploy's own API under `/umbraco/deploy/…` does not accept the Management API bearer token even though the core API does, so `deploy transfer` against a Cloud environment stays blocked until it does — the CLI now says so instead of looping
 
 ## v0.4.20 - 2026-09-21

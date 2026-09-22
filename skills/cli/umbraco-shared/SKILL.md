@@ -2,7 +2,7 @@
 name: umbraco-shared
 description: "Umbraco CLI: Shared patterns for authentication, global flags, and safety rules."
 metadata:
-  version: 0.4.20
+  version: 0.4.21
   requires:
     bins:
       - umbraco
