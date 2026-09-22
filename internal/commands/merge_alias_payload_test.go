@@ -21,7 +21,7 @@ func TestMergeAliasObjectArraysKeysByAliasCultureAndSegment(t *testing.T) {
 		map[string]any{"alias": "title", "value": "New da", "culture": "da-DK", "segment": nil},
 	}
 
-	merged := mergeAliasObjectArrays(current, patch)
+	merged := mergeObjectArrays(current, patch, aliasMergeKey)
 	if len(merged) != 3 {
 		t.Fatalf("expected 3 merged entries, got %d: %+v", len(merged), merged)
 	}
@@ -55,7 +55,7 @@ func TestMergeAliasObjectArraysAliasOnlyShapesUnchanged(t *testing.T) {
 		map[string]any{"alias": "title", "name": "Headline"},
 	}
 
-	merged := mergeAliasObjectArrays(current, patch)
+	merged := mergeObjectArrays(current, patch, aliasMergeKey)
 	if len(merged) != 2 {
 		t.Fatalf("expected 2 properties, got %d", len(merged))
 	}
@@ -79,7 +79,7 @@ func TestMergeAliasObjectArraysInvariantPatchDoesNotMatchVariantCurrent(t *testi
 		map[string]any{"alias": "title", "value": "invariant value", "culture": nil},
 	}
 
-	merged := mergeAliasObjectArrays(current, patch)
+	merged := mergeObjectArrays(current, patch, aliasMergeKey)
 	if len(merged) != 2 {
 		t.Fatalf("invariant and variant entries with the same alias must coexist after merge, got %d: %+v", len(merged), merged)
 	}
@@ -97,7 +97,11 @@ func TestMergeAliasObjectArraysKeysAliaslessVariantsByCultureAndSegment(t *testi
 		map[string]any{"culture": "da-DK", "name": "New Danish name"},
 	}
 
-	merged := mergeAliasObjectArrays(current, patch)
+	mergedPayload := mergeAliasPayload(
+		map[string]any{"variants": current},
+		map[string]any{"variants": patch},
+	)
+	merged, _ := mergedPayload["variants"].([]any)
 	if len(merged) != 2 {
 		t.Fatalf("expected both variants to survive, got %d: %+v", len(merged), merged)
 	}
@@ -135,7 +139,11 @@ func TestMergeAliasObjectArraysKeysAliaslessEntriesBySegment(t *testing.T) {
 		map[string]any{"culture": "en-US", "segment": "mobile", "name": "Mobile renamed"},
 	}
 
-	merged := mergeAliasObjectArrays(current, patch)
+	mergedPayload := mergeAliasPayload(
+		map[string]any{"variants": current},
+		map[string]any{"variants": patch},
+	)
+	merged, _ := mergedPayload["variants"].([]any)
 	if len(merged) != 2 {
 		t.Fatalf("expected both segments to survive, got %d: %+v", len(merged), merged)
 	}
@@ -167,5 +175,119 @@ func TestMergeAliasObjectArraysReplacesUnidentifiableArrays(t *testing.T) {
 	containers, _ := merged["containers"].([]any)
 	if len(containers) != 1 {
 		t.Fatalf("expected containers to be replaced wholesale, got %d: %+v", len(containers), containers)
+	}
+}
+
+// The culture/segment identity belongs to the payload's own variants[] and
+// nowhere else. A property value that happens to be an array of
+// culture-tagged objects is opaque content, not a variant list, so it is
+// replaced wholesale exactly as it was before variants learned an identity.
+func TestMergeAliasPayloadDoesNotApplyVariantIdentityInsidePropertyValues(t *testing.T) {
+	current := map[string]any{
+		"values": []any{
+			map[string]any{"alias": "blocks", "culture": nil, "segment": nil, "value": []any{
+				map[string]any{"culture": "en-US", "text": "English block"},
+				map[string]any{"culture": "da-DK", "text": "Danish block"},
+			}},
+		},
+	}
+	patch := map[string]any{
+		"values": []any{
+			map[string]any{"alias": "blocks", "culture": nil, "segment": nil, "value": []any{
+				map[string]any{"culture": "en-US", "text": "Replaced block"},
+			}},
+		},
+	}
+
+	merged := mergeAliasPayload(current, patch)
+	values, _ := merged["values"].([]any)
+	if len(values) != 1 {
+		t.Fatalf("expected the single value entry to merge by alias, got %+v", values)
+	}
+	entry, _ := values[0].(map[string]any)
+	value, _ := entry["value"].([]any)
+	if len(value) != 1 {
+		t.Fatalf("expected the property value to be replaced wholesale, got %d items: %+v", len(value), value)
+	}
+	item, _ := value[0].(map[string]any)
+	if item["text"] != "Replaced block" {
+		t.Fatalf("expected the patch value verbatim, got %+v", value)
+	}
+}
+
+// The same guard one level down: an object nested inside a property value
+// may itself have a "variants" field, and it must not be mistaken for the
+// document's own.
+func TestMergeAliasPayloadDoesNotApplyVariantIdentityToNestedVariantsFields(t *testing.T) {
+	current := map[string]any{
+		"values": []any{
+			map[string]any{"alias": "embedded", "value": map[string]any{
+				"variants": []any{
+					map[string]any{"culture": "en-US", "name": "English inner"},
+					map[string]any{"culture": "da-DK", "name": "Danish inner"},
+				},
+			}},
+		},
+	}
+	patch := map[string]any{
+		"values": []any{
+			map[string]any{"alias": "embedded", "value": map[string]any{
+				"variants": []any{
+					map[string]any{"culture": "da-DK", "name": "Replaced inner"},
+				},
+			}},
+		},
+	}
+
+	merged := mergeAliasPayload(current, patch)
+	values, _ := merged["values"].([]any)
+	entry, _ := values[0].(map[string]any)
+	value, _ := entry["value"].(map[string]any)
+	nested, _ := value["variants"].([]any)
+	if len(nested) != 1 {
+		t.Fatalf("expected a nested variants field to be replaced wholesale, got %d: %+v", len(nested), nested)
+	}
+}
+
+// And the root array still merges, so the guard did not cost the fix.
+func TestMergeAliasPayloadMergesTheRootVariantsArray(t *testing.T) {
+	current := map[string]any{
+		"variants": []any{
+			map[string]any{"culture": "en-US", "segment": nil, "name": "English name"},
+			map[string]any{"culture": "da-DK", "segment": nil, "name": "Danish name"},
+		},
+	}
+	patch := map[string]any{
+		"variants": []any{
+			map[string]any{"culture": "da-DK", "name": "Renamed"},
+		},
+	}
+
+	merged := mergeAliasPayload(current, patch)
+	variants, _ := merged["variants"].([]any)
+	if len(variants) != 2 {
+		t.Fatalf("expected the root variants array to merge, got %d: %+v", len(variants), variants)
+	}
+}
+
+// A variants patch naming neither culture nor segment is not identifiable,
+// so the array keeps the wholesale-replacement contract it had before.
+func TestMergeAliasPayloadReplacesVariantsWhenThePatchNamesNoCulture(t *testing.T) {
+	current := map[string]any{
+		"variants": []any{
+			map[string]any{"culture": "en-US", "segment": nil, "name": "English name"},
+			map[string]any{"culture": "da-DK", "segment": nil, "name": "Danish name"},
+		},
+	}
+	patch := map[string]any{
+		"variants": []any{
+			map[string]any{"name": "Only this one"},
+		},
+	}
+
+	merged := mergeAliasPayload(current, patch)
+	variants, _ := merged["variants"].([]any)
+	if len(variants) != 1 {
+		t.Fatalf("expected an unidentifiable variants patch to replace, got %d: %+v", len(variants), variants)
 	}
 }
