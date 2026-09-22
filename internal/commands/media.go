@@ -28,7 +28,8 @@ Task → command:
   Swap the file behind an existing item (keep other values)    media replace-file <id> <file> --backup
   Undo a bad write                                             media restore-backup <backup.json>
   Change name/values without touching the file                 media update <id> --merge-json '{...}' --backup
-  Where is it served from?                                     media urls <id>`,
+  Where is it served from?                                     media urls <id>
+  What URL serves it at a given size?                          media resize-urls --ids <id> --width 200`,
 	}
 
 	media.AddCommand(mediaInspect(deps))
@@ -38,6 +39,7 @@ Task → command:
 	media.AddCommand(mediaChildren(deps))
 	media.AddCommand(mediaSearch(deps))
 	media.AddCommand(mediaURLs(deps))
+	media.AddCommand(mediaResizeURLs(deps))
 	media.AddCommand(mediaCreate(deps))
 	media.AddCommand(mediaCreateFolder(deps))
 	media.AddCommand(mediaUpload(deps))
@@ -119,6 +121,48 @@ func mediaURLs(deps Dependencies) *cobra.Command {
 		}
 		return printResult(cmd, deps, result)
 	}}
+}
+
+// mediaResizeURLs asks the server for the imaging pipeline URLs that serve
+// the given media items at a size — the crop/resize URLs the backoffice
+// renders thumbnails from — for several items in one round trip.
+func mediaResizeURLs(deps Dependencies) *cobra.Command {
+	var idsCSV string
+	var width int
+	var height int
+	var mode string
+	cmd := &cobra.Command{
+		Use:   "resize-urls",
+		Short: "Get resized image URLs for media items (--ids, --width, --height, --mode)",
+		Long:  "GET /imaging/resize/urls. Each ID is sent as a repeated ?id= value, so one call covers many media items. --width/--height default to the server's 200x200; --mode is one of Crop, Max, Stretch, Pad, BoxPad, Min.",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ids := uniqueCSV(idsCSV)
+			if len(ids) == 0 {
+				return fmt.Errorf("media resize-urls requires --ids <comma-separated guids>")
+			}
+			params := map[string]any{"id": stringsToAny(ids)}
+			if width > 0 {
+				params["width"] = width
+			}
+			if height > 0 {
+				params["height"] = height
+			}
+			if strings.TrimSpace(mode) != "" {
+				params["mode"] = mode
+			}
+			result, err := deps.Client.Get(cmd.Context(), "/imaging/resize/urls", api.RequestOptions{Params: params})
+			if err != nil {
+				return err
+			}
+			return printResult(cmd, deps, result)
+		},
+	}
+	cmd.Flags().StringVar(&idsCSV, "ids", "", "Comma-separated media GUIDs to resize (required)")
+	cmd.Flags().IntVar(&width, "width", 0, "Target width in pixels (server default 200 when omitted)")
+	cmd.Flags().IntVar(&height, "height", 0, "Target height in pixels (server default 200 when omitted)")
+	cmd.Flags().StringVar(&mode, "mode", "", "Crop mode: Crop, Max, Stretch, Pad, BoxPad or Min")
+	return cmd
 }
 
 func mediaCreate(deps Dependencies) *cobra.Command {

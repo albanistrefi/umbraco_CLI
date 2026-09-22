@@ -323,6 +323,7 @@ var endpointBindings = map[string]endpointBinding{
 	"media.children":               {Method: "GET", Path: "/tree/media/children", ExtraQuery: withFields},
 	"media.search":                 {Method: "GET", Path: "/item/media/search"},
 	"media.urls":                   {Method: "GET", Path: "/media/urls"},
+	"media.resize-urls":            {Method: "GET", Path: "/imaging/resize/urls"},
 	"media.create":                 {Method: "POST", Path: "/media"},
 	"media.create-folder":          {Method: "POST", Path: "/media", Response: &ObjectSchema{Type: "object", Description: "CLI workflow: resolves the Folder media type and creates a media item of that type"}},
 	"media.upload":                 {Manual: &rawSchema{Method: "POST", Path: "/temporary-file", RequestBody: &ObjectSchema{Type: "object", Description: "CLI workflow: multipart temporary-file upload followed by media create"}}},
@@ -340,6 +341,7 @@ var endpointBindings = map[string]endpointBinding{
 
 	// doctype
 	"doctype.get":                {Method: "GET", Path: "/document-type/{id}", ExtraQuery: withFields},
+	"doctype.property-is-used":   {Method: "GET", Path: "/property-type/is-used"},
 	"doctype.list":               {Method: "GET", Path: "/tree/document-type/root", ExtraQuery: withFields},
 	"doctype.root":               {Method: "GET", Path: "/tree/document-type/root"},
 	"doctype.children":           {Method: "GET", Path: "/tree/document-type/children"},
@@ -498,6 +500,15 @@ var endpointBindings = map[string]endpointBinding{
 	"language.delete":   {Method: "DELETE", Path: "/language/{isoCode}"},
 	"language.default":  {Method: "GET", Path: "/item/language/default"},
 	"language.cultures": {Method: "GET", Path: "/culture"},
+
+	// tag
+	"tag.list": {Method: "GET", Path: "/tag"},
+
+	// user-data (always scoped to the authenticated account)
+	"user-data.list":   {Method: "GET", Path: "/user-data"},
+	"user-data.get":    {Method: "GET", Path: "/user-data/{id}"},
+	"user-data.create": {Method: "POST", Path: "/user-data"},
+	"user-data.update": {Method: "PUT", Path: "/user-data"},
 
 	// user
 	"user.list":         {Method: "GET", Path: "/filter/user"},
