@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.4.24 - 2026-09-30
+
 - fixed `document update --property <alias> --value ""` failing with "property updates require exactly one of --value or --value-json" although `--value` was passed (agent-reported on 0.4.23). Presence of `--value`/`--value-json` was judged by content, so an empty or whitespace-only `--value` counted as missing and a text property could not be cleared through `--property`; the only way was `--value-json '""'`. Presence is now taken from whether the flag was set: `--value ""` sends `""`, `--value "  "` sends the two spaces unchanged, and the "exactly one of" rule still rejects neither-flag and both-flags calls. Covers the single-document path and the `--ids`/`--from-file` batch path. Verified with `--dry-run` against a local instance, old binary against new: the old binary refused `--value ""`, and the new one put `"value": ""` in the planned PUT body, identical to the `--value-json '""'` body, on both paths
 
 ## v0.4.23 - 2026-09-22

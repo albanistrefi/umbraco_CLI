@@ -2,7 +2,7 @@
 name: umbraco-indexer
 description: "Examine search index operations"
 metadata:
-  version: 0.4.23
+  version: 0.4.24
   requires:
     bins:
       - umbraco

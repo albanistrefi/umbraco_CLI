@@ -2,7 +2,7 @@
 name: umbraco-blueprint
 description: "Document blueprints: reusable content presets for new documents"
 metadata:
-  version: 0.4.23
+  version: 0.4.24
   requires:
     bins:
       - umbraco
