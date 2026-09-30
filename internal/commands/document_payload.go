@@ -69,7 +69,9 @@ func fetchDocumentObject(ctx context.Context, client *api.Client, id string) (ma
 	return decodeResult[map[string]any](result)
 }
 
-func documentPropertyPatch(alias string, rawValue string, rawValueJSON string) (map[string]any, error) {
+// documentPropertyPatch takes flag presence separately from content so that
+// --value "" clears a property instead of counting as a missing flag.
+func documentPropertyPatch(alias string, rawValue string, hasValue bool, rawValueJSON string, hasValueJSON bool) (map[string]any, error) {
 	if err := requireValue("--property", alias); err != nil {
 		return nil, err
 	}
@@ -77,8 +79,6 @@ func documentPropertyPatch(alias string, rawValue string, rawValueJSON string) (
 		return nil, err
 	}
 
-	hasValue := strings.TrimSpace(rawValue) != ""
-	hasValueJSON := strings.TrimSpace(rawValueJSON) != ""
 	if hasValue == hasValueJSON {
 		return nil, fmt.Errorf("property updates require exactly one of --value or --value-json")
 	}

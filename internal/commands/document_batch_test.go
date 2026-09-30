@@ -241,3 +241,47 @@ func TestDocumentPublishIDsPassesFullJSONBodyAndKeepsAuthExitCode(t *testing.T) 
 		t.Fatalf("expected the auth exit code 3 to survive the batch, got %v (code %d)", err, batchExitCode(err))
 	}
 }
+
+func TestDocumentUpdateIDsEmptyValueClearsPropertyOnEveryDocument(t *testing.T) {
+	bodies := map[string]map[string]any{}
+	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		switch {
+		case req.URL.Path == "/umbraco/management/api/v1/security/back-office/token":
+			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+		case strings.HasPrefix(req.URL.Path, "/umbraco/management/api/v1/document/"):
+			id := strings.TrimPrefix(req.URL.Path, "/umbraco/management/api/v1/document/")
+			if req.Method == http.MethodGet {
+				return endpointJSONResponse(http.StatusOK, `{"id":"`+id+`","variants":[{"culture":null,"segment":null,"name":"Page `+id+`"}],"values":[{"alias":"title","culture":null,"segment":null,"value":"old"}]}`), nil
+			}
+			if req.Method == http.MethodPut {
+				var body map[string]any
+				_ = json.NewDecoder(req.Body).Decode(&body)
+				bodies[id] = body
+				return endpointNoContent(), nil
+			}
+		}
+		return endpointJSONResponse(http.StatusNotFound, `null`), nil
+	})
+
+	out, err := execute(buildRootWithCollections(t, deps), "document", "update", "--ids", "a,b", "--property", "title", "--value", "", "--force")
+	if err != nil {
+		t.Fatalf("batch update with --value \"\" failed: %v", err)
+	}
+	var result documentBatchResult
+	if err := json.Unmarshal([]byte(out), &result); err != nil {
+		t.Fatalf("decode: %v (%s)", err, out)
+	}
+	if result.Total != 2 || result.Updated != 2 || result.Failed != 0 {
+		t.Fatalf("expected both documents updated, got %+v", result)
+	}
+	for _, id := range []string{"a", "b"} {
+		body, ok := bodies[id]
+		if !ok {
+			t.Fatalf("expected a PUT for %s, got %v", id, bodies)
+		}
+		entry := body["values"].([]any)[0].(map[string]any)
+		if got, present := entry["value"]; entry["alias"] != "title" || !present || got != "" {
+			t.Fatalf("expected title cleared on %s, got %+v", id, entry)
+		}
+	}
+}

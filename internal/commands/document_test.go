@@ -2310,3 +2310,66 @@ func TestSchemaTypeRestoreBackupStripsResponseOnlyFieldsAndChecksProperties(t *t
 		}
 	}
 }
+
+func TestDocumentUpdatePropertyValuePresenceIsByFlagNotContent(t *testing.T) {
+	cases := []struct {
+		name    string
+		flags   []string
+		want    any
+		wantErr string
+	}{
+		{name: "empty --value clears the property", flags: []string{"--value", ""}, want: ""},
+		{name: "whitespace --value is sent as given", flags: []string{"--value", "  "}, want: "  "},
+		{name: "--value-json empty string", flags: []string{"--value-json", `""`}, want: ""},
+		{name: "--value-json null", flags: []string{"--value-json", "null"}, want: nil},
+		{name: "neither flag", flags: nil, wantErr: "exactly one of --value or --value-json"},
+		{name: "both flags", flags: []string{"--value", "x", "--value-json", `"y"`}, wantErr: "exactly one of --value or --value-json"},
+		{name: "both flags empty", flags: []string{"--value", "", "--value-json", ""}, wantErr: "exactly one of --value or --value-json"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var putBody map[string]any
+			puts := 0
+			deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+				switch req.URL.Path {
+				case "/umbraco/management/api/v1/security/back-office/token":
+					return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+				case "/umbraco/management/api/v1/document/doc-1":
+					if req.Method == http.MethodGet {
+						return endpointJSONResponse(http.StatusOK, `{"id":"doc-1","variants":[{"culture":null,"segment":null,"name":"Guest post"}],"values":[{"alias":"guestAuthorName","culture":null,"segment":null,"value":"Jane"}]}`), nil
+					}
+					if req.Method == http.MethodPut {
+						puts++
+						_ = json.NewDecoder(req.Body).Decode(&putBody)
+						return endpointNoContent(), nil
+					}
+				}
+				return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			})
+
+			args := append([]string{"document", "update", "doc-1", "--property", "guestAuthorName"}, tc.flags...)
+			_, err := execute(buildRootWithCollections(t, deps), args...)
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("expected %q, got %v", tc.wantErr, err)
+				}
+				if puts != 0 {
+					t.Fatalf("expected no PUT on a rejected flag combination, got %d", puts)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("document update failed: %v", err)
+			}
+			values := putBody["values"].([]any)
+			if len(values) != 1 {
+				t.Fatalf("expected the one existing value merged in place, got %+v", values)
+			}
+			entry := values[0].(map[string]any)
+			got, present := entry["value"]
+			if entry["alias"] != "guestAuthorName" || !present || got != tc.want {
+				t.Fatalf("expected guestAuthorName=%#v in the PUT, got %+v", tc.want, entry)
+			}
+		})
+	}
+}

@@ -818,7 +818,7 @@ With --ids or --from-file the same change is applied to every listed document in
 | `--merge-json` | string | — | Partial JSON deep-merged into the current document before update (fields not mentioned are preserved): values merge by alias+culture+segment and variants by culture+segment, so naming one culture leaves the others untouched. --json replaces the payload wholesale instead |
 | `--property` | string | — | Update a single property alias without constructing the full payload |
 | `--save-and-publish` | bool | false | Publish the document after a successful update |
-| `--value` | string | — | String value used with --property |
+| `--value` | string | — | String value used with --property, sent as given; --value "" clears the property |
 | `--value-json` | string | — | JSON value used with --property |
 
 **Safe pattern:**
