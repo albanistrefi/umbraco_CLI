@@ -351,7 +351,7 @@ func documentUpdate(deps Dependencies) *cobra.Command {
 				case hasMergeJSON:
 					opts.MergePatch, err = parseJSONObject(mergeJSON, "--merge-json")
 				default:
-					opts.MergePatch, err = documentPropertyPatch(property, value, valueJSON)
+					opts.MergePatch, err = documentPropertyPatch(property, value, cmd.Flags().Changed("value"), valueJSON, cmd.Flags().Changed("value-json"))
 				}
 				if err != nil {
 					return err
@@ -362,7 +362,7 @@ func documentUpdate(deps Dependencies) *cobra.Command {
 
 			var body map[string]any
 			if hasProperty {
-				patch, err := documentPropertyPatch(property, value, valueJSON)
+				patch, err := documentPropertyPatch(property, value, cmd.Flags().Changed("value"), valueJSON, cmd.Flags().Changed("value-json"))
 				if err != nil {
 					return err
 				}
@@ -452,7 +452,7 @@ func documentUpdate(deps Dependencies) *cobra.Command {
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Full replacement payload as JSON (fields not mentioned are reset by the server)")
 	cmd.Flags().StringVar(&mergeJSON, "merge-json", "", "Partial JSON deep-merged into the current document before update (fields not mentioned are preserved): values merge by alias+culture+segment and variants by culture+segment, so naming one culture leaves the others untouched. --json replaces the payload wholesale instead")
 	cmd.Flags().StringVar(&property, "property", "", "Update a single property alias without constructing the full payload")
-	cmd.Flags().StringVar(&value, "value", "", "String value used with --property")
+	cmd.Flags().StringVar(&value, "value", "", "String value used with --property, sent as given; --value \"\" clears the property")
 	cmd.Flags().StringVar(&valueJSON, "value-json", "", "JSON value used with --property")
 	cmd.Flags().BoolVar(&saveAndPublish, "save-and-publish", false, "Publish the document after a successful update")
 	cmd.Flags().StringVar(&culture, "culture", "", "Culture shortcut for --save-and-publish")
