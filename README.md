@@ -3,7 +3,7 @@
 The agent-first command line for Umbraco — CMS, Forms, Automate, and Engage. Built on
 the Management APIs, it goes beyond them: exhaustive content search,
 cross-environment schema diff, log tailing, and safe, rehearsable bulk
-operations — 425 commands with a scriptable exit-code contract.
+operations — 455 commands with a scriptable exit-code contract.
 
 Core behavior:
 - `--json` and `--params` are primary machine inputs
@@ -382,9 +382,9 @@ testing) are not part of this repo — get those from
 - `auth` (5)
 - `schema` — runtime schema introspection (`umbraco schema <command>`) plus `schema diff <envA> <envB>` cross-environment comparison across doctype, datatype, mediatype, membertype, template, language, and dictionary
 - `automate` (8 subgroups) — requires [Umbraco Automate](https://docs.umbraco.com/umbraco-automate) on the target instance; see below
-- `engage` (15, read-only) — requires [Umbraco Engage](https://docs.umbraco.com/umbraco-engage) on the target instance; see below
+- `engage` (16) — requires [Umbraco Engage](https://docs.umbraco.com/umbraco-engage) on the target instance; what it may read or change is governed by the API user's permissions; see below
 
-Total: **425 runnable commands** counting every nested subcommand. Group counts above are direct subcommands; nested subgroups like `document version`, `document bin`, and the `automate` and `engage` subgroups add the rest.
+Total: **455 runnable commands** counting every nested subcommand. Group counts above are direct subcommands; nested subgroups like `document version`, `document bin`, and the `automate` and `engage` subgroups add the rest.
 
 ## Umbraco Automate
 
@@ -406,16 +406,26 @@ umbraco automate automation runs <id> --take 10
 
 ## Umbraco Engage
 
-The `engage` command group reads the [Umbraco Engage](https://docs.umbraco.com/umbraco-engage)
+The `engage` command group covers the [Umbraco Engage](https://docs.umbraco.com/umbraco-engage)
 Management API: status and configuration, segments, personas, customer
 journeys, goals, A/B tests, applied personalizations, campaign and referral
-groups, traffic filters, annotations, aggregate statistics, and the analytics
-query behind the back-office charts. It is read-only, and it does not expose
+groups, traffic filters, annotations, aggregate statistics, the analytics
+query behind the back-office charts, the site-wide main switch, and reporting
+regeneration. What a command may read or change is governed by the
+permissions of the API user the CLI authenticates as. It does not expose
 visitor profiles, which hold personal data about individual visitors.
 
 Engage entities carry a numeric `id` and a GUID `unique` (`key` on goals and
-traffic filters). Most `get` commands take the GUID; the A/B test reads take
-the numeric id. Each `get` rejects the wrong kind before calling the API.
+traffic filters). Most `get`, `update` and `delete` commands take the GUID;
+the A/B test reads, annotations and segment priorities take the numeric id.
+Each command rejects the wrong kind before calling the API.
+
+Engage saves an entity by POSTing the whole entity to one route for both
+create and update. `create` always sends `id` 0 (generating the GUID when
+omitted); `update` fetches the entity first, pins its `id` and GUID, and
+takes exactly one of `--json` (replace) or `--merge-json` (fetch and merge).
+Every write takes `--dry-run`; deletes, `main-switch on|off` and
+`reporting generate` also require `--force`.
 
 ```bash
 umbraco engage status
@@ -425,10 +435,14 @@ umbraco engage abtest list --fields id,name,status
 umbraco engage analytics query --metrics pageviews,sessions --dimensions date --from 2026-09-01 --to 2026-10-01
 umbraco engage analytics query --metrics pageviews --dimensions pagePath --filter "deviceCategory=='mobile'" --page-size 20
 umbraco engage analytics distinct --dimension country
+umbraco engage persona create --print-template
+umbraco engage segment update <unique> --merge-json '{"name":"Returning visitors"}' --dry-run
+umbraco engage traffic-filter delete <key> --dry-run
+umbraco engage segment update-priority --order 7,3,9 --dry-run
 ```
 
 When Engage's database schema alignment is incomplete, Engage answers every
-data read with HTTP 409 "Umbraco Engage is unavailable" (exit code 4);
+data route with HTTP 409 "Umbraco Engage is unavailable" (exit code 4);
 `engage status` reports this as `dataAvailable: false`.
 
 ## Agent Safety Rules

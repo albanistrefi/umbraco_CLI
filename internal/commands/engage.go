@@ -24,11 +24,13 @@ const engageAPIPrefix = "/umbraco/engage/management/api/v1"
 func RegisterEngage(root *cobra.Command, deps Dependencies) {
 	engage := &cobra.Command{
 		Use:   "engage",
-		Short: "Umbraco Engage operations (read-only: analytics, segments, personas, journeys, goals, A/B tests)",
-		Long: "Read-only commands for the Umbraco Engage Management API (" + engageAPIPrefix + "). Requires Umbraco Engage on the target instance.\n\n" +
-			"Engage entities carry two ids: a numeric `id` and a GUID `unique` (`key` on goals and traffic filters). Most get commands take the GUID; the A/B test reads take the numeric id. Each get command says which, and rejects the other kind before calling the API.\n\n" +
-			"Start with 'umbraco engage status': it reports the license, the main switch, and whether Engage's data is reachable. When Engage's database migration is incomplete every data read answers HTTP 409 \"Umbraco Engage is unavailable\" (exit code 4).\n\n" +
-			"Visitor profiles (/profile/*) are deliberately not exposed: they return personal data about individual visitors.",
+		Short: "Umbraco Engage operations (analytics, segments, personas, journeys, goals, A/B tests, personalization)",
+		Long: "Commands for the Umbraco Engage Management API (" + engageAPIPrefix + "). Requires Umbraco Engage on the target instance. " +
+			"What a command may read or change is governed by the permissions of the API user the CLI authenticates as.\n\n" +
+			"Engage entities carry two ids: a numeric `id` and a GUID `unique` (`key` on goals and traffic filters). Most get, update and delete commands take the GUID; the A/B test reads, annotations and segment priorities take the numeric id. Each command says which, and rejects the other kind before calling the API.\n\n" +
+			"Engage saves an entity by POSTing the whole entity to one route for both create and update; 'create' always sends `id` 0, and 'update' fetches the entity first so it can never create one by accident. Every write takes --dry-run; deletes, the main switch and reporting regeneration also require --force.\n\n" +
+			"Start with 'umbraco engage status': it reports the license, the main switch, and whether Engage's data is reachable. When Engage's database migration is incomplete every data route answers HTTP 409 \"Umbraco Engage is unavailable\" (exit code 4).\n\n" +
+			"Visitor profiles (/profile/*, per-visitor scoring locks, suspicious-visitor routes) are deliberately not exposed: they hold personal data about individual visitors.",
 	}
 	engage.AddCommand(engageStatus(deps))
 	engage.AddCommand(engageRead(deps, engageReadSpec{Use: "config", Short: "Show Engage's effective configuration (analytics, A/B testing, segmentation, reporting settings)", Path: "/configuration"}))
@@ -39,37 +41,46 @@ func RegisterEngage(root *cobra.Command, deps Dependencies) {
 			{Name: "temporary", Param: "isTemporary", Kind: engageFlagBool, Usage: "List temporary (unsaved) segments instead of saved ones"},
 			{Name: "days", Param: "amountOfDays", Kind: engageFlagInt, Usage: "Window in days for the per-segment visitor statistics"},
 		},
+		Write: engageSegmentWrite,
+		Extra: []func(Dependencies) *cobra.Command{engageSegmentUpdatePriority},
 	}))
 	engage.AddCommand(engageEntityGroup(deps, engageEntity{
 		Group: "persona", Noun: "persona", Short: "Personas (implicit personalization)",
 		ListPath: "/persona/all", GetPath: "/persona/details", IDParam: "id", IDKind: engageGUID, IDField: "unique",
+		Write: engagePersonaWrite,
 	}))
 	engage.AddCommand(engageEntityGroup(deps, engageEntity{
 		Group: "journey", Noun: "customer journey", Short: "Customer journeys (implicit personalization)",
 		ListPath: "/customer-journey/all", GetPath: "/customer-journey/details", IDParam: "id", IDKind: engageGUID, IDField: "unique",
+		Write: engageJourneyWrite,
 	}))
 	engage.AddCommand(engageGoal(deps))
 	engage.AddCommand(engageABTest(deps))
 	engage.AddCommand(engageEntityGroup(deps, engageEntity{
 		Group: "personalization", Noun: "applied personalization", Short: "Applied personalizations (segment-specific content variants)",
 		ListPath: "/applied-personalization/all", GetPath: "/applied-personalization/id", IDParam: "id", IDKind: engageGUID, IDField: "unique",
+		Write: engagePersonalizationWrite,
 	}))
 	engage.AddCommand(engageEntityGroup(deps, engageEntity{
 		Group: "campaign-group", Noun: "campaign group", Short: "Campaign groups (UTM campaign scoring)",
 		ListPath: "/campaign-group/all", GetPath: "/campaign-group", IDParam: "id", IDKind: engageGUID, IDField: "unique",
+		Write: engageCampaignGroupWrite,
 	}))
 	engage.AddCommand(engageEntityGroup(deps, engageEntity{
 		Group: "referral-group", Noun: "referral group", Short: "Referral groups (referrer scoring)",
 		ListPath: "/referral-group/all", GetPath: "/referral-group", IDParam: "id", IDKind: engageGUID, IDField: "unique",
+		Write: engageReferralGroupWrite,
 	}))
 	engage.AddCommand(engageEntityGroup(deps, engageEntity{
 		Group: "traffic-filter", Noun: "traffic filter", Short: "Traffic filters (IP ranges excluded from analytics)",
 		ListPath: "/traffic-filter/all", GetPath: "/traffic-filter", IDParam: "key", IDKind: engageGUID, IDField: "key",
+		Write: engageTrafficFilterWrite,
 	}))
 	engage.AddCommand(engageAnalytics(deps))
 	engage.AddCommand(engageAnnotation(deps))
 	engage.AddCommand(engageStats(deps))
 	engage.AddCommand(engageReporting(deps))
+	engage.AddCommand(engageMainSwitch(deps))
 	root.AddCommand(engage)
 }
 
@@ -255,6 +266,11 @@ type engageEntity struct {
 	IDParam   string
 	IDKind    engageIDKind
 	IDField   string
+	// Write, when non-nil, adds create/update (and delete when the spec has
+	// a delete route).
+	Write *engageWriteSpec
+	// Extra commands appended after the generated ones.
+	Extra []func(Dependencies) *cobra.Command
 }
 
 // engageEntityGroup builds the list/get pair shared by the configuration
@@ -279,6 +295,14 @@ func engageEntityGroup(deps Dependencies, entity engageEntity) *cobra.Command {
 		IDField:     entity.IDField,
 		ListCommand: listCommand,
 	}))
+	if entity.Write != nil {
+		for _, command := range engageEntityWrites(deps, entity) {
+			group.AddCommand(command)
+		}
+	}
+	for _, extra := range entity.Extra {
+		group.AddCommand(extra(deps))
+	}
 	return group
 }
 
@@ -296,6 +320,12 @@ func engageGoal(deps Dependencies) *cobra.Command {
 		Long: "GET /goal/details?id=<key>. Pass the GUID `key` from 'umbraco engage goal list' (the detail model calls it `unique`), not the numeric `id`.",
 		Path: "/goal/details", IDParam: "id", IDKind: engageGUID, IDField: "key", ListCommand: "umbraco engage goal list",
 	}))
+	// Goals list a `key` but save under `unique`; Engage has no goal delete.
+	for _, command := range engageEntityWrites(deps, engageEntity{
+		Group: "goal", Noun: "goal", GetPath: "/goal/details", IDParam: "id", IDKind: engageGUID, IDField: "key", Write: engageGoalWrite,
+	}) {
+		group.AddCommand(command)
+	}
 	return group
 }
 
