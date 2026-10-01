@@ -12,6 +12,8 @@
 //   - merge.go: the --merge-json deep merge.
 //   - backup.go: --backup envelopes and restore input.
 //   - management.go: Management API facts shared by a core group and an add-on.
+//   - logtail.go: the log-viewer tail behind 'logs tail' and 'deploy watch
+//     --logs', and the log entry helpers (timestamps, message text, redaction).
 //
 // It must not import any command package. Core resources (package commands)
 // and each add-on (forms, automate, deploy, engage) import it, which is what

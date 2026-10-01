@@ -98,7 +98,7 @@ func logParamsFromFlags(raw string, flags logQueryFlags) (map[string]any, logRun
 		if flags.minutes <= 0 {
 			return nil, logRuntimeOptions{}, fmt.Errorf("--minutes must be greater than zero")
 		}
-		center, err := parseLogTime(flags.around)
+		center, err := cmdkit.ParseLogTime(flags.around)
 		if err != nil {
 			return nil, logRuntimeOptions{}, fmt.Errorf("invalid --around: %w", err)
 		}
@@ -194,14 +194,14 @@ func logRuntimeFromParams(params map[string]any, flags logQueryFlags) (logRuntim
 	}
 
 	if raw := strings.TrimSpace(fmt.Sprint(params["startDate"])); raw != "" && raw != "<nil>" {
-		parsed, err := parseLogTime(raw)
+		parsed, err := cmdkit.ParseLogTime(raw)
 		if err != nil {
 			return runtime, fmt.Errorf("invalid --from/startDate: %w", err)
 		}
 		runtime.from = &parsed
 	}
 	if raw := strings.TrimSpace(fmt.Sprint(params["endDate"])); raw != "" && raw != "<nil>" {
-		parsed, err := parseLogTime(raw)
+		parsed, err := cmdkit.ParseLogTime(raw)
 		if err != nil {
 			return runtime, fmt.Errorf("invalid --to/endDate: %w", err)
 		}
@@ -238,20 +238,6 @@ func logRuntimeFromParams(params map[string]any, flags logQueryFlags) (logRuntim
 		runtime.contains != "" ||
 		runtime.correlationID != ""
 	return runtime, nil
-}
-
-func parseLogTime(raw string) (time.Time, error) {
-	value := strings.TrimSpace(raw)
-	if value == "" {
-		return time.Time{}, fmt.Errorf("empty timestamp")
-	}
-	if parsed, err := time.Parse(time.RFC3339Nano, value); err == nil {
-		return parsed, nil
-	}
-	if parsed, err := time.Parse("2006-01-02", value); err == nil {
-		return parsed, nil
-	}
-	return time.Time{}, fmt.Errorf("%q must be RFC3339 or YYYY-MM-DD", raw)
 }
 
 func logStringListParam(raw any) []string {
