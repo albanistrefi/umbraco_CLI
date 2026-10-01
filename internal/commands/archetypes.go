@@ -444,6 +444,10 @@ type updateSpec struct {
 	// fetch. Use it for output hygiene like stripping response-only fields
 	// the update model rejects. Must be idempotent.
 	NormalizeMerged func(map[string]any) error
+	// BindArgs, when non-nil, runs last on the final body with the
+	// positional args, for update models that must restate the path id in
+	// the body (and must not name a different one).
+	BindArgs func(args []string, body map[string]any) error
 	// APIPrefix overrides the default core Management API mount.
 	APIPrefix string
 }
@@ -467,6 +471,11 @@ func updateCommand(deps Dependencies, spec updateSpec) *cobra.Command {
 			body, err := resolveUpdateBody(ctx, deps.Client, path, spec.APIPrefix, jsonPayload, mergeJSON, spec.Normalize, spec.NormalizeMerged)
 			if err != nil {
 				return err
+			}
+			if spec.BindArgs != nil {
+				if err := spec.BindArgs(args, body); err != nil {
+					return err
+				}
 			}
 			var backupFile string
 			if cmd.Flags().Changed("backup") && !dryRun {
@@ -545,6 +554,9 @@ type createSpec struct {
 	// ResultKeys are extra payload fields echoed into the create result
 	// alongside the defaults (e.g. "icon", "kind").
 	ResultKeys []string
+	// APIPrefix overrides the default core Management API mount for the
+	// POST. A Base fetch picks its own mount.
+	APIPrefix string
 }
 
 // createCommand builds a create mutation with the uniform contract:
@@ -622,7 +634,7 @@ func createCommand(deps Dependencies, spec createSpec) *cobra.Command {
 					path = override
 				}
 			}
-			result, err := deps.Client.Post(cmd.Context(), path, body, api.RequestOptions{DryRun: dryRun})
+			result, err := deps.Client.Post(cmd.Context(), path, body, api.RequestOptions{DryRun: dryRun, APIPrefix: spec.APIPrefix})
 			if err != nil {
 				return err
 			}
