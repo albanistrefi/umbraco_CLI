@@ -37,5 +37,5 @@ var ExpectedCollectionCommandCounts = map[string]int{
 	"user":            14,
 	"user-group":      7,
 	"automate":        8,
-	"engage":          15,
+	"engage":          16,
 }
