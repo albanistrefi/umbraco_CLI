@@ -1,9 +1,11 @@
-package commands
+package forms
 
 import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"umbraco-cli/internal/commands/cmdkit"
 )
 
 const formsTestRecordSetActions = `[
@@ -35,7 +37,7 @@ func TestFormsCreateFolderFillsFlagsAndReadsBack(t *testing.T) {
 		t.Fatalf("forms create-folder --dry-run failed: %v", err)
 	}
 	planned := decodeObject(t, output)["body"].(map[string]any)
-	if value, ok := planned["parentId"]; !ok || value != nil || !isUUIDLike(asString(planned["id"])) {
+	if value, ok := planned["parentId"]; !ok || value != nil || !cmdkit.IsUUIDLike(cmdkit.AsString(planned["id"])) {
 		t.Fatalf("expected a generated id and parentId null, got %+v", planned)
 	}
 	for _, args := range [][]string{

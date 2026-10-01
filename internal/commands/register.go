@@ -1,6 +1,10 @@
 package commands
 
-import "github.com/spf13/cobra"
+import (
+	"github.com/spf13/cobra"
+
+	"umbraco-cli/internal/commands/forms"
+)
 
 // RegisterAll attaches every command group to root. It is the single
 // registration list: the production root in internal/cli and the roots built by
@@ -18,7 +22,7 @@ func RegisterAll(root *cobra.Command, deps Dependencies) {
 	RegisterScript(root, deps)
 	RegisterStylesheet(root, deps)
 	RegisterStaticFile(root, deps)
-	RegisterForms(root, deps)
+	forms.Register(root, deps)
 	RegisterModelsBuilder(root, deps)
 	RegisterMember(root, deps)
 	RegisterMemberGroup(root, deps)

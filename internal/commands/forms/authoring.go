@@ -1,4 +1,4 @@
-package commands
+package forms
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/commands/cmdkit"
 )
 
 // Form authoring: create, change, copy, move, and delete form definitions.
@@ -15,8 +16,8 @@ import (
 // forms, manage workflows, ...), not by the CLI; a refused write comes back
 // as the server's 403.
 
-func formsCreate(deps Dependencies) *cobra.Command {
-	return createCommand(deps, createSpec{
+func formsCreate(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.CreateCommand(deps, cmdkit.CreateSpec{
 		Use:   "create",
 		Short: "Create a form, starting from the server's form scaffold",
 		Long: "POST /form. The full form model has some thirty required fields, so the CLI fetches GET /form/scaffold (the same starting point the backoffice uses: a fresh id, the default page/field layout, and the install's default workflows) and deep-merges --json on top; only what differs from the scaffold needs naming, and \"name\" is required. " +
@@ -27,7 +28,7 @@ func formsCreate(deps Dependencies) *cobra.Command {
 		TemplateKey:  "forms.create",
 		PayloadUsage: "Form fields as JSON, deep-merged onto GET /form/scaffold; must name \"name\"",
 		Base: func(ctx context.Context) (map[string]any, error) {
-			return fetchObject(ctx, deps.Client, "/form/scaffold", formsRequestOpts("", nil))
+			return cmdkit.FetchObject(ctx, deps.Client, "/form/scaffold", formsRequestOpts("", nil))
 		},
 		Flags: func(cmd *cobra.Command) func(map[string]any) error {
 			return func(body map[string]any) error {
@@ -67,8 +68,8 @@ func bindFormsBodyID(args []string, body map[string]any) error {
 	return nil
 }
 
-func formsUpdate(deps Dependencies) *cobra.Command {
-	return updateCommand(deps, updateSpec{
+func formsUpdate(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.UpdateCommand(deps, cmdkit.UpdateSpec{
 		Use:   "update <id>",
 		Short: "Update a form definition (fields, pages, workflows, settings)",
 		Long: "PUT /form/{id}. --merge-json fetches the form and deep-merges the patch, so unmentioned settings survive — the safe default (e.g. --merge-json '{\"name\": \"New name\"}'). " +
@@ -82,8 +83,8 @@ func formsUpdate(deps Dependencies) *cobra.Command {
 	})
 }
 
-func formsDelete(deps Dependencies) *cobra.Command {
-	return deleteCommand(deps, deleteSpec{
+func formsDelete(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.DeleteCommand(deps, cmdkit.DeleteSpec{
 		Use:       "delete <id>",
 		Short:     "Permanently delete a form together with its stored records",
 		Path:      func(args []string) string { return api.JoinPath("/form/%s", args[0]) },
@@ -91,7 +92,7 @@ func formsDelete(deps Dependencies) *cobra.Command {
 	})
 }
 
-func formsCopy(deps Dependencies) *cobra.Command {
+func formsCopy(deps cmdkit.Dependencies) *cobra.Command {
 	var jsonPayload string
 	var name string
 	var to string
@@ -109,7 +110,7 @@ func formsCopy(deps Dependencies) *cobra.Command {
 				if cmd.Flags().Changed("name") || cmd.Flags().Changed("to") || cmd.Flags().Changed("copy-workflows") {
 					return fmt.Errorf("--json cannot be combined with --name, --to or --copy-workflows")
 				}
-				parsed, err := parsePayload(jsonPayload)
+				parsed, err := cmdkit.ParsePayload(jsonPayload)
 				if err != nil {
 					return err
 				}
@@ -120,7 +121,7 @@ func formsCopy(deps Dependencies) *cobra.Command {
 					body["newName"] = strings.TrimSpace(name)
 				}
 				if strings.TrimSpace(to) != "" {
-					if !isUUIDLike(to) {
+					if !cmdkit.IsUUIDLike(to) {
 						return fmt.Errorf("--to must be a Forms folder GUID, got %q", to)
 					}
 					body["copyToFolderId"] = strings.TrimSpace(to)
@@ -131,7 +132,7 @@ func formsCopy(deps Dependencies) *cobra.Command {
 				return err
 			}
 			if dryRun {
-				return printResult(cmd, deps, result)
+				return cmdkit.PrintResult(cmd, deps, result)
 			}
 			out := map[string]any{"copied": true, "sourceId": args[0]}
 			if created, ok := result.(map[string]any); ok {
@@ -142,20 +143,20 @@ func formsCopy(deps Dependencies) *cobra.Command {
 			if newName, ok := body["newName"]; ok {
 				out["name"] = newName
 			}
-			return printResult(cmd, deps, out)
+			return cmdkit.PrintResult(cmd, deps, out)
 		},
 	}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Raw copy payload as JSON: {\"newName\"?, \"copyWorkflows\", \"copyToFolderId\"?}")
 	cmd.Flags().StringVar(&name, "name", "", "Name for the copy (default: the source name with \" (1)\" appended)")
 	cmd.Flags().StringVar(&to, "to", "", "Folder GUID to put the copy in (default: the source form's folder)")
 	cmd.Flags().BoolVar(&copyWorkflows, "copy-workflows", false, "Copy the source form's workflows too")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
 // formsMoveCommand builds the folder-reparenting moves shared by forms and
 // folders: PUT <path>/move with {"parentId": <folder id or null>}.
-func formsMoveCommand(deps Dependencies, use string, short string, long string, pathFormat string) *cobra.Command {
+func formsMoveCommand(deps cmdkit.Dependencies, use string, short string, long string, pathFormat string) *cobra.Command {
 	var jsonPayload string
 	var to string
 	var toRoot bool
@@ -174,13 +175,13 @@ func formsMoveCommand(deps Dependencies, use string, short string, long string, 
 			if err != nil {
 				return err
 			}
-			return printMutationResult(cmd, deps, "moved", result, dryRun)
+			return cmdkit.PrintMutationResult(cmd, deps, "moved", result, dryRun)
 		},
 	}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Raw move payload as JSON: {\"parentId\": \"<folder id>\" | null}")
 	cmd.Flags().StringVar(&to, "to", "", "Target folder GUID")
 	cmd.Flags().BoolVar(&toRoot, "to-root", false, "Move to the root of the Forms tree")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
@@ -198,7 +199,7 @@ func formsMoveBody(jsonPayload string, to string, toRoot bool) (map[string]any, 
 	}
 	switch {
 	case strings.TrimSpace(jsonPayload) != "":
-		body, err := parsePayload(jsonPayload)
+		body, err := cmdkit.ParsePayload(jsonPayload)
 		if err != nil {
 			return nil, err
 		}
@@ -210,7 +211,7 @@ func formsMoveBody(jsonPayload string, to string, toRoot bool) (map[string]any, 
 		}
 		if parentID != nil {
 			text, ok := parentID.(string)
-			if !ok || !isUUIDLike(text) {
+			if !ok || !cmdkit.IsUUIDLike(text) {
 				return nil, fmt.Errorf("parentId must be a Forms folder GUID or null, got %v", parentID)
 			}
 		}
@@ -218,14 +219,14 @@ func formsMoveBody(jsonPayload string, to string, toRoot bool) (map[string]any, 
 	case toRoot:
 		return map[string]any{"parentId": nil}, nil
 	default:
-		if !isUUIDLike(to) {
+		if !cmdkit.IsUUIDLike(to) {
 			return nil, fmt.Errorf("--to must be a Forms folder GUID, got %q", to)
 		}
 		return map[string]any{"parentId": strings.TrimSpace(to)}, nil
 	}
 }
 
-func formsMove(deps Dependencies) *cobra.Command {
+func formsMove(deps cmdkit.Dependencies) *cobra.Command {
 	return formsMoveCommand(deps,
 		"move <id>",
 		"Move a form into another folder (or to the root)",
@@ -234,7 +235,7 @@ func formsMove(deps Dependencies) *cobra.Command {
 	)
 }
 
-func formsCopyWorkflows(deps Dependencies) *cobra.Command {
+func formsCopyWorkflows(deps cmdkit.Dependencies) *cobra.Command {
 	var jsonPayload string
 	var to string
 	var workflowIDs string
@@ -251,36 +252,36 @@ func formsCopyWorkflows(deps Dependencies) *cobra.Command {
 				if strings.TrimSpace(to) != "" || strings.TrimSpace(workflowIDs) != "" {
 					return fmt.Errorf("--json cannot be combined with --to or --workflow-ids")
 				}
-				parsed, err := parsePayload(jsonPayload)
+				parsed, err := cmdkit.ParsePayload(jsonPayload)
 				if err != nil {
 					return err
 				}
 				body = parsed
 			} else {
-				if !isUUIDLike(to) {
+				if !cmdkit.IsUUIDLike(to) {
 					return fmt.Errorf("copy-workflows requires --to <destination form GUID>")
 				}
-				ids := uniqueCSV(workflowIDs)
+				ids := cmdkit.UniqueCSV(workflowIDs)
 				if len(ids) == 0 {
 					return fmt.Errorf("copy-workflows requires --workflow-ids <comma-separated workflow GUIDs>")
 				}
 				for _, id := range ids {
-					if !isUUIDLike(id) {
+					if !cmdkit.IsUUIDLike(id) {
 						return fmt.Errorf("--workflow-ids must be workflow GUIDs, got %q", id)
 					}
 				}
-				body = map[string]any{"destinationId": strings.TrimSpace(to), "workflowIds": stringsToAny(ids)}
+				body = map[string]any{"destinationId": strings.TrimSpace(to), "workflowIds": cmdkit.StringsToAny(ids)}
 			}
 			result, err := deps.Client.Post(cmd.Context(), api.JoinPath("/form/%s/copy-workflows", args[0]), body, api.RequestOptions{APIPrefix: formsAPIPrefix, DryRun: dryRun})
 			if err != nil {
 				return err
 			}
-			return printMutationResult(cmd, deps, "copied", result, dryRun)
+			return cmdkit.PrintMutationResult(cmd, deps, "copied", result, dryRun)
 		},
 	}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Raw payload as JSON: {\"destinationId\", \"workflowIds\": [...]}")
 	cmd.Flags().StringVar(&to, "to", "", "Destination form GUID")
 	cmd.Flags().StringVar(&workflowIDs, "workflow-ids", "", "Comma-separated GUIDs of the source form's workflows to copy")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }

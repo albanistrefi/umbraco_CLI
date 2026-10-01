@@ -1,4 +1,4 @@
-package commands
+package forms
 
 import (
 	"encoding/json"
@@ -7,6 +7,9 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"umbraco-cli/internal/commands/cmdkit"
+	"umbraco-cli/internal/commands/cmdtest"
 )
 
 // Forms write commands: every mutation must target the Forms Management API
@@ -38,10 +41,10 @@ func newFormsFake(routes map[string]formsFakeResponse) *formsFake {
 	return &formsFake{routes: routes}
 }
 
-func (f *formsFake) deps() Dependencies {
-	return datatypeDeps(func(req *http.Request) (*http.Response, error) {
+func (f *formsFake) deps() cmdkit.Dependencies {
+	return cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		if req.URL.Path == "/umbraco/management/api/v1/security/back-office/token" {
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		}
 		var body any
 		if req.Body != nil {
@@ -55,13 +58,13 @@ func (f *formsFake) deps() Dependencies {
 		f.requests = append(f.requests, formsFakeRequest{method: req.Method, path: path, body: body})
 		f.mu.Unlock()
 		if !strings.HasPrefix(req.URL.Path, formsTestPrefix) {
-			return datatypeJSONResponse(http.StatusNotFound, `{"title":"wrong API mount"}`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `{"title":"wrong API mount"}`), nil
 		}
 		response, ok := f.routes[req.Method+" "+path]
 		if !ok {
-			return datatypeJSONResponse(http.StatusNotFound, `{"title":"Not found"}`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `{"title":"Not found"}`), nil
 		}
-		resp := datatypeJSONResponse(response.status, response.body)
+		resp := cmdtest.JSONResponse(response.status, response.body)
 		if response.location != "" {
 			resp.Header.Set("Location", response.location)
 		}
@@ -84,7 +87,7 @@ func (f *formsFake) sent(method string) []formsFakeRequest {
 
 func (f *formsFake) run(t *testing.T, args ...string) (string, error) {
 	t.Helper()
-	return execute(buildRootWithCollections(t, f.deps()), args...)
+	return cmdtest.Execute(buildFormsRoot(t, f.deps()), args...)
 }
 
 func decodeObject(t *testing.T, output string) map[string]any {
@@ -155,7 +158,7 @@ func TestFormsCreateRequiresNameAndBindsCallerID(t *testing.T) {
 	if planned["id"] != formsTestOtherID || planned["unique"] != formsTestOtherID {
 		t.Fatalf("expected the caller's id mirrored into unique, got %+v", planned)
 	}
-	if !strings.HasSuffix(asString(plan["path"]), formsTestPrefix+"/form") {
+	if !strings.HasSuffix(cmdkit.AsString(plan["path"]), formsTestPrefix+"/form") {
 		t.Fatalf("expected the dry-run plan on the Forms prefix, got %+v", plan["path"])
 	}
 }

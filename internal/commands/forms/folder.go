@@ -1,4 +1,4 @@
-package commands
+package forms
 
 import (
 	"fmt"
@@ -7,12 +7,13 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/commands/cmdkit"
 )
 
 // Forms folders organize the form tree. They are plain {id, name, parentId}
 // records on their own routes (/folder/...), separate from the form model.
 
-func formsCreateFolder(deps Dependencies) *cobra.Command {
+func formsCreateFolder(deps cmdkit.Dependencies) *cobra.Command {
 	var jsonPayload string
 	var name string
 	var parent string
@@ -27,7 +28,7 @@ func formsCreateFolder(deps Dependencies) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			body := map[string]any{}
 			if strings.TrimSpace(jsonPayload) != "" {
-				parsed, err := parseJSONObject(jsonPayload, "--json")
+				parsed, err := cmdkit.ParseJSONObject(jsonPayload, "--json")
 				if err != nil {
 					return err
 				}
@@ -46,18 +47,18 @@ func formsCreateFolder(deps Dependencies) *cobra.Command {
 				return fmt.Errorf("create-folder requires a folder name: pass --name or a --json payload with \"name\"")
 			}
 			if parentID, set := body["parentId"]; set && parentID != nil {
-				if value, _ := parentID.(string); !isUUIDLike(value) {
+				if value, _ := parentID.(string); !cmdkit.IsUUIDLike(value) {
 					return fmt.Errorf("parentId must be a Forms folder GUID or null, got %v", parentID)
 				}
 			}
 			if _, set := body["parentId"]; !set {
 				body["parentId"] = nil
 			}
-			folderID, err := ensurePayloadID(body)
+			folderID, err := cmdkit.EnsurePayloadID(body)
 			if err != nil {
 				return err
 			}
-			if !isUUIDLike(folderID) {
+			if !cmdkit.IsUUIDLike(folderID) {
 				return fmt.Errorf("id must be a GUID, got %q", folderID)
 			}
 			ctx := cmd.Context()
@@ -66,37 +67,37 @@ func formsCreateFolder(deps Dependencies) *cobra.Command {
 				return err
 			}
 			if dryRun {
-				return printResult(cmd, deps, result)
+				return cmdkit.PrintResult(cmd, deps, result)
 			}
-			created, err := fetchObject(ctx, deps.Client, api.JoinPath("/folder/%s", folderID), formsRequestOpts("", nil))
+			created, err := cmdkit.FetchObject(ctx, deps.Client, api.JoinPath("/folder/%s", folderID), formsRequestOpts("", nil))
 			if err != nil {
 				return fmt.Errorf("the server accepted the folder but reading it back failed: %w", err)
 			}
-			return printResult(cmd, deps, map[string]any{"id": folderID, "name": created["name"], "parentId": created["parentId"], "created": true})
+			return cmdkit.PrintResult(cmd, deps, map[string]any{"id": folderID, "name": created["name"], "parentId": created["parentId"], "created": true})
 		},
 	}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Folder payload as JSON: {\"id\"?, \"name\", \"parentId\"?}")
 	cmd.Flags().StringVar(&name, "name", "", "Folder name (fills name when --json omits it)")
 	cmd.Flags().StringVar(&parent, "parent", "", "Parent folder GUID; omit for a root-level folder")
 	cmd.Flags().StringVar(&id, "id", "", "Folder GUID to use (generated when omitted)")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
-func formsUpdateFolder(deps Dependencies) *cobra.Command {
-	return updateCommand(deps, updateSpec{
+func formsUpdateFolder(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.UpdateCommand(deps, cmdkit.UpdateSpec{
 		Use:   "update-folder <id>",
 		Short: "Rename a Forms folder",
 		Long: "PUT /folder/{id}. The update model carries only the name, e.g. --merge-json '{\"name\": \"New name\"}' or --json '{\"name\": \"New name\"}'. " +
 			"Moving a folder is 'forms move-folder'.",
 		Path: func(args []string) string { return api.JoinPath("/folder/%s", args[0]) },
 		// UpdateFolderModel is {name}; drop what the merge fetch echoes.
-		NormalizeMerged: stripFields("id", "parentId", "created"),
+		NormalizeMerged: cmdkit.StripFields("id", "parentId", "created"),
 		APIPrefix:       formsAPIPrefix,
 	})
 }
 
-func formsMoveFolder(deps Dependencies) *cobra.Command {
+func formsMoveFolder(deps cmdkit.Dependencies) *cobra.Command {
 	return formsMoveCommand(deps,
 		"move-folder <id>",
 		"Move a Forms folder into another folder (or to the root)",
@@ -105,7 +106,7 @@ func formsMoveFolder(deps Dependencies) *cobra.Command {
 	)
 }
 
-func formsDeleteFolder(deps Dependencies) *cobra.Command {
+func formsDeleteFolder(deps cmdkit.Dependencies) *cobra.Command {
 	var force bool
 	var dryRun bool
 	cmd := &cobra.Command{
@@ -115,7 +116,7 @@ func formsDeleteFolder(deps Dependencies) *cobra.Command {
 			"because the server answers that case with a bare 500 (a database constraint error) rather than a validation message (verified on Forms 18.1). Move or delete the contents first.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := requireForceOrDryRun(cmd, "permanently deletes", force, dryRun); err != nil {
+			if err := cmdkit.RequireForceOrDryRun(cmd, "permanently deletes", force, dryRun); err != nil {
 				return err
 			}
 			ctx := cmd.Context()
@@ -139,10 +140,10 @@ func formsDeleteFolder(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printMutationResult(cmd, deps, "deleted", result, dryRun)
+			return cmdkit.PrintMutationResult(cmd, deps, "deleted", result, dryRun)
 		},
 	}
 	cmd.Flags().BoolVar(&force, "force", false, "Confirm permanent deletion")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }

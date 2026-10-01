@@ -1,4 +1,4 @@
-package commands
+package forms
 
 import (
 	"context"
@@ -8,13 +8,14 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/commands/cmdkit"
 )
 
 // Prevalue sources feed the options of list-style form fields (dropdowns,
 // checkbox lists, radio buttons) from somewhere other than the form itself:
 // a text file, a data type's prevalues, documents, or a SQL query.
 
-func formsPrevalueSource(deps Dependencies) *cobra.Command {
+func formsPrevalueSource(deps cmdkit.Dependencies) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "prevalue-source",
 		Short: "Prevalue sources: shared option lists for list-style form fields",
@@ -30,19 +31,19 @@ func formsPrevalueSource(deps Dependencies) *cobra.Command {
 	return cmd
 }
 
-func formsPrevalueSourceList(deps Dependencies) *cobra.Command {
-	return collectionCommand(deps, collectionSpec{
+func formsPrevalueSourceList(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.CollectionCommand(deps, cmdkit.CollectionSpec{
 		Use:   "list",
 		Short: "List prevalue sources (paginated; --skip/--take/--all)",
-		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
-			return []getRequestCandidate{
+		Endpoints: func(args []string, params map[string]any) []cmdkit.GetRequestCandidate {
+			return []cmdkit.GetRequestCandidate{
 				{Path: "/prevalue-source", Opts: formsRequestOpts("", params)},
 			}
 		},
 	})
 }
 
-func formsPrevalueSourceTypes(deps Dependencies) *cobra.Command {
+func formsPrevalueSourceTypes(deps cmdkit.Dependencies) *cobra.Command {
 	var fields string
 	cmd := &cobra.Command{
 		Use:   "types",
@@ -53,15 +54,15 @@ func formsPrevalueSourceTypes(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, deps, applyFieldsProjection(result, fields))
+			return cmdkit.PrintResult(cmd, deps, cmdkit.ApplyFieldsProjection(result, fields))
 		},
 	}
-	addFieldsFlag(cmd, &fields)
+	cmdkit.AddFieldsFlag(cmd, &fields)
 	return cmd
 }
 
-func formsPrevalueSourceGet(deps Dependencies) *cobra.Command {
-	return getCommand(deps, getSpec{
+func formsPrevalueSourceGet(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.GetCommand(deps, cmdkit.GetSpec{
 		Use:       "get <id>",
 		Short:     "Get a prevalue source by ID",
 		Path:      func(args []string) string { return api.JoinPath("/prevalue-source/%s", args[0]) },
@@ -69,8 +70,8 @@ func formsPrevalueSourceGet(deps Dependencies) *cobra.Command {
 	})
 }
 
-func formsPrevalueSourceCreate(deps Dependencies) *cobra.Command {
-	return createCommand(deps, createSpec{
+func formsPrevalueSourceCreate(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.CreateCommand(deps, cmdkit.CreateSpec{
 		Use:   "create",
 		Short: "Create a prevalue source, starting from the server's scaffold",
 		Long: "POST /prevalue-source. The CLI fetches GET /prevalue-source/scaffold (a fresh id and the required defaults) and deep-merges --json on top. " +
@@ -79,14 +80,14 @@ func formsPrevalueSourceCreate(deps Dependencies) *cobra.Command {
 		TemplateKey:  "forms.prevalue-source.create",
 		PayloadUsage: "Prevalue source fields as JSON, deep-merged onto GET /prevalue-source/scaffold",
 		Base: func(ctx context.Context) (map[string]any, error) {
-			return fetchObject(ctx, deps.Client, "/prevalue-source/scaffold", formsRequestOpts("", nil))
+			return cmdkit.FetchObject(ctx, deps.Client, "/prevalue-source/scaffold", formsRequestOpts("", nil))
 		},
 		Flags: func(cmd *cobra.Command) func(map[string]any) error {
 			return func(body map[string]any) error {
 				if name, _ := body["name"].(string); strings.TrimSpace(name) == "" {
 					return fmt.Errorf("prevalue-source create requires a name: pass --json '{\"name\": …, \"fieldPreValueSourceTypeId\": …}'")
 				}
-				if typeID := asString(body["fieldPreValueSourceTypeId"]); !isUUIDLike(typeID) || typeID == "00000000-0000-0000-0000-000000000000" {
+				if typeID := cmdkit.AsString(body["fieldPreValueSourceTypeId"]); !cmdkit.IsUUIDLike(typeID) || typeID == "00000000-0000-0000-0000-000000000000" {
 					return fmt.Errorf("prevalue-source create requires \"fieldPreValueSourceTypeId\": an id from 'umbraco forms prevalue-source types'")
 				}
 				if id, ok := body["id"].(string); ok && strings.TrimSpace(id) != "" {
@@ -102,8 +103,8 @@ func formsPrevalueSourceCreate(deps Dependencies) *cobra.Command {
 	})
 }
 
-func formsPrevalueSourceUpdate(deps Dependencies) *cobra.Command {
-	return updateCommand(deps, updateSpec{
+func formsPrevalueSourceUpdate(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.UpdateCommand(deps, cmdkit.UpdateSpec{
 		Use:   "update <id>",
 		Short: "Update a prevalue source",
 		Long: "PUT /prevalue-source/{id}. --merge-json fetches the source and deep-merges the patch (the safe default); --json replaces it wholesale. " +
@@ -114,8 +115,8 @@ func formsPrevalueSourceUpdate(deps Dependencies) *cobra.Command {
 	})
 }
 
-func formsPrevalueSourceDelete(deps Dependencies) *cobra.Command {
-	return deleteCommand(deps, deleteSpec{
+func formsPrevalueSourceDelete(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.DeleteCommand(deps, cmdkit.DeleteSpec{
 		Use:       "delete <id>",
 		Short:     "Permanently delete a prevalue source",
 		Path:      func(args []string) string { return api.JoinPath("/prevalue-source/%s", args[0]) },

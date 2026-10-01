@@ -1,4 +1,4 @@
-package commands
+package forms
 
 import (
 	"context"
@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/commands/cmdkit"
 )
 
 // Record writes: state changes (approve/reject/delete via record-set
@@ -17,7 +18,7 @@ import (
 // hold what site visitors submitted, so these commands echo ids and counts,
 // never record contents.
 
-func formsRecordActions(deps Dependencies) *cobra.Command {
+func formsRecordActions(deps cmdkit.Dependencies) *cobra.Command {
 	var fields string
 	cmd := &cobra.Command{
 		Use:   "record-actions",
@@ -30,10 +31,10 @@ func formsRecordActions(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, deps, applyFieldsProjection(result, fields))
+			return cmdkit.PrintResult(cmd, deps, cmdkit.ApplyFieldsProjection(result, fields))
 		},
 	}
-	addFieldsFlag(cmd, &fields)
+	cmdkit.AddFieldsFlag(cmd, &fields)
 	return cmd
 }
 
@@ -53,10 +54,10 @@ func resolveFormsRecordAction(ctx context.Context, client *api.Client, action st
 		if !ok {
 			continue
 		}
-		alias := asString(entry["alias"])
+		alias := cmdkit.AsString(entry["alias"])
 		available = append(available, alias)
 		for _, key := range []string{"alias", "id", "name"} {
-			if strings.EqualFold(asString(entry[key]), strings.TrimSpace(action)) {
+			if strings.EqualFold(cmdkit.AsString(entry[key]), strings.TrimSpace(action)) {
 				return entry, nil
 			}
 		}
@@ -73,14 +74,14 @@ func formsRecordActionDestructive(entry map[string]any) bool {
 		return true
 	}
 	for _, key := range []string{"alias", "name"} {
-		if strings.Contains(strings.ToLower(asString(entry[key])), "delete") {
+		if strings.Contains(strings.ToLower(cmdkit.AsString(entry[key])), "delete") {
 			return true
 		}
 	}
 	return false
 }
 
-func formsRecordAction(deps Dependencies) *cobra.Command {
+func formsRecordAction(deps cmdkit.Dependencies) *cobra.Command {
 	var recordIDs string
 	var force bool
 	var dryRun bool
@@ -92,12 +93,12 @@ func formsRecordAction(deps Dependencies) *cobra.Command {
 			"The server ignores record ids it does not know and still answers 200 (verified on Forms 18.1), so read the records back with 'forms records' to confirm the new state.",
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ids := uniqueCSV(recordIDs)
+			ids := cmdkit.UniqueCSV(recordIDs)
 			if len(ids) == 0 {
 				return fmt.Errorf("record-action requires --record-ids <comma-separated record uniqueIds>")
 			}
 			for _, id := range ids {
-				if !isUUIDLike(id) {
+				if !cmdkit.IsUUIDLike(id) {
 					return fmt.Errorf("--record-ids must be record uniqueIds (GUIDs), got %q; the numeric record id is not accepted here", id)
 				}
 			}
@@ -106,27 +107,27 @@ func formsRecordAction(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			alias := asString(action["alias"])
+			alias := cmdkit.AsString(action["alias"])
 			if formsRecordActionDestructive(action) {
-				if err := requireForceOrDryRun(cmd, fmt.Sprintf("runs the %q record action, which permanently changes the records", alias), force, dryRun); err != nil {
+				if err := cmdkit.RequireForceOrDryRun(cmd, fmt.Sprintf("runs the %q record action, which permanently changes the records", alias), force, dryRun); err != nil {
 					return err
 				}
 			}
-			actionID := asString(action["id"])
-			body := map[string]any{"recordKeys": stringsToAny(ids)}
+			actionID := cmdkit.AsString(action["id"])
+			body := map[string]any{"recordKeys": cmdkit.StringsToAny(ids)}
 			result, err := deps.Client.Post(ctx, api.JoinPath("/form/%s/record/actions/%s/execute", args[0], actionID), body, api.RequestOptions{APIPrefix: formsAPIPrefix, DryRun: dryRun})
 			if err != nil {
 				return err
 			}
 			if dryRun || result != nil {
-				return printResult(cmd, deps, result)
+				return cmdkit.PrintResult(cmd, deps, result)
 			}
-			return printResult(cmd, deps, map[string]any{"executed": true, "action": alias, "actionId": actionID, "formId": args[0], "recordIds": stringsToAny(ids)})
+			return cmdkit.PrintResult(cmd, deps, map[string]any{"executed": true, "action": alias, "actionId": actionID, "formId": args[0], "recordIds": cmdkit.StringsToAny(ids)})
 		},
 	}
 	cmd.Flags().StringVar(&recordIDs, "record-ids", "", "Comma-separated record uniqueIds (GUIDs) to run the action on (required)")
 	cmd.Flags().BoolVar(&force, "force", false, "Confirm a destructive action (delete)")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
@@ -146,7 +147,7 @@ func parseFormsRecordFields(raw string) ([]any, error) {
 		if !ok {
 			return nil, fmt.Errorf("--json entry %d must be an object {\"fieldId\", \"values\"}", i)
 		}
-		if !isUUIDLike(asString(entry["fieldId"])) {
+		if !cmdkit.IsUUIDLike(cmdkit.AsString(entry["fieldId"])) {
 			return nil, fmt.Errorf("--json entry %d needs \"fieldId\": the field GUID from 'forms get <formId>' (pages → fieldSets → containers → fields)", i)
 		}
 		if _, ok := entry["values"].([]any); !ok {
@@ -156,7 +157,7 @@ func parseFormsRecordFields(raw string) ([]any, error) {
 	return entries, nil
 }
 
-func formsRecordUpdate(deps Dependencies) *cobra.Command {
+func formsRecordUpdate(deps cmdkit.Dependencies) *cobra.Command {
 	var jsonPayload string
 	var dryRun bool
 	cmd := &cobra.Command{
@@ -166,10 +167,10 @@ func formsRecordUpdate(deps Dependencies) *cobra.Command {
 			"recordId is the record's uniqueId (GUID). Needs the Forms edit-entries permission. Record contents are not echoed back; read the record with 'forms record <formId> <recordId>'.",
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := requireValue("--json", jsonPayload); err != nil {
+			if err := cmdkit.RequireValue("--json", jsonPayload); err != nil {
 				return err
 			}
-			if !isUUIDLike(args[1]) {
+			if !cmdkit.IsUUIDLike(args[1]) {
 				return fmt.Errorf("recordId must be the record's uniqueId (GUID), got %q", args[1])
 			}
 			body, err := parseFormsRecordFields(jsonPayload)
@@ -180,15 +181,15 @@ func formsRecordUpdate(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printMutationResult(cmd, deps, "updated", result, dryRun)
+			return cmdkit.PrintMutationResult(cmd, deps, "updated", result, dryRun)
 		},
 	}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Field changes as a JSON array: [{\"fieldId\", \"values\": [...]}] (required)")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
-func formsRecordWorkflowRetry(deps Dependencies) *cobra.Command {
+func formsRecordWorkflowRetry(deps cmdkit.Dependencies) *cobra.Command {
 	var dryRun bool
 	cmd := &cobra.Command{
 		Use:   "record-workflow-retry <formId> <recordId> <workflowId>",
@@ -201,9 +202,9 @@ func formsRecordWorkflowRetry(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printMutationResult(cmd, deps, "retried", result, dryRun)
+			return cmdkit.PrintMutationResult(cmd, deps, "retried", result, dryRun)
 		},
 	}
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }

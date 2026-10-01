@@ -1,4 +1,6 @@
-package commands
+// Package forms holds the Umbraco Forms add-on commands, served from the
+// Forms Management API mount rather than the core one.
+package forms
 
 import (
 	"context"
@@ -9,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/commands/cmdkit"
 )
 
 // formsAPIPrefix is the mount point for the Umbraco Forms Management API.
@@ -45,7 +48,7 @@ func findFormsRecord(payload any, recordID string) map[string]any {
 		if !ok {
 			continue
 		}
-		if asString(entry["uniqueId"]) == recordID || asString(entry["id"]) == recordID {
+		if cmdkit.AsString(entry["uniqueId"]) == recordID || cmdkit.AsString(entry["id"]) == recordID {
 			return entry
 		}
 	}
@@ -73,7 +76,8 @@ func formsRecordScanWindowExhausted(payload any, scan int) bool {
 	return formsRecordCount(payload) >= scan
 }
 
-func RegisterForms(root *cobra.Command, deps Dependencies) {
+// Register attaches the forms command group to root.
+func Register(root *cobra.Command, deps cmdkit.Dependencies) {
 	forms := &cobra.Command{
 		Use:   "forms",
 		Short: "Umbraco Forms operations: forms, folders, records, prevalue sources",
@@ -105,29 +109,29 @@ func RegisterForms(root *cobra.Command, deps Dependencies) {
 	root.AddCommand(forms)
 }
 
-func formsList(deps Dependencies) *cobra.Command {
+func formsList(deps cmdkit.Dependencies) *cobra.Command {
 	var fields string
-	var triage readTriageOptions
+	var triage cmdkit.ReadTriageOptions
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List forms (tree root: returns folders and root-level forms)",
 		Long:  "Returns the Forms tree root. On real installs this is mostly folders. Every item carries isFolder and type (\"folder\" or \"form\"); use 'forms children <folderId>' to drill into a folder and 'forms get <formId>' only on forms.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			result, err := getWithFallback(
+			result, err := cmdkit.GetWithFallback(
 				cmd.Context(),
 				deps.Client,
-				getRequestCandidate{Path: "/tree/form/root", Opts: formsRequestOpts(fields, nil)},
-				getRequestCandidate{Path: "/form", Opts: formsRequestOpts(fields, nil)},
+				cmdkit.GetRequestCandidate{Path: "/tree/form/root", Opts: formsRequestOpts(fields, nil)},
+				cmdkit.GetRequestCandidate{Path: "/form", Opts: formsRequestOpts(fields, nil)},
 			)
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, deps, applyReadTriage(applyFieldsProjection(annotateFormsItems(result), fields), triage))
+			return cmdkit.PrintResult(cmd, deps, cmdkit.ApplyReadTriage(cmdkit.ApplyFieldsProjection(annotateFormsItems(result), fields), triage))
 		},
 	}
 	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
-	addReadTriageFlags(cmd, &triage)
+	cmdkit.AddReadTriageFlags(cmd, &triage)
 	return cmd
 }
 
@@ -136,7 +140,7 @@ func formsList(deps Dependencies) *cobra.Command {
 // ("Contact sales") was passed to 'forms get', which 404s; the tree root
 // flags folders but form rows carry nothing, so absence read as ambiguity.
 func annotateFormsItems(result any) any {
-	for _, item := range resultItems(result) {
+	for _, item := range cmdkit.ResultItems(result) {
 		entry, ok := item.(map[string]any)
 		if !ok {
 			continue
@@ -163,7 +167,7 @@ func formsNotAFolderError(id string) error {
 func isFormsFolderID(ctx context.Context, client *api.Client, id string) (bool, error) {
 	result, err := client.Get(ctx, api.JoinPath("/folder/%s", id), formsRequestOpts("", nil))
 	if err != nil {
-		if isAPIStatus(err, http.StatusNotFound) {
+		if cmdkit.IsAPIStatus(err, http.StatusNotFound) {
 			return false, nil
 		}
 		return false, err
@@ -172,9 +176,9 @@ func isFormsFolderID(ctx context.Context, client *api.Client, id string) (bool, 
 	return ok && folder["id"] != nil, nil
 }
 
-func formsChildren(deps Dependencies) *cobra.Command {
+func formsChildren(deps cmdkit.Dependencies) *cobra.Command {
 	var fields string
-	var triage readTriageOptions
+	var triage cmdkit.ReadTriageOptions
 	cmd := &cobra.Command{
 		Use:   "children <folderId>",
 		Short: "List the forms and sub-folders inside a folder",
@@ -189,7 +193,7 @@ func formsChildren(deps Dependencies) *cobra.Command {
 				formsRequestOpts(fields, nil),
 			)
 			if err != nil {
-				if isAPIStatus(err, http.StatusNotFound) {
+				if cmdkit.IsAPIStatus(err, http.StatusNotFound) {
 					folder, probeErr := isFormsFolderID(cmd.Context(), deps.Client, args[0])
 					if probeErr != nil {
 						return probeErr
@@ -203,7 +207,7 @@ func formsChildren(deps Dependencies) *cobra.Command {
 			// The tree answers 200 with an empty page for any id (a form id,
 			// a typo), which would read as "empty folder"; only an actual
 			// folder record may be reported as empty.
-			if len(resultItems(result)) == 0 {
+			if len(cmdkit.ResultItems(result)) == 0 {
 				folder, probeErr := isFormsFolderID(cmd.Context(), deps.Client, args[0])
 				if probeErr != nil {
 					return probeErr
@@ -212,15 +216,15 @@ func formsChildren(deps Dependencies) *cobra.Command {
 					return formsNotAFolderError(args[0])
 				}
 			}
-			return printResult(cmd, deps, applyReadTriage(applyFieldsProjection(annotateFormsItems(result), fields), triage))
+			return cmdkit.PrintResult(cmd, deps, cmdkit.ApplyReadTriage(cmdkit.ApplyFieldsProjection(annotateFormsItems(result), fields), triage))
 		},
 	}
 	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
-	addReadTriageFlags(cmd, &triage)
+	cmdkit.AddReadTriageFlags(cmd, &triage)
 	return cmd
 }
 
-func formsGet(deps Dependencies) *cobra.Command {
+func formsGet(deps cmdkit.Dependencies) *cobra.Command {
 	var fields string
 	cmd := &cobra.Command{
 		Use:   "get <id>",
@@ -230,7 +234,7 @@ func formsGet(deps Dependencies) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			result, err := deps.Client.Get(cmd.Context(), api.JoinPath("/form/%s", args[0]), formsRequestOpts(fields, nil))
 			if err != nil {
-				if isAPIStatus(err, http.StatusNotFound) {
+				if cmdkit.IsAPIStatus(err, http.StatusNotFound) {
 					folder, probeErr := isFormsFolderID(cmd.Context(), deps.Client, args[0])
 					if probeErr != nil {
 						return probeErr
@@ -241,16 +245,16 @@ func formsGet(deps Dependencies) *cobra.Command {
 				}
 				return err
 			}
-			return printResult(cmd, deps, applyFieldsProjection(result, fields))
+			return cmdkit.PrintResult(cmd, deps, cmdkit.ApplyFieldsProjection(result, fields))
 		},
 	}
 	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
 	return cmd
 }
 
-func formsRecords(deps Dependencies) *cobra.Command {
+func formsRecords(deps cmdkit.Dependencies) *cobra.Command {
 	var fields string
-	var triage readTriageOptions
+	var triage cmdkit.ReadTriageOptions
 	var state string
 	var from string
 	var to string
@@ -263,7 +267,7 @@ func formsRecords(deps Dependencies) *cobra.Command {
 		Long:  "List records for a form. Filter flags (--state, --from, --to, --skip, --take) are passed through to the Management API verbatim; use --params for any other supported filter.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			params, err := parseParams(paramsRaw)
+			params, err := cmdkit.ParseParams(paramsRaw)
 			if err != nil {
 				return err
 			}
@@ -306,7 +310,7 @@ func formsRecords(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, deps, applyReadTriage(applyFieldsProjection(result, fields), triage))
+			return cmdkit.PrintResult(cmd, deps, cmdkit.ApplyReadTriage(cmdkit.ApplyFieldsProjection(result, fields), triage))
 		},
 	}
 	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
@@ -316,11 +320,11 @@ func formsRecords(deps Dependencies) *cobra.Command {
 	cmd.Flags().IntVar(&skip, "skip", 0, "Number of records to skip")
 	cmd.Flags().IntVar(&take, "take", 0, "Maximum number of records to return (defaults to 100 if not set; pass --take 0 explicitly for no limit)")
 	cmd.Flags().StringVar(&paramsRaw, "params", "", "Additional query parameters as JSON; merged with --state/--from/--to/--skip/--take, with --params taking precedence on key collisions")
-	addReadTriageFlags(cmd, &triage)
+	cmdkit.AddReadTriageFlags(cmd, &triage)
 	return cmd
 }
 
-func formsRecord(deps Dependencies) *cobra.Command {
+func formsRecord(deps cmdkit.Dependencies) *cobra.Command {
 	var fields string
 	var scan int
 	cmd := &cobra.Command{
@@ -350,7 +354,7 @@ func formsRecord(deps Dependencies) *cobra.Command {
 				}
 				return fmt.Errorf("no record with id %q on form %s (scanned all %d records the form returned)", recordID, formID, formsRecordCount(result))
 			}
-			return printResult(cmd, deps, applyFieldsProjection(match, fields))
+			return cmdkit.PrintResult(cmd, deps, cmdkit.ApplyFieldsProjection(match, fields))
 		},
 	}
 	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
@@ -358,7 +362,7 @@ func formsRecord(deps Dependencies) *cobra.Command {
 	return cmd
 }
 
-func formsRecordWorkflowLog(deps Dependencies) *cobra.Command {
+func formsRecordWorkflowLog(deps cmdkit.Dependencies) *cobra.Command {
 	var fields string
 	cmd := &cobra.Command{
 		Use:   "record-workflow-log <formId> <recordId>",
@@ -374,7 +378,7 @@ func formsRecordWorkflowLog(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, deps, applyFieldsProjection(result, fields))
+			return cmdkit.PrintResult(cmd, deps, cmdkit.ApplyFieldsProjection(result, fields))
 		},
 	}
 	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
