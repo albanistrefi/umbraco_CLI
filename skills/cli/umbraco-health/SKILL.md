@@ -44,6 +44,12 @@ umbraco health groups
 umbraco health run <group-name>
 ```
 
+Runs one health check group, or with --all every group GET /health-check-group lists, one after another, printing {groups: [{name, checks} or {name, error}], summary: {groups, ran, failed, results: {<resultType>: count}}}. A group that fails to run is reported in place and the command exits 4 after printing; an authentication failure stops the run.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--all` | bool | false | Run every health check group in one call, with a summary of result types |
+
 ## Mutation Commands
 
 > **Safety:** Always use `--dry-run` first. Remove the flag only after verifying the dry-run output.

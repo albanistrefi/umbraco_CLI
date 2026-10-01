@@ -1,12 +1,16 @@
 package commands
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
 	"umbraco-cli/internal/commands/cmdkit"
+	"umbraco-cli/internal/jsonvalue"
 )
 
 func RegisterHealth(root *cobra.Command, deps cmdkit.Dependencies) {
@@ -39,17 +43,113 @@ func healthGroup(deps cmdkit.Dependencies) *cobra.Command {
 }
 
 func healthRun(deps cmdkit.Dependencies) *cobra.Command {
-	return &cobra.Command{Use: "run <group-name>", Short: "Run health checks for group", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		result, err := deps.Client.Post(cmd.Context(), api.JoinPath("/health-check-group/%s/check", args[0]), nil, api.RequestOptions{})
-		if api.IsStatus(err, http.StatusNotFound) {
-			// Older servers expose GET .../run instead of POST .../check.
-			result, err = deps.Client.Get(cmd.Context(), api.JoinPath("/health-check-group/%s/run", args[0]), api.RequestOptions{})
+	var all bool
+	cmd := &cobra.Command{
+		Use:   "run <group-name>",
+		Short: "Run health checks for group",
+		Long:  "Runs one health check group, or with --all every group GET /health-check-group lists, one after another, printing {groups: [{name, checks} or {name, error}], summary: {groups, ran, failed, results: {<resultType>: count}}}. A group that fails to run is reported in place and the command exits 4 after printing; an authentication failure stops the run.",
+		Args: func(cmd *cobra.Command, args []string) error {
+			if all {
+				if len(args) > 0 {
+					return fmt.Errorf("pass a group name or --all, not both")
+				}
+				return nil
+			}
+			return cobra.ExactArgs(1)(cmd, args)
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !all {
+				result, err := runHealthGroup(cmd.Context(), deps, args[0])
+				if err != nil {
+					return err
+				}
+				return cmdkit.PrintResult(cmd, deps, result)
+			}
+			return runAllHealthGroups(cmd, deps)
+		},
+	}
+	cmd.Flags().BoolVar(&all, "all", false, "Run every health check group in one call, with a summary of result types")
+	return cmd
+}
+
+func runHealthGroup(ctx context.Context, deps cmdkit.Dependencies, name string) (any, error) {
+	result, err := deps.Client.Post(ctx, api.JoinPath("/health-check-group/%s/check", name), nil, api.RequestOptions{})
+	if api.IsStatus(err, http.StatusNotFound) {
+		// Older servers expose GET .../run instead of POST .../check.
+		result, err = deps.Client.Get(ctx, api.JoinPath("/health-check-group/%s/run", name), api.RequestOptions{})
+	}
+	return result, err
+}
+
+// healthGroupsFailedError is the exit after printing when one or more
+// groups could not be run: an API error (4), like a single failed run.
+type healthGroupsFailedError struct{ failed, total int }
+
+func (e healthGroupsFailedError) Error() string {
+	return fmt.Sprintf("health run --all: %d of %d groups could not be run (see their error fields)", e.failed, e.total)
+}
+func (healthGroupsFailedError) ExitCode() int { return 4 }
+
+func runAllHealthGroups(cmd *cobra.Command, deps cmdkit.Dependencies) error {
+	ctx := cmd.Context()
+	listed, err := deps.Client.Get(ctx, "/health-check-group", api.RequestOptions{})
+	if err != nil {
+		return err
+	}
+	names := make([]string, 0)
+	for _, item := range cmdkit.ResultItems(listed) {
+		if group, ok := item.(map[string]any); ok {
+			if name := jsonvalue.String(group["name"]); name != "" {
+				names = append(names, name)
+			}
 		}
+	}
+
+	groups := make([]any, 0, len(names))
+	results := map[string]int{}
+	failed := 0
+	for _, name := range names {
+		result, err := runHealthGroup(ctx, deps, name)
 		if err != nil {
-			return err
+			var authErr interface{ ExitCode() int }
+			if errors.As(err, &authErr) && authErr.ExitCode() == 3 {
+				return err
+			}
+			failed++
+			groups = append(groups, map[string]any{"name": name, "error": err.Error()})
+			continue
 		}
-		return cmdkit.PrintResult(cmd, deps, result)
-	}}
+		object, _ := result.(map[string]any)
+		checks, _ := object["checks"].([]any)
+		for _, check := range checks {
+			checkObject, _ := check.(map[string]any)
+			checkResults, _ := checkObject["results"].([]any)
+			for _, checkResult := range checkResults {
+				resultObject, _ := checkResult.(map[string]any)
+				if resultType := jsonvalue.String(resultObject["resultType"]); resultType != "" {
+					results[resultType]++
+				}
+			}
+		}
+		groups = append(groups, map[string]any{"name": name, "checks": checks})
+	}
+
+	payload := map[string]any{
+		"groups": groups,
+		"summary": map[string]any{
+			"groups":  len(names),
+			"ran":     len(names) - failed,
+			"failed":  failed,
+			"results": results,
+		},
+	}
+	if err := cmdkit.PrintResult(cmd, deps, payload); err != nil {
+		return err
+	}
+	if failed > 0 {
+		return healthGroupsFailedError{failed: failed, total: len(names)}
+	}
+	return nil
 }
 
 func healthAction(deps cmdkit.Dependencies) *cobra.Command {
