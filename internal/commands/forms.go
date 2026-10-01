@@ -114,6 +114,10 @@ func RegisterForms(root *cobra.Command, deps Dependencies) {
 	forms.AddCommand(formsRecords(deps))
 	forms.AddCommand(formsRecord(deps))
 	forms.AddCommand(formsRecordWorkflowLog(deps))
+	forms.AddCommand(formsRecordActions(deps))
+	forms.AddCommand(formsRecordAction(deps))
+	forms.AddCommand(formsRecordUpdate(deps))
+	forms.AddCommand(formsRecordWorkflowRetry(deps))
 	root.AddCommand(forms)
 }
 
