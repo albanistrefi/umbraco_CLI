@@ -10,9 +10,19 @@ differs, and say why in a comment.
 | Package | Holds |
 |---|---|
 | `internal/commands` (`commands`) | Core CMS resources (document, media, doctype, …), `RegisterAll`, and the tree-wide tests (command counts, README counts, schema coverage, skills) |
-| `internal/commands/cmdkit` | The shared toolkit: `Dependencies`, `PrintResult`/`PrintMutationResult`, the builders and their specs, flag helpers, payload parsing and merging, endpoint fallback and auto-pagination, `--backup`, small value/ID helpers |
+| `internal/commands/cmdkit` | The kit for building commands: `Dependencies`, the builders and their specs, flag registration and gates, `--params`/`--json` parsing, endpoint fallback and `--all` paging, response reading and output shaping, printing, the `--merge-json` merge, `--backup`. `doc.go` maps each file to its part |
 | `internal/commands/cmdtest` | The shared test harness: fake transports (`RoundTripper`, `JSONResponse`, `NoContent`, `TokenOr404`), `Deps`/`ClientDeps`/`MakeDeps`, `BuildRoot`, `Execute`/`ExecuteWithErr`. Imported only by `_test.go` files |
 | `internal/commands/forms`, `automate`, `deploy`, `engage` | One package per Umbraco add-on, each exposing `Register(root, deps)` |
+
+Small helpers that are not about building commands live in packages named
+for what they do, outside `internal/commands`:
+
+| Package | Holds |
+|---|---|
+| `internal/uuid` | `Valid` (GUID shape check), `NewV4` |
+| `internal/jsonvalue` | Values decoded from JSON into `any`: `String`, `Text` (integral numbers in plain decimal), `ShapeName` |
+| `internal/safefile` | Server-provided names made safe on disk: `Name`, `ChildPath` |
+| `internal/api` | `IsStatus(err, code)` sits with `APIError` |
 
 Import rules, which keep the graph acyclic:
 
@@ -23,11 +33,9 @@ Import rules, which keep the graph acyclic:
 - `commands` imports the add-ons only to register them in `RegisterAll`.
 - Core-resource logic an add-on needs (e.g. indexer health, the log-viewer
   route) moves into `cmdkit` rather than being reached through `commands`.
-
-Core files predate the split and still call the toolkit and harness by
-their original unexported names (`printResult`, `getSpec`, `execute`, …)
-through the aliases in `kit_aliases.go` and `kit_aliases_test.go`. New
-core code may use either spelling; add-on code always uses `cmdkit.X`.
+- Every package, core included, calls the kit as `cmdkit.X` and the harness
+  as `cmdtest.X`; there are no local aliases. Name new files for what they
+  hold — no `common.go`, `util.go` or `values.go`.
 
 ### Adding an add-on
 
@@ -61,7 +69,7 @@ core code may use either spelling; add-on code always uses `cmdkit.X`.
 | Hard delete | `DeleteCommand` | gated by force/dry-run |
 | References | `ReferencesCommand` / `AreReferencedCommand` | shared document/media reference reads |
 
-All live in `cmdkit` (core code reaches them as `getCommand`, `collectionCommand`, …).
+All live in `cmdkit` (`cmdkit.GetCommand`, `cmdkit.CollectionCommand`, …).
 
 ## Flags
 
