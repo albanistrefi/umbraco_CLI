@@ -223,26 +223,76 @@ type watchLogMonitorEvent struct {
 	Detail    map[string]any `json:"detail,omitempty"`
 }
 
-type logMonitor struct {
-	tail       *cmdkit.LogTail
-	exclusions []logExclusion
-	matches    []string
-	minLevel   int
-
-	seen        int
-	emitted     map[string]int
-	excluded    map[string]int
+// watchLogFeed reads the log viewer once per tick for every consumer (the
+// --logs monitor, the --uda-dir schema tracker) and reports its own state.
+type watchLogFeed struct {
+	tail        *cmdkit.LogTail
+	read        int
 	unavailable bool
 	gaps        int
 }
 
-// newLogMonitor starts reading after the newest entry at baseline, by the
+// newWatchLogFeed starts reading after the newest entry at baseline, by the
 // server's clock, so local clock skew cannot drop or replay entries. When
 // the baseline had no timestamp it starts from now.
-func newLogMonitor(ctx context.Context, client *api.Client, since time.Time, flags watchLogFlags) *logMonitor {
+func newWatchLogFeed(ctx context.Context, client *api.Client, since time.Time) *watchLogFeed {
 	if since.IsZero() {
 		since = time.Now().UTC()
 	}
+	feed := &watchLogFeed{tail: cmdkit.NewLogTail(client, nil, since)}
+	// The entries stamped at the baseline instant are already history;
+	// reading them once marks them seen.
+	_, _ = feed.tail.Next(ctx)
+	return feed
+}
+
+// next returns the entries since the previous call and any monitor events
+// about the feed itself. Failures are reported as events, never returned.
+func (f *watchLogFeed) next(ctx context.Context) ([]map[string]any, []any) {
+	now := time.Now().UTC().Format(time.RFC3339)
+	entries, err := f.tail.Next(ctx)
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, nil
+		}
+		if errors.Is(err, cmdkit.ErrLogTailBacklogTooLarge) {
+			from := f.tail.Cursor()
+			to := f.tail.NewestSeen()
+			f.tail.SkipTo(to)
+			f.gaps++
+			return nil, []any{watchLogMonitorEvent{Timestamp: now, Type: "log-monitor", Status: "gap", Detail: map[string]any{
+				"reason": fmt.Sprintf("more than %d entries arrived in one poll; the entries between from and to were not read", cmdkit.LogTailPageSize*cmdkit.LogTailMaxPagesPerPoll),
+				"from":   from.UTC().Format(time.RFC3339Nano),
+				"to":     to.UTC().Format(time.RFC3339Nano),
+			}}}
+		}
+		if f.unavailable {
+			return nil, nil
+		}
+		f.unavailable = true
+		return nil, []any{watchLogMonitorEvent{Timestamp: now, Type: "log-monitor", Status: "unavailable", Detail: map[string]any{
+			"reason": api.SanitizeTerminalText(err.Error()),
+			"note":   "expected while the app restarts; entries are read on recovery",
+		}}}
+	}
+	f.read += len(entries)
+	if f.unavailable {
+		f.unavailable = false
+		return entries, []any{watchLogMonitorEvent{Timestamp: now, Type: "log-monitor", Status: "resumed"}}
+	}
+	return entries, nil
+}
+
+type logMonitor struct {
+	exclusions []logExclusion
+	matches    []string
+	minLevel   int
+
+	emitted  map[string]int
+	excluded map[string]int
+}
+
+func newLogMonitor(flags watchLogFlags) *logMonitor {
 	minLevel, _ := logLevelRank(flags.level)
 	keepAll := false
 	keep := map[string]bool{}
@@ -264,18 +314,13 @@ func newLogMonitor(ctx context.Context, client *api.Client, since time.Time, fla
 		}
 		exclusions = append(exclusions, logExclusion{name: "custom:" + needle, matches: func(v logEntryView) bool { return v.contains(needle) }})
 	}
-	monitor := &logMonitor{
-		tail:       cmdkit.NewLogTail(client, nil, since),
+	return &logMonitor{
 		exclusions: exclusions,
 		matches:    flags.matches,
 		minLevel:   minLevel,
 		emitted:    map[string]int{},
 		excluded:   map[string]int{},
 	}
-	// The entries stamped at the baseline instant are already history;
-	// reading them once marks them seen.
-	_, _ = monitor.tail.Next(ctx)
-	return monitor
 }
 
 func (m *logMonitor) exclusionNames() []string {
@@ -286,43 +331,10 @@ func (m *logMonitor) exclusionNames() []string {
 	return names
 }
 
-// poll reads the entries since the previous poll and returns the events to
-// emit. Failures are reported as monitor events, never returned.
-func (m *logMonitor) poll(ctx context.Context) []any {
-	now := time.Now().UTC().Format(time.RFC3339)
-	entries, err := m.tail.Next(ctx)
-	if err != nil {
-		if ctx.Err() != nil {
-			return nil
-		}
-		if errors.Is(err, cmdkit.ErrLogTailBacklogTooLarge) {
-			from := m.tail.Cursor()
-			to := m.tail.NewestSeen()
-			m.tail.SkipTo(to)
-			m.gaps++
-			return []any{watchLogMonitorEvent{Timestamp: now, Type: "log-monitor", Status: "gap", Detail: map[string]any{
-				"reason": fmt.Sprintf("more than %d entries arrived in one poll; the entries between from and to were not read", cmdkit.LogTailPageSize*cmdkit.LogTailMaxPagesPerPoll),
-				"from":   from.UTC().Format(time.RFC3339Nano),
-				"to":     to.UTC().Format(time.RFC3339Nano),
-			}}}
-		}
-		if m.unavailable {
-			return nil
-		}
-		m.unavailable = true
-		return []any{watchLogMonitorEvent{Timestamp: now, Type: "log-monitor", Status: "unavailable", Detail: map[string]any{
-			"reason": api.SanitizeTerminalText(err.Error()),
-			"note":   "expected while the app restarts; entries are read on recovery",
-		}}}
-	}
-
-	events := make([]any, 0, len(entries)+1)
-	if m.unavailable {
-		m.unavailable = false
-		events = append(events, watchLogMonitorEvent{Timestamp: now, Type: "log-monitor", Status: "resumed"})
-	}
+// consume turns a tick's entries into log events.
+func (m *logMonitor) consume(entries []map[string]any) []any {
+	events := make([]any, 0)
 	for _, entry := range entries {
-		m.seen++
 		view := newLogEntryView(entry)
 		if name := m.excludedBy(view); name != "" {
 			m.excluded[name]++
@@ -371,7 +383,7 @@ func (m *logMonitor) total() int {
 }
 
 // stopped is the final monitor event: what was read, emitted and excluded.
-func (m *logMonitor) stopped(phase string) watchLogMonitorEvent {
+func (m *logMonitor) stopped(phase string, feed *watchLogFeed) watchLogMonitorEvent {
 	excluded := map[string]any{}
 	for _, name := range sortedCountKeys(m.excluded) {
 		excluded[name] = m.excluded[name]
@@ -382,11 +394,11 @@ func (m *logMonitor) stopped(phase string) watchLogMonitorEvent {
 	}
 	return watchLogMonitorEvent{Timestamp: time.Now().UTC().Format(time.RFC3339), Type: "log-monitor", Status: "stopped", Detail: map[string]any{
 		"phase":    phase,
-		"read":     m.seen,
+		"read":     feed.read,
 		"emitted":  emitted,
 		"excluded": excluded,
-		"gaps":     m.gaps,
-		"through":  m.tail.Cursor().UTC().Format(time.RFC3339Nano),
+		"gaps":     feed.gaps,
+		"through":  feed.tail.Cursor().UTC().Format(time.RFC3339Nano),
 	}}
 }
 

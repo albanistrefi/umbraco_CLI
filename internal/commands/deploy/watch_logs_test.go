@@ -27,6 +27,8 @@ type fakeDeployEnv struct {
 	tailBroken bool
 	entries    []fakeLogEntry
 	tailReads  int
+	// routes answers any other request for the current tick (nil = 404).
+	routes func(tick int, req *http.Request) *http.Response
 }
 
 type fakeLogEntry struct {
@@ -93,6 +95,11 @@ func (e *fakeDeployEnv) handler() cmdtest.RoundTripper {
 			}
 			return cmdtest.JSONResponse(http.StatusOK, `{"total":`+fmt.Sprint(len(visible))+`,"items":[`+strings.Join(visible, ",")+`]}`), nil
 		}
+		if e.routes != nil {
+			if resp := e.routes(tick, req); resp != nil {
+				return resp, nil
+			}
+		}
 		return cmdtest.JSONResponse(http.StatusNotFound, `{}`), nil
 	}
 }
@@ -121,7 +128,8 @@ func deployLogs(landTick int) []fakeLogEntry {
 func runWatch(t *testing.T, env *fakeDeployEnv, args ...string) ([]map[string]any, error) {
 	t.Helper()
 	deps := cmdtest.Deps(env.handler())
-	base := []string{"deploy", "watch", "--json", "--interval", "1ms", "--settle", "0", "--skip-index-verify", "--escalation", "1h", "--heartbeat", "0"}
+	// A regression that never settles times out (exit 6) instead of hanging.
+	base := []string{"deploy", "watch", "--json", "--interval", "1ms", "--settle", "0", "--skip-index-verify", "--escalation", "1h", "--heartbeat", "0", "--timeout", "10s"}
 	out, err := cmdtest.Execute(cmdtest.BuildRoot(t, deps, Register), append(base, args...)...)
 	lines := make([]map[string]any, 0)
 	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {

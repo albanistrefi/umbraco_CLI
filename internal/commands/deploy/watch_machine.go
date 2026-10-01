@@ -16,10 +16,13 @@ type watchObservation struct {
 	MgmtStatus  int // HTTP status of the unauthenticated token probe; 0 = unreachable
 	ProcessID   string
 	MachineName string
-	NewestLogAt time.Time       // timestamp of the newest log entry, by the server's clock
-	LogErr      error           // the typed error from the log probe, surfaced at baseline
-	Health      map[string]bool // per health path; nil when the probe errored entirely
-	BadIndexes  []string        // rebuilding/unhealthy index names; nil = unknown this tick
+	NewestLogAt time.Time // timestamp of the newest log entry, by the server's clock
+	// SchemaPending holds verified back while --uda-dir artifacts await
+	// confirmation; false when no schema is tracked.
+	SchemaPending bool
+	LogErr        error           // the typed error from the log probe, surfaced at baseline
+	Health        map[string]bool // per health path; nil when the probe errored entirely
+	BadIndexes    []string        // rebuilding/unhealthy index names; nil = unknown this tick
 }
 
 type watchOutcome int
@@ -169,7 +172,7 @@ func (m *watchMachine) observe(obs watchObservation) ([]watchEvent, watchOutcome
 	// the app is already serving (index rebuilds discard replicated-clean
 	// indexes at deployment completion), so a single passing sample is not
 	// verification — it can land exactly in the healthy gap.
-	allClear := m.sawLanded && m.sawServing && healthOK && m.indexesClean(obs)
+	allClear := m.sawLanded && m.sawServing && healthOK && m.indexesClean(obs) && !obs.SchemaPending
 	if allClear {
 		if m.settle <= 0 {
 			transition("verified", map[string]any{"paths": m.baselineHealthy, "indexVerify": !m.skipIndexVerify, "settledFor": "disabled"})

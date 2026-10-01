@@ -40,6 +40,7 @@ func deployWatch(deps cmdkit.Dependencies) *cobra.Command {
 	var jsonOut bool
 	var skipIndexVerify bool
 	var logFlags watchLogFlags
+	var udaDir string
 
 	cmd := &cobra.Command{
 		Use:   "watch",
@@ -50,7 +51,9 @@ Signals: the newest log entry's ProcessId/MachineName (an app recycle means the 
 
 Phases: baseline → restarting → app-alive → serving → landed → settling → verified | failed | timeout. Everything is baselined before arming — a signal already true on the target is not a signal. Verified requires the environment to stay healthy for a full --settle window after everything first looks good: deployment pipelines can disturb the environment AFTER the app is already serving (observed in production: Umbraco Deploy wiped every Examine index 27 seconds after a single-sample check had passed, leaving search empty for 17 minutes), so a single passing sample is not verification. An interrupted settle (index rebuild, health flap) is emitted as settle-interrupted and the window restarts once the environment recovers. Transitions are emitted with timestamps as they are observed (fast recycles may skip phases); silence between transitions means "still in the current phase", and --heartbeat writes a periodic still-alive line to stderr so silence is never ambiguous. Success is never inferred from silence: reaching --timeout without verification exits 6 (status unknown), and sustained downtime or post-landing health failure beyond --escalation exits 5.
 
-Every --json line has a "type": "phase" for the transitions above. --logs adds the deploy's log entries to the same stream, read with the 'logs tail' poller from the newest entry at baseline: "log" lines (timestamp, category, level, sourceContext, message, exception's first line; e-mail addresses, tokens and secrets masked) for app start/stop (lifecycle), migrations and upgrades (migration), Examine indexer suspend/resume/rebuild (indexer), Umbraco Deploy entries (deploy), --logs-match hits (match) and anything at --logs-level or above (level, default Error); and "log-monitor" lines when the log viewer is unavailable (expected during the restart) or resumes, when a burst outran the poller (gap, with the unread window), and once when the watch ends (stopped, with counts of what was read, emitted and excluded). Known chronic noise is dropped before categories apply: delivery-api-disabled (the Delivery API index populator's "not enabled" line), ready-probe-upgrading (the umbraco-ready health check failing with "Level: Upgrading" while migrations run) and automate-workflow-lock-pk (SQL 2627 on PK_umbracoAutomateWorkflowLock); --logs-keep turns one off, --logs-exclude adds more. Log lines never change phases or the exit code, and the monitor stops with the watch.`,
+Every --json line has a "type": "phase" for the transitions above. --logs adds the deploy's log entries to the same stream, read with the 'logs tail' poller from the newest entry at baseline: "log" lines (timestamp, category, level, sourceContext, message, exception's first line; e-mail addresses, tokens and secrets masked) for app start/stop (lifecycle), migrations and upgrades (migration), Examine indexer suspend/resume/rebuild (indexer), Umbraco Deploy entries (deploy), --logs-match hits (match) and anything at --logs-level or above (level, default Error); and "log-monitor" lines when the log viewer is unavailable (expected during the restart) or resumes, when a burst outran the poller (gap, with the unread window), and once when the watch ends (stopped, with counts of what was read, emitted and excluded). Known chronic noise is dropped before categories apply: delivery-api-disabled (the Delivery API index populator's "not enabled" line), ready-probe-upgrading (the umbraco-ready health check failing with "Level: Upgrading" while migrations run) and automate-workflow-lock-pk (SQL 2627 on PK_umbracoAutomateWorkflowLock); --logs-keep turns one off, --logs-exclude adds more. Log lines never change phases or the exit code, and the monitor stops with the watch.
+
+--uda-dir checks schema tripwires, using the same comparison as 'deploy status'. At baseline every artifact is compared: the drifted and missing-remote ones are what this deploy should change and are tracked; in-sync ones are counted; unknown and error ones (Automate artifacts where the Automate API is unreachable, as on non-live environments behind basic auth) are listed as unverifiable and never counted as in sync or failed. After landing the tracked artifacts are re-checked each poll, with a "schema" line per status change. Umbraco Deploy applies schema in its own pass after the app is serving, logging its start and its end (Work Status "Completed"), so an artifact still at baseline before then is expected; "schema-pass" lines report the pass starting and ending as read from the log (entries of the new process only), and "waiting" once when only the schema is holding verified back. Verified waits until every tracked artifact is in sync, or the pass has ended and a re-check after it has a definitive answer for each (an unreadable one gets three tries, then counts as unknown). If the pass end never shows up, verified never comes and the watch times out (exit 6): success is not inferred from silence. A "schema-summary" line closes the stream with confirmed, unconfirmed (still drifted or missing), unknown and unverifiable artifacts. When the environment is verified but tracked artifacts are still drifted or missing after the pass ended, or the pass ended with another work status than Completed, the watch exits 7, the documented code for drifted or missing entities (Deploy can skip artifacts without failing the pass).`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if interval <= 0 {
@@ -58,6 +61,17 @@ Every --json line has a "type": "phase" for the transitions above. --logs adds t
 			}
 			if err := logFlags.validate(cmd); err != nil {
 				return err
+			}
+			if udaDir != "" {
+				// Local checks first: a wrong directory is a usage error
+				// before any request is sent.
+				artifacts, err := loadUdaArtifacts(udaDir, nil)
+				if err != nil {
+					return err
+				}
+				if len(artifacts) == 0 {
+					return fmt.Errorf("no .uda artifacts found in %s (pass --uda-dir pointing at the site repo's umbraco/Deploy/Revision)", udaDir)
+				}
 			}
 			base := strings.TrimRight(deps.CurrentConfig().BaseURL, "/")
 			public := base
@@ -95,9 +109,21 @@ Every --json line has a "type": "phase" for the transitions above. --logs adds t
 				"unhealthyPaths": unhealthyPathNames(baseline.Health),
 				"ignoredIndexes": cmdkit.SortedKeys(machine.baselineBadIndexes),
 			}
+			var schema *schemaTracker
+			if udaDir != "" {
+				schema, err = newSchemaTracker(ctx, deps, udaDir, baseline)
+				if err != nil {
+					return err
+				}
+				baselineDetail["schema"] = schema.baselineDetail()
+			}
+			var feed *watchLogFeed
 			var logs *logMonitor
+			if logFlags.enabled || schema != nil {
+				feed = newWatchLogFeed(ctx, deps.Client, baseline.NewestLogAt)
+			}
 			if logFlags.enabled {
-				logs = newLogMonitor(ctx, deps.Client, baseline.NewestLogAt, logFlags)
+				logs = newLogMonitor(logFlags)
 				baselineDetail["logs"] = map[string]any{"excluding": logs.exclusionNames(), "level": logFlags.level}
 			}
 			emit(watchEvent{
@@ -105,22 +131,36 @@ Every --json line has a "type": "phase" for the transitions above. --logs adds t
 				Phase:     "baseline",
 				Detail:    baselineDetail,
 			})
-			// Log events of a tick go out before its phase transitions (the
-			// entries happened first). At a terminal state the monitor drains
-			// once more and stops with the watch.
+			// A tick's log and schema events go out before its phase
+			// transitions (they happened first). At a terminal state the feed
+			// is read once more, then the schema summary and the log monitor's
+			// stopped event close the stream.
 			drainLogs := func() {
-				if logs == nil {
+				if feed == nil {
 					return
 				}
-				for _, event := range logs.poll(ctx) {
-					emit(event)
+				entries, status := feed.next(ctx)
+				if logs != nil {
+					for _, event := range status {
+						emit(event)
+					}
+					for _, event := range logs.consume(entries) {
+						emit(event)
+					}
+				}
+				if schema != nil {
+					for _, event := range schema.observeLogs(entries) {
+						emit(event)
+					}
 				}
 			}
 			stopLogs := func() {
-				if logs == nil {
-					return
+				if schema != nil {
+					emit(schema.summary(machine.phase))
 				}
-				emit(logs.stopped(machine.phase))
+				if logs != nil {
+					emit(logs.stopped(machine.phase, feed))
+				}
 			}
 
 			started := time.Now()
@@ -129,6 +169,9 @@ Every --json line has a "type": "phase" for the transitions above. --logs adds t
 			timeoutErr := func() error {
 				drainLogs()
 				reason := fmt.Sprintf("no verification within %s (last phase: %s) — deployment status unknown", timeout, machine.phase)
+				if schema != nil && schema.pending() {
+					reason += fmt.Sprintf("; schema: %d tracked artifacts unconfirmed, Umbraco Deploy's schema pass end not observed", len(schema.pendingFiles()))
+				}
 				emit(watchEvent{Timestamp: time.Now().UTC().Format(time.RFC3339), Phase: "timeout", Detail: map[string]any{"reason": reason}})
 				stopLogs()
 				return deployWatchTimeoutError{reason: reason}
@@ -151,14 +194,30 @@ Every --json line has a "type": "phase" for the transitions above. --logs adds t
 				}
 
 				observation := probes.observe(ctx)
-				events, terminal := machine.observe(observation)
 				drainLogs()
+				if schema != nil {
+					landed := machine.sawLanded || (observation.ProcessID != "" &&
+						(observation.ProcessID != baseline.ProcessID || observation.MachineName != baseline.MachineName))
+					for _, event := range schema.recheck(ctx, landed) {
+						emit(event)
+					}
+					observation.SchemaPending = schema.pending()
+				}
+				events, terminal := machine.observe(observation)
 				for _, event := range events {
 					emit(event)
+				}
+				if schema != nil && terminal == watchOutcomeNone && machine.sawLanded && machine.sawServing {
+					for _, event := range schema.waiting(observation.At.UTC().Format(time.RFC3339)) {
+						emit(event)
+					}
 				}
 				switch terminal {
 				case watchOutcomeVerified:
 					stopLogs()
+					if schema != nil {
+						return schema.exitError()
+					}
 					return nil
 				case watchOutcomeFailed:
 					stopLogs()
@@ -171,7 +230,7 @@ Every --json line has a "type": "phase" for the transitions above. --logs adds t
 				if heartbeat > 0 && time.Since(lastHeartbeat) >= heartbeat {
 					logStatus := ""
 					if logs != nil {
-						logStatus = fmt.Sprintf(", logs: %d read, %d emitted", logs.seen, logs.total())
+						logStatus = fmt.Sprintf(", logs: %d read, %d emitted", feed.read, logs.total())
 					}
 					fmt.Fprintf(cmd.ErrOrStderr(), "%s still watching — phase %s, elapsed %s%s\n", time.Now().UTC().Format(time.RFC3339), machine.phase, time.Since(started).Round(time.Second), logStatus)
 					lastHeartbeat = time.Now()
@@ -190,6 +249,7 @@ Every --json line has a "type": "phase" for the transitions above. --logs adds t
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "Emit phase transitions as NDJSON")
 	cmd.Flags().BoolVar(&skipIndexVerify, "skip-index-verify", false, "Do not require Examine indexes to be healthy for the verified phase")
 	addWatchLogFlags(cmd, &logFlags)
+	cmd.Flags().StringVar(&udaDir, "uda-dir", "", "Check schema tripwires: the .uda artifacts here (the site repo's umbraco/Deploy/Revision) that are drifted or missing on the target at baseline are re-checked after landing; verified waits until they are in sync or Umbraco Deploy's schema pass has ended, and exits 7 if any is still drifted or missing then")
 	return cmd
 }
 
@@ -229,6 +289,10 @@ func watchEmitter(out io.Writer, jsonOut bool) func(any) {
 			fmt.Fprintf(out, "%s log [%s] %s%s %s%s\n", event.Timestamp, event.Category, event.Level, source, api.SanitizeTerminalText(event.Message), api.SanitizeTerminalText(exception))
 		case watchLogMonitorEvent:
 			fmt.Fprintf(out, "%s log-monitor %s%s\n", event.Timestamp, event.Status, formatWatchDetail(event.Detail))
+		case watchSchemaEvent:
+			fmt.Fprintf(out, "%s schema %s %s → %s%s\n", event.Timestamp, event.File, event.Previous, event.Status, formatWatchDetail(map[string]any{"kind": event.Kind, "name": event.Name}))
+		case watchSchemaPassEvent:
+			fmt.Fprintf(out, "%s %s %s%s\n", event.Timestamp, event.Type, event.Status, formatWatchDetail(event.Detail))
 		}
 	}
 }
