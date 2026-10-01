@@ -33,7 +33,7 @@ func documentVersionList(deps Dependencies) *cobra.Command {
 				versionParams["culture"] = culture
 			}
 			return []getRequestCandidate{
-				{path: "/document-version", opts: api.RequestOptions{Params: versionParams}},
+				{Path: "/document-version", Opts: api.RequestOptions{Params: versionParams}},
 			}
 		},
 	})
@@ -108,7 +108,7 @@ func documentAuditLog(deps Dependencies) *cobra.Command {
 		NArgs: 1,
 		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
 			return []getRequestCandidate{
-				{path: api.JoinPath("/document/%s/audit-log", args[0]), opts: api.RequestOptions{Params: params}},
+				{Path: api.JoinPath("/document/%s/audit-log", args[0]), Opts: api.RequestOptions{Params: params}},
 			}
 		},
 	})

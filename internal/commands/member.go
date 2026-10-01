@@ -358,23 +358,6 @@ func memberGroupGUIDs(raw any) []string {
 	return out
 }
 
-func uniqueCSV(s string) []string {
-	seen := map[string]struct{}{}
-	out := []string{}
-	for _, raw := range strings.Split(s, ",") {
-		v := strings.TrimSpace(raw)
-		if v == "" {
-			continue
-		}
-		if _, exists := seen[v]; exists {
-			continue
-		}
-		seen[v] = struct{}{}
-		out = append(out, v)
-	}
-	return out
-}
-
 func mergeUniqueCSV(a []string, b []string) []string {
 	seen := map[string]struct{}{}
 	out := []string{}
@@ -399,14 +382,6 @@ func subtractCSV(a []string, remove []string) []string {
 			continue
 		}
 		out = append(out, v)
-	}
-	return out
-}
-
-func stringsToAny(in []string) []any {
-	out := make([]any, len(in))
-	for i, v := range in {
-		out[i] = v
 	}
 	return out
 }

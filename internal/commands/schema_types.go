@@ -52,8 +52,8 @@ func registerSchemaTypeGroup(root *cobra.Command, deps Dependencies, spec schema
 		NArgs: 1,
 		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
 			return []getRequestCandidate{
-				{path: "/tree/" + spec.Resource + "/children", opts: api.RequestOptions{Params: withParam(params, "parentId", args[0])}},
-				{path: api.JoinPath("/"+spec.Resource+"/%s/children", args[0]), opts: api.RequestOptions{Params: params}},
+				{Path: "/tree/" + spec.Resource + "/children", Opts: api.RequestOptions{Params: withParam(params, "parentId", args[0])}},
+				{Path: api.JoinPath("/"+spec.Resource+"/%s/children", args[0]), Opts: api.RequestOptions{Params: params}},
 			}
 		},
 	}))
@@ -65,7 +65,7 @@ func registerSchemaTypeGroup(root *cobra.Command, deps Dependencies, spec schema
 		Short: fmt.Sprintf("Search %ss", spec.Display),
 		Endpoints: func(params map[string]any) []getRequestCandidate {
 			return []getRequestCandidate{
-				{path: "/item/" + spec.Resource + "/search", opts: api.RequestOptions{Params: params}},
+				{Path: "/item/" + spec.Resource + "/search", Opts: api.RequestOptions{Params: params}},
 			}
 		},
 	}))
@@ -124,7 +124,7 @@ func schemaTypeList(deps Dependencies, spec schemaTypeSpec) *cobra.Command {
 			}
 			params = applyPaginationParams(params, skip, take)
 			candidates := []getRequestCandidate{
-				{path: "/tree/" + spec.Resource + "/root", opts: api.RequestOptions{Params: params, Fields: fields}},
+				{Path: "/tree/" + spec.Resource + "/root", Opts: api.RequestOptions{Params: params, Fields: fields}},
 			}
 
 			ctx := cmd.Context()
@@ -737,8 +737,8 @@ func appendSchemaTypeTreeItems(ctx context.Context, client *api.Client, resource
 
 func fetchSchemaTypeFolderChildren(ctx context.Context, client *api.Client, resource string, folderID string, pageSize int, limit int) ([]any, error) {
 	result, err := getAllPagesWithFallback(ctx, client, pageSize, 0, limit,
-		getRequestCandidate{path: "/tree/" + resource + "/children", opts: api.RequestOptions{Params: map[string]any{"parentId": folderID}}},
-		getRequestCandidate{path: api.JoinPath("/"+resource+"/%s/children", folderID)},
+		getRequestCandidate{Path: "/tree/" + resource + "/children", Opts: api.RequestOptions{Params: map[string]any{"parentId": folderID}}},
+		getRequestCandidate{Path: api.JoinPath("/"+resource+"/%s/children", folderID)},
 	)
 	if err != nil {
 		return nil, err

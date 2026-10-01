@@ -55,7 +55,7 @@ func userDataList(deps Dependencies) *cobra.Command {
 				params = withParam(params, key, stringsToAny(values))
 			}
 			return []getRequestCandidate{
-				{path: "/user-data", opts: api.RequestOptions{Params: params}},
+				{Path: "/user-data", Opts: api.RequestOptions{Params: params}},
 			}
 		},
 	})

@@ -299,17 +299,6 @@ func copyAnyMap(source map[string]any) map[string]any {
 	return result
 }
 
-func stringValue(raw any) string {
-	if raw == nil {
-		return ""
-	}
-	text, ok := raw.(string)
-	if ok {
-		return text
-	}
-	return fmt.Sprint(raw)
-}
-
 func matchesAnyFold(value string, needles []string) bool {
 	for _, needle := range needles {
 		if strings.EqualFold(value, needle) {

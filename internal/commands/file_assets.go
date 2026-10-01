@@ -241,7 +241,7 @@ func fileAssetList(deps Dependencies, spec fileAssetSpec) *cobra.Command {
 		Short: fmt.Sprintf("List %ss and folders at the root (paginated; --skip/--take/--all)", spec.Display),
 		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
 			return []getRequestCandidate{
-				{path: "/tree/" + spec.Resource + "/root", opts: api.RequestOptions{Params: params}},
+				{Path: "/tree/" + spec.Resource + "/root", Opts: api.RequestOptions{Params: params}},
 			}
 		},
 	})
@@ -273,7 +273,7 @@ func fileAssetChildren(deps Dependencies, spec fileAssetSpec) *cobra.Command {
 				}
 			}
 			return []getRequestCandidate{
-				{path: "/tree/" + spec.Resource + "/children", opts: api.RequestOptions{Params: withParam(params, "parentPath", parent)}},
+				{Path: "/tree/" + spec.Resource + "/children", Opts: api.RequestOptions{Params: withParam(params, "parentPath", parent)}},
 			}
 		},
 	})
@@ -391,7 +391,7 @@ func fileAssetSnippets(deps Dependencies, spec fileAssetSpec) *cobra.Command {
 		Short: "List the built-in partial view snippets (paginated; --skip/--take/--all)",
 		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
 			return []getRequestCandidate{
-				{path: "/" + spec.Resource + "/snippet", opts: api.RequestOptions{Params: params}},
+				{Path: "/" + spec.Resource + "/snippet", Opts: api.RequestOptions{Params: params}},
 			}
 		},
 	})

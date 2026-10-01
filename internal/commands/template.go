@@ -32,8 +32,8 @@ func templateRoot(deps Dependencies) *cobra.Command {
 		Short: "Get root templates (paginated; --skip/--take/--all)",
 		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
 			return []getRequestCandidate{
-				{path: "/tree/template/root", opts: api.RequestOptions{Params: params}},
-				{path: "/template/root", opts: api.RequestOptions{Params: params}},
+				{Path: "/tree/template/root", Opts: api.RequestOptions{Params: params}},
+				{Path: "/template/root", Opts: api.RequestOptions{Params: params}},
 			}
 		},
 	})
@@ -45,8 +45,8 @@ func templateSearch(deps Dependencies) *cobra.Command {
 		Short: "Search templates",
 		Endpoints: func(params map[string]any) []getRequestCandidate {
 			return []getRequestCandidate{
-				{path: "/item/template/search", opts: api.RequestOptions{Params: params}},
-				{path: "/template/search", opts: api.RequestOptions{Params: params}},
+				{Path: "/item/template/search", Opts: api.RequestOptions{Params: params}},
+				{Path: "/template/search", Opts: api.RequestOptions{Params: params}},
 			}
 		},
 	})

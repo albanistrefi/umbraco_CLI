@@ -30,7 +30,7 @@ func readOnlyEndpointWithFallback(deps Dependencies, use string, short string, p
 	return &cobra.Command{Use: use, Short: short, Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
 		candidates := make([]getRequestCandidate, 0, len(paths))
 		for _, path := range paths {
-			candidates = append(candidates, getRequestCandidate{path: path, opts: api.RequestOptions{}})
+			candidates = append(candidates, getRequestCandidate{Path: path, Opts: api.RequestOptions{}})
 		}
 
 		result, err := getWithFallback(cmd.Context(), deps.Client, candidates...)

@@ -30,8 +30,8 @@ func memberGroupList(deps Dependencies) *cobra.Command {
 			result, err := getWithFallback(
 				cmd.Context(),
 				deps.Client,
-				getRequestCandidate{path: memberGroupPath, opts: api.RequestOptions{Fields: fields}},
-				getRequestCandidate{path: "/tree/member-group/root", opts: api.RequestOptions{Fields: fields}},
+				getRequestCandidate{Path: memberGroupPath, Opts: api.RequestOptions{Fields: fields}},
+				getRequestCandidate{Path: "/tree/member-group/root", Opts: api.RequestOptions{Fields: fields}},
 			)
 			if err != nil {
 				return err

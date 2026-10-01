@@ -57,7 +57,7 @@ func redirectGet(deps Dependencies) *cobra.Command {
 		NArgs: 1,
 		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
 			return []getRequestCandidate{
-				{path: api.JoinPath("/redirect-management/%s", args[0]), opts: api.RequestOptions{Params: params}},
+				{Path: api.JoinPath("/redirect-management/%s", args[0]), Opts: api.RequestOptions{Params: params}},
 			}
 		},
 	})

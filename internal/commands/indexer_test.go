@@ -131,18 +131,6 @@ func TestIndexerRebuildWaitTimesOut(t *testing.T) {
 	}
 }
 
-func TestIndexerHealthStatusToleratesLegacyStringShape(t *testing.T) {
-	if got := indexerHealthStatus(map[string]any{"healthStatus": "Healthy"}); got != "Healthy" {
-		t.Fatalf("expected legacy string shape supported, got %q", got)
-	}
-	if got := indexerHealthStatus(map[string]any{"healthStatus": map[string]any{"status": "Corrupt"}}); got != "Corrupt" {
-		t.Fatalf("expected nested status, got %q", got)
-	}
-	if got := indexerHealthStatus("not-an-object"); got != "" {
-		t.Fatalf("expected empty status for non-object payload, got %q", got)
-	}
-}
-
 func TestIndexerRebuildWaitFailsOnCorruptTerminalState(t *testing.T) {
 	statusRequests := 0
 	deps := indexerDeps(func(req *http.Request) (*http.Response, error) {

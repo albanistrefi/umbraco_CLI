@@ -45,7 +45,7 @@ func tagList(deps Dependencies) *cobra.Command {
 				params = withParam(params, key, value)
 			}
 			return []getRequestCandidate{
-				{path: "/tag", opts: api.RequestOptions{Params: params}},
+				{Path: "/tag", Opts: api.RequestOptions{Params: params}},
 			}
 		},
 	})

@@ -50,8 +50,8 @@ func publishedCacheRebuild(deps Dependencies) *cobra.Command {
 				// Same fallback list as the status command: older servers
 				// only expose the legacy route.
 				statusPayload, err := getWithFallback(ctx, deps.Client,
-					getRequestCandidate{path: "/published-cache/rebuild/status", opts: api.RequestOptions{}},
-					getRequestCandidate{path: "/published-cache/status", opts: api.RequestOptions{}},
+					getRequestCandidate{Path: "/published-cache/rebuild/status", Opts: api.RequestOptions{}},
+					getRequestCandidate{Path: "/published-cache/status", Opts: api.RequestOptions{}},
 				)
 				if err != nil {
 					return fmt.Errorf("polling rebuild status failed: %w", err)

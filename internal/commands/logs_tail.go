@@ -240,8 +240,8 @@ func tailPoll(ctx context.Context, client *api.Client, baseParams map[string]any
 		params["take"] = tailPageSize
 		params["orderDirection"] = "Descending"
 		result, err := getWithFallback(ctx, client,
-			getRequestCandidate{path: logViewerLogPath, opts: api.RequestOptions{Params: params}},
-			getRequestCandidate{path: logViewerLegacyListPath, opts: api.RequestOptions{Params: params}},
+			getRequestCandidate{Path: logViewerLogPath, Opts: api.RequestOptions{Params: params}},
+			getRequestCandidate{Path: logViewerLegacyListPath, Opts: api.RequestOptions{Params: params}},
 		)
 		if err != nil {
 			return nil, newest, err

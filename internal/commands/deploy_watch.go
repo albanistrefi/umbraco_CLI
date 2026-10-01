@@ -55,7 +55,7 @@ Phases: baseline → restarting → app-alive → serving → landed → settlin
 			if interval <= 0 {
 				return fmt.Errorf("--interval must be greater than zero")
 			}
-			base := strings.TrimRight(deps.currentConfig().BaseURL, "/")
+			base := strings.TrimRight(deps.CurrentConfig().BaseURL, "/")
 			public := base
 			if strings.TrimSpace(publicURL) != "" {
 				public = strings.TrimRight(publicURL, "/")

@@ -36,7 +36,7 @@ func formsPrevalueSourceList(deps Dependencies) *cobra.Command {
 		Short: "List prevalue sources (paginated; --skip/--take/--all)",
 		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
 			return []getRequestCandidate{
-				{path: "/prevalue-source", opts: formsRequestOpts("", params)},
+				{Path: "/prevalue-source", Opts: formsRequestOpts("", params)},
 			}
 		},
 	})

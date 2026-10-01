@@ -143,7 +143,7 @@ type udaStatusResult struct {
 // padded values). The env-default output deliberately does not count:
 // quiet exits are for machine consumers who asked for machine output.
 func explicitJSONOutput(deps Dependencies) bool {
-	requested := deps.requestedOutput()
+	requested := deps.RequestedOutput()
 	if strings.TrimSpace(requested) == "" {
 		return false
 	}

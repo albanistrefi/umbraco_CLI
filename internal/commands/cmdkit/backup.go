@@ -1,4 +1,4 @@
-package commands
+package cmdkit
 
 import (
 	"crypto/rand"
@@ -15,14 +15,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// backupAutoValue is the sentinel a bare --backup (no path) resolves to; the
+// BackupAutoValue is the sentinel a bare --backup (no path) resolves to; the
 // file name is then derived from the resource and id.
-const backupAutoValue = "auto"
+const BackupAutoValue = "auto"
 
-// backupEnvelope is the on-disk shape written by --backup and read by
+// BackupEnvelope is the on-disk shape written by --backup and read by
 // restore-backup. The entity is the exact GET response captured before the
 // write, so a restore can PUT it back unchanged.
-type backupEnvelope struct {
+type BackupEnvelope struct {
 	Resource string         `json:"resource"`
 	ID       string         `json:"id"`
 	Path     string         `json:"path"`
@@ -43,17 +43,17 @@ type backupFile struct {
 	Bytes    int    `json:"bytes"`
 }
 
-// addBackupFlag registers --backup [path]. Without a value the file lands in
+// AddBackupFlag registers --backup [path]. Without a value the file lands in
 // the working directory as <resource>-<id>-<timestamp>.backup.json.
-func addBackupFlag(cmd *cobra.Command, target *string) {
+func AddBackupFlag(cmd *cobra.Command, target *string) {
 	cmd.Flags().StringVar(target, "backup", "", "Save the current item to a JSON file before writing; bare --backup writes ./<collection>-<id>-<timestamp>.backup.json, --backup=<path> chooses the file. Undo with '<collection> restore-backup <file>' where available")
-	cmd.Flags().Lookup("backup").NoOptDefVal = backupAutoValue
+	cmd.Flags().Lookup("backup").NoOptDefVal = BackupAutoValue
 }
 
-// resolveBackupPath turns the --backup value into a concrete file path.
-func resolveBackupPath(target string, resource string, id string) string {
+// ResolveBackupPath turns the --backup value into a concrete file path.
+func ResolveBackupPath(target string, resource string, id string) string {
 	file := strings.TrimSpace(target)
-	if file == "" || file == backupAutoValue {
+	if file == "" || file == BackupAutoValue {
 		// Timestamp plus a random suffix: two writes to the same item in the
 		// same second must not share (and truncate) one backup.
 		file = fmt.Sprintf("%s-%s-%s-%s.backup.json", resource, sanitizeFileComponent(id), time.Now().UTC().Format("20060102T150405Z"), randomSuffix())
@@ -69,10 +69,10 @@ func randomSuffix() string {
 	return hex.EncodeToString(buf[:])
 }
 
-// writeBackup persists the pre-change entity (and, when given, the binary
+// WriteBackup persists the pre-change entity (and, when given, the binary
 // behind it as a sibling file) and returns the envelope path.
-func writeBackup(file string, resource string, id string, path string, entity map[string]any, binary *backupBinary) (string, error) {
-	envelope := backupEnvelope{
+func WriteBackup(file string, resource string, id string, path string, entity map[string]any, binary *BackupBinary) (string, error) {
+	envelope := BackupEnvelope{
 		Resource: resource,
 		ID:       id,
 		Path:     path,
@@ -100,7 +100,7 @@ func writeBackup(file string, resource string, id string, path string, entity ma
 		if err := os.MkdirAll(filesDir, 0o700); err != nil {
 			return "", err
 		}
-		binaryPath, err := safeChildPath(filesDir, sanitizeFileName(pathpkg.Base(binary.Src), "file"))
+		binaryPath, err := SafeChildPath(filesDir, SanitizeFileName(pathpkg.Base(binary.Src), "file"))
 		if err != nil {
 			return "", err
 		}
@@ -129,10 +129,10 @@ func writeBackup(file string, resource string, id string, path string, entity ma
 	return file, nil
 }
 
-// sanitizeFileName reduces a server-provided file name to a single safe path
+// SanitizeFileName reduces a server-provided file name to a single safe path
 // component for any host OS: no separators of either flavour, no traversal,
 // no control characters.
-func sanitizeFileName(name string, fallback string) string {
+func SanitizeFileName(name string, fallback string) string {
 	var b strings.Builder
 	for _, r := range name {
 		switch {
@@ -167,9 +167,9 @@ var windowsReservedNames = func() map[string]bool {
 	return names
 }()
 
-// safeChildPath joins name under dir and verifies the result is a direct
+// SafeChildPath joins name under dir and verifies the result is a direct
 // child of dir under the host OS's path semantics.
-func safeChildPath(dir string, name string) (string, error) {
+func SafeChildPath(dir string, name string) (string, error) {
 	joined := filepath.Join(dir, name)
 	absDir, err := filepath.Abs(dir)
 	if err != nil {
@@ -185,9 +185,9 @@ func safeChildPath(dir string, name string) (string, error) {
 	return joined, nil
 }
 
-// backupBinary is a downloaded media file waiting to be written next to its
+// BackupBinary is a downloaded media file waiting to be written next to its
 // envelope.
-type backupBinary struct {
+type BackupBinary struct {
 	Property string
 	Culture  string
 	Segment  string
@@ -200,11 +200,11 @@ func backupFilesDir(envelopePath string) string {
 	return strings.TrimSuffix(envelopePath, ".json") + ".files"
 }
 
-// backupBinaryPath resolves a stored relative binary path and refuses
+// BackupBinaryPath resolves a stored relative binary path and refuses
 // anything that escapes the envelope's .files directory (including via
 // symlinks): a crafted envelope must not make restore upload arbitrary
 // local files.
-func backupBinaryPath(envelopePath string, stored string) (string, error) {
+func BackupBinaryPath(envelopePath string, stored string) (string, error) {
 	filesDir, err := filepath.Abs(backupFilesDir(envelopePath))
 	if err != nil {
 		return "", err
@@ -229,25 +229,25 @@ func backupBinaryPath(envelopePath string, stored string) (string, error) {
 	return candidateAbs, nil
 }
 
-// readBackup loads a backup envelope and checks it belongs to the expected
+// ReadBackup loads a backup envelope and checks it belongs to the expected
 // resource, so a document backup cannot be restored onto a media item.
-func readBackup(file string, resource string) (backupEnvelope, error) {
+func ReadBackup(file string, resource string) (BackupEnvelope, error) {
 	raw, err := os.ReadFile(file)
 	if err != nil {
-		return backupEnvelope{}, err
+		return BackupEnvelope{}, err
 	}
-	var envelope backupEnvelope
+	var envelope BackupEnvelope
 	if err := json.Unmarshal(raw, &envelope); err != nil {
-		return backupEnvelope{}, fmt.Errorf("invalid backup file %s: %w", file, err)
+		return BackupEnvelope{}, fmt.Errorf("invalid backup file %s: %w", file, err)
 	}
 	if envelope.Resource != resource {
-		return backupEnvelope{}, fmt.Errorf("backup file %s holds a %q, not a %s", file, envelope.Resource, resource)
+		return BackupEnvelope{}, fmt.Errorf("backup file %s holds a %q, not a %s", file, envelope.Resource, resource)
 	}
 	if envelope.ID == "" || len(envelope.Entity) == 0 {
-		return backupEnvelope{}, fmt.Errorf("backup file %s is missing the id or entity", file)
+		return BackupEnvelope{}, fmt.Errorf("backup file %s is missing the id or entity", file)
 	}
 	if strings.ContainsAny(envelope.ID, "/\\?#% \t\r\n") || strings.Contains(envelope.ID, "..") {
-		return backupEnvelope{}, fmt.Errorf("backup file %s has an invalid id %q", file, envelope.ID)
+		return BackupEnvelope{}, fmt.Errorf("backup file %s has an invalid id %q", file, envelope.ID)
 	}
 	return envelope, nil
 }

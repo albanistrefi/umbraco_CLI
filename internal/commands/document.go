@@ -107,8 +107,8 @@ func documentRoot(deps Dependencies) *cobra.Command {
 		DocumentOutputTrim: true,
 		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
 			return []getRequestCandidate{
-				{path: "/tree/document/root", opts: api.RequestOptions{Params: params}},
-				{path: "/document/root", opts: api.RequestOptions{Params: params}},
+				{Path: "/tree/document/root", Opts: api.RequestOptions{Params: params}},
+				{Path: "/document/root", Opts: api.RequestOptions{Params: params}},
 			}
 		},
 		Enrich: func(ctx context.Context, result any) (any, error) {
@@ -131,8 +131,8 @@ func documentChildren(deps Dependencies) *cobra.Command {
 		DocumentOutputTrim: true,
 		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
 			return []getRequestCandidate{
-				{path: "/tree/document/children", opts: api.RequestOptions{Params: withParam(params, "parentId", args[0])}},
-				{path: api.JoinPath("/document/%s/children", args[0]), opts: api.RequestOptions{Params: params}},
+				{Path: "/tree/document/children", Opts: api.RequestOptions{Params: withParam(params, "parentId", args[0])}},
+				{Path: api.JoinPath("/document/%s/children", args[0]), Opts: api.RequestOptions{Params: params}},
 			}
 		},
 		Enrich: func(ctx context.Context, result any) (any, error) {
@@ -195,12 +195,12 @@ func documentAncestors(deps Dependencies) *cobra.Command {
 				cmd.Context(),
 				deps.Client,
 				getRequestCandidate{
-					path: "/tree/document/ancestors",
-					opts: api.RequestOptions{Params: map[string]any{"descendantId": args[0]}},
+					Path: "/tree/document/ancestors",
+					Opts: api.RequestOptions{Params: map[string]any{"descendantId": args[0]}},
 				},
 				getRequestCandidate{
-					path: api.JoinPath("/document/%s/ancestors", args[0]),
-					opts: api.RequestOptions{},
+					Path: api.JoinPath("/document/%s/ancestors", args[0]),
+					Opts: api.RequestOptions{},
 				},
 			)
 			if err != nil {
@@ -221,8 +221,8 @@ func documentSearch(deps Dependencies) *cobra.Command {
 		},
 		Endpoints: func(params map[string]any) []getRequestCandidate {
 			return []getRequestCandidate{
-				{path: "/item/document/search", opts: api.RequestOptions{Params: params}},
-				{path: "/document/search", opts: api.RequestOptions{Params: params}},
+				{Path: "/item/document/search", Opts: api.RequestOptions{Params: params}},
+				{Path: "/document/search", Opts: api.RequestOptions{Params: params}},
 			}
 		},
 	})
@@ -599,7 +599,7 @@ func documentMove(deps Dependencies) *cobra.Command {
 		Short: "Move a document",
 		Candidates: func(args []string) []mutationCandidate {
 			path := api.JoinPath("/document/%s/move", args[0])
-			return []mutationCandidate{{method: "PUT", path: path}, {method: "POST", path: path}}
+			return []mutationCandidate{{Method: "PUT", Path: path}, {Method: "POST", Path: path}}
 		},
 		Verb: "moved",
 	})
@@ -624,8 +624,8 @@ func documentTrash(deps Dependencies) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			path := api.JoinPath("/document/%s/move-to-recycle-bin", args[0])
 			result, err := mutateWithFallback(cmd.Context(), deps.Client, map[string]any{}, api.RequestOptions{DryRun: dryRun},
-				mutationCandidate{method: "PUT", path: path},
-				mutationCandidate{method: "POST", path: path},
+				mutationCandidate{Method: "PUT", Path: path},
+				mutationCandidate{Method: "POST", Path: path},
 			)
 			if err != nil {
 				return err

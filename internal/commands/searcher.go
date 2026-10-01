@@ -40,7 +40,7 @@ func searcherList(deps Dependencies) *cobra.Command {
 		NArgs: 0,
 		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
 			return []getRequestCandidate{
-				{path: "/searcher", opts: api.RequestOptions{Params: params}},
+				{Path: "/searcher", Opts: api.RequestOptions{Params: params}},
 			}
 		},
 	})
@@ -65,7 +65,7 @@ func searcherQuery(deps Dependencies) *cobra.Command {
 			// keeps the caller's params map untouched.
 			searchParams := mergeParams(maps.Clone(params), map[string]any{"term": searcherTerm(term, query)})
 			return []getRequestCandidate{
-				{path: api.JoinPath("/searcher/%s/query", args[0]), opts: api.RequestOptions{Params: searchParams}},
+				{Path: api.JoinPath("/searcher/%s/query", args[0]), Opts: api.RequestOptions{Params: searchParams}},
 			}
 		},
 	})

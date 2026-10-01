@@ -1,4 +1,4 @@
-package commands
+package cmdkit
 
 import (
 	"bytes"
@@ -25,7 +25,7 @@ func TestDocumentOutputTrimProjectsDottedFieldsAndValueAliases(t *testing.T) {
 		"large": map[string]any{"nested": true},
 	}
 
-	out, err := applyDocumentOutputTrim(payload, outputTrimOptions{Fields: "id,documentType.alias,variants.name,values.bodyText"}, nil)
+	out, err := ApplyDocumentOutputTrim(payload, OutputTrimOptions{Fields: "id,documentType.alias,variants.name,values.bodyText"}, nil)
 	if err != nil {
 		t.Fatalf("trim failed: %v", err)
 	}
@@ -68,7 +68,7 @@ func TestDocumentOutputTrimSummaryFieldsAndNoEmpty(t *testing.T) {
 		"values":     []any{map[string]any{"alias": "bodyText", "value": "Welcome"}},
 	}
 
-	out, err := applyDocumentOutputTrim(payload, outputTrimOptions{Summary: true, Fields: "values.bodyText", NoEmpty: true}, nil)
+	out, err := ApplyDocumentOutputTrim(payload, OutputTrimOptions{Summary: true, Fields: "values.bodyText", NoEmpty: true}, nil)
 	if err != nil {
 		t.Fatalf("trim failed: %v", err)
 	}
@@ -104,7 +104,7 @@ func TestDocumentOutputTrimPreservesEnvelopeAndWarnsUnknownFields(t *testing.T) 
 	}
 	var warnings bytes.Buffer
 
-	out, err := applyDocumentOutputTrim(payload, outputTrimOptions{Fields: "id,missing"}, &warnings)
+	out, err := ApplyDocumentOutputTrim(payload, OutputTrimOptions{Fields: "id,missing"}, &warnings)
 	if err != nil {
 		t.Fatalf("trim failed: %v", err)
 	}
@@ -126,7 +126,7 @@ func TestDocumentOutputTrimPreservesEnvelopeAndWarnsUnknownFields(t *testing.T) 
 }
 
 func TestDocumentOutputTrimFullRejectsOtherTrimFlags(t *testing.T) {
-	_, err := applyDocumentOutputTrim(map[string]any{"id": "doc-1"}, outputTrimOptions{Full: true, Fields: "id"}, nil)
+	_, err := ApplyDocumentOutputTrim(map[string]any{"id": "doc-1"}, OutputTrimOptions{Full: true, Fields: "id"}, nil)
 	if err == nil {
 		t.Fatalf("expected --full plus --fields to fail")
 	}

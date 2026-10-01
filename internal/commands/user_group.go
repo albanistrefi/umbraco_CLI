@@ -32,11 +32,11 @@ func userGroupList(deps Dependencies) *cobra.Command {
 		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
 			if filter != "" {
 				return []getRequestCandidate{
-					{path: "/filter/user-group", opts: api.RequestOptions{Params: withParam(params, "filter", filter)}},
+					{Path: "/filter/user-group", Opts: api.RequestOptions{Params: withParam(params, "filter", filter)}},
 				}
 			}
 			return []getRequestCandidate{
-				{path: "/user-group", opts: api.RequestOptions{Params: params}},
+				{Path: "/user-group", Opts: api.RequestOptions{Params: params}},
 			}
 		},
 	})

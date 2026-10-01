@@ -42,8 +42,8 @@ func userList(deps Dependencies) *cobra.Command {
 				params = withParam(params, "filter", filter)
 			}
 			return []getRequestCandidate{
-				{path: "/filter/user", opts: api.RequestOptions{Params: params}},
-				{path: "/user", opts: api.RequestOptions{Params: params}},
+				{Path: "/filter/user", Opts: api.RequestOptions{Params: params}},
+				{Path: "/user", Opts: api.RequestOptions{Params: params}},
 			}
 		},
 	})

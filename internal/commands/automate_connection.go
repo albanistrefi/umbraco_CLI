@@ -32,7 +32,7 @@ func automateConnectionList(deps Dependencies) *cobra.Command {
 		Short: "List connections (paginated; --skip/--take/--all)",
 		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
 			return []getRequestCandidate{
-				{path: "/connections", opts: automateOpts(params, false)},
+				{Path: "/connections", Opts: automateOpts(params, false)},
 			}
 		},
 	})

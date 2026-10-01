@@ -69,7 +69,7 @@ func authLogin(deps Dependencies) *cobra.Command {
 				return err
 			}
 
-			_, _, selection, err := config.LoadUserConfigWithOptions(deps.configOptions())
+			_, _, selection, err := config.LoadUserConfigWithOptions(deps.ConfigOptions())
 			if err != nil {
 				return err
 			}
@@ -85,7 +85,7 @@ func authLogin(deps Dependencies) *cobra.Command {
 				})
 			}
 
-			existing, ok, _, err := config.LoadUserConfigWithOptions(deps.configOptions())
+			existing, ok, _, err := config.LoadUserConfigWithOptions(deps.ConfigOptions())
 			if err != nil {
 				return err
 			}
@@ -95,7 +95,7 @@ func authLogin(deps Dependencies) *cobra.Command {
 			existing.BaseURL = cfg.BaseURL
 			existing.ClientID = cfg.ClientID
 			existing.ClientSecret = cfg.ClientSecret
-			if err := config.WriteUserConfigWithOptions(deps.configOptions(), existing); err != nil {
+			if err := config.WriteUserConfigWithOptions(deps.ConfigOptions(), existing); err != nil {
 				return err
 			}
 
@@ -192,7 +192,7 @@ func authStatus(deps Dependencies) *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			env := currentAuthEnv()
-			opts := deps.configOptions()
+			opts := deps.ConfigOptions()
 			userConfig, hasUserConfig, selection, err := config.LoadUserConfigWithOptions(opts)
 			if err != nil {
 				return err
@@ -255,7 +255,7 @@ func authLogout(deps Dependencies) *cobra.Command {
 		Short: "Remove stored credentials from the user config",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			_, _, selection, err := config.LoadUserConfigWithOptions(deps.configOptions())
+			_, _, selection, err := config.LoadUserConfigWithOptions(deps.ConfigOptions())
 			if err != nil {
 				return err
 			}
@@ -268,7 +268,7 @@ func authLogout(deps Dependencies) *cobra.Command {
 					"message":   "stored credentials would be removed",
 				})
 			}
-			if err := config.ClearUserAuthWithOptions(deps.configOptions()); err != nil {
+			if err := config.ClearUserAuthWithOptions(deps.ConfigOptions()); err != nil {
 				return err
 			}
 			return printResult(cmd, deps, map[string]any{

@@ -30,7 +30,7 @@ func languageList(deps Dependencies) *cobra.Command {
 		Short: "List configured languages (paginated; --skip/--take/--all)",
 		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
 			return []getRequestCandidate{
-				{path: "/language", opts: api.RequestOptions{Params: params}},
+				{Path: "/language", Opts: api.RequestOptions{Params: params}},
 			}
 		},
 	})
@@ -141,7 +141,7 @@ func languageCultures(deps Dependencies) *cobra.Command {
 		Short: "List the ISO cultures available for new languages (paginated; --skip/--take/--all)",
 		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
 			return []getRequestCandidate{
-				{path: "/culture", opts: api.RequestOptions{Params: params}},
+				{Path: "/culture", Opts: api.RequestOptions{Params: params}},
 			}
 		},
 	})

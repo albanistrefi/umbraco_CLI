@@ -189,7 +189,7 @@ func absolutizeDocumentURLs(results []documentURLResult, baseURL string) []docum
 
 func configuredBaseURL(deps Dependencies) (string, error) {
 	if deps.ConfigOptionsProvider != nil {
-		cfg, err := config.LoadWithOptions(deps.configOptions())
+		cfg, err := config.LoadWithOptions(deps.ConfigOptions())
 		if err != nil {
 			return "", err
 		}
@@ -197,8 +197,8 @@ func configuredBaseURL(deps Dependencies) (string, error) {
 			return cfg.BaseURL, nil
 		}
 	}
-	if strings.TrimSpace(deps.currentConfig().BaseURL) != "" {
-		return deps.currentConfig().BaseURL, nil
+	if strings.TrimSpace(deps.CurrentConfig().BaseURL) != "" {
+		return deps.CurrentConfig().BaseURL, nil
 	}
 	cfg, err := config.Load()
 	if err != nil {
@@ -291,17 +291,6 @@ func printDocumentURLTable(cmd *cobra.Command, rows []documentURLRow) error {
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", row.ID, row.Culture, row.URL, row.Provider, row.Message)
 	}
 	return tw.Flush()
-}
-
-func cultureValue(value any) string {
-	switch typed := value.(type) {
-	case nil:
-		return ""
-	case string:
-		return typed
-	default:
-		return fmt.Sprint(typed)
-	}
 }
 
 func messageValue(value any) string {

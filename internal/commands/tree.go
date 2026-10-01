@@ -81,8 +81,8 @@ func findDocumentRootByName(ctx context.Context, deps Dependencies, name string)
 		ctx,
 		deps.Client,
 		0, 0, 0,
-		getRequestCandidate{path: "/tree/document/root", opts: api.RequestOptions{}},
-		getRequestCandidate{path: "/document/root", opts: api.RequestOptions{}},
+		getRequestCandidate{Path: "/tree/document/root", Opts: api.RequestOptions{}},
+		getRequestCandidate{Path: "/document/root", Opts: api.RequestOptions{}},
 	)
 	if err != nil {
 		return treeNodeRef{}, err
@@ -95,8 +95,8 @@ func findDocumentChildByName(ctx context.Context, deps Dependencies, parentID st
 		ctx,
 		deps.Client,
 		0, 0, 0,
-		getRequestCandidate{path: "/tree/document/children", opts: api.RequestOptions{Params: map[string]any{"parentId": parentID}}},
-		getRequestCandidate{path: api.JoinPath("/document/%s/children", parentID), opts: api.RequestOptions{}},
+		getRequestCandidate{Path: "/tree/document/children", Opts: api.RequestOptions{Params: map[string]any{"parentId": parentID}}},
+		getRequestCandidate{Path: api.JoinPath("/document/%s/children", parentID), Opts: api.RequestOptions{}},
 	)
 	if err != nil {
 		return treeNodeRef{}, err
@@ -141,26 +141,4 @@ func selectTreeNodeByName(raw any, name string, location string) (treeNodeRef, e
 	default:
 		return treeNodeRef{}, fmt.Errorf("tree walk found multiple matches for %q under %s", name, location)
 	}
-}
-
-// treeItemNames returns every name a tree item is known by. Older
-// Management APIs put a top-level name on tree items; modern ones carry
-// per-culture names inside variants[] with no top-level field, which made
-// matching on item["name"] silently find nothing.
-func treeItemNames(item map[string]any) []string {
-	names := make([]string, 0, 2)
-	if name, ok := item["name"].(string); ok && name != "" {
-		names = append(names, name)
-	}
-	variants, _ := item["variants"].([]any)
-	for _, raw := range variants {
-		variant, ok := raw.(map[string]any)
-		if !ok {
-			continue
-		}
-		if name, ok := variant["name"].(string); ok && name != "" {
-			names = append(names, name)
-		}
-	}
-	return names
 }

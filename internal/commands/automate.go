@@ -203,7 +203,7 @@ func automateAutomationList(deps Dependencies) *cobra.Command {
 				}
 			}
 			return []getRequestCandidate{
-				{path: "/automations", opts: automateOpts(params, false)},
+				{Path: "/automations", Opts: automateOpts(params, false)},
 			}
 		},
 	})
@@ -229,7 +229,7 @@ func automateAutomationRuns(deps Dependencies) *cobra.Command {
 		NArgs: 1,
 		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
 			return []getRequestCandidate{
-				{path: api.JoinPath("/automations/%s/runs", args[0]), opts: automateOpts(params, false)},
+				{Path: api.JoinPath("/automations/%s/runs", args[0]), Opts: automateOpts(params, false)},
 			}
 		},
 	})

@@ -9,7 +9,6 @@ import (
 )
 
 const (
-	logViewerLogPath                    = "/log-viewer/log"
 	logViewerMessageTemplatePath        = "/log-viewer/message-template"
 	logViewerLegacyListPath             = "/log-viewer"
 	logViewerLegacySearchPath           = "/log-viewer/search"
@@ -43,8 +42,8 @@ func logsList(deps Dependencies) *cobra.Command {
 		result, err := getWithFallback(
 			cmd.Context(),
 			deps.Client,
-			getRequestCandidate{path: logViewerLogPath, opts: api.RequestOptions{Params: params}},
-			getRequestCandidate{path: logViewerLegacyListPath, opts: api.RequestOptions{Params: params}},
+			getRequestCandidate{Path: logViewerLogPath, Opts: api.RequestOptions{Params: params}},
+			getRequestCandidate{Path: logViewerLegacyListPath, Opts: api.RequestOptions{Params: params}},
 		)
 		if err != nil {
 			return friendlyLogViewerError(err)
@@ -107,8 +106,8 @@ func logsTemplates(deps Dependencies) *cobra.Command {
 		result, err := getWithFallback(
 			cmd.Context(),
 			deps.Client,
-			getRequestCandidate{path: logViewerMessageTemplatePath, opts: api.RequestOptions{Params: params}},
-			getRequestCandidate{path: logViewerLegacyMessageTemplatesPath, opts: api.RequestOptions{Params: params}},
+			getRequestCandidate{Path: logViewerMessageTemplatePath, Opts: api.RequestOptions{Params: params}},
+			getRequestCandidate{Path: logViewerLegacyMessageTemplatesPath, Opts: api.RequestOptions{Params: params}},
 		)
 		if err != nil {
 			return friendlyLogViewerError(err)
@@ -136,8 +135,8 @@ func logsSearch(deps Dependencies) *cobra.Command {
 		result, err := getWithFallback(
 			cmd.Context(),
 			deps.Client,
-			getRequestCandidate{path: logViewerLogPath, opts: api.RequestOptions{Params: params}},
-			getRequestCandidate{path: logViewerLegacySearchPath, opts: api.RequestOptions{Params: params}},
+			getRequestCandidate{Path: logViewerLogPath, Opts: api.RequestOptions{Params: params}},
+			getRequestCandidate{Path: logViewerLegacySearchPath, Opts: api.RequestOptions{Params: params}},
 		)
 		if err != nil {
 			return friendlyLogViewerError(err)

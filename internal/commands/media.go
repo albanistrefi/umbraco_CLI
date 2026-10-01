@@ -74,8 +74,8 @@ func mediaRoot(deps Dependencies) *cobra.Command {
 		Short: "Get root media items (paginated; --skip/--take/--all)",
 		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
 			return []getRequestCandidate{
-				{path: "/tree/media/root", opts: api.RequestOptions{Params: params}},
-				{path: "/media/root", opts: api.RequestOptions{Params: params}},
+				{Path: "/tree/media/root", Opts: api.RequestOptions{Params: params}},
+				{Path: "/media/root", Opts: api.RequestOptions{Params: params}},
 			}
 		},
 	})
@@ -88,8 +88,8 @@ func mediaChildren(deps Dependencies) *cobra.Command {
 		NArgs: 1,
 		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
 			return []getRequestCandidate{
-				{path: "/tree/media/children", opts: api.RequestOptions{Params: withParam(params, "parentId", args[0])}},
-				{path: api.JoinPath("/media/%s/children", args[0]), opts: api.RequestOptions{Params: params}},
+				{Path: "/tree/media/children", Opts: api.RequestOptions{Params: withParam(params, "parentId", args[0])}},
+				{Path: api.JoinPath("/media/%s/children", args[0]), Opts: api.RequestOptions{Params: params}},
 			}
 		},
 	})
@@ -101,8 +101,8 @@ func mediaSearch(deps Dependencies) *cobra.Command {
 		Short: "Search media items",
 		Endpoints: func(params map[string]any) []getRequestCandidate {
 			return []getRequestCandidate{
-				{path: "/item/media/search", opts: api.RequestOptions{Params: params}},
-				{path: "/media/search", opts: api.RequestOptions{Params: params}},
+				{Path: "/item/media/search", Opts: api.RequestOptions{Params: params}},
+				{Path: "/media/search", Opts: api.RequestOptions{Params: params}},
 			}
 		},
 	})
@@ -113,8 +113,8 @@ func mediaURLs(deps Dependencies) *cobra.Command {
 		result, err := getWithFallback(
 			cmd.Context(),
 			deps.Client,
-			getRequestCandidate{path: "/media/urls", opts: api.RequestOptions{Params: map[string]any{"id": args[0]}}},
-			getRequestCandidate{path: api.JoinPath("/media/%s/urls", args[0]), opts: api.RequestOptions{}},
+			getRequestCandidate{Path: "/media/urls", Opts: api.RequestOptions{Params: map[string]any{"id": args[0]}}},
+			getRequestCandidate{Path: api.JoinPath("/media/%s/urls", args[0]), Opts: api.RequestOptions{}},
 		)
 		if err != nil {
 			return err
@@ -389,8 +389,8 @@ func collectMediaTypeCandidateIDs(ctx context.Context, client *api.Client, query
 	searchResult, err := getWithFallback(
 		ctx,
 		client,
-		getRequestCandidate{path: "/item/media-type/search", opts: api.RequestOptions{Params: map[string]any{"query": query, "skip": 0, "take": 50}}},
-		getRequestCandidate{path: "/media-type/search", opts: api.RequestOptions{Params: map[string]any{"query": query, "skip": 0, "take": 50}}},
+		getRequestCandidate{Path: "/item/media-type/search", Opts: api.RequestOptions{Params: map[string]any{"query": query, "skip": 0, "take": 50}}},
+		getRequestCandidate{Path: "/media-type/search", Opts: api.RequestOptions{Params: map[string]any{"query": query, "skip": 0, "take": 50}}},
 	)
 	if err == nil {
 		ids = append(ids, mediaTypeIDsFromResult(searchResult)...)
@@ -458,36 +458,12 @@ func mediaTypeInfoFromMap(entry map[string]any) mediaTypeInfo {
 	return info
 }
 
-func isUUIDLike(value string) bool {
-	value = strings.TrimSpace(value)
-	if len(value) != 36 {
-		return false
-	}
-	for i, r := range value {
-		switch i {
-		case 8, 13, 18, 23:
-			if r != '-' {
-				return false
-			}
-		default:
-			if !isHexDigit(r) {
-				return false
-			}
-		}
-	}
-	return true
-}
-
-func isHexDigit(r rune) bool {
-	return (r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')
-}
-
 func resolveDefaultCulture(ctx context.Context, client *api.Client) (string, error) {
 	result, err := getWithFallback(
 		ctx,
 		client,
-		getRequestCandidate{path: "/server/configuration", opts: api.RequestOptions{}},
-		getRequestCandidate{path: "/server/config", opts: api.RequestOptions{}},
+		getRequestCandidate{Path: "/server/configuration", Opts: api.RequestOptions{}},
+		getRequestCandidate{Path: "/server/config", Opts: api.RequestOptions{}},
 	)
 	if err != nil {
 		return "", err
@@ -593,7 +569,7 @@ func mediaMove(deps Dependencies) *cobra.Command {
 		Short: "Move media item",
 		Candidates: func(args []string) []mutationCandidate {
 			path := api.JoinPath("/media/%s/move", args[0])
-			return []mutationCandidate{{method: "PUT", path: path}, {method: "POST", path: path}}
+			return []mutationCandidate{{Method: "PUT", Path: path}, {Method: "POST", Path: path}}
 		},
 		Verb: "moved",
 	})
@@ -614,8 +590,8 @@ func mediaTrash(deps Dependencies) *cobra.Command {
 	cmd := &cobra.Command{Use: "trash <id>", Short: "Move media item to recycle bin", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		path := api.JoinPath("/media/%s/move-to-recycle-bin", args[0])
 		result, err := mutateWithFallback(cmd.Context(), deps.Client, map[string]any{}, api.RequestOptions{DryRun: dryRun},
-			mutationCandidate{method: "PUT", path: path},
-			mutationCandidate{method: "POST", path: path},
+			mutationCandidate{Method: "PUT", Path: path},
+			mutationCandidate{Method: "POST", Path: path},
 		)
 		if err != nil {
 			return err

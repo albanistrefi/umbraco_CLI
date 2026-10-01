@@ -70,9 +70,9 @@ func datatypeList(deps Dependencies) *cobra.Command {
 		Short: "List data types (paginated; --skip/--take/--all)",
 		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
 			return []getRequestCandidate{
-				{path: dataTypeFilterPath, opts: api.RequestOptions{Params: params}},
-				{path: dataTypeTreeRootPath, opts: api.RequestOptions{Params: params}},
-				{path: dataTypeLegacyCollectionPath, opts: api.RequestOptions{}},
+				{Path: dataTypeFilterPath, Opts: api.RequestOptions{Params: params}},
+				{Path: dataTypeTreeRootPath, Opts: api.RequestOptions{Params: params}},
+				{Path: dataTypeLegacyCollectionPath, Opts: api.RequestOptions{}},
 			}
 		},
 	})
@@ -84,8 +84,8 @@ func datatypeRoot(deps Dependencies) *cobra.Command {
 		Short: "Get root data types (paginated; --skip/--take/--all)",
 		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
 			return []getRequestCandidate{
-				{path: dataTypeTreeRootPath, opts: api.RequestOptions{Params: params}},
-				{path: dataTypeLegacyRootPath, opts: api.RequestOptions{}},
+				{Path: dataTypeTreeRootPath, Opts: api.RequestOptions{Params: params}},
+				{Path: dataTypeLegacyRootPath, Opts: api.RequestOptions{}},
 			}
 		},
 	})
@@ -158,13 +158,13 @@ func datatypeSearch(deps Dependencies) *cobra.Command {
 		}
 
 		candidates := []getRequestCandidate{
-			{path: dataTypeFilterPath, opts: api.RequestOptions{Params: filterParams}},
+			{Path: dataTypeFilterPath, Opts: api.RequestOptions{Params: filterParams}},
 		}
 		if _, hasQuery := searchParams["query"]; hasQuery {
 			candidates = []getRequestCandidate{
-				{path: dataTypeItemSearchPath, opts: api.RequestOptions{Params: searchParams}},
-				{path: dataTypeFilterPath, opts: api.RequestOptions{Params: filterParams}},
-				{path: dataTypeLegacySearchPath, opts: api.RequestOptions{Params: searchParams}},
+				{Path: dataTypeItemSearchPath, Opts: api.RequestOptions{Params: searchParams}},
+				{Path: dataTypeFilterPath, Opts: api.RequestOptions{Params: filterParams}},
+				{Path: dataTypeLegacySearchPath, Opts: api.RequestOptions{Params: searchParams}},
 			}
 		}
 
@@ -268,13 +268,13 @@ func datatypeSearchPage(ctx context.Context, client *api.Client, params map[stri
 	}
 	if _, hasQuery := searchParams["query"]; hasQuery {
 		return getWithFallback(ctx, client,
-			getRequestCandidate{path: dataTypeItemSearchPath, opts: api.RequestOptions{Params: searchParams}},
-			getRequestCandidate{path: dataTypeFilterPath, opts: api.RequestOptions{Params: filterParams}},
-			getRequestCandidate{path: dataTypeLegacySearchPath, opts: api.RequestOptions{Params: searchParams}},
+			getRequestCandidate{Path: dataTypeItemSearchPath, Opts: api.RequestOptions{Params: searchParams}},
+			getRequestCandidate{Path: dataTypeFilterPath, Opts: api.RequestOptions{Params: filterParams}},
+			getRequestCandidate{Path: dataTypeLegacySearchPath, Opts: api.RequestOptions{Params: searchParams}},
 		)
 	}
 	return getWithFallback(ctx, client,
-		getRequestCandidate{path: dataTypeFilterPath, opts: api.RequestOptions{Params: filterParams}},
+		getRequestCandidate{Path: dataTypeFilterPath, Opts: api.RequestOptions{Params: filterParams}},
 	)
 }
 

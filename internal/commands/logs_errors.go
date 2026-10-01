@@ -68,8 +68,8 @@ func logsErrors(deps Dependencies) *cobra.Command {
 				cmd.Context(),
 				deps.Client,
 				0, 0, maxEntries,
-				getRequestCandidate{path: logViewerLogPath, opts: api.RequestOptions{Params: params}},
-				getRequestCandidate{path: logViewerLegacyListPath, opts: api.RequestOptions{Params: params}},
+				getRequestCandidate{Path: logViewerLogPath, Opts: api.RequestOptions{Params: params}},
+				getRequestCandidate{Path: logViewerLegacyListPath, Opts: api.RequestOptions{Params: params}},
 			)
 			if err != nil {
 				return friendlyLogViewerError(err)
@@ -292,13 +292,4 @@ func truncateForDisplay(value string, max int) string {
 		return value
 	}
 	return value[:max] + "…"
-}
-
-func sortedKeys(set map[string]struct{}) []string {
-	keys := make([]string, 0, len(set))
-	for key := range set {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	return keys
 }

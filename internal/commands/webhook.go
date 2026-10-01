@@ -31,7 +31,7 @@ func webhookList(deps Dependencies) *cobra.Command {
 		Short: "List webhooks (paginated; --skip/--take/--all)",
 		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
 			return []getRequestCandidate{
-				{path: "/webhook", opts: api.RequestOptions{Params: params}},
+				{Path: "/webhook", Opts: api.RequestOptions{Params: params}},
 			}
 		},
 	})
@@ -140,7 +140,7 @@ func webhookEvents(deps Dependencies) *cobra.Command {
 		Short: "List the event aliases webhooks can subscribe to",
 		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
 			return []getRequestCandidate{
-				{path: "/webhook/events", opts: api.RequestOptions{Params: params}},
+				{Path: "/webhook/events", Opts: api.RequestOptions{Params: params}},
 			}
 		},
 	})
@@ -155,11 +155,11 @@ func webhookLogs(deps Dependencies) *cobra.Command {
 		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
 			if len(args) == 1 {
 				return []getRequestCandidate{
-					{path: api.JoinPath("/webhook/%s/logs", args[0]), opts: api.RequestOptions{Params: params}},
+					{Path: api.JoinPath("/webhook/%s/logs", args[0]), Opts: api.RequestOptions{Params: params}},
 				}
 			}
 			return []getRequestCandidate{
-				{path: "/webhook/logs", opts: api.RequestOptions{Params: params}},
+				{Path: "/webhook/logs", Opts: api.RequestOptions{Params: params}},
 			}
 		},
 	})

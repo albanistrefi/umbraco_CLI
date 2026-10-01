@@ -158,8 +158,8 @@ func fetchSchemaDiffRawEntities(ctx context.Context, client *api.Client, kind sc
 
 func fetchSchemaDiffSchemaTypes(ctx context.Context, client *api.Client, resource string) ([]map[string]any, error) {
 	root, err := getAllPagesWithFallback(ctx, client, autoPaginateDefaultPageSize, 0, 0,
-		getRequestCandidate{path: "/tree/" + resource + "/root", opts: api.RequestOptions{}},
-		getRequestCandidate{path: "/" + resource + "/root", opts: api.RequestOptions{}},
+		getRequestCandidate{Path: "/tree/" + resource + "/root", Opts: api.RequestOptions{}},
+		getRequestCandidate{Path: "/" + resource + "/root", Opts: api.RequestOptions{}},
 	)
 	if err != nil {
 		return nil, err
@@ -186,12 +186,12 @@ func collectTemplateTreeItems(ctx context.Context, client *api.Client, parentID 
 	var candidates []getRequestCandidate
 	if parentID == "" {
 		candidates = []getRequestCandidate{
-			{path: "/tree/template/root", opts: api.RequestOptions{}},
-			{path: "/template/root", opts: api.RequestOptions{}},
+			{Path: "/tree/template/root", Opts: api.RequestOptions{}},
+			{Path: "/template/root", Opts: api.RequestOptions{}},
 		}
 	} else {
 		candidates = []getRequestCandidate{
-			{path: "/tree/template/children", opts: api.RequestOptions{Params: map[string]any{"parentId": parentID}}},
+			{Path: "/tree/template/children", Opts: api.RequestOptions{Params: map[string]any{"parentId": parentID}}},
 		}
 	}
 	page, err := getAllPagesWithFallback(ctx, client, autoPaginateDefaultPageSize, 0, 0, candidates...)
@@ -223,7 +223,7 @@ func collectTemplateTreeItems(ctx context.Context, client *api.Client, parentID 
 // items are the full language models, so no per-item detail fetch is needed.
 func fetchSchemaDiffLanguages(ctx context.Context, client *api.Client) ([]map[string]any, error) {
 	page, err := getAllPagesWithFallback(ctx, client, autoPaginateDefaultPageSize, 0, 0,
-		getRequestCandidate{path: "/language", opts: api.RequestOptions{}},
+		getRequestCandidate{Path: "/language", Opts: api.RequestOptions{}},
 	)
 	if err != nil {
 		return nil, err
@@ -239,7 +239,7 @@ func fetchSchemaDiffLanguages(ctx context.Context, client *api.Client) ([]map[st
 
 func fetchSchemaDiffDictionary(ctx context.Context, client *api.Client) ([]map[string]any, error) {
 	page, err := getAllPagesWithFallback(ctx, client, autoPaginateDefaultPageSize, 0, 0,
-		getRequestCandidate{path: "/dictionary", opts: api.RequestOptions{}},
+		getRequestCandidate{Path: "/dictionary", Opts: api.RequestOptions{}},
 	)
 	if err != nil {
 		return nil, err
@@ -293,9 +293,9 @@ func fetchSchemaDiffDictionary(ctx context.Context, client *api.Client) ([]map[s
 
 func fetchSchemaDiffDatatypes(ctx context.Context, client *api.Client) ([]map[string]any, error) {
 	result, err := getAllPagesWithFallback(ctx, client, autoPaginateDefaultPageSize, 0, 0,
-		getRequestCandidate{path: dataTypeFilterPath, opts: api.RequestOptions{}},
-		getRequestCandidate{path: dataTypeTreeRootPath, opts: api.RequestOptions{}},
-		getRequestCandidate{path: dataTypeLegacyCollectionPath, opts: api.RequestOptions{}},
+		getRequestCandidate{Path: dataTypeFilterPath, Opts: api.RequestOptions{}},
+		getRequestCandidate{Path: dataTypeTreeRootPath, Opts: api.RequestOptions{}},
+		getRequestCandidate{Path: dataTypeLegacyCollectionPath, Opts: api.RequestOptions{}},
 	)
 	if err != nil {
 		return nil, err

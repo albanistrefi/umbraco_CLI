@@ -25,7 +25,7 @@ func recycleBinCommand(deps Dependencies, resource string) *cobra.Command {
 		NArgs: 0,
 		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
 			return []getRequestCandidate{
-				{path: "/recycle-bin/" + resource + "/root", opts: api.RequestOptions{Params: params}},
+				{Path: "/recycle-bin/" + resource + "/root", Opts: api.RequestOptions{Params: params}},
 			}
 		},
 	}))
@@ -36,7 +36,7 @@ func recycleBinCommand(deps Dependencies, resource string) *cobra.Command {
 		NArgs: 1,
 		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
 			return []getRequestCandidate{
-				{path: "/recycle-bin/" + resource + "/children", opts: api.RequestOptions{Params: withParam(params, "parentId", args[0])}},
+				{Path: "/recycle-bin/" + resource + "/children", Opts: api.RequestOptions{Params: withParam(params, "parentId", args[0])}},
 			}
 		},
 	}))
@@ -125,8 +125,8 @@ func restoreFromBinCommand(deps Dependencies, resource string, rootName string) 
 			}
 
 			result, err := mutateWithFallback(ctx, deps.Client, map[string]any{"target": target}, api.RequestOptions{DryRun: dryRun},
-				mutationCandidate{method: "PUT", path: api.JoinPath("/recycle-bin/"+resource+"/%s/restore", args[0])},
-				mutationCandidate{method: "POST", path: api.JoinPath("/"+resource+"/%s/restore", args[0])},
+				mutationCandidate{Method: "PUT", Path: api.JoinPath("/recycle-bin/"+resource+"/%s/restore", args[0])},
+				mutationCandidate{Method: "POST", Path: api.JoinPath("/"+resource+"/%s/restore", args[0])},
 			)
 			if err != nil {
 				return err

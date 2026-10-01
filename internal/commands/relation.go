@@ -43,7 +43,7 @@ func relationList(deps Dependencies) *cobra.Command {
 		NArgs: 0,
 		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
 			return []getRequestCandidate{
-				{path: api.JoinPath("/relation/type/%s", strings.TrimSpace(relationTypeID)), opts: api.RequestOptions{Params: params}},
+				{Path: api.JoinPath("/relation/type/%s", strings.TrimSpace(relationTypeID)), Opts: api.RequestOptions{Params: params}},
 			}
 		},
 	})
@@ -79,7 +79,7 @@ func relationTypeList(deps Dependencies) *cobra.Command {
 		NArgs: 0,
 		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
 			return []getRequestCandidate{
-				{path: "/relation-type", opts: api.RequestOptions{Params: params}},
+				{Path: "/relation-type", Opts: api.RequestOptions{Params: params}},
 			}
 		},
 	})

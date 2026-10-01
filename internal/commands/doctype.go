@@ -127,9 +127,9 @@ func doctypeList(deps Dependencies) *cobra.Command {
 			}
 			params = applyPaginationParams(params, skip, take)
 			candidates := []getRequestCandidate{
-				{path: "/tree/document-type/root", opts: api.RequestOptions{Params: params, Fields: fields}},
-				{path: "/document-type/root", opts: api.RequestOptions{Params: params, Fields: fields}},
-				{path: "/document-type", opts: api.RequestOptions{Params: params, Fields: fields}},
+				{Path: "/tree/document-type/root", Opts: api.RequestOptions{Params: params, Fields: fields}},
+				{Path: "/document-type/root", Opts: api.RequestOptions{Params: params, Fields: fields}},
+				{Path: "/document-type", Opts: api.RequestOptions{Params: params, Fields: fields}},
 			}
 
 			ctx := cmd.Context()
@@ -188,8 +188,8 @@ func doctypeRoot(deps Dependencies) *cobra.Command {
 		Short: "Get root document types (paginated; --skip/--take/--all)",
 		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
 			return []getRequestCandidate{
-				{path: "/tree/document-type/root", opts: api.RequestOptions{Params: params}},
-				{path: "/document-type/root", opts: api.RequestOptions{Params: params}},
+				{Path: "/tree/document-type/root", Opts: api.RequestOptions{Params: params}},
+				{Path: "/document-type/root", Opts: api.RequestOptions{Params: params}},
 			}
 		},
 	})
@@ -205,8 +205,8 @@ func doctypeChildren(deps Dependencies) *cobra.Command {
 		NArgs: 1,
 		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
 			return []getRequestCandidate{
-				{path: "/tree/document-type/children", opts: api.RequestOptions{Params: withParam(params, "parentId", args[0])}},
-				{path: api.JoinPath("/document-type/%s/children", args[0]), opts: api.RequestOptions{Params: params}},
+				{Path: "/tree/document-type/children", Opts: api.RequestOptions{Params: withParam(params, "parentId", args[0])}},
+				{Path: api.JoinPath("/document-type/%s/children", args[0]), Opts: api.RequestOptions{Params: params}},
 			}
 		},
 	})
@@ -221,20 +221,11 @@ func doctypeSearch(deps Dependencies) *cobra.Command {
 		},
 		Endpoints: func(params map[string]any) []getRequestCandidate {
 			return []getRequestCandidate{
-				{path: "/item/document-type/search", opts: api.RequestOptions{Params: params}},
-				{path: "/document-type/search", opts: api.RequestOptions{Params: params}},
+				{Path: "/item/document-type/search", Opts: api.RequestOptions{Params: params}},
+				{Path: "/document-type/search", Opts: api.RequestOptions{Params: params}},
 			}
 		},
 	})
-}
-
-func itemID(item any) string {
-	entry, ok := item.(map[string]any)
-	if !ok {
-		return ""
-	}
-	id, _ := entry["id"].(string)
-	return strings.TrimSpace(id)
 }
 
 func doctypeAllowedInLibrary(deps Dependencies) *cobra.Command {
@@ -245,7 +236,7 @@ func doctypeAllowedInLibrary(deps Dependencies) *cobra.Command {
 		NArgs: 0,
 		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
 			return []getRequestCandidate{
-				{path: "/document-type/allowed-in-library", opts: api.RequestOptions{Params: params}},
+				{Path: "/document-type/allowed-in-library", Opts: api.RequestOptions{Params: params}},
 			}
 		},
 	})
@@ -567,7 +558,7 @@ func doctypeCopy(deps Dependencies) *cobra.Command {
 		Use:   "copy <id>",
 		Short: "Copy document type",
 		Candidates: func(args []string) []mutationCandidate {
-			return []mutationCandidate{{method: "POST", path: api.JoinPath("/document-type/%s/copy", args[0])}}
+			return []mutationCandidate{{Method: "POST", Path: api.JoinPath("/document-type/%s/copy", args[0])}}
 		},
 		Verb: "copied",
 	})
@@ -579,7 +570,7 @@ func doctypeMove(deps Dependencies) *cobra.Command {
 		Short: "Move document type",
 		Candidates: func(args []string) []mutationCandidate {
 			path := api.JoinPath("/document-type/%s/move", args[0])
-			return []mutationCandidate{{method: "PUT", path: path}, {method: "POST", path: path}}
+			return []mutationCandidate{{Method: "PUT", Path: path}, {Method: "POST", Path: path}}
 		},
 		Verb: "moved",
 	})

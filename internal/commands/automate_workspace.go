@@ -33,7 +33,7 @@ func automateWorkspaceList(deps Dependencies) *cobra.Command {
 		Short: "List workspaces (paginated; --skip/--take/--all)",
 		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
 			return []getRequestCandidate{
-				{path: "/workspaces", opts: automateOpts(params, false)},
+				{Path: "/workspaces", Opts: automateOpts(params, false)},
 			}
 		},
 	})

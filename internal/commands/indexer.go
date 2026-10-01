@@ -32,7 +32,7 @@ func indexerList(deps Dependencies) *cobra.Command {
 		NArgs: 0,
 		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
 			return []getRequestCandidate{
-				{path: "/indexer", opts: api.RequestOptions{Params: params}},
+				{Path: "/indexer", Opts: api.RequestOptions{Params: params}},
 			}
 		},
 	})
@@ -103,21 +103,4 @@ func indexerRebuild(deps Dependencies) *cobra.Command {
 	cmd.Flags().DurationVar(&timeout, "timeout", 60*time.Second, "How long to wait when --wait is set (e.g. 30s, 2m)")
 	cmd.Flags().DurationVar(&pollInterval, "poll-interval", time.Second, "How often to poll when --wait is set")
 	return cmd
-}
-
-func indexerHealthStatus(payload any) string {
-	object, ok := payload.(map[string]any)
-	if !ok {
-		return ""
-	}
-	health, ok := object["healthStatus"].(map[string]any)
-	if !ok {
-		// Pre-16 servers returned healthStatus as a plain string.
-		if status, ok := object["healthStatus"].(string); ok {
-			return status
-		}
-		return ""
-	}
-	status, _ := health["status"].(string)
-	return status
 }

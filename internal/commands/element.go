@@ -53,7 +53,7 @@ func elementRoot(deps Dependencies) *cobra.Command {
 		NArgs: 0,
 		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
 			return []getRequestCandidate{
-				{path: "/tree/element/root", opts: api.RequestOptions{Params: params}},
+				{Path: "/tree/element/root", Opts: api.RequestOptions{Params: params}},
 			}
 		},
 	})
@@ -66,7 +66,7 @@ func elementChildren(deps Dependencies) *cobra.Command {
 		NArgs: 1,
 		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
 			return []getRequestCandidate{
-				{path: "/tree/element/children", opts: api.RequestOptions{Params: withParam(params, "parentId", args[0])}},
+				{Path: "/tree/element/children", Opts: api.RequestOptions{Params: withParam(params, "parentId", args[0])}},
 			}
 		},
 	})
@@ -93,7 +93,7 @@ func elementSearch(deps Dependencies) *cobra.Command {
 		Short: "Search elements",
 		Endpoints: func(params map[string]any) []getRequestCandidate {
 			return []getRequestCandidate{
-				{path: "/item/element/search", opts: api.RequestOptions{Params: params}},
+				{Path: "/item/element/search", Opts: api.RequestOptions{Params: params}},
 			}
 		},
 	})
@@ -266,7 +266,7 @@ func elementCopy(deps Dependencies) *cobra.Command {
 		Use:   "copy <id>",
 		Short: "Copy an element",
 		Candidates: func(args []string) []mutationCandidate {
-			return []mutationCandidate{{method: "POST", path: api.JoinPath("/element/%s/copy", args[0])}}
+			return []mutationCandidate{{Method: "POST", Path: api.JoinPath("/element/%s/copy", args[0])}}
 		},
 		Verb: "copied",
 	})
@@ -277,7 +277,7 @@ func elementMove(deps Dependencies) *cobra.Command {
 		Use:   "move <id>",
 		Short: "Move an element",
 		Candidates: func(args []string) []mutationCandidate {
-			return []mutationCandidate{{method: "PUT", path: api.JoinPath("/element/%s/move", args[0])}}
+			return []mutationCandidate{{Method: "PUT", Path: api.JoinPath("/element/%s/move", args[0])}}
 		},
 		Verb: "moved",
 	})
@@ -318,7 +318,7 @@ func elementAuditLog(deps Dependencies) *cobra.Command {
 		NArgs: 1,
 		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
 			return []getRequestCandidate{
-				{path: api.JoinPath("/element/%s/audit-log", args[0]), opts: api.RequestOptions{Params: params}},
+				{Path: api.JoinPath("/element/%s/audit-log", args[0]), Opts: api.RequestOptions{Params: params}},
 			}
 		},
 	})
@@ -367,7 +367,7 @@ func elementVersionList(deps Dependencies) *cobra.Command {
 				versionParams["culture"] = culture
 			}
 			return []getRequestCandidate{
-				{path: "/element-version", opts: api.RequestOptions{Params: versionParams}},
+				{Path: "/element-version", Opts: api.RequestOptions{Params: versionParams}},
 			}
 		},
 	})

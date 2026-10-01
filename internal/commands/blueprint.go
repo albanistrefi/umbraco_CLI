@@ -66,7 +66,7 @@ func blueprintList(deps Dependencies) *cobra.Command {
 		NArgs: 0,
 		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
 			return []getRequestCandidate{
-				{path: "/tree/document-blueprint/root", opts: api.RequestOptions{Params: params}},
+				{Path: "/tree/document-blueprint/root", Opts: api.RequestOptions{Params: params}},
 			}
 		},
 	})
@@ -79,7 +79,7 @@ func blueprintChildren(deps Dependencies) *cobra.Command {
 		NArgs: 1,
 		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
 			return []getRequestCandidate{
-				{path: "/tree/document-blueprint/children", opts: api.RequestOptions{Params: withParam(params, "parentId", args[0])}},
+				{Path: "/tree/document-blueprint/children", Opts: api.RequestOptions{Params: withParam(params, "parentId", args[0])}},
 			}
 		},
 	})
@@ -172,7 +172,7 @@ func blueprintAuditLog(deps Dependencies) *cobra.Command {
 		NArgs: 1,
 		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
 			return []getRequestCandidate{
-				{path: api.JoinPath("/document-blueprint/%s/audit-log", args[0]), opts: api.RequestOptions{Params: params}},
+				{Path: api.JoinPath("/document-blueprint/%s/audit-log", args[0]), Opts: api.RequestOptions{Params: params}},
 			}
 		},
 	})
@@ -263,7 +263,7 @@ func blueprintMove(deps Dependencies) *cobra.Command {
 		Short: "Move a blueprint into another folder",
 		Long:  "PUT /document-blueprint/{id}/move. --to takes the destination folder GUID; --json '{\"target\":null}' moves the blueprint back to the tree root.",
 		Candidates: func(args []string) []mutationCandidate {
-			return []mutationCandidate{{method: "PUT", path: api.JoinPath("/document-blueprint/%s/move", args[0])}}
+			return []mutationCandidate{{Method: "PUT", Path: api.JoinPath("/document-blueprint/%s/move", args[0])}}
 		},
 		Verb: "moved",
 	})

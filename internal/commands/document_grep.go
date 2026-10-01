@@ -3,7 +3,6 @@ package commands
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"regexp"
@@ -302,13 +301,13 @@ func fetchDocumentTreeItems(ctx context.Context, client *api.Client, parentID st
 	var candidates []getRequestCandidate
 	if root {
 		candidates = []getRequestCandidate{
-			{path: "/tree/document/root"},
-			{path: "/document/root"},
+			{Path: "/tree/document/root"},
+			{Path: "/document/root"},
 		}
 	} else {
 		candidates = []getRequestCandidate{
-			{path: "/tree/document/children", opts: api.RequestOptions{Params: map[string]any{"parentId": parentID}}},
-			{path: api.JoinPath("/document/%s/children", parentID)},
+			{Path: "/tree/document/children", Opts: api.RequestOptions{Params: map[string]any{"parentId": parentID}}},
+			{Path: api.JoinPath("/document/%s/children", parentID)},
 		}
 	}
 	result, err := getAllPagesWithFallback(ctx, client, autoPaginateDefaultPageSize, 0, 0, candidates...)
@@ -535,9 +534,4 @@ func stringSet(values []string) map[string]struct{} {
 		result[value] = struct{}{}
 	}
 	return result
-}
-
-func isAPIStatus(err error, status int) bool {
-	var apiErr *api.APIError
-	return errors.As(err, &apiErr) && apiErr.StatusCode == status
 }

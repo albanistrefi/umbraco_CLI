@@ -1,4 +1,4 @@
-package commands
+package cmdkit
 
 import (
 	"reflect"
@@ -21,7 +21,7 @@ func TestMergeAliasObjectArraysKeysByAliasCultureAndSegment(t *testing.T) {
 		map[string]any{"alias": "title", "value": "New da", "culture": "da-DK", "segment": nil},
 	}
 
-	merged := mergeObjectArrays(current, patch, aliasMergeKey)
+	merged := MergeObjectArrays(current, patch, AliasMergeKey)
 	if len(merged) != 3 {
 		t.Fatalf("expected 3 merged entries, got %d: %+v", len(merged), merged)
 	}
@@ -55,7 +55,7 @@ func TestMergeAliasObjectArraysAliasOnlyShapesUnchanged(t *testing.T) {
 		map[string]any{"alias": "title", "name": "Headline"},
 	}
 
-	merged := mergeObjectArrays(current, patch, aliasMergeKey)
+	merged := MergeObjectArrays(current, patch, AliasMergeKey)
 	if len(merged) != 2 {
 		t.Fatalf("expected 2 properties, got %d", len(merged))
 	}
@@ -79,7 +79,7 @@ func TestMergeAliasObjectArraysInvariantPatchDoesNotMatchVariantCurrent(t *testi
 		map[string]any{"alias": "title", "value": "invariant value", "culture": nil},
 	}
 
-	merged := mergeObjectArrays(current, patch, aliasMergeKey)
+	merged := MergeObjectArrays(current, patch, AliasMergeKey)
 	if len(merged) != 2 {
 		t.Fatalf("invariant and variant entries with the same alias must coexist after merge, got %d: %+v", len(merged), merged)
 	}
@@ -97,7 +97,7 @@ func TestMergeAliasObjectArraysKeysAliaslessVariantsByCultureAndSegment(t *testi
 		map[string]any{"culture": "da-DK", "name": "New Danish name"},
 	}
 
-	mergedPayload := mergeAliasPayload(
+	mergedPayload := MergeAliasPayload(
 		map[string]any{"variants": current},
 		map[string]any{"variants": patch},
 	)
@@ -139,7 +139,7 @@ func TestMergeAliasObjectArraysKeysAliaslessEntriesBySegment(t *testing.T) {
 		map[string]any{"culture": "en-US", "segment": "mobile", "name": "Mobile renamed"},
 	}
 
-	mergedPayload := mergeAliasPayload(
+	mergedPayload := MergeAliasPayload(
 		map[string]any{"variants": current},
 		map[string]any{"variants": patch},
 	)
@@ -171,7 +171,7 @@ func TestMergeAliasObjectArraysReplacesUnidentifiableArrays(t *testing.T) {
 		},
 	}
 
-	merged := mergeAliasPayload(current, patch)
+	merged := MergeAliasPayload(current, patch)
 	containers, _ := merged["containers"].([]any)
 	if len(containers) != 1 {
 		t.Fatalf("expected containers to be replaced wholesale, got %d: %+v", len(containers), containers)
@@ -199,7 +199,7 @@ func TestMergeAliasPayloadDoesNotApplyVariantIdentityInsidePropertyValues(t *tes
 		},
 	}
 
-	merged := mergeAliasPayload(current, patch)
+	merged := MergeAliasPayload(current, patch)
 	values, _ := merged["values"].([]any)
 	if len(values) != 1 {
 		t.Fatalf("expected the single value entry to merge by alias, got %+v", values)
@@ -239,7 +239,7 @@ func TestMergeAliasPayloadDoesNotApplyVariantIdentityToNestedVariantsFields(t *t
 		},
 	}
 
-	merged := mergeAliasPayload(current, patch)
+	merged := MergeAliasPayload(current, patch)
 	values, _ := merged["values"].([]any)
 	entry, _ := values[0].(map[string]any)
 	value, _ := entry["value"].(map[string]any)
@@ -263,7 +263,7 @@ func TestMergeAliasPayloadMergesTheRootVariantsArray(t *testing.T) {
 		},
 	}
 
-	merged := mergeAliasPayload(current, patch)
+	merged := MergeAliasPayload(current, patch)
 	variants, _ := merged["variants"].([]any)
 	if len(variants) != 2 {
 		t.Fatalf("expected the root variants array to merge, got %d: %+v", len(variants), variants)
@@ -285,7 +285,7 @@ func TestMergeAliasPayloadReplacesVariantsWhenThePatchNamesNoCulture(t *testing.
 		},
 	}
 
-	merged := mergeAliasPayload(current, patch)
+	merged := MergeAliasPayload(current, patch)
 	variants, _ := merged["variants"].([]any)
 	if len(variants) != 1 {
 		t.Fatalf("expected an unidentifiable variants patch to replace, got %d: %+v", len(variants), variants)

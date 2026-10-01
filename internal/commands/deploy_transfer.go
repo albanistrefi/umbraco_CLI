@@ -188,7 +188,7 @@ func countDescendants(ctx context.Context, client *api.Client, entityType string
 		parent := pending[0]
 		pending = pending[1:]
 		result, err := getAllPagesWithFallback(ctx, client, 0, 0, 0,
-			getRequestCandidate{path: "/tree/" + entityType + "/children", opts: api.RequestOptions{Params: map[string]any{"parentId": parent}}},
+			getRequestCandidate{Path: "/tree/" + entityType + "/children", Opts: api.RequestOptions{Params: map[string]any{"parentId": parent}}},
 		)
 		if err != nil {
 			return count, false, err

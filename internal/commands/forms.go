@@ -73,23 +73,6 @@ func formsRecordScanWindowExhausted(payload any, scan int) bool {
 	return formsRecordCount(payload) >= scan
 }
 
-func asString(v any) string {
-	switch value := v.(type) {
-	case nil:
-		return ""
-	case string:
-		return value
-	case float64:
-		// JSON numbers decode as float64; render integers without trailing .0
-		if value == float64(int64(value)) {
-			return fmt.Sprintf("%d", int64(value))
-		}
-		return fmt.Sprintf("%v", value)
-	default:
-		return fmt.Sprintf("%v", v)
-	}
-}
-
 func RegisterForms(root *cobra.Command, deps Dependencies) {
 	forms := &cobra.Command{
 		Use:   "forms",
@@ -134,8 +117,8 @@ func formsList(deps Dependencies) *cobra.Command {
 			result, err := getWithFallback(
 				cmd.Context(),
 				deps.Client,
-				getRequestCandidate{path: "/tree/form/root", opts: formsRequestOpts(fields, nil)},
-				getRequestCandidate{path: "/form", opts: formsRequestOpts(fields, nil)},
+				getRequestCandidate{Path: "/tree/form/root", Opts: formsRequestOpts(fields, nil)},
+				getRequestCandidate{Path: "/form", Opts: formsRequestOpts(fields, nil)},
 			)
 			if err != nil {
 				return err

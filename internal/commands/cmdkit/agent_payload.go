@@ -1,4 +1,4 @@
-package commands
+package cmdkit
 
 import (
 	"fmt"
@@ -6,24 +6,24 @@ import (
 	"strings"
 )
 
-type readTriageOptions struct {
+type ReadTriageOptions struct {
 	Summarize bool
 	IDsOnly   bool
 	FirstN    int
 }
 
-type outputTrimOptions struct {
+type OutputTrimOptions struct {
 	Fields  string
 	Summary bool
 	NoEmpty bool
 	Full    bool
 }
 
-func ensurePayloadID(body map[string]any) (string, error) {
+func EnsurePayloadID(body map[string]any) (string, error) {
 	if existing, ok := body["id"].(string); ok && strings.TrimSpace(existing) != "" {
 		return existing, nil
 	}
-	id, err := newUUIDv4()
+	id, err := NewUUIDv4()
 	if err != nil {
 		return "", fmt.Errorf("failed to generate entity id: %w", err)
 	}
@@ -31,7 +31,7 @@ func ensurePayloadID(body map[string]any) (string, error) {
 	return id, nil
 }
 
-func createResult(result any, body map[string]any, keys ...string) any {
+func CreateResult(result any, body map[string]any, keys ...string) any {
 	if resultMap, ok := result.(map[string]any); ok {
 		if id, ok := resultMap["id"].(string); ok && strings.TrimSpace(id) != "" {
 			return result
@@ -58,48 +58,10 @@ func createResult(result any, body map[string]any, keys ...string) any {
 	return minimal
 }
 
-func normalizeDoctypePayload(body map[string]any) {
-	normalizeDoctypeProperties(body["properties"])
-	// Earlier --print-template skeletons called the version-cleanup block
-	// historyCleanup (Deploy's name); the Management API field is cleanup.
-	if legacy, ok := body["historyCleanup"]; ok {
-		if _, exists := body["cleanup"]; !exists {
-			body["cleanup"] = legacy
-		}
-		delete(body, "historyCleanup")
-	}
-}
-
-// normalizeDoctypePayloadHook adapts normalizeDoctypePayload to the
-// error-returning Normalize contract used by update specs.
-func normalizeDoctypePayloadHook(body map[string]any) error {
-	normalizeDoctypePayload(body)
-	return nil
-}
-
-func normalizeDoctypeProperties(raw any) {
-	properties, ok := raw.([]any)
-	if !ok {
-		return
-	}
-	for _, item := range properties {
-		property, ok := item.(map[string]any)
-		if !ok {
-			continue
-		}
-		if _, exists := property["dataType"]; !exists {
-			if dataTypeID, ok := property["dataTypeId"].(string); ok && strings.TrimSpace(dataTypeID) != "" {
-				property["dataType"] = map[string]any{"id": dataTypeID}
-				delete(property, "dataTypeId")
-			}
-		}
-	}
-}
-
-// applyFieldsProjection trims each item in a collection (or the lone object) down to the
+// ApplyFieldsProjection trims each item in a collection (or the lone object) down to the
 // comma-separated keys named in fields. Used to give --fields a guaranteed effect even on
 // Management API endpoints that ignore the ?fields= query parameter.
-func applyFieldsProjection(data any, fields string) any {
+func ApplyFieldsProjection(data any, fields string) any {
 	fields = strings.TrimSpace(fields)
 	if fields == "" {
 		return data
@@ -117,7 +79,7 @@ func applyFieldsProjection(data any, fields string) any {
 
 	if payload, ok := data.(map[string]any); ok {
 		if items, ok := payload["items"].([]any); ok {
-			next := cloneAnyMap(payload)
+			next := CloneAnyMap(payload)
 			projected := make([]any, 0, len(items))
 			for _, item := range items {
 				projected = append(projected, projectFieldsFromAny(item, keep))
@@ -137,8 +99,8 @@ func applyFieldsProjection(data any, fields string) any {
 	return data
 }
 
-func applyDocumentOutputTrim(data any, opts outputTrimOptions, warnings io.Writer) (any, error) {
-	if err := validateDocumentOutputTrim(opts); err != nil {
+func ApplyDocumentOutputTrim(data any, opts OutputTrimOptions, warnings io.Writer) (any, error) {
+	if err := ValidateDocumentOutputTrim(opts); err != nil {
 		return nil, err
 	}
 	if opts.Full {
@@ -167,7 +129,7 @@ func applyDocumentOutputTrim(data any, opts outputTrimOptions, warnings io.Write
 	return out, nil
 }
 
-func validateDocumentOutputTrim(opts outputTrimOptions) error {
+func ValidateDocumentOutputTrim(opts OutputTrimOptions) error {
 	if opts.Full && (strings.TrimSpace(opts.Fields) != "" || opts.Summary || opts.NoEmpty) {
 		return fmt.Errorf("--full cannot be combined with --fields, --summary, or --no-empty")
 	}
@@ -202,7 +164,7 @@ func parseFieldPaths(fields string) [][]string {
 func projectDocumentPayload(data any, summary bool, paths [][]string, found []bool) any {
 	if payload, ok := data.(map[string]any); ok {
 		if items, ok := payload["items"].([]any); ok {
-			next := cloneAnyMap(payload)
+			next := CloneAnyMap(payload)
 			projected := make([]any, 0, len(items))
 			for _, item := range items {
 				projected = append(projected, projectDocumentItem(item, summary, paths, found))
@@ -245,7 +207,7 @@ func summarizeDocumentMap(input map[string]any) map[string]any {
 	copyIfPresent(output, input, "id")
 	if name, _ := input["name"].(string); name != "" {
 		output["name"] = name
-	} else if names := treeItemNames(input); len(names) > 0 {
+	} else if names := TreeItemNames(input); len(names) > 0 {
 		output["name"] = names[0]
 	}
 	if docType, ok := input["documentType"].(map[string]any); ok {
@@ -395,14 +357,14 @@ func projectFieldsFromAny(value any, keep map[string]struct{}) any {
 	return out
 }
 
-func applyReadTriage(data any, opts readTriageOptions) any {
+func ApplyReadTriage(data any, opts ReadTriageOptions) any {
 	if !opts.Summarize && !opts.IDsOnly && opts.FirstN <= 0 {
 		return data
 	}
 
 	if payload, ok := data.(map[string]any); ok {
 		if items, ok := payload["items"].([]any); ok {
-			next := cloneAnyMap(payload)
+			next := CloneAnyMap(payload)
 			next["items"] = triageItems(items, opts)
 			if opts.FirstN > 0 {
 				next["returned"] = len(next["items"].([]any))
@@ -416,7 +378,7 @@ func applyReadTriage(data any, opts readTriageOptions) any {
 	return data
 }
 
-func triageItems(items []any, opts readTriageOptions) []any {
+func triageItems(items []any, opts ReadTriageOptions) []any {
 	limit := len(items)
 	if opts.FirstN > 0 && opts.FirstN < limit {
 		limit = opts.FirstN
@@ -451,7 +413,7 @@ func summarizeMap(input map[string]any) map[string]any {
 	return output
 }
 
-func cloneAnyMap(input map[string]any) map[string]any {
+func CloneAnyMap(input map[string]any) map[string]any {
 	output := make(map[string]any, len(input))
 	for key, value := range input {
 		output[key] = value
@@ -459,7 +421,7 @@ func cloneAnyMap(input map[string]any) map[string]any {
 	return output
 }
 
-func resultItems(result any) []any {
+func ResultItems(result any) []any {
 	if payload, ok := result.(map[string]any); ok {
 		if items, ok := payload["items"].([]any); ok {
 			return items

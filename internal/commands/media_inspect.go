@@ -324,8 +324,8 @@ type mediaURLInfo struct {
 // culture each belongs to ("" for invariant).
 func mediaPublicURLs(ctx context.Context, client *api.Client, id string) ([]mediaURLInfo, error) {
 	result, err := getWithFallback(ctx, client,
-		getRequestCandidate{path: "/media/urls", opts: api.RequestOptions{Params: map[string]any{"id": id}}},
-		getRequestCandidate{path: api.JoinPath("/media/%s/urls", id), opts: api.RequestOptions{}},
+		getRequestCandidate{Path: "/media/urls", Opts: api.RequestOptions{Params: map[string]any{"id": id}}},
+		getRequestCandidate{Path: api.JoinPath("/media/%s/urls", id), Opts: api.RequestOptions{}},
 	)
 	if err != nil {
 		return nil, err

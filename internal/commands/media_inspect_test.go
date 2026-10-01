@@ -191,17 +191,6 @@ func TestMediaDownloadSanitizesServerFileName(t *testing.T) {
 	}
 }
 
-func TestSanitizeFileNameRejectsWindowsDeviceNames(t *testing.T) {
-	for _, name := range []string{"CON", "nul", "COM1", "LPT1.txt", "aux.svg"} {
-		if got := sanitizeFileName(name, "file"); !strings.HasPrefix(got, "_") {
-			t.Fatalf("expected %q to be rewritten, got %q", name, got)
-		}
-	}
-	if got := sanitizeFileName("console.svg", "file"); got != "console.svg" {
-		t.Fatalf("expected ordinary names untouched, got %q", got)
-	}
-}
-
 func TestMediaInspectOmitsURLForCustomFileProperty(t *testing.T) {
 	item := `{"id":"m-4","variants":[{"culture":null,"segment":null,"name":"Doc"}],"values":[` +
 		`{"alias":"umbracoFile","culture":null,"segment":null,"value":{"src":"/media/a/main.pdf"}},` +
