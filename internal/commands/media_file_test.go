@@ -8,6 +8,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"umbraco-cli/internal/commands/cmdkit"
+	"umbraco-cli/internal/commands/cmdtest"
 )
 
 const mediaFileTestItem = `{"id":"m-1","mediaType":{"id":"mt-1"},"variants":[{"culture":null,"segment":null,"name":"Logo"}],"values":[` +
@@ -33,30 +36,30 @@ func TestMediaReplaceFileUploadsMergesAndVerifies(t *testing.T) {
 	var putBody map[string]any
 	var uploadedID string
 
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch {
 		case req.URL.Path == "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case req.URL.Path == "/umbraco/management/api/v1/media/m-1" && req.Method == http.MethodGet:
 			gets++
 			if gets == 1 {
-				return datatypeJSONResponse(http.StatusOK, mediaFileTestItem), nil
+				return cmdtest.JSONResponse(http.StatusOK, mediaFileTestItem), nil
 			}
-			return datatypeJSONResponse(http.StatusOK, mediaFileTestItemAfter), nil
+			return cmdtest.JSONResponse(http.StatusOK, mediaFileTestItemAfter), nil
 		case req.URL.Path == "/umbraco/management/api/v1/temporary-file":
 			_ = req.ParseMultipartForm(1 << 20)
 			uploadedID = req.FormValue("id")
-			return datatypeJSONResponse(http.StatusCreated, ``), nil
+			return cmdtest.JSONResponse(http.StatusCreated, ``), nil
 		case req.URL.Path == "/umbraco/management/api/v1/media/m-1" && req.Method == http.MethodPut:
 			raw, _ := io.ReadAll(req.Body)
 			_ = json.Unmarshal(raw, &putBody)
-			return datatypeJSONResponse(http.StatusOK, ``), nil
+			return cmdtest.JSONResponse(http.StatusOK, ``), nil
 		default:
-			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	output, err := execute(buildRootWithCollections(t, deps), "media", "replace-file", "m-1", filePath)
+	output, err := cmdtest.Execute(buildRootWithCollections(t, deps), "media", "replace-file", "m-1", filePath)
 	if err != nil {
 		t.Fatalf("replace-file failed: %v", err)
 	}
@@ -85,28 +88,28 @@ func TestMediaReplaceFileFailsWhenServerEmptiesItemAndPointsAtBackup(t *testing.
 	backupPath := filepath.Join(t.TempDir(), "bk", "logo.backup.json")
 	gets := 0
 
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch {
 		case req.URL.Path == "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case req.URL.Path == "/umbraco/management/api/v1/media/m-1" && req.Method == http.MethodGet:
 			gets++
 			if gets == 1 {
-				return datatypeJSONResponse(http.StatusOK, mediaFileTestItem), nil
+				return cmdtest.JSONResponse(http.StatusOK, mediaFileTestItem), nil
 			}
-			return datatypeJSONResponse(http.StatusOK, `{"id":"m-1","variants":[{"culture":null,"segment":null,"name":"Logo"}],"values":[]}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"id":"m-1","variants":[{"culture":null,"segment":null,"name":"Logo"}],"values":[]}`), nil
 		case req.URL.Path == "/media/abc/old.svg":
 			return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"image/svg+xml"}}, Body: io.NopCloser(strings.NewReader("<svg>old</svg>"))}, nil
 		case req.URL.Path == "/umbraco/management/api/v1/temporary-file":
-			return datatypeJSONResponse(http.StatusCreated, ``), nil
+			return cmdtest.JSONResponse(http.StatusCreated, ``), nil
 		case req.URL.Path == "/umbraco/management/api/v1/media/m-1" && req.Method == http.MethodPut:
-			return datatypeJSONResponse(http.StatusOK, ``), nil
+			return cmdtest.JSONResponse(http.StatusOK, ``), nil
 		default:
-			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	_, err := execute(buildRootWithCollections(t, deps), "media", "replace-file", "m-1", filePath, "--backup="+backupPath)
+	_, err := cmdtest.Execute(buildRootWithCollections(t, deps), "media", "replace-file", "m-1", filePath, "--backup="+backupPath)
 	if err == nil {
 		t.Fatalf("expected replace-file to fail when the item is emptied")
 	}
@@ -117,7 +120,7 @@ func TestMediaReplaceFileFailsWhenServerEmptiesItemAndPointsAtBackup(t *testing.
 	if readErr != nil {
 		t.Fatalf("expected backup to be written: %v", readErr)
 	}
-	var envelope backupEnvelope
+	var envelope cmdkit.BackupEnvelope
 	if err := json.Unmarshal(raw, &envelope); err != nil {
 		t.Fatal(err)
 	}
@@ -146,29 +149,29 @@ func TestMediaRestoreBackupReuploadsSavedFile(t *testing.T) {
 	var uploadedID, uploadedContent string
 	var putBody map[string]any
 
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch {
 		case req.URL.Path == "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case req.URL.Path == "/umbraco/management/api/v1/temporary-file":
 			_ = req.ParseMultipartForm(1 << 20)
 			uploadedID = req.FormValue("id")
 			file, _, _ := req.FormFile("file")
 			content, _ := io.ReadAll(file)
 			uploadedContent = string(content)
-			return datatypeJSONResponse(http.StatusCreated, ``), nil
+			return cmdtest.JSONResponse(http.StatusCreated, ``), nil
 		case req.URL.Path == "/umbraco/management/api/v1/media/m-1" && req.Method == http.MethodPut:
 			raw, _ := io.ReadAll(req.Body)
 			_ = json.Unmarshal(raw, &putBody)
-			return datatypeJSONResponse(http.StatusOK, ``), nil
+			return cmdtest.JSONResponse(http.StatusOK, ``), nil
 		case req.URL.Path == "/umbraco/management/api/v1/media/m-1" && req.Method == http.MethodGet:
-			return datatypeJSONResponse(http.StatusOK, mediaFileTestItem), nil
+			return cmdtest.JSONResponse(http.StatusOK, mediaFileTestItem), nil
 		default:
-			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	output, err := execute(buildRootWithCollections(t, deps), "media", "restore-backup", backupPath)
+	output, err := cmdtest.Execute(buildRootWithCollections(t, deps), "media", "restore-backup", backupPath)
 	if err != nil {
 		t.Fatalf("restore-backup failed: %v", err)
 	}
@@ -182,7 +185,7 @@ func TestMediaRestoreBackupReuploadsSavedFile(t *testing.T) {
 	if !strings.Contains(output, `"restored": true`) {
 		t.Fatalf("unexpected output: %s", output)
 	}
-	if _, err := execute(buildRootWithCollections(t, deps), "media", "restore-backup", filepath.Join(dir, "missing.json")); err == nil {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), "media", "restore-backup", filepath.Join(dir, "missing.json")); err == nil {
 		t.Fatalf("expected missing backup file to fail")
 	}
 }
@@ -190,21 +193,21 @@ func TestMediaRestoreBackupReuploadsSavedFile(t *testing.T) {
 func TestUpdateBackupFlagWritesEntityBeforePut(t *testing.T) {
 	backupPath := filepath.Join(t.TempDir(), "doc.json")
 	order := []string{}
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch {
 		case req.URL.Path == "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case req.URL.Path == "/umbraco/management/api/v1/media/m-1" && req.Method == http.MethodGet:
 			order = append(order, "get")
-			return datatypeJSONResponse(http.StatusOK, mediaFileTestItem), nil
+			return cmdtest.JSONResponse(http.StatusOK, mediaFileTestItem), nil
 		case req.URL.Path == "/umbraco/management/api/v1/media/m-1" && req.Method == http.MethodPut:
 			order = append(order, "put")
 			return &http.Response{StatusCode: http.StatusNoContent, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(""))}, nil
 		default:
-			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
-	output, err := execute(buildRootWithCollections(t, deps), "media", "update", "m-1", "--json", `{"variants":[{"name":"X"}],"values":[]}`, "--backup="+backupPath)
+	output, err := cmdtest.Execute(buildRootWithCollections(t, deps), "media", "update", "m-1", "--json", `{"variants":[{"name":"X"}],"values":[]}`, "--backup="+backupPath)
 	if err != nil {
 		t.Fatalf("update --backup failed: %v", err)
 	}
@@ -214,7 +217,7 @@ func TestUpdateBackupFlagWritesEntityBeforePut(t *testing.T) {
 	if !strings.Contains(output, `"backup": "`+backupPath+`"`) {
 		t.Fatalf("expected backup path in output: %s", output)
 	}
-	envelope, err := readBackup(backupPath, "media")
+	envelope, err := cmdkit.ReadBackup(backupPath, "media")
 	if err != nil || envelope.ID != "m-1" || envelope.File != nil {
 		t.Fatalf("unexpected envelope %+v (%v)", envelope, err)
 	}
@@ -227,18 +230,18 @@ func TestMediaRestoreBackupRefusesMetadataOnlyWhenFileIsGone(t *testing.T) {
 		t.Fatal(err)
 	}
 	puts := 0
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch {
 		case req.URL.Path == "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case req.Method == http.MethodPut:
 			puts++
-			return datatypeJSONResponse(http.StatusOK, ``), nil
+			return cmdtest.JSONResponse(http.StatusOK, ``), nil
 		default:
-			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
-	_, err := execute(buildRootWithCollections(t, deps), "media", "restore-backup", backupPath)
+	_, err := cmdtest.Execute(buildRootWithCollections(t, deps), "media", "restore-backup", backupPath)
 	if err == nil || !strings.Contains(err.Error(), "refusing to restore") {
 		t.Fatalf("expected refusal, got %v", err)
 	}
@@ -254,27 +257,27 @@ const mediaFileTestVariantItem = `{"id":"m-3","mediaType":{"id":"mt-1"},"variant
 func TestMediaReplaceFileRequiresCultureForVariantsAndCarriesIt(t *testing.T) {
 	filePath := writeTestSVG(t, "new.svg", "<svg>new</svg>")
 	var putBody map[string]any
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch {
 		case req.URL.Path == "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case req.URL.Path == "/umbraco/management/api/v1/media/m-3" && req.Method == http.MethodGet:
-			return datatypeJSONResponse(http.StatusOK, mediaFileTestVariantItem), nil
+			return cmdtest.JSONResponse(http.StatusOK, mediaFileTestVariantItem), nil
 		case req.URL.Path == "/umbraco/management/api/v1/temporary-file":
-			return datatypeJSONResponse(http.StatusCreated, ``), nil
+			return cmdtest.JSONResponse(http.StatusCreated, ``), nil
 		case req.URL.Path == "/umbraco/management/api/v1/media/m-3" && req.Method == http.MethodPut:
 			raw, _ := io.ReadAll(req.Body)
 			_ = json.Unmarshal(raw, &putBody)
-			return datatypeJSONResponse(http.StatusOK, ``), nil
+			return cmdtest.JSONResponse(http.StatusOK, ``), nil
 		default:
-			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
-	_, err := execute(buildRootWithCollections(t, deps), "media", "replace-file", "m-3", filePath)
+	_, err := cmdtest.Execute(buildRootWithCollections(t, deps), "media", "replace-file", "m-3", filePath)
 	if err == nil || !strings.Contains(err.Error(), "--culture") || !strings.Contains(err.Error(), "en-US, da-DK") {
 		t.Fatalf("expected culture selection error, got %v", err)
 	}
-	if _, err := execute(buildRootWithCollections(t, deps), "media", "replace-file", "m-3", filePath, "--culture", "da-DK"); err != nil {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), "media", "replace-file", "m-3", filePath, "--culture", "da-DK"); err != nil {
 		t.Fatalf("replace-file with --culture failed: %v", err)
 	}
 	values := putBody["values"].([]any)
@@ -297,19 +300,19 @@ func TestMediaRestoreBackupRejectsCraftedPathsAndEndpoints(t *testing.T) {
 		t.Fatal(err)
 	}
 	requests := 0
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		if req.URL.Path == "/umbraco/management/api/v1/security/back-office/token" {
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		}
 		requests++
-		return datatypeJSONResponse(http.StatusOK, ``), nil
+		return cmdtest.JSONResponse(http.StatusOK, ``), nil
 	})
 
 	traversal := filepath.Join(dir, "t.json")
 	if err := os.WriteFile(traversal, []byte(`{"resource":"media","id":"m-1","entity":`+mediaFileTestItem+`,"file":{"property":"umbracoFile","src":"/media/abc/old.svg","path":"../secret.txt","bytes":7}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := execute(buildRootWithCollections(t, deps), "media", "restore-backup", traversal); err == nil || !strings.Contains(err.Error(), "outside") {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), "media", "restore-backup", traversal); err == nil || !strings.Contains(err.Error(), "outside") {
 		t.Fatalf("expected traversal refusal, got %v", err)
 	}
 
@@ -317,7 +320,7 @@ func TestMediaRestoreBackupRejectsCraftedPathsAndEndpoints(t *testing.T) {
 	if err := os.WriteFile(wrongPath, []byte(`{"resource":"media","id":"m-1","path":"/user-group/admin","entity":`+mediaFileTestItem+`}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := execute(buildRootWithCollections(t, deps), "media", "restore-backup", wrongPath); err == nil || !strings.Contains(err.Error(), "does not match") {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), "media", "restore-backup", wrongPath); err == nil || !strings.Contains(err.Error(), "does not match") {
 		t.Fatalf("expected endpoint mismatch refusal, got %v", err)
 	}
 
@@ -325,7 +328,7 @@ func TestMediaRestoreBackupRejectsCraftedPathsAndEndpoints(t *testing.T) {
 	if err := os.WriteFile(badID, []byte(`{"resource":"media","id":"../user-group/admin","entity":`+mediaFileTestItem+`}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := execute(buildRootWithCollections(t, deps), "media", "restore-backup", badID); err == nil || !strings.Contains(err.Error(), "invalid id") {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), "media", "restore-backup", badID); err == nil || !strings.Contains(err.Error(), "invalid id") {
 		t.Fatalf("expected invalid id refusal, got %v", err)
 	}
 	if requests != 0 {
@@ -353,20 +356,20 @@ func TestMetadataOnlyRestoreChecksEveryFileReference(t *testing.T) {
 		t.Fatal(err)
 	}
 	puts := 0
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/media/abc/en.svg":
 			return &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader("<svg/>"))}, nil
 		default:
 			if req.Method == http.MethodPut {
 				puts++
 			}
-			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
-	_, err := execute(buildRootWithCollections(t, deps), "media", "restore-backup", backupPath)
+	_, err := cmdtest.Execute(buildRootWithCollections(t, deps), "media", "restore-backup", backupPath)
 	if err == nil || !strings.Contains(err.Error(), "da.svg") || puts != 0 {
 		t.Fatalf("expected refusal naming the dead da-DK file with no PUT, got %v (puts=%d)", err, puts)
 	}
@@ -374,17 +377,17 @@ func TestMetadataOnlyRestoreChecksEveryFileReference(t *testing.T) {
 
 func TestUpdateBackupPathSurvivesNonEmptyPutBody(t *testing.T) {
 	backupPath := filepath.Join(t.TempDir(), "b.json")
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch {
 		case req.URL.Path == "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case req.Method == http.MethodGet:
-			return datatypeJSONResponse(http.StatusOK, mediaFileTestItem), nil
+			return cmdtest.JSONResponse(http.StatusOK, mediaFileTestItem), nil
 		default:
-			return datatypeJSONResponse(http.StatusOK, `{"id":"m-1"}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"id":"m-1"}`), nil
 		}
 	})
-	output, err := execute(buildRootWithCollections(t, deps), "media", "update", "m-1", "--json", `{"variants":[{"name":"X"}],"values":[]}`, "--backup="+backupPath)
+	output, err := cmdtest.Execute(buildRootWithCollections(t, deps), "media", "update", "m-1", "--json", `{"variants":[{"name":"X"}],"values":[]}`, "--backup="+backupPath)
 	if err != nil {
 		t.Fatal(err)
 	}

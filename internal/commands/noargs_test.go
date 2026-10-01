@@ -5,13 +5,15 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
+
+	"umbraco-cli/internal/commands/cmdtest"
 )
 
 // Every leaf command whose Use declares no positional arguments must reject
 // stray positionals: silently ignoring one turned "bin delete <id>" typos
 // into a full-bin wipe (#41). This invariant keeps the whole tree honest.
 func TestLeafCommandsWithoutPositionalsRejectStrayArgs(t *testing.T) {
-	root := buildRootWithCollections(t, makeDeps())
+	root := buildRootWithCollections(t, cmdtest.MakeDeps())
 
 	var violations []string
 	var walk func(cmd *cobra.Command, path string)

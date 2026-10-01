@@ -8,19 +8,20 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"umbraco-cli/internal/commands/cmdkit"
 	"umbraco-cli/internal/commands/cmdtest"
 	"umbraco-cli/internal/schema"
 )
 
 // buildRootWithCollections builds the full production command tree, add-ons
 // included, for core tests.
-func buildRootWithCollections(t *testing.T, deps Dependencies) *cobra.Command {
+func buildRootWithCollections(t *testing.T, deps cmdkit.Dependencies) *cobra.Command {
 	t.Helper()
 	return cmdtest.BuildRoot(t, deps, RegisterAll)
 }
 
 func TestCommandCountsMatchMVP(t *testing.T) {
-	deps := makeDeps()
+	deps := cmdtest.MakeDeps()
 	root := buildRootWithCollections(t, deps)
 
 	total := 0
@@ -47,8 +48,8 @@ func TestCommandCountsMatchMVP(t *testing.T) {
 }
 
 func TestSchemaCommandListAndCollectionLookup(t *testing.T) {
-	deps := makeDeps()
-	output, err := execute(buildRootWithCollections(t, deps), "schema", "--list")
+	deps := cmdtest.MakeDeps()
+	output, err := cmdtest.Execute(buildRootWithCollections(t, deps), "schema", "--list")
 	if err != nil {
 		t.Fatalf("schema --list failed: %v", err)
 	}
@@ -61,7 +62,7 @@ func TestSchemaCommandListAndCollectionLookup(t *testing.T) {
 		t.Fatalf("expected non-empty endpoints list")
 	}
 
-	output, err = execute(buildRootWithCollections(t, deps), "schema", "document")
+	output, err = cmdtest.Execute(buildRootWithCollections(t, deps), "schema", "document")
 	if err != nil {
 		t.Fatalf("schema collection lookup failed: %v", err)
 	}
@@ -75,8 +76,8 @@ func TestSchemaCommandListAndCollectionLookup(t *testing.T) {
 }
 
 func TestSchemaTemplatePrintsPayloadSkeleton(t *testing.T) {
-	deps := makeDeps()
-	output, err := execute(buildRootWithCollections(t, deps), "schema", "doctype.create", "--template")
+	deps := cmdtest.MakeDeps()
+	output, err := cmdtest.Execute(buildRootWithCollections(t, deps), "schema", "doctype.create", "--template")
 	if err != nil {
 		t.Fatalf("schema template failed: %v", err)
 	}
@@ -109,7 +110,7 @@ func TestSchemaTemplatePrintsPayloadSkeleton(t *testing.T) {
 }
 
 func TestRegisteredAPICommandsHaveSchemas(t *testing.T) {
-	root := buildRootWithCollections(t, makeDeps())
+	root := buildRootWithCollections(t, cmdtest.MakeDeps())
 	schemaBackedCollections := map[string]struct{}{
 		"document":       {},
 		"element":        {},
@@ -173,7 +174,7 @@ func TestRegisteredAPICommandsHaveSchemas(t *testing.T) {
 
 	missing := make([]string, 0)
 	for collection := range schemaBackedCollections {
-		command := findChildCommand(root, collection)
+		command := cmdtest.FindChildCommand(root, collection)
 		if command == nil {
 			t.Fatalf("missing registered collection command %s", collection)
 		}
@@ -196,10 +197,10 @@ func TestRegisteredAPICommandsHaveSchemas(t *testing.T) {
 }
 
 func TestDocumentPublishPrefersJSONOverCultureInDryRun(t *testing.T) {
-	deps := makeDeps()
+	deps := cmdtest.MakeDeps()
 	root := buildRootWithCollections(t, deps)
 
-	output, err := execute(root,
+	output, err := cmdtest.Execute(root,
 		"document", "publish", "abc-123",
 		"--json", `{"cultures":["da-DK"]}`,
 		"--culture", "en-US",
@@ -224,10 +225,10 @@ func TestDocumentPublishPrefersJSONOverCultureInDryRun(t *testing.T) {
 }
 
 func TestDatatypeSchemaMatchesCompatibilityPrimaryEndpoints(t *testing.T) {
-	deps := makeDeps()
+	deps := cmdtest.MakeDeps()
 	root := buildRootWithCollections(t, deps)
 
-	output, err := execute(root, "schema", "datatype.list")
+	output, err := cmdtest.Execute(root, "schema", "datatype.list")
 	if err != nil {
 		t.Fatalf("schema datatype.list failed: %v", err)
 	}
@@ -239,7 +240,7 @@ func TestDatatypeSchemaMatchesCompatibilityPrimaryEndpoints(t *testing.T) {
 		t.Fatalf("unexpected datatype.list path: %+v", listPayload)
 	}
 
-	output, err = execute(root, "schema", "datatype.root")
+	output, err = cmdtest.Execute(root, "schema", "datatype.root")
 	if err != nil {
 		t.Fatalf("schema datatype.root failed: %v", err)
 	}
@@ -251,7 +252,7 @@ func TestDatatypeSchemaMatchesCompatibilityPrimaryEndpoints(t *testing.T) {
 		t.Fatalf("unexpected datatype.root path: %+v", rootPayload)
 	}
 
-	output, err = execute(root, "schema", "datatype.search")
+	output, err = cmdtest.Execute(root, "schema", "datatype.search")
 	if err != nil {
 		t.Fatalf("schema datatype.search failed: %v", err)
 	}
@@ -265,7 +266,7 @@ func TestDatatypeSchemaMatchesCompatibilityPrimaryEndpoints(t *testing.T) {
 }
 
 func TestSchemaMatchesTemplateDoctypeAndServerPrimaryEndpoints(t *testing.T) {
-	deps := makeDeps()
+	deps := cmdtest.MakeDeps()
 	root := buildRootWithCollections(t, deps)
 
 	cases := map[string]string{
@@ -288,7 +289,7 @@ func TestSchemaMatchesTemplateDoctypeAndServerPrimaryEndpoints(t *testing.T) {
 	}
 
 	for endpoint, expectedPath := range cases {
-		output, err := execute(root, "schema", endpoint)
+		output, err := cmdtest.Execute(root, "schema", endpoint)
 		if err != nil {
 			t.Fatalf("schema %s failed: %v", endpoint, err)
 		}

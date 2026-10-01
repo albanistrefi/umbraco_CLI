@@ -6,30 +6,33 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"umbraco-cli/internal/commands/cmdkit"
+	"umbraco-cli/internal/commands/cmdtest"
 )
 
 func TestDoctypeListSupportsFieldsAndReadTriage(t *testing.T) {
 	var observedPath string
 
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/tree/document-type/root":
 			observedPath = req.URL.String()
-			return datatypeJSONResponse(http.StatusOK, `{"total":2,"items":[
+			return cmdtest.JSONResponse(http.StatusOK, `{"total":2,"items":[
 				{"id":"dt-1","name":"Article","alias":"article","icon":"icon-document"},
 				{"id":"dt-2","name":"Product","alias":"product","icon":"icon-box"}
 			]}`), nil
 		case "/umbraco/management/api/v1/document-type":
 			t.Fatalf("doctype list should prefer the v17 tree root endpoint over /document-type")
-			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		default:
-			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	output, err := execute(buildRootWithCollections(t, deps), "doctype", "list", "--first-n", "1", "--fields", "id,name")
+	output, err := cmdtest.Execute(buildRootWithCollections(t, deps), "doctype", "list", "--first-n", "1", "--fields", "id,name")
 	if err != nil {
 		t.Fatalf("doctype list --first-n --fields failed: %v", err)
 	}
@@ -60,12 +63,12 @@ func TestDoctypeListSupportsFieldsAndReadTriage(t *testing.T) {
 func TestDoctypeListRecursiveTypesOnlyWalksFolders(t *testing.T) {
 	childRequests := map[string]int{}
 
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/tree/document-type/root":
-			return datatypeJSONResponse(http.StatusOK, `{"total":2,"items":[
+			return cmdtest.JSONResponse(http.StatusOK, `{"total":2,"items":[
 				{"id":"folder-1","name":"Compositions","isFolder":true,"icon":"icon-folder"},
 				{"id":"dt-article","name":"Article","alias":"article","icon":"icon-document"}
 			]}`), nil
@@ -74,23 +77,23 @@ func TestDoctypeListRecursiveTypesOnlyWalksFolders(t *testing.T) {
 			childRequests[parentID]++
 			switch parentID {
 			case "folder-1":
-				return datatypeJSONResponse(http.StatusOK, `{"total":2,"items":[
+				return cmdtest.JSONResponse(http.StatusOK, `{"total":2,"items":[
 					{"id":"folder-2","name":"Nested","isFolder":true,"icon":"icon-folder"},
 					{"id":"dt-seo","name":"SEO","alias":"seo","icon":"icon-document"}
 				]}`), nil
 			case "folder-2":
-				return datatypeJSONResponse(http.StatusOK, `{"total":1,"items":[
+				return cmdtest.JSONResponse(http.StatusOK, `{"total":1,"items":[
 					{"id":"dt-card","name":"Card","alias":"card","icon":"icon-document"}
 				]}`), nil
 			default:
-				return datatypeJSONResponse(http.StatusOK, `{"total":0,"items":[]}`), nil
+				return cmdtest.JSONResponse(http.StatusOK, `{"total":0,"items":[]}`), nil
 			}
 		default:
-			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	output, err := execute(buildRootWithCollections(t, deps), "doctype", "list", "--recursive", "--types-only", "--fields", "id,name,alias")
+	output, err := cmdtest.Execute(buildRootWithCollections(t, deps), "doctype", "list", "--recursive", "--types-only", "--fields", "id,name,alias")
 	if err != nil {
 		t.Fatalf("doctype list --recursive --types-only failed: %v", err)
 	}
@@ -117,12 +120,12 @@ func TestDoctypeListRecursiveTypesOnlyWalksFolders(t *testing.T) {
 func TestDoctypeListRecursiveFirstNStopsWalkingAfterLimit(t *testing.T) {
 	childRequests := map[string]int{}
 
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/tree/document-type/root":
-			return datatypeJSONResponse(http.StatusOK, `{"total":3,"items":[
+			return cmdtest.JSONResponse(http.StatusOK, `{"total":3,"items":[
 				{"id":"folder-1","name":"Compositions","isFolder":true,"icon":"icon-folder"},
 				{"id":"folder-2","name":"Unused","isFolder":true,"icon":"icon-folder"},
 				{"id":"dt-article","name":"Article","alias":"article","icon":"icon-document"}
@@ -132,23 +135,23 @@ func TestDoctypeListRecursiveFirstNStopsWalkingAfterLimit(t *testing.T) {
 			childRequests[parentID]++
 			switch parentID {
 			case "folder-1":
-				return datatypeJSONResponse(http.StatusOK, `{"total":2,"items":[
+				return cmdtest.JSONResponse(http.StatusOK, `{"total":2,"items":[
 					{"id":"dt-seo","name":"SEO","alias":"seo","icon":"icon-document"},
 					{"id":"dt-card","name":"Card","alias":"card","icon":"icon-document"}
 				]}`), nil
 			case "folder-2":
-				return datatypeJSONResponse(http.StatusOK, `{"total":1,"items":[
+				return cmdtest.JSONResponse(http.StatusOK, `{"total":1,"items":[
 					{"id":"dt-unused","name":"Unused","alias":"unused","icon":"icon-document"}
 				]}`), nil
 			default:
-				return datatypeJSONResponse(http.StatusOK, `{"total":0,"items":[]}`), nil
+				return cmdtest.JSONResponse(http.StatusOK, `{"total":0,"items":[]}`), nil
 			}
 		default:
-			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	output, err := execute(buildRootWithCollections(t, deps), "doctype", "list", "--recursive", "--first-n", "2", "--fields", "id,name")
+	output, err := cmdtest.Execute(buildRootWithCollections(t, deps), "doctype", "list", "--recursive", "--first-n", "2", "--fields", "id,name")
 	if err != nil {
 		t.Fatalf("doctype list --recursive --first-n failed: %v", err)
 	}
@@ -176,29 +179,29 @@ func TestDoctypeListRecursiveFirstNStopsWalkingAfterLimit(t *testing.T) {
 }
 
 func TestDoctypeGetFolderIDReturnsFolderDiagnostic(t *testing.T) {
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/document-type/f0f0f0f0-0000-4000-8000-000000000001", "/umbraco/management/api/v1/document-type/f0f0f0f0-0000-4000-8000-000000000002":
-			return datatypeJSONResponse(http.StatusNotFound, `{"title":"Not Found"}`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `{"title":"Not Found"}`), nil
 		case "/umbraco/management/api/v1/document-type/folder/f0f0f0f0-0000-4000-8000-000000000001":
-			return datatypeJSONResponse(http.StatusOK, `{"id":"f0f0f0f0-0000-4000-8000-000000000001","name":"Compositions"}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"id":"f0f0f0f0-0000-4000-8000-000000000001","name":"Compositions"}`), nil
 		case "/umbraco/management/api/v1/tree/document-type/children":
 			// The tree answers 200 with an empty page for any parentId; it must
 			// no longer be what decides "folder".
-			return datatypeJSONResponse(http.StatusOK, `{"total":0,"items":[]}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"total":0,"items":[]}`), nil
 		default:
-			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	_, err := execute(buildRootWithCollections(t, deps), "doctype", "get", "f0f0f0f0-0000-4000-8000-000000000001")
+	_, err := cmdtest.Execute(buildRootWithCollections(t, deps), "doctype", "get", "f0f0f0f0-0000-4000-8000-000000000001")
 	if err == nil || !strings.Contains(err.Error(), "is a folder, not a document type") {
 		t.Fatalf("expected folder-specific diagnostic, got %v", err)
 	}
 
-	_, err = execute(buildRootWithCollections(t, deps), "doctype", "get", "f0f0f0f0-0000-4000-8000-000000000002")
+	_, err = cmdtest.Execute(buildRootWithCollections(t, deps), "doctype", "get", "f0f0f0f0-0000-4000-8000-000000000002")
 	if err == nil || strings.Contains(err.Error(), "is a folder") || !strings.Contains(err.Error(), "404") {
 		t.Fatalf("expected the real 404 for a missing document type, got %v", err)
 	}
@@ -208,14 +211,14 @@ func TestDoctypeUpdateMergeJSONFetchesCurrentAndSendsMergedPayload(t *testing.T)
 	var putPayload map[string]any
 	var getRequests int
 
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/document-type/dt-1":
 			if req.Method == http.MethodGet {
 				getRequests++
-				return datatypeJSONResponse(http.StatusOK, `{
+				return cmdtest.JSONResponse(http.StatusOK, `{
   "id":"dt-1",
   "alias":"partnerPage",
   "name":"Partner Page",
@@ -233,15 +236,15 @@ func TestDoctypeUpdateMergeJSONFetchesCurrentAndSendsMergedPayload(t *testing.T)
 				if err := json.NewDecoder(req.Body).Decode(&putPayload); err != nil {
 					t.Fatalf("failed to decode put payload: %v", err)
 				}
-				return datatypeJSONResponse(http.StatusOK, `{"updated":true}`), nil
+				return cmdtest.JSONResponse(http.StatusOK, `{"updated":true}`), nil
 			}
-			return datatypeJSONResponse(http.StatusMethodNotAllowed, `{"error":"method not allowed"}`), nil
+			return cmdtest.JSONResponse(http.StatusMethodNotAllowed, `{"error":"method not allowed"}`), nil
 		default:
-			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	output, err := execute(
+	output, err := cmdtest.Execute(
 		buildRootWithCollections(t, deps),
 		"doctype", "update", "dt-1",
 		"--merge-json", `{"properties":[{"alias":"title","name":"Headline"}]}`,
@@ -304,26 +307,26 @@ func TestDoctypeUpdateMergeJSONFetchesCurrentAndSendsMergedPayload(t *testing.T)
 func TestDoctypeCreateElementFlagSetsIsElementTrue(t *testing.T) {
 	var postPayload map[string]any
 
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/document-type":
 			if req.Method != http.MethodPost {
-				return datatypeJSONResponse(http.StatusMethodNotAllowed, `{"error":"method not allowed"}`), nil
+				return cmdtest.JSONResponse(http.StatusMethodNotAllowed, `{"error":"method not allowed"}`), nil
 			}
 			if err := json.NewDecoder(req.Body).Decode(&postPayload); err != nil {
 				t.Fatalf("failed to decode create payload: %v", err)
 			}
-			return datatypeJSONResponse(http.StatusOK, `{"success":true}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"success":true}`), nil
 		default:
-			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
 	// --element should win over an explicit isElement:false in --json so agents
 	// can opt in with a single flag instead of editing the JSON payload.
-	if _, err := execute(
+	if _, err := cmdtest.Execute(
 		buildRootWithCollections(t, deps),
 		"doctype", "create",
 		"--element",
@@ -339,24 +342,24 @@ func TestDoctypeCreateElementFlagSetsIsElementTrue(t *testing.T) {
 func TestDoctypeCreateNormalizesDataTypeIDAndReturnsCreatedIdentity(t *testing.T) {
 	var postPayload map[string]any
 
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/document-type":
 			if req.Method != http.MethodPost {
-				return datatypeJSONResponse(http.StatusMethodNotAllowed, `{"error":"method not allowed"}`), nil
+				return cmdtest.JSONResponse(http.StatusMethodNotAllowed, `{"error":"method not allowed"}`), nil
 			}
 			if err := json.NewDecoder(req.Body).Decode(&postPayload); err != nil {
 				t.Fatalf("failed to decode create payload: %v", err)
 			}
-			return datatypeJSONResponse(http.StatusOK, `{"success":true}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"success":true}`), nil
 		default:
-			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	output, err := execute(
+	output, err := cmdtest.Execute(
 		buildRootWithCollections(t, deps),
 		"doctype", "create",
 		"--json", `{"name":"Article","alias":"article","properties":[{"name":"Title","alias":"title","dataTypeId":"dt-text"}]}`,
@@ -390,14 +393,14 @@ func TestDoctypeCreateNormalizesDataTypeIDAndReturnsCreatedIdentity(t *testing.T
 func TestDoctypeUpdateMergeJSONSupportsDryRun(t *testing.T) {
 	var getRequests int
 
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/document-type/dt-1":
 			if req.Method == http.MethodGet {
 				getRequests++
-				return datatypeJSONResponse(http.StatusOK, `{
+				return cmdtest.JSONResponse(http.StatusOK, `{
   "id":"dt-1",
   "alias":"partnerPage",
   "name":"Partner Page",
@@ -405,13 +408,13 @@ func TestDoctypeUpdateMergeJSONSupportsDryRun(t *testing.T) {
   "properties":[{"alias":"title","name":"Title"}]
 }`), nil
 			}
-			return datatypeJSONResponse(http.StatusMethodNotAllowed, `{"error":"unexpected write"}`), nil
+			return cmdtest.JSONResponse(http.StatusMethodNotAllowed, `{"error":"unexpected write"}`), nil
 		default:
-			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	output, err := execute(
+	output, err := cmdtest.Execute(
 		buildRootWithCollections(t, deps),
 		"doctype", "update", "dt-1",
 		"--merge-json", `{"properties":[{"alias":"title","name":"Headline"}]}`,
@@ -449,19 +452,19 @@ func TestDoctypeUpdateMergeJSONSupportsDryRun(t *testing.T) {
 func TestDocumentTypeAliasRoutesToDoctypeCommand(t *testing.T) {
 	var observedPath string
 
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/document-type":
 			observedPath = req.URL.Path
-			return datatypeJSONResponse(http.StatusOK, `{"total":0,"items":[]}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"total":0,"items":[]}`), nil
 		default:
-			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	if _, err := execute(buildRootWithCollections(t, deps), "document-type", "list"); err != nil {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), "document-type", "list"); err != nil {
 		t.Fatalf("document-type alias failed: %v", err)
 	}
 	if observedPath != "/umbraco/management/api/v1/document-type" {
@@ -472,13 +475,13 @@ func TestDocumentTypeAliasRoutesToDoctypeCommand(t *testing.T) {
 func TestDoctypeAddPropertyAppendsPropertyUnderResolvedContainer(t *testing.T) {
 	var observedPutBody map[string]any
 
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/document-type/dt-1":
 			if req.Method == http.MethodGet {
-				return datatypeJSONResponse(http.StatusOK, `{
+				return cmdtest.JSONResponse(http.StatusOK, `{
   "id":"dt-1",
   "alias":"partnerPage",
   "name":"Partner Page",
@@ -495,15 +498,15 @@ func TestDoctypeAddPropertyAppendsPropertyUnderResolvedContainer(t *testing.T) {
 				if err := json.NewDecoder(req.Body).Decode(&observedPutBody); err != nil {
 					t.Fatalf("failed to decode put payload: %v", err)
 				}
-				return datatypeJSONResponse(http.StatusOK, `{"updated":true}`), nil
+				return cmdtest.JSONResponse(http.StatusOK, `{"updated":true}`), nil
 			}
-			return datatypeJSONResponse(http.StatusMethodNotAllowed, `{"error":"method not allowed"}`), nil
+			return cmdtest.JSONResponse(http.StatusMethodNotAllowed, `{"error":"method not allowed"}`), nil
 		default:
-			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	output, err := execute(
+	output, err := cmdtest.Execute(
 		buildRootWithCollections(t, deps),
 		"doctype", "add-property", "dt-1",
 		"--alias", "subtitle",
@@ -562,13 +565,13 @@ func TestDoctypeAddPropertyAppendsPropertyUnderResolvedContainer(t *testing.T) {
 func TestDoctypeAddPropertyRejectsUnknownContainer(t *testing.T) {
 	var putRequests int
 
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/document-type/dt-1":
 			if req.Method == http.MethodGet {
-				return datatypeJSONResponse(http.StatusOK, `{
+				return cmdtest.JSONResponse(http.StatusOK, `{
   "id":"dt-1",
   "alias":"partnerPage",
   "name":"Partner Page",
@@ -579,13 +582,13 @@ func TestDoctypeAddPropertyRejectsUnknownContainer(t *testing.T) {
 			if req.Method == http.MethodPut {
 				putRequests++
 			}
-			return datatypeJSONResponse(http.StatusMethodNotAllowed, `{"error":"method not allowed"}`), nil
+			return cmdtest.JSONResponse(http.StatusMethodNotAllowed, `{"error":"method not allowed"}`), nil
 		default:
-			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	_, err := execute(
+	_, err := cmdtest.Execute(
 		buildRootWithCollections(t, deps),
 		"doctype", "add-property", "dt-1",
 		"--alias", "subtitle",
@@ -607,13 +610,13 @@ func TestDoctypeAddPropertyRejectsUnknownContainer(t *testing.T) {
 func TestDoctypeAddPropertyRejectsDuplicateAlias(t *testing.T) {
 	var putRequests int
 
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/document-type/dt-1":
 			if req.Method == http.MethodGet {
-				return datatypeJSONResponse(http.StatusOK, `{
+				return cmdtest.JSONResponse(http.StatusOK, `{
   "id":"dt-1",
   "alias":"partnerPage",
   "name":"Partner Page",
@@ -624,13 +627,13 @@ func TestDoctypeAddPropertyRejectsDuplicateAlias(t *testing.T) {
 			if req.Method == http.MethodPut {
 				putRequests++
 			}
-			return datatypeJSONResponse(http.StatusMethodNotAllowed, `{"error":"method not allowed"}`), nil
+			return cmdtest.JSONResponse(http.StatusMethodNotAllowed, `{"error":"method not allowed"}`), nil
 		default:
-			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	_, err := execute(
+	_, err := cmdtest.Execute(
 		buildRootWithCollections(t, deps),
 		"doctype", "add-property", "dt-1",
 		"--alias", "title",
@@ -652,13 +655,13 @@ func TestDoctypeAddPropertyRejectsDuplicateAlias(t *testing.T) {
 func TestDoctypeAddPropertyRejectsAmbiguousContainerName(t *testing.T) {
 	var putRequests int
 
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/document-type/dt-1":
 			if req.Method == http.MethodGet {
-				return datatypeJSONResponse(http.StatusOK, `{
+				return cmdtest.JSONResponse(http.StatusOK, `{
   "id":"dt-1",
   "alias":"partnerPage",
   "name":"Partner Page",
@@ -672,13 +675,13 @@ func TestDoctypeAddPropertyRejectsAmbiguousContainerName(t *testing.T) {
 			if req.Method == http.MethodPut {
 				putRequests++
 			}
-			return datatypeJSONResponse(http.StatusMethodNotAllowed, `{"error":"method not allowed"}`), nil
+			return cmdtest.JSONResponse(http.StatusMethodNotAllowed, `{"error":"method not allowed"}`), nil
 		default:
-			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	_, err := execute(
+	_, err := cmdtest.Execute(
 		buildRootWithCollections(t, deps),
 		"doctype", "add-property", "dt-1",
 		"--alias", "subtitle",
@@ -698,13 +701,13 @@ func TestDoctypeAddPropertyRejectsAmbiguousContainerName(t *testing.T) {
 }
 
 func TestDoctypeAddPropertySupportsDryRun(t *testing.T) {
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/document-type/dt-1":
 			if req.Method == http.MethodGet {
-				return datatypeJSONResponse(http.StatusOK, `{
+				return cmdtest.JSONResponse(http.StatusOK, `{
   "id":"dt-1",
   "alias":"partnerPage",
   "name":"Partner Page",
@@ -712,13 +715,13 @@ func TestDoctypeAddPropertySupportsDryRun(t *testing.T) {
   "containers":[{"id":"c-1","name":"Content","type":"Tab","sortOrder":0}]
 }`), nil
 			}
-			return datatypeJSONResponse(http.StatusMethodNotAllowed, `{"error":"unexpected write"}`), nil
+			return cmdtest.JSONResponse(http.StatusMethodNotAllowed, `{"error":"unexpected write"}`), nil
 		default:
-			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	output, err := execute(
+	output, err := cmdtest.Execute(
 		buildRootWithCollections(t, deps),
 		"doctype", "add-property", "dt-1",
 		"--alias", "subtitle",
@@ -759,19 +762,19 @@ func TestDoctypeAddPropertySupportsDryRun(t *testing.T) {
 func TestDoctypeAddContainerAppendsTabAtRoot(t *testing.T) {
 	var observedPutBody map[string]any
 
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/document-type/dt-1":
 			if req.Method == http.MethodGet {
 				// After the PUT the verification read must see the saved
 				// state, container included.
 				if observedPutBody != nil {
 					saved, _ := json.Marshal(observedPutBody)
-					return datatypeJSONResponse(http.StatusOK, string(saved)), nil
+					return cmdtest.JSONResponse(http.StatusOK, string(saved)), nil
 				}
-				return datatypeJSONResponse(http.StatusOK, `{
+				return cmdtest.JSONResponse(http.StatusOK, `{
   "id":"dt-1",
   "alias":"partnerPage",
   "name":"Partner Page",
@@ -784,15 +787,15 @@ func TestDoctypeAddContainerAppendsTabAtRoot(t *testing.T) {
 				if err := json.NewDecoder(req.Body).Decode(&observedPutBody); err != nil {
 					t.Fatalf("failed to decode put payload: %v", err)
 				}
-				return datatypeJSONResponse(http.StatusOK, `{"updated":true}`), nil
+				return cmdtest.JSONResponse(http.StatusOK, `{"updated":true}`), nil
 			}
-			return datatypeJSONResponse(http.StatusMethodNotAllowed, `{"error":"method not allowed"}`), nil
+			return cmdtest.JSONResponse(http.StatusMethodNotAllowed, `{"error":"method not allowed"}`), nil
 		default:
-			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	output, err := execute(
+	output, err := cmdtest.Execute(
 		buildRootWithCollections(t, deps),
 		"doctype", "add-container", "dt-1",
 		"--name", "SEO",
@@ -846,17 +849,17 @@ func TestDoctypeAddContainerAppendsTabAtRoot(t *testing.T) {
 func TestDoctypeAddContainerResolvesParentByName(t *testing.T) {
 	var observedPutBody map[string]any
 
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/document-type/dt-1":
 			if req.Method == http.MethodGet {
 				if observedPutBody != nil {
 					saved, _ := json.Marshal(observedPutBody)
-					return datatypeJSONResponse(http.StatusOK, string(saved)), nil
+					return cmdtest.JSONResponse(http.StatusOK, string(saved)), nil
 				}
-				return datatypeJSONResponse(http.StatusOK, `{
+				return cmdtest.JSONResponse(http.StatusOK, `{
   "id":"dt-1",
   "alias":"partnerPage",
   "name":"Partner Page",
@@ -868,15 +871,15 @@ func TestDoctypeAddContainerResolvesParentByName(t *testing.T) {
 				if err := json.NewDecoder(req.Body).Decode(&observedPutBody); err != nil {
 					t.Fatalf("failed to decode put payload: %v", err)
 				}
-				return datatypeJSONResponse(http.StatusOK, `{"updated":true}`), nil
+				return cmdtest.JSONResponse(http.StatusOK, `{"updated":true}`), nil
 			}
-			return datatypeJSONResponse(http.StatusMethodNotAllowed, `{"error":"method not allowed"}`), nil
+			return cmdtest.JSONResponse(http.StatusMethodNotAllowed, `{"error":"method not allowed"}`), nil
 		default:
-			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	_, err := execute(
+	_, err := cmdtest.Execute(
 		buildRootWithCollections(t, deps),
 		"doctype", "add-container", "dt-1",
 		"--name", "Hero",
@@ -911,16 +914,16 @@ func TestDoctypeAddContainerResolvesParentByName(t *testing.T) {
 }
 
 func TestDoctypeAddContainerRejectsBadType(t *testing.T) {
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		default:
-			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	_, err := execute(
+	_, err := cmdtest.Execute(
 		buildRootWithCollections(t, deps),
 		"doctype", "add-container", "dt-1",
 		"--name", "Whatever",
@@ -937,13 +940,13 @@ func TestDoctypeAddContainerRejectsBadType(t *testing.T) {
 func TestDoctypeAddContainerRejectsDuplicateName(t *testing.T) {
 	var putRequests int
 
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/document-type/dt-1":
 			if req.Method == http.MethodGet {
-				return datatypeJSONResponse(http.StatusOK, `{
+				return cmdtest.JSONResponse(http.StatusOK, `{
   "id":"dt-1",
   "alias":"partnerPage",
   "name":"Partner Page",
@@ -954,13 +957,13 @@ func TestDoctypeAddContainerRejectsDuplicateName(t *testing.T) {
 			if req.Method == http.MethodPut {
 				putRequests++
 			}
-			return datatypeJSONResponse(http.StatusMethodNotAllowed, `{"error":"method not allowed"}`), nil
+			return cmdtest.JSONResponse(http.StatusMethodNotAllowed, `{"error":"method not allowed"}`), nil
 		default:
-			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	_, err := execute(
+	_, err := cmdtest.Execute(
 		buildRootWithCollections(t, deps),
 		"doctype", "add-container", "dt-1",
 		"--name", "Content",
@@ -978,10 +981,10 @@ func TestDoctypeAddContainerRejectsDuplicateName(t *testing.T) {
 }
 
 func TestDoctypeUpdateRejectsJSONAndMergeJSONTogether(t *testing.T) {
-	deps := makeDeps()
+	deps := cmdtest.MakeDeps()
 	root := buildRootWithCollections(t, deps)
 
-	_, err := execute(
+	_, err := cmdtest.Execute(
 		root,
 		"doctype", "update", "dt-1",
 		"--json", `{"name":"Full"}`,
@@ -1012,25 +1015,25 @@ const reorderDoctypePayload = `{
   ]
 }`
 
-func reorderDoctypeDeps(t *testing.T, observed *map[string]any) Dependencies {
+func reorderDoctypeDeps(t *testing.T, observed *map[string]any) cmdkit.Dependencies {
 	t.Helper()
-	return datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	return cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/document-type/dt-1":
 			if req.Method == http.MethodGet {
-				return datatypeJSONResponse(http.StatusOK, reorderDoctypePayload), nil
+				return cmdtest.JSONResponse(http.StatusOK, reorderDoctypePayload), nil
 			}
 			if req.Method == http.MethodPut {
 				if err := json.NewDecoder(req.Body).Decode(observed); err != nil {
 					t.Fatalf("failed to decode put payload: %v", err)
 				}
-				return datatypeJSONResponse(http.StatusOK, `null`), nil
+				return cmdtest.JSONResponse(http.StatusOK, `null`), nil
 			}
-			return datatypeJSONResponse(http.StatusMethodNotAllowed, `null`), nil
+			return cmdtest.JSONResponse(http.StatusMethodNotAllowed, `null`), nil
 		default:
-			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 }
@@ -1055,7 +1058,7 @@ func TestDoctypeReorderPropertiesAssignsPositionsAndKeepsRest(t *testing.T) {
 	var observed map[string]any
 	deps := reorderDoctypeDeps(t, &observed)
 
-	if _, err := execute(
+	if _, err := cmdtest.Execute(
 		buildRootWithCollections(t, deps),
 		"doctype", "reorder-properties", "dt-1",
 		"--aliases", "body,title",
@@ -1091,7 +1094,7 @@ func TestDoctypeReorderPropertiesSingleMoveSetsSortOrderVerbatim(t *testing.T) {
 	var observed map[string]any
 	deps := reorderDoctypeDeps(t, &observed)
 
-	if _, err := execute(
+	if _, err := cmdtest.Execute(
 		buildRootWithCollections(t, deps),
 		"doctype", "reorder-properties", "dt-1",
 		"--alias", "body",
@@ -1113,7 +1116,7 @@ func TestDoctypeReorderPropertiesRejectsCrossContainerOrder(t *testing.T) {
 	var observed map[string]any
 	deps := reorderDoctypeDeps(t, &observed)
 
-	_, err := execute(
+	_, err := cmdtest.Execute(
 		buildRootWithCollections(t, deps),
 		"doctype", "reorder-properties", "dt-1",
 		"--aliases", "title,seoTitle",
@@ -1127,38 +1130,38 @@ func TestDoctypeReorderPropertiesRejectsUnknownAliasAndModeMix(t *testing.T) {
 	var observed map[string]any
 	deps := reorderDoctypeDeps(t, &observed)
 
-	if _, err := execute(buildRootWithCollections(t, deps), "doctype", "reorder-properties", "dt-1", "--aliases", "missing"); err == nil || !strings.Contains(err.Error(), `no property with alias "missing"`) {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), "doctype", "reorder-properties", "dt-1", "--aliases", "missing"); err == nil || !strings.Contains(err.Error(), `no property with alias "missing"`) {
 		t.Fatalf("expected unknown alias error, got %v", err)
 	}
-	if _, err := execute(buildRootWithCollections(t, deps), "doctype", "reorder-properties", "dt-1", "--aliases", ","); err == nil || !strings.Contains(err.Error(), "parsed to no property aliases") {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), "doctype", "reorder-properties", "dt-1", "--aliases", ","); err == nil || !strings.Contains(err.Error(), "parsed to no property aliases") {
 		t.Fatalf("expected empty alias list rejection, got %v", err)
 	}
-	if _, err := execute(buildRootWithCollections(t, deps), "doctype", "reorder-properties", "dt-1"); err == nil || !strings.Contains(err.Error(), "exactly one of") {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), "doctype", "reorder-properties", "dt-1"); err == nil || !strings.Contains(err.Error(), "exactly one of") {
 		t.Fatalf("expected mode requirement error, got %v", err)
 	}
-	if _, err := execute(buildRootWithCollections(t, deps), "doctype", "reorder-properties", "dt-1", "--alias", "body"); err == nil || !strings.Contains(err.Error(), "--sort-order") {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), "doctype", "reorder-properties", "dt-1", "--alias", "body"); err == nil || !strings.Contains(err.Error(), "--sort-order") {
 		t.Fatalf("expected sort-order requirement error, got %v", err)
 	}
 }
 
 func TestDoctypeAddContainerReportsPrunedContainerHonestly(t *testing.T) {
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/document-type/dt-1":
 			if req.Method == http.MethodPut {
-				return datatypeJSONResponse(http.StatusOK, `{"updated":true}`), nil
+				return cmdtest.JSONResponse(http.StatusOK, `{"updated":true}`), nil
 			}
 			// The server accepted the PUT and pruned the empty container:
 			// every read reports no containers.
-			return datatypeJSONResponse(http.StatusOK, `{"id":"dt-1","alias":"partnerPage","name":"Partner Page","properties":[],"containers":[]}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"id":"dt-1","alias":"partnerPage","name":"Partner Page","properties":[],"containers":[]}`), nil
 		default:
-			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	_, err := execute(buildRootWithCollections(t, deps), "doctype", "add-container", "dt-1", "--name", "Content", "--type", "Group")
+	_, err := cmdtest.Execute(buildRootWithCollections(t, deps), "doctype", "add-container", "dt-1", "--name", "Content", "--type", "Group")
 	if err == nil || !strings.Contains(err.Error(), "pruned the empty container") || !strings.Contains(err.Error(), "--create-container") {
 		t.Fatalf("expected honest prune error with the workflow hint, got %v", err)
 	}
@@ -1166,24 +1169,24 @@ func TestDoctypeAddContainerReportsPrunedContainerHonestly(t *testing.T) {
 
 func TestDoctypeAddPropertyCreateContainerBuildsBothInOnePut(t *testing.T) {
 	var observedPutBody map[string]any
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/document-type/dt-1":
 			if req.Method == http.MethodPut {
 				if err := json.NewDecoder(req.Body).Decode(&observedPutBody); err != nil {
 					t.Fatalf("decode put: %v", err)
 				}
-				return datatypeJSONResponse(http.StatusOK, `{"updated":true}`), nil
+				return cmdtest.JSONResponse(http.StatusOK, `{"updated":true}`), nil
 			}
-			return datatypeJSONResponse(http.StatusOK, `{"id":"dt-1","alias":"partnerPage","name":"Partner Page","properties":[],"containers":[]}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"id":"dt-1","alias":"partnerPage","name":"Partner Page","properties":[],"containers":[]}`), nil
 		default:
-			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	if _, err := execute(
+	if _, err := cmdtest.Execute(
 		buildRootWithCollections(t, deps),
 		"doctype", "add-property", "dt-1",
 		"--alias", "title", "--name", "Title", "--data-type", "dt-text",
@@ -1211,19 +1214,19 @@ func TestDoctypeAddPropertyCreateContainerBuildsBothInOnePut(t *testing.T) {
 }
 
 func TestDoctypeAddPropertyMissingContainerHintsCreateFlag(t *testing.T) {
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		default:
-			return datatypeJSONResponse(http.StatusOK, `{"id":"dt-1","alias":"x","name":"X","properties":[],"containers":[]}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"id":"dt-1","alias":"x","name":"X","properties":[],"containers":[]}`), nil
 		}
 	})
-	_, err := execute(buildRootWithCollections(t, deps), "doctype", "add-property", "dt-1", "--alias", "a", "--name", "A", "--data-type", "d", "--container", "Nope")
+	_, err := cmdtest.Execute(buildRootWithCollections(t, deps), "doctype", "add-property", "dt-1", "--alias", "a", "--name", "A", "--data-type", "d", "--container", "Nope")
 	if err == nil || !strings.Contains(err.Error(), "--create-container") {
 		t.Fatalf("expected missing-container hint, got %v", err)
 	}
-	_, err = execute(buildRootWithCollections(t, deps), "doctype", "add-property", "dt-1", "--alias", "a", "--name", "A", "--data-type", "d", "--container", "Nope", "--container-type", "Tab")
+	_, err = cmdtest.Execute(buildRootWithCollections(t, deps), "doctype", "add-property", "dt-1", "--alias", "a", "--name", "A", "--data-type", "d", "--container", "Nope", "--container-type", "Tab")
 	if err == nil || !strings.Contains(err.Error(), "--container-type only applies") {
 		t.Fatalf("expected container-type guard, got %v", err)
 	}
@@ -1231,22 +1234,22 @@ func TestDoctypeAddPropertyMissingContainerHintsCreateFlag(t *testing.T) {
 
 func TestDoctypeCreateFolderPostsAndReadsBack(t *testing.T) {
 	var posted map[string]any
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch {
 		case req.URL.Path == "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case req.URL.Path == "/umbraco/management/api/v1/document-type/folder" && req.Method == http.MethodPost:
 			body, _ := io.ReadAll(req.Body)
 			_ = json.Unmarshal(body, &posted)
 			return &http.Response{StatusCode: http.StatusCreated, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(""))}, nil
 		case strings.HasPrefix(req.URL.Path, "/umbraco/management/api/v1/document-type/folder/") && req.Method == http.MethodGet:
 			id := strings.TrimPrefix(req.URL.Path, "/umbraco/management/api/v1/document-type/folder/")
-			return datatypeJSONResponse(http.StatusOK, `{"id":"`+id+`","name":"Sectors","isTrashed":false}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"id":"`+id+`","name":"Sectors","isTrashed":false}`), nil
 		default:
-			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
-	out, err := execute(buildRootWithCollections(t, deps), "doctype", "create-folder", "--name", "Sectors", "--parent", "16c53fcd-e119-4c96-a327-898adcbfac27")
+	out, err := cmdtest.Execute(buildRootWithCollections(t, deps), "doctype", "create-folder", "--name", "Sectors", "--parent", "16c53fcd-e119-4c96-a327-898adcbfac27")
 	if err != nil {
 		t.Fatalf("doctype create-folder failed: %v", err)
 	}
@@ -1257,7 +1260,7 @@ func TestDoctypeCreateFolderPostsAndReadsBack(t *testing.T) {
 	if parent["id"] != "16c53fcd-e119-4c96-a327-898adcbfac27" {
 		t.Fatalf("expected parent reference in the POST body, got %+v", posted)
 	}
-	if id, _ := posted["id"].(string); !isUUIDLike(id) {
+	if id, _ := posted["id"].(string); !cmdkit.IsUUIDLike(id) {
 		t.Fatalf("expected a generated folder id, got %+v", posted)
 	}
 	var result map[string]any
@@ -1268,16 +1271,16 @@ func TestDoctypeCreateFolderPostsAndReadsBack(t *testing.T) {
 		t.Fatalf("expected the read-back folder in the result, got %s", out)
 	}
 
-	if _, err := execute(buildRootWithCollections(t, deps), "doctype", "create-folder", "--name", "X", "--parent", "not-a-guid"); err == nil || !strings.Contains(err.Error(), "parent must be") {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), "doctype", "create-folder", "--name", "X", "--parent", "not-a-guid"); err == nil || !strings.Contains(err.Error(), "parent must be") {
 		t.Fatalf("expected parent validation, got %v", err)
 	}
-	if _, err := execute(buildRootWithCollections(t, deps), "doctype", "create-folder"); err == nil || !strings.Contains(err.Error(), "requires a folder name") {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), "doctype", "create-folder"); err == nil || !strings.Contains(err.Error(), "requires a folder name") {
 		t.Fatalf("expected the name to be required, got %v", err)
 	}
 
 	// --json is the primary path; flags fill only what the payload omits.
 	posted = nil
-	out, err = execute(buildRootWithCollections(t, deps), "doctype", "create-folder", "--json", `{"id":"bbbbbbbb-0000-4000-8000-000000000001","name":"From JSON"}`, "--name", "Ignored", "--parent", "16c53fcd-e119-4c96-a327-898adcbfac27")
+	out, err = cmdtest.Execute(buildRootWithCollections(t, deps), "doctype", "create-folder", "--json", `{"id":"bbbbbbbb-0000-4000-8000-000000000001","name":"From JSON"}`, "--name", "Ignored", "--parent", "16c53fcd-e119-4c96-a327-898adcbfac27")
 	if err != nil {
 		t.Fatalf("doctype create-folder --json failed: %v", err)
 	}
@@ -1290,28 +1293,28 @@ func TestDoctypeCreateFolderPostsAndReadsBack(t *testing.T) {
 	if !strings.Contains(out, `"bbbbbbbb-0000-4000-8000-000000000001"`) || !strings.Contains(out, `"created": true`) {
 		t.Fatalf("expected the read-back folder, got %s", out)
 	}
-	if _, err := execute(buildRootWithCollections(t, deps), "doctype", "create-folder", "--json", `{"name":"X","parent":"16c53fcd-e119-4c96-a327-898adcbfac27"}`); err == nil || !strings.Contains(err.Error(), "parent must be") {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), "doctype", "create-folder", "--json", `{"name":"X","parent":"16c53fcd-e119-4c96-a327-898adcbfac27"}`); err == nil || !strings.Contains(err.Error(), "parent must be") {
 		t.Fatalf("expected a non-object parent to be rejected, got %v", err)
 	}
 }
 
 func TestDoctypeDeleteFolderIsGatedAndHitsFolderRoute(t *testing.T) {
 	var deleted string
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch {
 		case req.URL.Path == "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case req.Method == http.MethodDelete:
 			deleted = req.URL.Path
 			return &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(""))}, nil
 		default:
-			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
-	if _, err := execute(buildRootWithCollections(t, deps), "doctype", "delete-folder", "folder-1"); err == nil || !strings.Contains(err.Error(), "--force") {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), "doctype", "delete-folder", "folder-1"); err == nil || !strings.Contains(err.Error(), "--force") {
 		t.Fatalf("expected the force/dry-run gate, got %v", err)
 	}
-	out, err := execute(buildRootWithCollections(t, deps), "datatype", "delete-folder", "folder-1", "--force")
+	out, err := cmdtest.Execute(buildRootWithCollections(t, deps), "datatype", "delete-folder", "folder-1", "--force")
 	if err != nil || deleted != "/umbraco/management/api/v1/data-type/folder/folder-1" || !strings.Contains(out, `"deleted": true`) {
 		t.Fatalf("expected DELETE on the folder route, got err=%v path=%s out=%s", err, deleted, out)
 	}
@@ -1319,19 +1322,19 @@ func TestDoctypeDeleteFolderIsGatedAndHitsFolderRoute(t *testing.T) {
 
 func TestDoctypeCreateNormalizesLegacyHistoryCleanup(t *testing.T) {
 	var posted map[string]any
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch {
 		case req.URL.Path == "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case req.URL.Path == "/umbraco/management/api/v1/document-type" && req.Method == http.MethodPost:
 			body, _ := io.ReadAll(req.Body)
 			_ = json.Unmarshal(body, &posted)
 			return &http.Response{StatusCode: http.StatusCreated, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(""))}, nil
 		default:
-			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
-	if _, err := execute(buildRootWithCollections(t, deps), "doctype", "create", "--json", `{"name":"A","alias":"a","historyCleanup":{"preventCleanup":true}}`); err != nil {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), "doctype", "create", "--json", `{"name":"A","alias":"a","historyCleanup":{"preventCleanup":true}}`); err != nil {
 		t.Fatalf("doctype create failed: %v", err)
 	}
 	if _, legacy := posted["historyCleanup"]; legacy {
@@ -1349,15 +1352,15 @@ func TestDoctypeRemovePropertyWritesBackWithoutPropertyAndVerifies(t *testing.T)
 		"properties":[{"id":"p-1","alias":"title","name":"Title","container":{"id":"group-2"}},{"id":"p-2","alias":"seoTitle","name":"SEO title","container":{"id":"group-1"}}]}`
 	var putBody map[string]any
 	afterBody := current
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch {
 		case req.URL.Path == "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case req.URL.Path == "/umbraco/management/api/v1/document-type/"+doctypeID && req.Method == http.MethodGet:
 			if putBody != nil {
-				return datatypeJSONResponse(http.StatusOK, afterBody), nil
+				return cmdtest.JSONResponse(http.StatusOK, afterBody), nil
 			}
-			return datatypeJSONResponse(http.StatusOK, current), nil
+			return cmdtest.JSONResponse(http.StatusOK, current), nil
 		case req.URL.Path == "/umbraco/management/api/v1/document-type/"+doctypeID && req.Method == http.MethodPut:
 			body, _ := io.ReadAll(req.Body)
 			_ = json.Unmarshal(body, &putBody)
@@ -1365,16 +1368,16 @@ func TestDoctypeRemovePropertyWritesBackWithoutPropertyAndVerifies(t *testing.T)
 			afterBody = string(encoded)
 			return &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(""))}, nil
 		default:
-			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
 	dir := t.TempDir()
 	backupPath := dir + "/article.backup.json"
-	if _, err := execute(buildRootWithCollections(t, deps), "doctype", "remove-property", doctypeID, "--alias", "seoTitle"); err == nil || !strings.Contains(err.Error(), "--force") || putBody != nil {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), "doctype", "remove-property", doctypeID, "--alias", "seoTitle"); err == nil || !strings.Contains(err.Error(), "--force") || putBody != nil {
 		t.Fatalf("expected the force/dry-run gate before any write, got err=%v put=%v", err, putBody != nil)
 	}
-	out, err := execute(buildRootWithCollections(t, deps), "doctype", "remove-property", doctypeID, "--alias", "seoTitle", "--backup="+backupPath, "--force")
+	out, err := cmdtest.Execute(buildRootWithCollections(t, deps), "doctype", "remove-property", doctypeID, "--alias", "seoTitle", "--backup="+backupPath, "--force")
 	if err != nil {
 		t.Fatalf("doctype remove-property failed: %v", err)
 	}
@@ -1402,7 +1405,7 @@ func TestDoctypeRemovePropertyWritesBackWithoutPropertyAndVerifies(t *testing.T)
 	if len(pruned) != 1 || pruned[0] != "Meta" {
 		t.Fatalf("expected the emptied group flagged, got %+v", result["prunedContainers"])
 	}
-	envelope, err := readBackup(backupPath, "doctype")
+	envelope, err := cmdkit.ReadBackup(backupPath, "doctype")
 	if err != nil || envelope.ID != doctypeID || len(envelope.Entity["properties"].([]any)) != 2 {
 		t.Fatalf("expected the pre-change type in the backup, got err=%v envelope=%+v", err, envelope)
 	}
@@ -1412,32 +1415,32 @@ func TestDoctypeRemovePropertyRejectsUnknownAliasAndFailsWhenNotRemoved(t *testi
 	const doctypeID = "aaaaaaaa-0000-4000-8000-0000000000ab"
 	current := `{"id":"` + doctypeID + `","name":"Article","alias":"article","containers":[],"properties":[{"id":"p-1","alias":"seoTitle","name":"SEO title","container":null}]}`
 	puts := 0
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch {
 		case req.URL.Path == "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case req.URL.Path == "/umbraco/management/api/v1/document-type/"+doctypeID && req.Method == http.MethodGet:
-			return datatypeJSONResponse(http.StatusOK, current), nil // never changes: the server "kept" the property
+			return cmdtest.JSONResponse(http.StatusOK, current), nil // never changes: the server "kept" the property
 		case req.URL.Path == "/umbraco/management/api/v1/document-type/"+doctypeID && req.Method == http.MethodPut:
 			puts++
 			return &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(""))}, nil
 		default:
-			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
-	_, err := execute(buildRootWithCollections(t, deps), "doctype", "remove-property", doctypeID, "--alias", "seotitle", "--force")
+	_, err := cmdtest.Execute(buildRootWithCollections(t, deps), "doctype", "remove-property", doctypeID, "--alias", "seotitle", "--force")
 	if err == nil || !strings.Contains(err.Error(), `did you mean "seoTitle"`) || puts != 0 {
 		t.Fatalf("expected a case hint and no write, got err=%v puts=%d", err, puts)
 	}
-	_, err = execute(buildRootWithCollections(t, deps), "doctype", "remove-property", doctypeID, "--alias", "nothere", "--force")
+	_, err = cmdtest.Execute(buildRootWithCollections(t, deps), "doctype", "remove-property", doctypeID, "--alias", "nothere", "--force")
 	if err == nil || !strings.Contains(err.Error(), `has no property with alias "nothere"`) || puts != 0 {
 		t.Fatalf("expected an unknown-alias error and no write, got err=%v puts=%d", err, puts)
 	}
-	_, err = execute(buildRootWithCollections(t, deps), "doctype", "remove-property", doctypeID, "--alias", "seoTitle", "--force")
+	_, err = cmdtest.Execute(buildRootWithCollections(t, deps), "doctype", "remove-property", doctypeID, "--alias", "seoTitle", "--force")
 	if err == nil || !strings.Contains(err.Error(), `still has property "seoTitle"`) || puts != 1 {
 		t.Fatalf("expected the verify step to fail when the property survives, got err=%v puts=%d", err, puts)
 	}
-	out, err := execute(buildRootWithCollections(t, deps), "doctype", "remove-property", doctypeID, "--alias", "seoTitle", "--dry-run")
+	out, err := cmdtest.Execute(buildRootWithCollections(t, deps), "doctype", "remove-property", doctypeID, "--alias", "seoTitle", "--dry-run")
 	if err != nil || !strings.Contains(out, `"dryRun": true`) || puts != 1 {
 		t.Fatalf("expected dry-run to plan without writing, got err=%v out=%s puts=%d", err, out, puts)
 	}
@@ -1450,18 +1453,18 @@ func TestSchemaTypeRemovePropertyStripsResponseOnlyFields(t *testing.T) {
 		switch {
 		case req.URL.Path == "/umbraco/management/api/v1/media-type/"+typeID && req.Method == http.MethodGet:
 			if putBody != nil {
-				return endpointJSONResponse(http.StatusOK, `{"id":"`+typeID+`","alias":"image","properties":[]}`), nil
+				return cmdtest.JSONResponse(http.StatusOK, `{"id":"`+typeID+`","alias":"image","properties":[]}`), nil
 			}
-			return endpointJSONResponse(http.StatusOK, `{"id":"`+typeID+`","alias":"image","isDeletable":false,"aliasCanBeChanged":true,"containers":[],"properties":[{"id":"p-1","alias":"umbracoFile","name":"File"}]}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"id":"`+typeID+`","alias":"image","isDeletable":false,"aliasCanBeChanged":true,"containers":[],"properties":[{"id":"p-1","alias":"umbracoFile","name":"File"}]}`), nil
 		case req.URL.Path == "/umbraco/management/api/v1/media-type/"+typeID && req.Method == http.MethodPut:
 			body, _ := io.ReadAll(req.Body)
 			_ = json.Unmarshal(body, &putBody)
-			return endpointJSONResponse(http.StatusOK, `{}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{}`), nil
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `{"error":"not found"}`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `{"error":"not found"}`), nil
 		}
 	})
-	if _, err := execute(buildSchemaTypeRoot(deps), "mediatype", "remove-property", typeID, "--alias", "umbracoFile", "--force"); err != nil {
+	if _, err := cmdtest.Execute(buildSchemaTypeRoot(deps), "mediatype", "remove-property", typeID, "--alias", "umbracoFile", "--force"); err != nil {
 		t.Fatalf("mediatype remove-property failed: %v", err)
 	}
 	for _, rejected := range []string{"id", "isDeletable", "aliasCanBeChanged"} {

@@ -5,26 +5,28 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"umbraco-cli/internal/commands/cmdtest"
 )
 
 func TestLogsListUsesV17LogEndpointWithQueryFlags(t *testing.T) {
 	var observedPath string
 	var observedQuery = make(map[string][]string)
 
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/log-viewer/log":
 			observedPath = req.URL.Path
 			observedQuery = req.URL.Query()
-			return endpointJSONResponse(http.StatusOK, `{"items":[{"level":"Error"}],"total":1}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"items":[{"level":"Error"}],"total":1}`), nil
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	output, err := execute(buildRootWithCollections(t, deps),
+	output, err := cmdtest.Execute(buildRootWithCollections(t, deps),
 		"logs", "list",
 		"--from", "2026-05-11T10:00:00Z",
 		"--to", "2026-05-11T10:30:00Z",
@@ -40,12 +42,12 @@ func TestLogsListUsesV17LogEndpointWithQueryFlags(t *testing.T) {
 	if observedPath != "/umbraco/management/api/v1/log-viewer/log" {
 		t.Fatalf("expected v17 log endpoint, got %q", observedPath)
 	}
-	assertQueryValue(t, observedQuery, "startDate", "2026-05-11T10:00:00Z")
-	assertQueryValue(t, observedQuery, "endDate", "2026-05-11T10:30:00Z")
-	assertQueryValue(t, observedQuery, "filterExpression", "@Message like '%panic%'")
-	assertQueryValue(t, observedQuery, "logLevel", "Error")
-	assertQueryValue(t, observedQuery, "skip", "5")
-	assertQueryValue(t, observedQuery, "take", "25")
+	cmdtest.AssertQueryValue(t, observedQuery, "startDate", "2026-05-11T10:00:00Z")
+	cmdtest.AssertQueryValue(t, observedQuery, "endDate", "2026-05-11T10:30:00Z")
+	cmdtest.AssertQueryValue(t, observedQuery, "filterExpression", "@Message like '%panic%'")
+	cmdtest.AssertQueryValue(t, observedQuery, "logLevel", "Error")
+	cmdtest.AssertQueryValue(t, observedQuery, "skip", "5")
+	cmdtest.AssertQueryValue(t, observedQuery, "take", "25")
 
 	var payload map[string]any
 	if err := json.Unmarshal([]byte(output), &payload); err != nil {
@@ -59,63 +61,63 @@ func TestLogsListUsesV17LogEndpointWithQueryFlags(t *testing.T) {
 func TestLogsSearchCombinesFlagsWithParamsBlob(t *testing.T) {
 	var observedQuery = make(map[string][]string)
 
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/log-viewer/log":
 			observedQuery = req.URL.Query()
-			return endpointJSONResponse(http.StatusOK, `{"items":[{"level":"Error"}],"total":1}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"items":[{"level":"Error"}],"total":1}`), nil
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
 	// The reported repro: a paging --params blob alongside a --level flag must
 	// forward both, not drop the level and return newest-N unfiltered.
-	_, err := execute(buildRootWithCollections(t, deps),
+	_, err := cmdtest.Execute(buildRootWithCollections(t, deps),
 		"logs", "search", "--level", "Error", "--params", `{"take":30}`)
 	if err != nil {
 		t.Fatalf("logs search failed: %v", err)
 	}
-	assertQueryValue(t, observedQuery, "logLevel", "Error")
-	assertQueryValue(t, observedQuery, "take", "30")
+	cmdtest.AssertQueryValue(t, observedQuery, "logLevel", "Error")
+	cmdtest.AssertQueryValue(t, observedQuery, "take", "30")
 }
 
 func TestLogsSearchFlagsOverrideParamsBlobOnConflict(t *testing.T) {
 	var observedQuery = make(map[string][]string)
 
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/log-viewer/log":
 			observedQuery = req.URL.Query()
-			return endpointJSONResponse(http.StatusOK, `{"items":[],"total":0}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"items":[],"total":0}`), nil
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	_, err := execute(buildRootWithCollections(t, deps),
+	_, err := cmdtest.Execute(buildRootWithCollections(t, deps),
 		"logs", "search", "--filter-expression", "@l = 'Error'", "--params", `{"filterExpression":"ignored","take":200}`)
 	if err != nil {
 		t.Fatalf("logs search failed: %v", err)
 	}
-	assertQueryValue(t, observedQuery, "filterExpression", "@l = 'Error'")
-	assertQueryValue(t, observedQuery, "take", "200")
+	cmdtest.AssertQueryValue(t, observedQuery, "filterExpression", "@l = 'Error'")
+	cmdtest.AssertQueryValue(t, observedQuery, "take", "200")
 }
 
 func TestLogsSearchAppliesStrictClientSideIncidentFilters(t *testing.T) {
 	var observedQuery = make(map[string][]string)
 
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/log-viewer/log":
 			observedQuery = req.URL.Query()
-			return endpointJSONResponse(http.StatusOK, `{
+			return cmdtest.JSONResponse(http.StatusOK, `{
 				"items": [
 					{
 						"timestamp": "2026-06-23T11:38:51Z",
@@ -151,11 +153,11 @@ func TestLogsSearchAppliesStrictClientSideIncidentFilters(t *testing.T) {
 				"total": 10
 			}`), nil
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	output, err := execute(buildRootWithCollections(t, deps),
+	output, err := cmdtest.Execute(buildRootWithCollections(t, deps),
 		"logs", "search",
 		"--from", "2026-06-23T11:30:00Z",
 		"--to", "2026-06-23T11:45:00Z",
@@ -169,10 +171,10 @@ func TestLogsSearchAppliesStrictClientSideIncidentFilters(t *testing.T) {
 	if err != nil {
 		t.Fatalf("logs search failed: %v", err)
 	}
-	assertQueryValue(t, observedQuery, "startDate", "2026-06-23T11:30:00Z")
-	assertQueryValue(t, observedQuery, "endDate", "2026-06-23T11:45:00Z")
-	assertQueryValue(t, observedQuery, "logLevel", "Error")
-	assertQueryValue(t, observedQuery, "take", "3")
+	cmdtest.AssertQueryValue(t, observedQuery, "startDate", "2026-06-23T11:30:00Z")
+	cmdtest.AssertQueryValue(t, observedQuery, "endDate", "2026-06-23T11:45:00Z")
+	cmdtest.AssertQueryValue(t, observedQuery, "logLevel", "Error")
+	cmdtest.AssertQueryValue(t, observedQuery, "take", "3")
 
 	var payload map[string]any
 	if err := json.Unmarshal([]byte(output), &payload); err != nil {
@@ -195,12 +197,12 @@ func TestLogsSearchAppliesStrictClientSideIncidentFilters(t *testing.T) {
 }
 
 func TestLogsSearchFlatJSONAndRedaction(t *testing.T) {
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/log-viewer/log":
-			return endpointJSONResponse(http.StatusOK, `{
+			return cmdtest.JSONResponse(http.StatusOK, `{
 				"items": [
 					{
 						"timestamp": "2026-06-23T11:38:51Z",
@@ -218,11 +220,11 @@ func TestLogsSearchFlatJSONAndRedaction(t *testing.T) {
 				"total": 1
 			}`), nil
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	output, err := execute(buildRootWithCollections(t, deps), "logs", "search", "--flat", "--redact-default")
+	output, err := cmdtest.Execute(buildRootWithCollections(t, deps), "logs", "search", "--flat", "--redact-default")
 	if err != nil {
 		t.Fatalf("logs search failed: %v", err)
 	}
@@ -251,13 +253,13 @@ func TestLogsSearchFlatJSONAndRedaction(t *testing.T) {
 func TestLogsSearchAroundCursorAndCountBy(t *testing.T) {
 	var observedQuery = make(map[string][]string)
 
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/log-viewer/log":
 			observedQuery = req.URL.Query()
-			return endpointJSONResponse(http.StatusOK, `{
+			return cmdtest.JSONResponse(http.StatusOK, `{
 				"items": [
 					{
 						"timestamp": "2026-06-23T11:38:51Z",
@@ -279,11 +281,11 @@ func TestLogsSearchAroundCursorAndCountBy(t *testing.T) {
 				"total": 60
 			}`), nil
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	output, err := execute(buildRootWithCollections(t, deps),
+	output, err := cmdtest.Execute(buildRootWithCollections(t, deps),
 		"logs", "search",
 		"--around", "2026-06-23T11:38:51Z",
 		"--minutes", "5",
@@ -294,10 +296,10 @@ func TestLogsSearchAroundCursorAndCountBy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("logs search failed: %v", err)
 	}
-	assertQueryValue(t, observedQuery, "startDate", "2026-06-23T11:33:51Z")
-	assertQueryValue(t, observedQuery, "endDate", "2026-06-23T11:43:51Z")
-	assertQueryValue(t, observedQuery, "skip", "50")
-	assertQueryValue(t, observedQuery, "take", "2")
+	cmdtest.AssertQueryValue(t, observedQuery, "startDate", "2026-06-23T11:33:51Z")
+	cmdtest.AssertQueryValue(t, observedQuery, "endDate", "2026-06-23T11:43:51Z")
+	cmdtest.AssertQueryValue(t, observedQuery, "skip", "50")
+	cmdtest.AssertQueryValue(t, observedQuery, "take", "2")
 
 	var payload map[string]any
 	if err := json.Unmarshal([]byte(output), &payload); err != nil {
@@ -320,23 +322,23 @@ func TestLogsListFallsBackToLegacyEndpointOnNotFound(t *testing.T) {
 	var requests []string
 	var legacyQuery = make(map[string][]string)
 
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/log-viewer/log":
 			requests = append(requests, req.URL.Path)
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		case "/umbraco/management/api/v1/log-viewer":
 			requests = append(requests, req.URL.Path)
 			legacyQuery = req.URL.Query()
-			return endpointJSONResponse(http.StatusOK, `{"items":[{"level":"Warning"}]}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"items":[{"level":"Warning"}]}`), nil
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	_, err := execute(buildRootWithCollections(t, deps), "logs", "list", "--params", `{"level":"Warning","from":"2026-05-11T09:00:00Z","take":10}`)
+	_, err := cmdtest.Execute(buildRootWithCollections(t, deps), "logs", "list", "--params", `{"level":"Warning","from":"2026-05-11T09:00:00Z","take":10}`)
 	if err != nil {
 		t.Fatalf("logs list fallback failed: %v", err)
 	}
@@ -345,32 +347,32 @@ func TestLogsListFallsBackToLegacyEndpointOnNotFound(t *testing.T) {
 	if strings.Join(requests, ",") != strings.Join(expected, ",") {
 		t.Fatalf("unexpected fallback request order: %+v", requests)
 	}
-	assertQueryValue(t, legacyQuery, "logLevel", "Warning")
-	assertQueryValue(t, legacyQuery, "startDate", "2026-05-11T09:00:00Z")
-	assertQueryValue(t, legacyQuery, "take", "10")
+	cmdtest.AssertQueryValue(t, legacyQuery, "logLevel", "Warning")
+	cmdtest.AssertQueryValue(t, legacyQuery, "startDate", "2026-05-11T09:00:00Z")
+	cmdtest.AssertQueryValue(t, legacyQuery, "take", "10")
 }
 
 func TestLogsSearchUsesV17LogEndpointAndFallsBackToLegacySearch(t *testing.T) {
 	var requests []string
 	var searchQuery = make(map[string][]string)
 
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/log-viewer/log":
 			requests = append(requests, req.URL.Path)
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		case "/umbraco/management/api/v1/log-viewer/search":
 			requests = append(requests, req.URL.Path)
 			searchQuery = req.URL.Query()
-			return endpointJSONResponse(http.StatusOK, `{"items":[{"level":"Information"}]}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"items":[{"level":"Information"}]}`), nil
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	_, err := execute(buildRootWithCollections(t, deps), "logs", "search", "--filter-expression", "StartsWith(SourceContext, 'Umbraco')", "--skip", "2")
+	_, err := cmdtest.Execute(buildRootWithCollections(t, deps), "logs", "search", "--filter-expression", "StartsWith(SourceContext, 'Umbraco')", "--skip", "2")
 	if err != nil {
 		t.Fatalf("logs search fallback failed: %v", err)
 	}
@@ -379,28 +381,28 @@ func TestLogsSearchUsesV17LogEndpointAndFallsBackToLegacySearch(t *testing.T) {
 	if strings.Join(requests, ",") != strings.Join(expected, ",") {
 		t.Fatalf("unexpected fallback request order: %+v", requests)
 	}
-	assertQueryValue(t, searchQuery, "filterExpression", "StartsWith(SourceContext, 'Umbraco')")
-	assertQueryValue(t, searchQuery, "skip", "2")
+	cmdtest.AssertQueryValue(t, searchQuery, "filterExpression", "StartsWith(SourceContext, 'Umbraco')")
+	cmdtest.AssertQueryValue(t, searchQuery, "skip", "2")
 }
 
 func TestLogsTemplatesUsesV17MessageTemplateEndpointWithQueryFlags(t *testing.T) {
 	var observedPath string
 	var observedQuery = make(map[string][]string)
 
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/log-viewer/message-template":
 			observedPath = req.URL.Path
 			observedQuery = req.URL.Query()
-			return endpointJSONResponse(http.StatusOK, `{"items":[{"messageTemplate":"Template 6"},{"messageTemplate":"Template 7"}],"total":10}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"items":[{"messageTemplate":"Template 6"},{"messageTemplate":"Template 7"}],"total":10}`), nil
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	output, err := execute(buildRootWithCollections(t, deps),
+	output, err := cmdtest.Execute(buildRootWithCollections(t, deps),
 		"logs", "templates",
 		"--from", "2026-05-01",
 		"--to", "2026-05-12",
@@ -414,10 +416,10 @@ func TestLogsTemplatesUsesV17MessageTemplateEndpointWithQueryFlags(t *testing.T)
 	if observedPath != "/umbraco/management/api/v1/log-viewer/message-template" {
 		t.Fatalf("expected v17 message-template endpoint, got %q", observedPath)
 	}
-	assertQueryValue(t, observedQuery, "startDate", "2026-05-01")
-	assertQueryValue(t, observedQuery, "endDate", "2026-05-12")
-	assertQueryValue(t, observedQuery, "skip", "5")
-	assertQueryValue(t, observedQuery, "take", "5")
+	cmdtest.AssertQueryValue(t, observedQuery, "startDate", "2026-05-01")
+	cmdtest.AssertQueryValue(t, observedQuery, "endDate", "2026-05-12")
+	cmdtest.AssertQueryValue(t, observedQuery, "skip", "5")
+	cmdtest.AssertQueryValue(t, observedQuery, "take", "5")
 
 	var payload map[string]any
 	if err := json.Unmarshal([]byte(output), &payload); err != nil {
@@ -433,23 +435,23 @@ func TestLogsTemplatesFallsBackToLegacyEndpointOnNotFound(t *testing.T) {
 	var requests []string
 	var legacyQuery = make(map[string][]string)
 
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/log-viewer/message-template":
 			requests = append(requests, req.URL.Path)
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		case "/umbraco/management/api/v1/log-viewer/templates":
 			requests = append(requests, req.URL.Path)
 			legacyQuery = req.URL.Query()
-			return endpointJSONResponse(http.StatusOK, `{"items":[{"messageTemplate":"Legacy"}]}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"items":[{"messageTemplate":"Legacy"}]}`), nil
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	_, err := execute(buildRootWithCollections(t, deps), "logs", "templates", "--take", "5")
+	_, err := cmdtest.Execute(buildRootWithCollections(t, deps), "logs", "templates", "--take", "5")
 	if err != nil {
 		t.Fatalf("logs templates fallback failed: %v", err)
 	}
@@ -458,27 +460,27 @@ func TestLogsTemplatesFallsBackToLegacyEndpointOnNotFound(t *testing.T) {
 	if strings.Join(requests, ",") != strings.Join(expected, ",") {
 		t.Fatalf("unexpected fallback request order: %+v", requests)
 	}
-	assertQueryValue(t, legacyQuery, "take", "5")
+	cmdtest.AssertQueryValue(t, legacyQuery, "take", "5")
 }
 
 func TestLogsTemplatesFallbackStopsOnNonNotFoundAPIError(t *testing.T) {
 	var legacyCalled bool
 
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/log-viewer/message-template":
-			return endpointJSONResponse(http.StatusInternalServerError, `{"title":"boom"}`), nil
+			return cmdtest.JSONResponse(http.StatusInternalServerError, `{"title":"boom"}`), nil
 		case "/umbraco/management/api/v1/log-viewer/templates":
 			legacyCalled = true
-			return endpointJSONResponse(http.StatusOK, `{"items":[]}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"items":[]}`), nil
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	_, err := execute(buildRootWithCollections(t, deps), "logs", "templates")
+	_, err := cmdtest.Execute(buildRootWithCollections(t, deps), "logs", "templates")
 	if err == nil {
 		t.Fatalf("expected logs templates to fail on non-404 primary error")
 	}
@@ -492,19 +494,19 @@ func TestLogsTemplatesOutputFormatsRender(t *testing.T) {
 		format := format
 		t.Run(format, func(t *testing.T) {
 			outputFormat := format
-			deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+			deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 				switch req.URL.Path {
 				case "/umbraco/management/api/v1/security/back-office/token":
-					return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+					return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 				case "/umbraco/management/api/v1/log-viewer/message-template":
-					return endpointJSONResponse(http.StatusOK, `{"items":[{"messageTemplate":"Template"}],"total":1}`), nil
+					return cmdtest.JSONResponse(http.StatusOK, `{"items":[{"messageTemplate":"Template"}],"total":1}`), nil
 				default:
-					return endpointJSONResponse(http.StatusNotFound, `null`), nil
+					return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 				}
 			})
 			deps.OutputFlag = &outputFormat
 
-			output, err := execute(buildRootWithCollections(t, deps), "logs", "templates", "--take", "1")
+			output, err := cmdtest.Execute(buildRootWithCollections(t, deps), "logs", "templates", "--take", "1")
 			if err != nil {
 				t.Fatalf("logs templates --output %s failed: %v", format, err)
 			}
@@ -524,21 +526,21 @@ func TestLogsTemplatesOutputFormatsRender(t *testing.T) {
 func TestLogsFallbackStopsOnNonNotFoundAPIError(t *testing.T) {
 	var legacyCalled bool
 
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/log-viewer/log":
-			return endpointJSONResponse(http.StatusInternalServerError, `{"title":"boom"}`), nil
+			return cmdtest.JSONResponse(http.StatusInternalServerError, `{"title":"boom"}`), nil
 		case "/umbraco/management/api/v1/log-viewer":
 			legacyCalled = true
-			return endpointJSONResponse(http.StatusOK, `{"items":[]}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"items":[]}`), nil
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	_, err := execute(buildRootWithCollections(t, deps), "logs", "list")
+	_, err := cmdtest.Execute(buildRootWithCollections(t, deps), "logs", "list")
 	if err == nil {
 		t.Fatalf("expected logs list to fail on non-404 primary error")
 	}
@@ -548,18 +550,18 @@ func TestLogsFallbackStopsOnNonNotFoundAPIError(t *testing.T) {
 }
 
 func TestLogsLevelCountExplainsLargeWindowGuard(t *testing.T) {
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/log-viewer/level-count":
-			return endpointJSONResponse(http.StatusBadRequest, `{"operationStatus":"CancelledByLogsSizeValidation"}`), nil
+			return cmdtest.JSONResponse(http.StatusBadRequest, `{"operationStatus":"CancelledByLogsSizeValidation"}`), nil
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	_, err := execute(buildRootWithCollections(t, deps), "logs", "level-count", "--from", "2026-05-01T00:00:00Z", "--to", "2026-05-11T00:00:00Z")
+	_, err := cmdtest.Execute(buildRootWithCollections(t, deps), "logs", "level-count", "--from", "2026-05-01T00:00:00Z", "--to", "2026-05-11T00:00:00Z")
 	if err == nil {
 		t.Fatalf("expected logs level-count to fail")
 	}
@@ -569,12 +571,12 @@ func TestLogsLevelCountExplainsLargeWindowGuard(t *testing.T) {
 }
 
 func TestLogsLevelsIsHiddenAndUnsupported(t *testing.T) {
-	root := buildRootWithCollections(t, makeDeps())
-	logs := findChildCommand(root, "logs")
+	root := buildRootWithCollections(t, cmdtest.MakeDeps())
+	logs := cmdtest.FindChildCommand(root, "logs")
 	if logs == nil {
 		t.Fatal("missing logs command")
 	}
-	levels := findChildCommand(logs, "levels")
+	levels := cmdtest.FindChildCommand(logs, "levels")
 	if levels == nil {
 		t.Fatal("missing hidden logs levels compatibility command")
 	}
@@ -582,7 +584,7 @@ func TestLogsLevelsIsHiddenAndUnsupported(t *testing.T) {
 		t.Fatal("logs levels should be hidden because Umbraco v17 has no levels endpoint")
 	}
 
-	_, err := execute(root, "logs", "levels")
+	_, err := cmdtest.Execute(root, "logs", "levels")
 	if err == nil || !strings.Contains(err.Error(), "not available in the Umbraco v17 Management API") {
 		t.Fatalf("expected unsupported logs levels error, got %v", err)
 	}

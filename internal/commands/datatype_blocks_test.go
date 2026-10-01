@@ -6,6 +6,9 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+
+	"umbraco-cli/internal/commands/cmdkit"
+	"umbraco-cli/internal/commands/cmdtest"
 )
 
 const blListID = "dt-blocklist-1"
@@ -31,18 +34,18 @@ func blockListPayload(t *testing.T) string {
 }
 
 func TestDatatypeBlockListReturnsExistingBlocks(t *testing.T) {
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case blPath:
-			return datatypeJSONResponse(http.StatusOK, blockListPayload(t)), nil
+			return cmdtest.JSONResponse(http.StatusOK, blockListPayload(t)), nil
 		default:
-			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	output, err := execute(buildRootWithCollections(t, deps), "datatype", "block", "list", blListID)
+	output, err := cmdtest.Execute(buildRootWithCollections(t, deps), "datatype", "block", "list", blListID)
 	if err != nil {
 		t.Fatalf("list failed: %v", err)
 	}
@@ -57,25 +60,25 @@ func TestDatatypeBlockListReturnsExistingBlocks(t *testing.T) {
 
 func TestDatatypeBlockAddPreservesExistingBlocksAndUnrelatedConfig(t *testing.T) {
 	var putBody map[string]any
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case blPath:
 			switch req.Method {
 			case http.MethodGet:
-				return datatypeJSONResponse(http.StatusOK, blockListPayload(t)), nil
+				return cmdtest.JSONResponse(http.StatusOK, blockListPayload(t)), nil
 			case http.MethodPut:
 				if err := json.NewDecoder(req.Body).Decode(&putBody); err != nil {
 					t.Fatalf("decode put: %v", err)
 				}
-				return datatypeJSONResponse(http.StatusOK, `{"updated":true}`), nil
+				return cmdtest.JSONResponse(http.StatusOK, `{"updated":true}`), nil
 			}
 		}
-		return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 	})
 
-	output, err := execute(
+	output, err := cmdtest.Execute(
 		buildRootWithCollections(t, deps),
 		"datatype", "block", "add", blListID,
 		"--content-element-type", "33333333-3333-3333-3333-333333333333",
@@ -127,21 +130,21 @@ func TestDatatypeBlockAddPreservesExistingBlocksAndUnrelatedConfig(t *testing.T)
 
 func TestDatatypeBlockAddIsIdempotent(t *testing.T) {
 	var putCount int32
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case blPath:
 			if req.Method == http.MethodPut {
 				atomic.AddInt32(&putCount, 1)
-				return datatypeJSONResponse(http.StatusOK, `{}`), nil
+				return cmdtest.JSONResponse(http.StatusOK, `{}`), nil
 			}
-			return datatypeJSONResponse(http.StatusOK, blockListPayload(t)), nil
+			return cmdtest.JSONResponse(http.StatusOK, blockListPayload(t)), nil
 		}
-		return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 	})
 
-	output, err := execute(
+	output, err := cmdtest.Execute(
 		buildRootWithCollections(t, deps),
 		"datatype", "block", "add", blListID,
 		"--content-element-type", "11111111-1111-1111-1111-111111111111",
@@ -166,17 +169,17 @@ func TestDatatypeBlockAddIsIdempotent(t *testing.T) {
 }
 
 func TestDatatypeBlockAddRejectsNonBlockEditor(t *testing.T) {
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case blPath:
-			return datatypeJSONResponse(http.StatusOK, `{"id":"dt-blocklist-1","editorAlias":"Umbraco.MultipleTextstring","values":[]}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"id":"dt-blocklist-1","editorAlias":"Umbraco.MultipleTextstring","values":[]}`), nil
 		}
-		return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 	})
 
-	_, err := execute(
+	_, err := cmdtest.Execute(
 		buildRootWithCollections(t, deps),
 		"datatype", "block", "add", blListID,
 		"--content-element-type", "00000000-0000-0000-0000-aaaaaaaaaaaa",
@@ -190,11 +193,11 @@ func TestDatatypeBlockAddRejectsNonBlockEditor(t *testing.T) {
 }
 
 func TestDatatypeBlockAddRejectsInvalidEditorSize(t *testing.T) {
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
-		return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
+		return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 	})
 
-	_, err := execute(
+	_, err := cmdtest.Execute(
 		buildRootWithCollections(t, deps),
 		"datatype", "block", "add", blListID,
 		"--content-element-type", "11111111-1111-1111-1111-111111111111",
@@ -210,25 +213,25 @@ func TestDatatypeBlockAddRejectsInvalidEditorSize(t *testing.T) {
 
 func TestDatatypeBlockRemoveDropsBlockAndPreservesRest(t *testing.T) {
 	var putBody map[string]any
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case blPath:
 			switch req.Method {
 			case http.MethodGet:
-				return datatypeJSONResponse(http.StatusOK, blockListPayload(t)), nil
+				return cmdtest.JSONResponse(http.StatusOK, blockListPayload(t)), nil
 			case http.MethodPut:
 				if err := json.NewDecoder(req.Body).Decode(&putBody); err != nil {
 					t.Fatalf("decode put: %v", err)
 				}
-				return datatypeJSONResponse(http.StatusOK, `{}`), nil
+				return cmdtest.JSONResponse(http.StatusOK, `{}`), nil
 			}
 		}
-		return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 	})
 
-	_, err := execute(
+	_, err := cmdtest.Execute(
 		buildRootWithCollections(t, deps),
 		"datatype", "block", "remove", blListID,
 		"--content-element-type", "11111111-1111-1111-1111-111111111111",
@@ -255,21 +258,21 @@ func TestDatatypeBlockRemoveDropsBlockAndPreservesRest(t *testing.T) {
 
 func TestDatatypeBlockRemoveIsIdempotent(t *testing.T) {
 	var putCount int32
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case blPath:
 			if req.Method == http.MethodPut {
 				atomic.AddInt32(&putCount, 1)
-				return datatypeJSONResponse(http.StatusOK, `{}`), nil
+				return cmdtest.JSONResponse(http.StatusOK, `{}`), nil
 			}
-			return datatypeJSONResponse(http.StatusOK, blockListPayload(t)), nil
+			return cmdtest.JSONResponse(http.StatusOK, blockListPayload(t)), nil
 		}
-		return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 	})
 
-	output, err := execute(
+	output, err := cmdtest.Execute(
 		buildRootWithCollections(t, deps),
 		"datatype", "block", "remove", blListID,
 		"--content-element-type", "00000000-0000-0000-0000-bbbbbbbbbbbb",
@@ -296,21 +299,21 @@ func TestDatatypeBlockRemoveIsIdempotent(t *testing.T) {
 func blockGridAddCaptured(t *testing.T, args ...string) map[string]any {
 	t.Helper()
 	var putBody map[string]any
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case blPath:
 			if req.Method == http.MethodPut {
 				_ = json.NewDecoder(req.Body).Decode(&putBody)
-				return datatypeJSONResponse(http.StatusOK, `{}`), nil
+				return cmdtest.JSONResponse(http.StatusOK, `{}`), nil
 			}
-			return datatypeJSONResponse(http.StatusOK, `{"id":"dt-blocklist-1","editorAlias":"Umbraco.BlockGrid","values":[{"alias":"blocks","value":[]}]}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"id":"dt-blocklist-1","editorAlias":"Umbraco.BlockGrid","values":[{"alias":"blocks","value":[]}]}`), nil
 		}
-		return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 	})
 
-	if _, err := execute(buildRootWithCollections(t, deps), append([]string{"datatype", "block", "add", blListID}, args...)...); err != nil {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), append([]string{"datatype", "block", "add", blListID}, args...)...); err != nil {
 		t.Fatalf("BlockGrid add failed: %v", err)
 	}
 	if putBody == nil {
@@ -361,21 +364,21 @@ func TestDatatypeBlockBlockListOmitsPlacementFlags(t *testing.T) {
 	// Placement flags are BlockGrid-only; setting them on a BlockList add
 	// must NOT pollute the payload with fields the editor doesn't understand.
 	var putBody map[string]any
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case blPath:
 			if req.Method == http.MethodPut {
 				_ = json.NewDecoder(req.Body).Decode(&putBody)
-				return datatypeJSONResponse(http.StatusOK, `{}`), nil
+				return cmdtest.JSONResponse(http.StatusOK, `{}`), nil
 			}
-			return datatypeJSONResponse(http.StatusOK, blockListPayload(t)), nil
+			return cmdtest.JSONResponse(http.StatusOK, blockListPayload(t)), nil
 		}
-		return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 	})
 
-	if _, err := execute(
+	if _, err := cmdtest.Execute(
 		buildRootWithCollections(t, deps),
 		"datatype", "block", "add", blListID,
 		"--content-element-type", "66666666-6666-6666-6666-666666666666",
@@ -436,25 +439,25 @@ func blockListPayloadWithEditorUI(t *testing.T) string {
 // not reintroduce it.
 func TestDatatypeBlockUpdatePreservesEverythingElse(t *testing.T) {
 	var putBody map[string]any
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case blPath:
 			switch req.Method {
 			case http.MethodGet:
-				return datatypeJSONResponse(http.StatusOK, blockListPayloadWithEditorUI(t)), nil
+				return cmdtest.JSONResponse(http.StatusOK, blockListPayloadWithEditorUI(t)), nil
 			case http.MethodPut:
 				if err := json.NewDecoder(req.Body).Decode(&putBody); err != nil {
 					t.Fatalf("decode put: %v", err)
 				}
-				return datatypeJSONResponse(http.StatusOK, `{}`), nil
+				return cmdtest.JSONResponse(http.StatusOK, `{}`), nil
 			}
 		}
-		return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 	})
 
-	if _, err := execute(
+	if _, err := cmdtest.Execute(
 		buildRootWithCollections(t, deps),
 		"datatype", "block", "update", blListID,
 		"--content-element-type", "11111111-1111-1111-1111-111111111111",
@@ -506,23 +509,23 @@ func TestDatatypeBlockUpdatePreservesEverythingElse(t *testing.T) {
 // gate, not zero-value detection.
 func TestDatatypeBlockUpdateOnlyMutatesPassedFlags(t *testing.T) {
 	var putBody map[string]any
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case blPath:
 			if req.Method == http.MethodGet {
-				return datatypeJSONResponse(http.StatusOK, blockListPayload(t)), nil
+				return cmdtest.JSONResponse(http.StatusOK, blockListPayload(t)), nil
 			}
 			if req.Method == http.MethodPut {
 				_ = json.NewDecoder(req.Body).Decode(&putBody)
-				return datatypeJSONResponse(http.StatusOK, `{}`), nil
+				return cmdtest.JSONResponse(http.StatusOK, `{}`), nil
 			}
 		}
-		return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 	})
 
-	if _, err := execute(
+	if _, err := cmdtest.Execute(
 		buildRootWithCollections(t, deps),
 		"datatype", "block", "update", blListID,
 		"--content-element-type", "11111111-1111-1111-1111-111111111111",
@@ -559,23 +562,23 @@ func TestDatatypeBlockUpdateOnlyMutatesPassedFlags(t *testing.T) {
 // to clear an override label they set earlier.
 func TestDatatypeBlockUpdateEmptyStringClearsOptionalFields(t *testing.T) {
 	var putBody map[string]any
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case blPath:
 			if req.Method == http.MethodGet {
-				return datatypeJSONResponse(http.StatusOK, blockListPayloadWithEditorUI(t)), nil
+				return cmdtest.JSONResponse(http.StatusOK, blockListPayloadWithEditorUI(t)), nil
 			}
 			if req.Method == http.MethodPut {
 				_ = json.NewDecoder(req.Body).Decode(&putBody)
-				return datatypeJSONResponse(http.StatusOK, `{}`), nil
+				return cmdtest.JSONResponse(http.StatusOK, `{}`), nil
 			}
 		}
-		return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 	})
 
-	if _, err := execute(
+	if _, err := cmdtest.Execute(
 		buildRootWithCollections(t, deps),
 		"datatype", "block", "update", blListID,
 		"--content-element-type", "11111111-1111-1111-1111-111111111111",
@@ -604,22 +607,22 @@ func TestDatatypeBlockUpdateEmptyStringClearsOptionalFields(t *testing.T) {
 
 func TestDatatypeBlockUpdateErrorsWhenBlockMissing(t *testing.T) {
 	var putCount int
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case blPath:
 			if req.Method == http.MethodPut {
 				putCount++
-				return datatypeJSONResponse(http.StatusOK, `{}`), nil
+				return cmdtest.JSONResponse(http.StatusOK, `{}`), nil
 			}
-			return datatypeJSONResponse(http.StatusOK, blockListPayload(t)), nil
+			return cmdtest.JSONResponse(http.StatusOK, blockListPayload(t)), nil
 		}
-		return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 	})
 
 	const absentGUID = "deadbeef-dead-beef-dead-beefdeadbeef"
-	_, err := execute(
+	_, err := cmdtest.Execute(
 		buildRootWithCollections(t, deps),
 		"datatype", "block", "update", blListID,
 		"--content-element-type", absentGUID,
@@ -638,22 +641,22 @@ func TestDatatypeBlockUpdateErrorsWhenBlockMissing(t *testing.T) {
 
 func TestDatatypeBlockUpdateIsIdempotent(t *testing.T) {
 	var putCount int
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case blPath:
 			if req.Method == http.MethodPut {
 				putCount++
-				return datatypeJSONResponse(http.StatusOK, `{}`), nil
+				return cmdtest.JSONResponse(http.StatusOK, `{}`), nil
 			}
-			return datatypeJSONResponse(http.StatusOK, blockListPayload(t)), nil
+			return cmdtest.JSONResponse(http.StatusOK, blockListPayload(t)), nil
 		}
-		return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 	})
 
 	// Re-applying the existing label is a no-op.
-	output, err := execute(
+	output, err := cmdtest.Execute(
 		buildRootWithCollections(t, deps),
 		"datatype", "block", "update", blListID,
 		"--content-element-type", "11111111-1111-1111-1111-111111111111",
@@ -675,10 +678,10 @@ func TestDatatypeBlockUpdateIsIdempotent(t *testing.T) {
 }
 
 func TestDatatypeBlockUpdateRejectsInvalidEditorSize(t *testing.T) {
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
-		return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
+		return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 	})
-	_, err := execute(
+	_, err := cmdtest.Execute(
 		buildRootWithCollections(t, deps),
 		"datatype", "block", "update", blListID,
 		"--content-element-type", "11111111-1111-1111-1111-111111111111",
@@ -694,21 +697,21 @@ func TestDatatypeBlockUpdateRejectsInvalidEditorSize(t *testing.T) {
 
 func TestDatatypeBlockUpdateBlockListIgnoresGridFlags(t *testing.T) {
 	var putBody map[string]any
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case blPath:
 			if req.Method == http.MethodPut {
 				_ = json.NewDecoder(req.Body).Decode(&putBody)
-				return datatypeJSONResponse(http.StatusOK, `{}`), nil
+				return cmdtest.JSONResponse(http.StatusOK, `{}`), nil
 			}
-			return datatypeJSONResponse(http.StatusOK, blockListPayload(t)), nil
+			return cmdtest.JSONResponse(http.StatusOK, blockListPayload(t)), nil
 		}
-		return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 	})
 
-	if _, err := execute(
+	if _, err := cmdtest.Execute(
 		buildRootWithCollections(t, deps),
 		"datatype", "block", "update", blListID,
 		"--content-element-type", "11111111-1111-1111-1111-111111111111",
@@ -737,21 +740,21 @@ func TestDatatypeBlockUpdateBlockListIgnoresGridFlags(t *testing.T) {
 
 func TestDatatypeBlockUpdateBlockGridHonoursPlacementFlags(t *testing.T) {
 	var putBody map[string]any
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case blPath:
 			if req.Method == http.MethodPut {
 				_ = json.NewDecoder(req.Body).Decode(&putBody)
-				return datatypeJSONResponse(http.StatusOK, `{}`), nil
+				return cmdtest.JSONResponse(http.StatusOK, `{}`), nil
 			}
-			return datatypeJSONResponse(http.StatusOK, `{"id":"dt-blocklist-1","editorAlias":"Umbraco.BlockGrid","values":[{"alias":"blocks","value":[{"contentElementTypeKey":"77777777-7777-7777-7777-777777777777","label":"Old","allowAtRoot":true,"allowInAreas":true}]}]}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"id":"dt-blocklist-1","editorAlias":"Umbraco.BlockGrid","values":[{"alias":"blocks","value":[{"contentElementTypeKey":"77777777-7777-7777-7777-777777777777","label":"Old","allowAtRoot":true,"allowInAreas":true}]}]}`), nil
 		}
-		return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 	})
 
-	if _, err := execute(
+	if _, err := cmdtest.Execute(
 		buildRootWithCollections(t, deps),
 		"datatype", "block", "update", blListID,
 		"--content-element-type", "77777777-7777-7777-7777-777777777777",
@@ -772,20 +775,20 @@ func TestDatatypeBlockUpdateBlockGridHonoursPlacementFlags(t *testing.T) {
 
 func TestDatatypeBlockUpdateDryRunSendsNoPut(t *testing.T) {
 	var putCount int
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case blPath:
 			if req.Method == http.MethodPut {
 				putCount++
 			}
-			return datatypeJSONResponse(http.StatusOK, blockListPayload(t)), nil
+			return cmdtest.JSONResponse(http.StatusOK, blockListPayload(t)), nil
 		}
-		return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 	})
 
-	output, err := execute(
+	output, err := cmdtest.Execute(
 		buildRootWithCollections(t, deps),
 		"datatype", "block", "update", blListID,
 		"--content-element-type", "11111111-1111-1111-1111-111111111111",
@@ -815,11 +818,11 @@ func TestDatatypeBlockUpdateDryRunSendsNoPut(t *testing.T) {
 // across all three subcommands since the surface is symmetric.
 
 func TestDatatypeBlockAddRejectsMalformedContentGUID(t *testing.T) {
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		t.Fatalf("invalid GUID must short-circuit before any HTTP call")
-		return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 	})
-	_, err := execute(
+	_, err := cmdtest.Execute(
 		buildRootWithCollections(t, deps),
 		"datatype", "block", "add", blListID,
 		"--content-element-type", "not-a-uuid",
@@ -833,11 +836,11 @@ func TestDatatypeBlockAddRejectsMalformedContentGUID(t *testing.T) {
 }
 
 func TestDatatypeBlockAddRejectsMalformedSettingsGUID(t *testing.T) {
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		t.Fatalf("invalid GUID must short-circuit before any HTTP call")
-		return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 	})
-	_, err := execute(
+	_, err := cmdtest.Execute(
 		buildRootWithCollections(t, deps),
 		"datatype", "block", "add", blListID,
 		"--content-element-type", "11111111-1111-1111-1111-111111111111",
@@ -852,11 +855,11 @@ func TestDatatypeBlockAddRejectsMalformedSettingsGUID(t *testing.T) {
 }
 
 func TestDatatypeBlockUpdateRejectsMalformedContentGUID(t *testing.T) {
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		t.Fatalf("invalid GUID must short-circuit before any HTTP call")
-		return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 	})
-	_, err := execute(
+	_, err := cmdtest.Execute(
 		buildRootWithCollections(t, deps),
 		"datatype", "block", "update", blListID,
 		"--content-element-type", "not-a-uuid",
@@ -868,11 +871,11 @@ func TestDatatypeBlockUpdateRejectsMalformedContentGUID(t *testing.T) {
 }
 
 func TestDatatypeBlockUpdateRejectsMalformedSettingsGUID(t *testing.T) {
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		t.Fatalf("invalid GUID must short-circuit before any HTTP call")
-		return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 	})
-	_, err := execute(
+	_, err := cmdtest.Execute(
 		buildRootWithCollections(t, deps),
 		"datatype", "block", "update", blListID,
 		"--content-element-type", "11111111-1111-1111-1111-111111111111",
@@ -888,21 +891,21 @@ func TestDatatypeBlockUpdateRejectsMalformedSettingsGUID(t *testing.T) {
 // behind cmd.Flags().Changed && value != "").
 func TestDatatypeBlockUpdateEmptySettingsClearsWithoutGUIDValidation(t *testing.T) {
 	var putBody map[string]any
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case blPath:
 			if req.Method == http.MethodPut {
 				_ = json.NewDecoder(req.Body).Decode(&putBody)
-				return datatypeJSONResponse(http.StatusOK, `{}`), nil
+				return cmdtest.JSONResponse(http.StatusOK, `{}`), nil
 			}
-			return datatypeJSONResponse(http.StatusOK, `{"id":"dt-blocklist-1","editorAlias":"Umbraco.BlockList","values":[{"alias":"blocks","value":[{"contentElementTypeKey":"11111111-1111-1111-1111-111111111111","settingsElementTypeKey":"44444444-4444-4444-4444-444444444444","label":"L"}]}]}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"id":"dt-blocklist-1","editorAlias":"Umbraco.BlockList","values":[{"alias":"blocks","value":[{"contentElementTypeKey":"11111111-1111-1111-1111-111111111111","settingsElementTypeKey":"44444444-4444-4444-4444-444444444444","label":"L"}]}]}`), nil
 		}
-		return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 	})
 
-	if _, err := execute(
+	if _, err := cmdtest.Execute(
 		buildRootWithCollections(t, deps),
 		"datatype", "block", "update", blListID,
 		"--content-element-type", "11111111-1111-1111-1111-111111111111",
@@ -917,11 +920,11 @@ func TestDatatypeBlockUpdateEmptySettingsClearsWithoutGUIDValidation(t *testing.
 }
 
 func TestDatatypeBlockRemoveRejectsMalformedContentGUID(t *testing.T) {
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		t.Fatalf("invalid GUID must short-circuit before any HTTP call")
-		return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 	})
-	_, err := execute(
+	_, err := cmdtest.Execute(
 		buildRootWithCollections(t, deps),
 		"datatype", "block", "remove", blListID,
 		"--content-element-type", "not-a-uuid",
@@ -946,26 +949,26 @@ func blockGridPayload() string {
 	]}`
 }
 
-func blockGridDeps(t *testing.T, putBody *map[string]any, afterPut func() string) Dependencies {
+func blockGridDeps(t *testing.T, putBody *map[string]any, afterPut func() string) cmdkit.Dependencies {
 	t.Helper()
 	var wrote atomic.Bool
-	return datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	return cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch {
 		case req.URL.Path == "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case req.URL.Path == bgPath && req.Method == http.MethodPut:
 			body := map[string]any{}
 			_ = json.NewDecoder(req.Body).Decode(&body)
 			*putBody = body
 			wrote.Store(true)
-			return datatypeJSONResponse(http.StatusOK, ``), nil
+			return cmdtest.JSONResponse(http.StatusOK, ``), nil
 		case req.URL.Path == bgPath:
 			if wrote.Load() && afterPut != nil {
-				return datatypeJSONResponse(http.StatusOK, afterPut()), nil
+				return cmdtest.JSONResponse(http.StatusOK, afterPut()), nil
 			}
-			return datatypeJSONResponse(http.StatusOK, blockGridPayload()), nil
+			return cmdtest.JSONResponse(http.StatusOK, blockGridPayload()), nil
 		default:
-			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 }
@@ -989,7 +992,7 @@ func TestDatatypeBlockReorderListedFirstThenRestAndVerifies(t *testing.T) {
 		encoded, _ := json.Marshal(putBody)
 		return string(encoded)
 	})
-	output, err := execute(buildRootWithCollections(t, deps), "datatype", "block", "reorder", bgGridID, "--keys", "33333333-3333-3333-3333-333333333333,11111111-1111-1111-1111-111111111111")
+	output, err := cmdtest.Execute(buildRootWithCollections(t, deps), "datatype", "block", "reorder", bgGridID, "--keys", "33333333-3333-3333-3333-333333333333,11111111-1111-1111-1111-111111111111")
 	if err != nil {
 		t.Fatalf("reorder failed: %v", err)
 	}
@@ -1010,7 +1013,7 @@ func TestDatatypeBlockReorderListedFirstThenRestAndVerifies(t *testing.T) {
 	if !found {
 		t.Fatalf("gridColumns value entry was dropped")
 	}
-	if _, err := execute(buildRootWithCollections(t, deps), "datatype", "block", "reorder", bgGridID, "--keys", "99999999-9999-9999-9999-999999999999"); err == nil || !strings.Contains(err.Error(), "no block") {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), "datatype", "block", "reorder", bgGridID, "--keys", "99999999-9999-9999-9999-999999999999"); err == nil || !strings.Contains(err.Error(), "no block") {
 		t.Fatalf("expected unknown key error, got %v", err)
 	}
 }
@@ -1018,7 +1021,7 @@ func TestDatatypeBlockReorderListedFirstThenRestAndVerifies(t *testing.T) {
 func TestDatatypeBlockReorderFailsWhenServerPersistsDifferentOrder(t *testing.T) {
 	var putBody map[string]any
 	deps := blockGridDeps(t, &putBody, blockGridPayload) // server "keeps" the old order
-	_, err := execute(buildRootWithCollections(t, deps), "datatype", "block", "reorder", bgGridID, "--keys", "22222222-2222-2222-2222-222222222222")
+	_, err := cmdtest.Execute(buildRootWithCollections(t, deps), "datatype", "block", "reorder", bgGridID, "--keys", "22222222-2222-2222-2222-222222222222")
 	if err == nil || !strings.Contains(err.Error(), "persisted a different block order") {
 		t.Fatalf("expected verification failure, got %v", err)
 	}
@@ -1027,7 +1030,7 @@ func TestDatatypeBlockReorderFailsWhenServerPersistsDifferentOrder(t *testing.T)
 func TestDatatypeBlockGroupFlagCreatesGroupAndListsCounts(t *testing.T) {
 	var putBody map[string]any
 	deps := blockGridDeps(t, &putBody, nil)
-	output, err := execute(buildRootWithCollections(t, deps), "datatype", "block", "add", bgGridID, "--content-element-type", "44444444-4444-4444-4444-444444444444", "--group", "content")
+	output, err := cmdtest.Execute(buildRootWithCollections(t, deps), "datatype", "block", "add", bgGridID, "--content-element-type", "44444444-4444-4444-4444-444444444444", "--group", "content")
 	if err != nil {
 		t.Fatalf("add --group failed: %v", err)
 	}
@@ -1054,7 +1057,7 @@ func TestDatatypeBlockGroupFlagCreatesGroupAndListsCounts(t *testing.T) {
 	}
 
 	// Existing group matched case-insensitively on update; clearing removes groupKey.
-	if _, err := execute(buildRootWithCollections(t, deps), "datatype", "block", "update", bgGridID, "--content-element-type", "22222222-2222-2222-2222-222222222222", "--group", "LAYOUT"); err != nil {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), "datatype", "block", "update", bgGridID, "--content-element-type", "22222222-2222-2222-2222-222222222222", "--group", "LAYOUT"); err != nil {
 		t.Fatal(err)
 	}
 	for _, item := range putBody["values"].([]any) {
@@ -1068,7 +1071,7 @@ func TestDatatypeBlockGroupFlagCreatesGroupAndListsCounts(t *testing.T) {
 			t.Fatalf("expected no new group for a case-insensitive match, got %v", entry["value"])
 		}
 	}
-	if _, err := execute(buildRootWithCollections(t, deps), "datatype", "block", "update", bgGridID, "--content-element-type", "11111111-1111-1111-1111-111111111111", "--group", ""); err != nil {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), "datatype", "block", "update", bgGridID, "--content-element-type", "11111111-1111-1111-1111-111111111111", "--group", ""); err != nil {
 		t.Fatal(err)
 	}
 	for _, item := range putBody["values"].([]any) {
@@ -1080,7 +1083,7 @@ func TestDatatypeBlockGroupFlagCreatesGroupAndListsCounts(t *testing.T) {
 		}
 	}
 
-	groupsOut, err := execute(buildRootWithCollections(t, deps), "datatype", "block", "groups", bgGridID)
+	groupsOut, err := cmdtest.Execute(buildRootWithCollections(t, deps), "datatype", "block", "groups", bgGridID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1090,49 +1093,49 @@ func TestDatatypeBlockGroupFlagCreatesGroupAndListsCounts(t *testing.T) {
 }
 
 func TestDatatypeBlockGroupRejectedOnBlockList(t *testing.T) {
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case blPath:
-			return datatypeJSONResponse(http.StatusOK, blockListPayload(t)), nil
+			return cmdtest.JSONResponse(http.StatusOK, blockListPayload(t)), nil
 		default:
-			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
-	if _, err := execute(buildRootWithCollections(t, deps), "datatype", "block", "add", blListID, "--content-element-type", "44444444-4444-4444-4444-444444444444", "--group", "x"); err == nil || !strings.Contains(err.Error(), "BlockGrid only") {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), "datatype", "block", "add", blListID, "--content-element-type", "44444444-4444-4444-4444-444444444444", "--group", "x"); err == nil || !strings.Contains(err.Error(), "BlockGrid only") {
 		t.Fatalf("expected BlockList rejection, got %v", err)
 	}
-	if _, err := execute(buildRootWithCollections(t, deps), "datatype", "block", "groups", blListID); err == nil {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), "datatype", "block", "groups", blListID); err == nil {
 		t.Fatalf("expected groups to reject BlockList")
 	}
 }
 
 func TestDatatypeBlockGroupValidatedBeforeIdempotentReturnAndWhitespaceRejected(t *testing.T) {
 	var puts int32
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case blPath:
 			if req.Method == http.MethodPut {
 				atomic.AddInt32(&puts, 1)
 			}
-			return datatypeJSONResponse(http.StatusOK, blockListPayload(t)), nil
+			return cmdtest.JSONResponse(http.StatusOK, blockListPayload(t)), nil
 		default:
-			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 	// Existing block on a Block List: --group must still be rejected, not swallowed by changed:false.
-	if _, err := execute(buildRootWithCollections(t, deps), "datatype", "block", "add", blListID, "--content-element-type", "11111111-1111-1111-1111-111111111111", "--group", "x"); err == nil || !strings.Contains(err.Error(), "BlockGrid only") {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), "datatype", "block", "add", blListID, "--content-element-type", "11111111-1111-1111-1111-111111111111", "--group", "x"); err == nil || !strings.Contains(err.Error(), "BlockGrid only") {
 		t.Fatalf("expected rejection before the idempotent return, got %v", err)
 	}
 	var putBody map[string]any
 	grid := blockGridDeps(t, &putBody, nil)
-	if _, err := execute(buildRootWithCollections(t, grid), "datatype", "block", "add", bgGridID, "--content-element-type", "44444444-4444-4444-4444-444444444444", "--group", "   "); err == nil || !strings.Contains(err.Error(), "whitespace") {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, grid), "datatype", "block", "add", bgGridID, "--content-element-type", "44444444-4444-4444-4444-444444444444", "--group", "   "); err == nil || !strings.Contains(err.Error(), "whitespace") {
 		t.Fatalf("expected whitespace group rejected on add, got %v", err)
 	}
-	if _, err := execute(buildRootWithCollections(t, grid), "datatype", "block", "update", bgGridID, "--content-element-type", "11111111-1111-1111-1111-111111111111", "--group", "  "); err == nil || !strings.Contains(err.Error(), "whitespace") {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, grid), "datatype", "block", "update", bgGridID, "--content-element-type", "11111111-1111-1111-1111-111111111111", "--group", "  "); err == nil || !strings.Contains(err.Error(), "whitespace") {
 		t.Fatalf("expected whitespace group rejected on update, got %v", err)
 	}
 	if putBody != nil || atomic.LoadInt32(&puts) != 0 {
@@ -1142,24 +1145,24 @@ func TestDatatypeBlockGroupValidatedBeforeIdempotentReturnAndWhitespaceRejected(
 
 func TestDatatypeBlockReorderWorksOnBlockList(t *testing.T) {
 	var putBody map[string]any
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch {
 		case req.URL.Path == "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case req.URL.Path == blPath && req.Method == http.MethodPut:
 			_ = json.NewDecoder(req.Body).Decode(&putBody)
-			return datatypeJSONResponse(http.StatusOK, ``), nil
+			return cmdtest.JSONResponse(http.StatusOK, ``), nil
 		case req.URL.Path == blPath:
 			if putBody != nil {
 				encoded, _ := json.Marshal(putBody)
-				return datatypeJSONResponse(http.StatusOK, string(encoded)), nil
+				return cmdtest.JSONResponse(http.StatusOK, string(encoded)), nil
 			}
-			return datatypeJSONResponse(http.StatusOK, blockListPayload(t)), nil
+			return cmdtest.JSONResponse(http.StatusOK, blockListPayload(t)), nil
 		default:
-			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
-	if _, err := execute(buildRootWithCollections(t, deps), "datatype", "block", "reorder", blListID, "--keys", "22222222-2222-2222-2222-222222222222"); err != nil {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), "datatype", "block", "reorder", blListID, "--keys", "22222222-2222-2222-2222-222222222222"); err != nil {
 		t.Fatalf("reorder on Block List should work (picker order applies there too): %v", err)
 	}
 	if got := gridBlocksFromBody(putBody); got[0] != "22222222-2222-2222-2222-222222222222" {

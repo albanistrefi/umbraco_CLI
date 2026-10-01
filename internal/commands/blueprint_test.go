@@ -8,6 +8,9 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
+
+	"umbraco-cli/internal/commands/cmdkit"
+	"umbraco-cli/internal/commands/cmdtest"
 )
 
 const blueprintScaffoldBody = `{
@@ -23,7 +26,7 @@ const blueprintScaffoldBody = `{
 	]
 }`
 
-func buildBlueprintRoot(deps Dependencies) *cobra.Command {
+func buildBlueprintRoot(deps cmdkit.Dependencies) *cobra.Command {
 	root := &cobra.Command{Use: "umbraco", SilenceErrors: true, SilenceUsage: true}
 	root.SetErr(io.Discard)
 	if deps.OutputFlag != nil {
@@ -43,11 +46,11 @@ type blueprintRecorder struct {
 	body   string
 }
 
-func blueprintDeps(t *testing.T, recorder *blueprintRecorder, responses map[string]string) Dependencies {
+func blueprintDeps(t *testing.T, recorder *blueprintRecorder, responses map[string]string) cmdkit.Dependencies {
 	t.Helper()
-	return endpointDeps(func(req *http.Request) (*http.Response, error) {
+	return cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		if req.URL.Path == "/umbraco/management/api/v1/security/back-office/token" {
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		}
 		recorder.method = req.Method
 		recorder.path = req.URL.Path
@@ -57,9 +60,9 @@ func blueprintDeps(t *testing.T, recorder *blueprintRecorder, responses map[stri
 			recorder.body = string(payload)
 		}
 		if response, ok := responses[req.URL.Path]; ok {
-			return endpointJSONResponse(http.StatusOK, response), nil
+			return cmdtest.JSONResponse(http.StatusOK, response), nil
 		}
-		return endpointJSONResponse(http.StatusOK, `null`), nil
+		return cmdtest.JSONResponse(http.StatusOK, `null`), nil
 	})
 }
 
@@ -69,7 +72,7 @@ func TestBlueprintListHitsTreeRoot(t *testing.T) {
 		"/umbraco/management/api/v1/tree/document-blueprint/root": `{"items":[],"total":0}`,
 	})
 
-	if _, err := execute(buildBlueprintRoot(deps), "blueprint", "list", "--take", "5"); err != nil {
+	if _, err := cmdtest.Execute(buildBlueprintRoot(deps), "blueprint", "list", "--take", "5"); err != nil {
 		t.Fatalf("blueprint list failed: %v", err)
 	}
 	if recorder.path != "/umbraco/management/api/v1/tree/document-blueprint/root" {
@@ -86,7 +89,7 @@ func TestBlueprintChildrenPassesParentID(t *testing.T) {
 		"/umbraco/management/api/v1/tree/document-blueprint/children": `{"items":[],"total":0}`,
 	})
 
-	if _, err := execute(buildBlueprintRoot(deps), "blueprint", "children", "folder-1"); err != nil {
+	if _, err := cmdtest.Execute(buildBlueprintRoot(deps), "blueprint", "children", "folder-1"); err != nil {
 		t.Fatalf("blueprint children failed: %v", err)
 	}
 	if recorder.path != "/umbraco/management/api/v1/tree/document-blueprint/children" {
@@ -103,7 +106,7 @@ func TestBlueprintAncestorsPassesDescendantID(t *testing.T) {
 		"/umbraco/management/api/v1/tree/document-blueprint/ancestors": `[]`,
 	})
 
-	if _, err := execute(buildBlueprintRoot(deps), "blueprint", "ancestors", "bp-1"); err != nil {
+	if _, err := cmdtest.Execute(buildBlueprintRoot(deps), "blueprint", "ancestors", "bp-1"); err != nil {
 		t.Fatalf("blueprint ancestors failed: %v", err)
 	}
 	if recorder.path != "/umbraco/management/api/v1/tree/document-blueprint/ancestors" {
@@ -120,7 +123,7 @@ func TestBlueprintSiblingsWindowsAroundTheTarget(t *testing.T) {
 		"/umbraco/management/api/v1/tree/document-blueprint/siblings": `{"totalBefore":0,"totalAfter":0,"items":[]}`,
 	})
 
-	if _, err := execute(buildBlueprintRoot(deps), "blueprint", "siblings", "bp-1"); err != nil {
+	if _, err := cmdtest.Execute(buildBlueprintRoot(deps), "blueprint", "siblings", "bp-1"); err != nil {
 		t.Fatalf("blueprint siblings failed: %v", err)
 	}
 	if recorder.path != "/umbraco/management/api/v1/tree/document-blueprint/siblings" {
@@ -137,7 +140,7 @@ func TestBlueprintSiblingsWindowsAroundTheTarget(t *testing.T) {
 		t.Fatalf("expected foldersOnly to stay off by default, got %q", recorder.query)
 	}
 
-	if _, err := execute(buildBlueprintRoot(deps), "blueprint", "siblings", "bp-1", "--before", "2", "--after", "3", "--folders-only"); err != nil {
+	if _, err := cmdtest.Execute(buildBlueprintRoot(deps), "blueprint", "siblings", "bp-1", "--before", "2", "--after", "3", "--folders-only"); err != nil {
 		t.Fatalf("blueprint siblings with a window failed: %v", err)
 	}
 	for _, expected := range []string{"before=2", "after=3", "foldersOnly=true"} {
@@ -153,7 +156,7 @@ func TestBlueprintItemsSendsRepeatedIDs(t *testing.T) {
 		"/umbraco/management/api/v1/item/document-blueprint": `[]`,
 	})
 
-	if _, err := execute(buildBlueprintRoot(deps), "blueprint", "items", "--ids", "bp-1,bp-2,bp-1"); err != nil {
+	if _, err := cmdtest.Execute(buildBlueprintRoot(deps), "blueprint", "items", "--ids", "bp-1,bp-2,bp-1"); err != nil {
 		t.Fatalf("blueprint items failed: %v", err)
 	}
 	if recorder.path != "/umbraco/management/api/v1/item/document-blueprint" {
@@ -173,7 +176,7 @@ func TestBlueprintItemsRequiresIDs(t *testing.T) {
 	recorder := &blueprintRecorder{}
 	deps := blueprintDeps(t, recorder, nil)
 
-	if _, err := execute(buildBlueprintRoot(deps), "blueprint", "items"); err == nil {
+	if _, err := cmdtest.Execute(buildBlueprintRoot(deps), "blueprint", "items"); err == nil {
 		t.Fatal("expected blueprint items without --ids to fail")
 	}
 	if recorder.path != "" {
@@ -187,7 +190,7 @@ func TestBlueprintAuditLogPaginatesOverTheBlueprintRoute(t *testing.T) {
 		"/umbraco/management/api/v1/document-blueprint/bp-1/audit-log": `{"items":[],"total":0}`,
 	})
 
-	if _, err := execute(buildBlueprintRoot(deps), "blueprint", "audit-log", "bp-1", "--take", "5", "--params", `{"orderDirection":"Ascending"}`); err != nil {
+	if _, err := cmdtest.Execute(buildBlueprintRoot(deps), "blueprint", "audit-log", "bp-1", "--take", "5", "--params", `{"orderDirection":"Ascending"}`); err != nil {
 		t.Fatalf("blueprint audit-log failed: %v", err)
 	}
 	if recorder.path != "/umbraco/management/api/v1/document-blueprint/bp-1/audit-log" {
@@ -204,7 +207,7 @@ func TestBlueprintCreatePostsPayloadWithGeneratedID(t *testing.T) {
 	recorder := &blueprintRecorder{}
 	deps := blueprintDeps(t, recorder, nil)
 
-	if _, err := execute(
+	if _, err := cmdtest.Execute(
 		buildBlueprintRoot(deps),
 		"blueprint", "create",
 		"--json", `{"documentType":{"id":"dt-1"},"values":[],"variants":[{"name":"Preset"}]}`,
@@ -227,7 +230,7 @@ func TestBlueprintCreateFromDocumentBuildsRequestModel(t *testing.T) {
 	recorder := &blueprintRecorder{}
 	deps := blueprintDeps(t, recorder, nil)
 
-	if _, err := execute(
+	if _, err := cmdtest.Execute(
 		buildBlueprintRoot(deps),
 		"blueprint", "create-from-document", "doc-1",
 		"--name", "zz probe preset",
@@ -254,7 +257,7 @@ func TestBlueprintCreateFromDocumentRequiresName(t *testing.T) {
 	recorder := &blueprintRecorder{}
 	deps := blueprintDeps(t, recorder, nil)
 
-	if _, err := execute(buildBlueprintRoot(deps), "blueprint", "create-from-document", "doc-1"); err == nil {
+	if _, err := cmdtest.Execute(buildBlueprintRoot(deps), "blueprint", "create-from-document", "doc-1"); err == nil {
 		t.Fatal("expected create-from-document without --name to fail")
 	}
 	if recorder.path != "" {
@@ -266,14 +269,14 @@ func TestBlueprintDeleteRequiresForce(t *testing.T) {
 	recorder := &blueprintRecorder{}
 	deps := blueprintDeps(t, recorder, nil)
 
-	if _, err := execute(buildBlueprintRoot(deps), "blueprint", "delete", "bp-1"); err == nil {
+	if _, err := cmdtest.Execute(buildBlueprintRoot(deps), "blueprint", "delete", "bp-1"); err == nil {
 		t.Fatal("expected blueprint delete without --force to fail")
 	}
 	if recorder.path != "" {
 		t.Fatalf("expected no request before the force gate, got %q", recorder.path)
 	}
 
-	if _, err := execute(buildBlueprintRoot(deps), "blueprint", "delete", "bp-1", "--force"); err != nil {
+	if _, err := cmdtest.Execute(buildBlueprintRoot(deps), "blueprint", "delete", "bp-1", "--force"); err != nil {
 		t.Fatalf("blueprint delete --force failed: %v", err)
 	}
 	if recorder.method != http.MethodDelete || recorder.path != "/umbraco/management/api/v1/document-blueprint/bp-1" {
@@ -285,11 +288,11 @@ func TestBlueprintDeleteFolderRequiresForce(t *testing.T) {
 	recorder := &blueprintRecorder{}
 	deps := blueprintDeps(t, recorder, nil)
 
-	if _, err := execute(buildBlueprintRoot(deps), "blueprint", "delete-folder", "folder-1"); err == nil {
+	if _, err := cmdtest.Execute(buildBlueprintRoot(deps), "blueprint", "delete-folder", "folder-1"); err == nil {
 		t.Fatal("expected blueprint delete-folder without --force to fail")
 	}
 
-	if _, err := execute(buildBlueprintRoot(deps), "blueprint", "delete-folder", "folder-1", "--force"); err != nil {
+	if _, err := cmdtest.Execute(buildBlueprintRoot(deps), "blueprint", "delete-folder", "folder-1", "--force"); err != nil {
 		t.Fatalf("blueprint delete-folder --force failed: %v", err)
 	}
 	if recorder.method != http.MethodDelete || recorder.path != "/umbraco/management/api/v1/document-blueprint/folder/folder-1" {
@@ -300,22 +303,22 @@ func TestBlueprintDeleteFolderRequiresForce(t *testing.T) {
 func TestBlueprintCreateFolderPostsAndReadsBack(t *testing.T) {
 	var paths []string
 	var createBody string
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch {
 		case req.URL.Path == "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case req.Method == http.MethodPost && req.URL.Path == "/umbraco/management/api/v1/document-blueprint/folder":
 			paths = append(paths, req.Method+" "+req.URL.Path)
 			payload, _ := io.ReadAll(req.Body)
 			createBody = string(payload)
-			return endpointJSONResponse(http.StatusCreated, `null`), nil
+			return cmdtest.JSONResponse(http.StatusCreated, `null`), nil
 		default:
 			paths = append(paths, req.Method+" "+req.URL.Path)
-			return endpointJSONResponse(http.StatusOK, `{"id":"11111111-1111-1111-1111-111111111111","name":"zz probe folder"}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"id":"11111111-1111-1111-1111-111111111111","name":"zz probe folder"}`), nil
 		}
 	})
 
-	out, err := execute(
+	out, err := cmdtest.Execute(
 		buildBlueprintRoot(deps),
 		"blueprint", "create-folder",
 		"--name", "zz probe folder",
@@ -342,7 +345,7 @@ func TestBlueprintMoveUsesTargetShortcut(t *testing.T) {
 	recorder := &blueprintRecorder{}
 	deps := blueprintDeps(t, recorder, nil)
 
-	if _, err := execute(buildBlueprintRoot(deps), "blueprint", "move", "bp-1", "--to", "folder-1"); err != nil {
+	if _, err := cmdtest.Execute(buildBlueprintRoot(deps), "blueprint", "move", "bp-1", "--to", "folder-1"); err != nil {
 		t.Fatalf("blueprint move failed: %v", err)
 	}
 	if recorder.method != http.MethodPut || recorder.path != "/umbraco/management/api/v1/document-blueprint/bp-1/move" {
@@ -359,7 +362,7 @@ func TestBlueprintScaffoldReadsScaffoldRoute(t *testing.T) {
 		"/umbraco/management/api/v1/document-blueprint/bp-1/scaffold": blueprintScaffoldBody,
 	})
 
-	out, err := execute(buildBlueprintRoot(deps), "blueprint", "scaffold", "bp-1")
+	out, err := cmdtest.Execute(buildBlueprintRoot(deps), "blueprint", "scaffold", "bp-1")
 	if err != nil {
 		t.Fatalf("blueprint scaffold failed: %v", err)
 	}
@@ -374,21 +377,21 @@ func TestBlueprintScaffoldReadsScaffoldRoute(t *testing.T) {
 func TestDocumentCreateFromBlueprintMergesScaffold(t *testing.T) {
 	var scaffoldRequested bool
 	var createBody string
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/document-blueprint/bp-1/scaffold":
 			scaffoldRequested = true
-			return endpointJSONResponse(http.StatusOK, blueprintScaffoldBody), nil
+			return cmdtest.JSONResponse(http.StatusOK, blueprintScaffoldBody), nil
 		default:
 			payload, _ := io.ReadAll(req.Body)
 			createBody = string(payload)
-			return endpointJSONResponse(http.StatusCreated, `null`), nil
+			return cmdtest.JSONResponse(http.StatusCreated, `null`), nil
 		}
 	})
 
-	if _, err := execute(
+	if _, err := cmdtest.Execute(
 		buildBlueprintRoot(deps),
 		"document", "create",
 		"--from-blueprint", "bp-1",
@@ -470,20 +473,20 @@ func TestDocumentCreateFromBlueprintMergesVariantsPerCulture(t *testing.T) {
 }`
 
 	var createBody string
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/document-blueprint/bp-1/scaffold":
-			return endpointJSONResponse(http.StatusOK, variantScaffoldBody), nil
+			return cmdtest.JSONResponse(http.StatusOK, variantScaffoldBody), nil
 		default:
 			payload, _ := io.ReadAll(req.Body)
 			createBody = string(payload)
-			return endpointJSONResponse(http.StatusCreated, `null`), nil
+			return cmdtest.JSONResponse(http.StatusCreated, `null`), nil
 		}
 	})
 
-	if _, err := execute(
+	if _, err := cmdtest.Execute(
 		buildBlueprintRoot(deps),
 		"document", "create", "--from-blueprint", "bp-1",
 		"--json", `{"variants":[{"culture":"da-DK","name":"zz probe Danish name"}]}`,
@@ -520,21 +523,21 @@ func TestDocumentCreateFromBlueprintMergesVariantsPerCulture(t *testing.T) {
 
 func TestDocumentCreateFromBlueprintKeepsScaffoldName(t *testing.T) {
 	var createBody string
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/document-blueprint/bp-1/scaffold":
-			return endpointJSONResponse(http.StatusOK, blueprintScaffoldBody), nil
+			return cmdtest.JSONResponse(http.StatusOK, blueprintScaffoldBody), nil
 		default:
 			payload, _ := io.ReadAll(req.Body)
 			createBody = string(payload)
-			return endpointJSONResponse(http.StatusCreated, `null`), nil
+			return cmdtest.JSONResponse(http.StatusCreated, `null`), nil
 		}
 	})
 
 	// No --json at all: the scaffold alone must be a usable create payload.
-	if _, err := execute(buildBlueprintRoot(deps), "document", "create", "--from-blueprint", "bp-1"); err != nil {
+	if _, err := cmdtest.Execute(buildBlueprintRoot(deps), "document", "create", "--from-blueprint", "bp-1"); err != nil {
 		t.Fatalf("document create --from-blueprint without --json failed: %v", err)
 	}
 	if !strings.Contains(createBody, `"name":"Preset name"`) {
@@ -543,19 +546,19 @@ func TestDocumentCreateFromBlueprintKeepsScaffoldName(t *testing.T) {
 }
 
 func TestDocumentCreateFromBlueprintRejectsNamelessScaffold(t *testing.T) {
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/document-blueprint/bp-1/scaffold":
-			return endpointJSONResponse(http.StatusOK, `{"documentType":{"id":"dt-1"},"values":[],"variants":[]}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"documentType":{"id":"dt-1"},"values":[],"variants":[]}`), nil
 		default:
 			t.Errorf("unexpected request to %s", req.URL.Path)
-			return endpointJSONResponse(http.StatusCreated, `null`), nil
+			return cmdtest.JSONResponse(http.StatusCreated, `null`), nil
 		}
 	})
 
-	_, err := execute(buildBlueprintRoot(deps), "document", "create", "--from-blueprint", "bp-1")
+	_, err := cmdtest.Execute(buildBlueprintRoot(deps), "document", "create", "--from-blueprint", "bp-1")
 	if err == nil {
 		t.Fatal("expected a nameless scaffold to be rejected before the POST")
 	}
@@ -587,12 +590,12 @@ func TestDocumentCreateFromBlueprintValidatesLocallyBeforeFetching(t *testing.T)
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
 			var requested []string
-			deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+			deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 				requested = append(requested, req.URL.Path)
-				return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+				return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 			})
 
-			_, err := execute(buildBlueprintRoot(deps), testCase.args...)
+			_, err := cmdtest.Execute(buildBlueprintRoot(deps), testCase.args...)
 			if err == nil {
 				t.Fatal("expected the command to fail before any request")
 			}
@@ -610,7 +613,7 @@ func TestDocumentCreateStillRequiresJSONWithoutBlueprint(t *testing.T) {
 	recorder := &blueprintRecorder{}
 	deps := blueprintDeps(t, recorder, nil)
 
-	if _, err := execute(buildBlueprintRoot(deps), "document", "create"); err == nil {
+	if _, err := cmdtest.Execute(buildBlueprintRoot(deps), "document", "create"); err == nil {
 		t.Fatal("expected document create without --json to fail")
 	}
 	if recorder.path != "" {

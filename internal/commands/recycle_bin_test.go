@@ -7,9 +7,12 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
+
+	"umbraco-cli/internal/commands/cmdkit"
+	"umbraco-cli/internal/commands/cmdtest"
 )
 
-func buildBinRoot(deps Dependencies) *cobra.Command {
+func buildBinRoot(deps cmdkit.Dependencies) *cobra.Command {
 	root := &cobra.Command{Use: "umbraco", SilenceErrors: true, SilenceUsage: true}
 	root.SetErr(io.Discard)
 	if deps.OutputFlag != nil {
@@ -20,10 +23,10 @@ func buildBinRoot(deps Dependencies) *cobra.Command {
 	return root
 }
 
-func binDeps(handler func(req *http.Request) (*http.Response, error)) Dependencies {
-	return endpointDeps(func(req *http.Request) (*http.Response, error) {
+func binDeps(handler func(req *http.Request) (*http.Response, error)) cmdkit.Dependencies {
+	return cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		if req.URL.Path == "/umbraco/management/api/v1/security/back-office/token" {
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		}
 		return handler(req)
 	})
@@ -34,10 +37,10 @@ func TestBinListReadsRecycleBinRoot(t *testing.T) {
 		var requestedURI string
 		deps := binDeps(func(req *http.Request) (*http.Response, error) {
 			requestedURI = req.URL.RequestURI()
-			return endpointJSONResponse(http.StatusOK, `{"items":[{"id":"trashed-1","name":"Old Page"}],"total":1}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"items":[{"id":"trashed-1","name":"Old Page"}],"total":1}`), nil
 		})
 
-		out, err := execute(buildBinRoot(deps), resource, "bin", "list", "--take", "10")
+		out, err := cmdtest.Execute(buildBinRoot(deps), resource, "bin", "list", "--take", "10")
 		if err != nil {
 			t.Fatalf("%s bin list failed: %v", resource, err)
 		}
@@ -54,10 +57,10 @@ func TestBinChildrenPassesParentID(t *testing.T) {
 	var requestedURI string
 	deps := binDeps(func(req *http.Request) (*http.Response, error) {
 		requestedURI = req.URL.RequestURI()
-		return endpointJSONResponse(http.StatusOK, `{"items":[],"total":0}`), nil
+		return cmdtest.JSONResponse(http.StatusOK, `{"items":[],"total":0}`), nil
 	})
 
-	if _, err := execute(buildBinRoot(deps), "document", "bin", "children", "trashed-1"); err != nil {
+	if _, err := cmdtest.Execute(buildBinRoot(deps), "document", "bin", "children", "trashed-1"); err != nil {
 		t.Fatalf("bin children failed: %v", err)
 	}
 	if !strings.Contains(requestedURI, "/recycle-bin/document/children") || !strings.Contains(requestedURI, "parentId=trashed-1") {
@@ -69,10 +72,10 @@ func TestBinOriginalParentReads(t *testing.T) {
 	var requestedPath string
 	deps := binDeps(func(req *http.Request) (*http.Response, error) {
 		requestedPath = req.URL.Path
-		return endpointJSONResponse(http.StatusOK, `{"id":"parent-1"}`), nil
+		return cmdtest.JSONResponse(http.StatusOK, `{"id":"parent-1"}`), nil
 	})
 
-	out, err := execute(buildBinRoot(deps), "media", "bin", "original-parent", "trashed-1")
+	out, err := cmdtest.Execute(buildBinRoot(deps), "media", "bin", "original-parent", "trashed-1")
 	if err != nil {
 		t.Fatalf("bin original-parent failed: %v", err)
 	}
@@ -90,7 +93,7 @@ func TestBinDeleteIsGated(t *testing.T) {
 		return nil, nil
 	})
 
-	_, err := execute(buildBinRoot(deps), "document", "bin", "delete", "trashed-1")
+	_, err := cmdtest.Execute(buildBinRoot(deps), "document", "bin", "delete", "trashed-1")
 	if err == nil || !strings.Contains(err.Error(), "--force") {
 		t.Fatalf("expected force/dry-run gate, got %v", err)
 	}
@@ -101,7 +104,7 @@ func TestBinEmptyIsGatedAndDeletes(t *testing.T) {
 		t.Fatalf("no HTTP request expected without --force or --dry-run")
 		return nil, nil
 	})
-	_, err := execute(buildBinRoot(deps), "document", "bin", "empty")
+	_, err := cmdtest.Execute(buildBinRoot(deps), "document", "bin", "empty")
 	if err == nil || !strings.Contains(err.Error(), "--force") {
 		t.Fatalf("expected force/dry-run gate, got %v", err)
 	}
@@ -112,7 +115,7 @@ func TestBinEmptyIsGatedAndDeletes(t *testing.T) {
 		requestedMethod = req.Method
 		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(""))}, nil
 	})
-	out, err := execute(buildBinRoot(deps), "document", "bin", "empty", "--force")
+	out, err := cmdtest.Execute(buildBinRoot(deps), "document", "bin", "empty", "--force")
 	if err != nil {
 		t.Fatalf("bin empty failed: %v", err)
 	}
@@ -128,10 +131,10 @@ func TestBinEmptyDryRunSkipsRequest(t *testing.T) {
 	requests := 0
 	deps := binDeps(func(req *http.Request) (*http.Response, error) {
 		requests++
-		return endpointJSONResponse(http.StatusOK, `{}`), nil
+		return cmdtest.JSONResponse(http.StatusOK, `{}`), nil
 	})
 
-	out, err := execute(buildBinRoot(deps), "media", "bin", "empty", "--dry-run")
+	out, err := cmdtest.Execute(buildBinRoot(deps), "media", "bin", "empty", "--dry-run")
 	if err != nil {
 		t.Fatalf("bin empty dry-run failed: %v", err)
 	}
@@ -151,7 +154,7 @@ func TestBinEmptyRejectsStrayArguments(t *testing.T) {
 
 	// A stray ID must fail loudly: silently ignoring it would turn an
 	// intended single-item delete into a full-bin wipe.
-	_, err := execute(buildBinRoot(deps), "document", "bin", "empty", "trashed-1", "--force")
+	_, err := cmdtest.Execute(buildBinRoot(deps), "document", "bin", "empty", "trashed-1", "--force")
 	if err == nil || !strings.Contains(err.Error(), "unknown command") && !strings.Contains(err.Error(), "accepts 0 arg") {
 		t.Fatalf("expected stray argument rejection, got %v", err)
 	}
@@ -164,17 +167,17 @@ func TestMediaRestoreDefaultsToOriginalParent(t *testing.T) {
 		requests = append(requests, req.Method+" "+req.URL.Path)
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/recycle-bin/media/trashed-1/original-parent":
-			return endpointJSONResponse(http.StatusOK, `{"id":"folder-9"}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"id":"folder-9"}`), nil
 		case "/umbraco/management/api/v1/recycle-bin/media/trashed-1/restore":
 			body, _ := io.ReadAll(req.Body)
 			putBody = string(body)
 			return &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(""))}, nil
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `{"error":"not found"}`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `{"error":"not found"}`), nil
 		}
 	})
 
-	out, err := execute(buildBinRoot(deps), "media", "restore", "trashed-1")
+	out, err := cmdtest.Execute(buildBinRoot(deps), "media", "restore", "trashed-1")
 	if err != nil {
 		t.Fatalf("media restore failed: %v", err)
 	}
@@ -195,14 +198,14 @@ func TestMediaRestoreToRootSkipsParentLookup(t *testing.T) {
 	deps := binDeps(func(req *http.Request) (*http.Response, error) {
 		if strings.HasSuffix(req.URL.Path, "/original-parent") {
 			lookups++
-			return endpointJSONResponse(http.StatusOK, `{"id":"should-not-be-used"}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"id":"should-not-be-used"}`), nil
 		}
 		body, _ := io.ReadAll(req.Body)
 		putBody = string(body)
 		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(""))}, nil
 	})
 
-	if _, err := execute(buildBinRoot(deps), "media", "restore", "trashed-1", "--to", "root"); err != nil {
+	if _, err := cmdtest.Execute(buildBinRoot(deps), "media", "restore", "trashed-1", "--to", "root"); err != nil {
 		t.Fatalf("media restore --to root failed: %v", err)
 	}
 	if lookups != 0 {

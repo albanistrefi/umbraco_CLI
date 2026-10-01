@@ -6,6 +6,9 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+
+	"umbraco-cli/internal/commands/cmdkit"
+	"umbraco-cli/internal/commands/cmdtest"
 )
 
 const memberID = "mem-1"
@@ -29,41 +32,41 @@ func currentMemberPayload() string {
 	}`
 }
 
-func mockMemberMutations(t *testing.T) (deps Dependencies, captured *map[string]any) {
+func mockMemberMutations(t *testing.T) (deps cmdkit.Dependencies, captured *map[string]any) {
 	t.Helper()
 	put := map[string]any{}
-	deps = endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps = cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case memberAPIPath:
 			if req.Method == http.MethodGet {
-				return endpointJSONResponse(http.StatusOK, currentMemberPayload()), nil
+				return cmdtest.JSONResponse(http.StatusOK, currentMemberPayload()), nil
 			}
 			if req.Method == http.MethodPut {
 				_ = json.NewDecoder(req.Body).Decode(&put)
-				return endpointNoContent(), nil
+				return cmdtest.NoContent(), nil
 			}
 		}
-		return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 	})
 	return deps, &put
 }
 
 func TestMemberListPassesFilterAndPaginationToFilterEndpoint(t *testing.T) {
 	var observedQuery string
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case memberFilterAPIPath:
 			observedQuery = req.URL.RawQuery
-			return endpointJSONResponse(http.StatusOK, `{"items":[{"id":"mem-1","username":"test-member@example.invalid","email":"test-member@example.invalid","isApproved":true}],"total":1}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"items":[{"id":"mem-1","username":"test-member@example.invalid","email":"test-member@example.invalid","isApproved":true}],"total":1}`), nil
 		}
-		return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 	})
 
-	if _, err := execute(buildRootWithCollections(t, deps), "member", "list", "--filter", "testq", "--take", "5"); err != nil {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), "member", "list", "--filter", "testq", "--take", "5"); err != nil {
 		t.Fatalf("member list failed: %v", err)
 	}
 	for _, want := range []string{"filter=testq", "take=5"} {
@@ -75,17 +78,17 @@ func TestMemberListPassesFilterAndPaginationToFilterEndpoint(t *testing.T) {
 
 func TestMemberSearchUsesFilterAsPositionalArg(t *testing.T) {
 	var observedQuery string
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case memberFilterAPIPath:
 			observedQuery = req.URL.RawQuery
-			return endpointJSONResponse(http.StatusOK, `{"items":[],"total":0}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"items":[],"total":0}`), nil
 		}
-		return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 	})
-	if _, err := execute(buildRootWithCollections(t, deps), "member", "search", "testq"); err != nil {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), "member", "search", "testq"); err != nil {
 		t.Fatalf("member search failed: %v", err)
 	}
 	if !strings.Contains(observedQuery, "filter=testq") {
@@ -94,10 +97,10 @@ func TestMemberSearchUsesFilterAsPositionalArg(t *testing.T) {
 }
 
 func TestMemberSetGroupsRequiresExactlyOneMode(t *testing.T) {
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
-		return endpointJSONResponse(http.StatusNotFound, `null`), nil
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
+		return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 	})
-	_, err := execute(buildRootWithCollections(t, deps), "member", "set-groups", memberID, "--groups", "a", "--add-groups", "b")
+	_, err := cmdtest.Execute(buildRootWithCollections(t, deps), "member", "set-groups", memberID, "--groups", "a", "--add-groups", "b")
 	if err == nil {
 		t.Fatalf("expected rejection when multiple mode flags supplied")
 	}
@@ -108,7 +111,7 @@ func TestMemberSetGroupsRequiresExactlyOneMode(t *testing.T) {
 
 func TestMemberSetGroupsReplaceProducesNewArray(t *testing.T) {
 	deps, captured := mockMemberMutations(t)
-	if _, err := execute(buildRootWithCollections(t, deps), "member", "set-groups", memberID, "--groups", "grp-x,grp-y"); err != nil {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), "member", "set-groups", memberID, "--groups", "grp-x,grp-y"); err != nil {
 		t.Fatalf("set-groups --groups failed: %v", err)
 	}
 	groups, _ := (*captured)["groups"].([]any)
@@ -119,24 +122,24 @@ func TestMemberSetGroupsReplaceProducesNewArray(t *testing.T) {
 
 func TestMemberSetGroupsAddIsIdempotent(t *testing.T) {
 	var putCount int32
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case memberAPIPath:
 			if req.Method == http.MethodGet {
-				return endpointJSONResponse(http.StatusOK, currentMemberPayload()), nil
+				return cmdtest.JSONResponse(http.StatusOK, currentMemberPayload()), nil
 			}
 			if req.Method == http.MethodPut {
 				atomic.AddInt32(&putCount, 1)
-				return endpointNoContent(), nil
+				return cmdtest.NoContent(), nil
 			}
 		}
-		return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 	})
 
 	// Adding a group already on the member should be a no-op.
-	output, err := execute(buildRootWithCollections(t, deps), "member", "set-groups", memberID, "--add-groups", "grp-a")
+	output, err := cmdtest.Execute(buildRootWithCollections(t, deps), "member", "set-groups", memberID, "--add-groups", "grp-a")
 	if err != nil {
 		t.Fatalf("idempotent set-groups failed: %v", err)
 	}
@@ -152,7 +155,7 @@ func TestMemberSetGroupsAddIsIdempotent(t *testing.T) {
 
 func TestMemberSetGroupsRemoveSubtracts(t *testing.T) {
 	deps, captured := mockMemberMutations(t)
-	if _, err := execute(buildRootWithCollections(t, deps), "member", "set-groups", memberID, "--remove-groups", "grp-a"); err != nil {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), "member", "set-groups", memberID, "--remove-groups", "grp-a"); err != nil {
 		t.Fatalf("set-groups --remove-groups failed: %v", err)
 	}
 	groups, _ := (*captured)["groups"].([]any)
@@ -165,7 +168,7 @@ func TestMemberUpdatePropertiesReusesValuesParser(t *testing.T) {
 	// Smoke-test that member update-properties picks up the same three-shape
 	// parser as document update-properties. Object form → values[] entries.
 	deps, captured := mockMemberMutations(t)
-	if _, err := execute(
+	if _, err := cmdtest.Execute(
 		buildRootWithCollections(t, deps),
 		"member", "update-properties", memberID,
 		"--json", `{"phone":"+1-555","industry":"saas"}`,
@@ -190,10 +193,10 @@ func TestMemberUpdatePropertiesReusesValuesParser(t *testing.T) {
 }
 
 func TestMemberUpdateRefusesAmbiguousFlags(t *testing.T) {
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
-		return endpointJSONResponse(http.StatusNotFound, `null`), nil
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
+		return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 	})
-	_, err := execute(buildRootWithCollections(t, deps), "member", "update", memberID, "--json", `{}`, "--merge-json", `{}`)
+	_, err := cmdtest.Execute(buildRootWithCollections(t, deps), "member", "update", memberID, "--json", `{}`, "--merge-json", `{}`)
 	if err == nil {
 		t.Fatalf("expected error when both --json and --merge-json passed")
 	}
@@ -204,21 +207,21 @@ func TestMemberUpdateRefusesAmbiguousFlags(t *testing.T) {
 
 func TestMemberGroupListFallsBackToTreeRoot(t *testing.T) {
 	var observedPaths []string
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/member-group":
 			observedPaths = append(observedPaths, req.URL.Path)
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		case "/umbraco/management/api/v1/tree/member-group/root":
 			observedPaths = append(observedPaths, req.URL.Path)
-			return endpointJSONResponse(http.StatusOK, `{"items":[{"id":"grp-a","name":"Gold"}]}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"items":[{"id":"grp-a","name":"Gold"}]}`), nil
 		}
-		return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 	})
 
-	if _, err := execute(buildRootWithCollections(t, deps), "member-group", "list"); err != nil {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), "member-group", "list"); err != nil {
 		t.Fatalf("member-group list failed: %v", err)
 	}
 	if len(observedPaths) != 2 {
@@ -232,19 +235,19 @@ func TestMemberGroupListFallsBackToTreeRoot(t *testing.T) {
 // accepts the PUT (204) but doesn't change the field, so the CLI's
 // help text was the only safeguard. Now reject those keys up front.
 func TestMemberUpdateRejectsReadOnlyFields(t *testing.T) {
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case memberAPIPath:
 			t.Fatalf("read-only-field patch must be rejected before any HTTP call")
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
-		return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 	})
 
 	for _, field := range []string{"isApproved", "isLockedOut", "failedPasswordAttempts", "isTwoFactorEnabled"} {
-		_, err := execute(buildRootWithCollections(t, deps), "member", "update", memberID, "--merge-json", `{"`+field+`":true}`)
+		_, err := cmdtest.Execute(buildRootWithCollections(t, deps), "member", "update", memberID, "--merge-json", `{"`+field+`":true}`)
 		if err == nil {
 			t.Fatalf("expected --merge-json with %q to be rejected", field)
 		}
@@ -258,7 +261,7 @@ func TestMemberUpdateRejectsReadOnlyFields(t *testing.T) {
 // rejection isn't catching everything.
 func TestMemberUpdateAllowsLegitimateFields(t *testing.T) {
 	deps, _ := mockMemberMutations(t)
-	if _, err := execute(buildRootWithCollections(t, deps), "member", "update", memberID, "--merge-json", `{"email":"new@example.invalid"}`); err != nil {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), "member", "update", memberID, "--merge-json", `{"email":"new@example.invalid"}`); err != nil {
 		t.Fatalf("legitimate update must pass the read-only gate: %v", err)
 	}
 }
@@ -269,19 +272,19 @@ func TestMemberUpdateAllowsLegitimateFields(t *testing.T) {
 // server-side default (false), which is the same false-positive shape
 // the update-side gate was added to prevent.
 func TestMemberCreateRejectsReadOnlyFields(t *testing.T) {
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/member":
 			t.Fatalf("read-only-field create payload must be rejected before any HTTP call")
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
-		return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 	})
 
 	for _, field := range []string{"isApproved", "isLockedOut", "failedPasswordAttempts", "isTwoFactorEnabled"} {
-		_, err := execute(
+		_, err := cmdtest.Execute(
 			buildRootWithCollections(t, deps),
 			"member", "create",
 			"--json", `{"email":"x@example.invalid","username":"x","password":"P@ss!123","memberType":{"id":"mt-1"},"`+field+`":true}`,

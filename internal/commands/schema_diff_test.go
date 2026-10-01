@@ -8,13 +8,15 @@ import (
 	"strings"
 	"testing"
 
+	"umbraco-cli/internal/commands/cmdkit"
+	"umbraco-cli/internal/commands/cmdtest"
 	"umbraco-cli/internal/config"
 )
 
-func schemaDiffTestDeps(handler endpointRoundTripper) Dependencies {
+func schemaDiffTestDeps(handler cmdtest.RoundTripper) cmdkit.Dependencies {
 	httpClient := &http.Client{Transport: handler}
 	output := "json"
-	return Dependencies{
+	return cmdkit.Dependencies{
 		HTTPClient: httpClient,
 		EnvOutput:  config.OutputJSON,
 		OutputFlag: &output,
@@ -42,30 +44,30 @@ func prepareSchemaDiffProfiles(t *testing.T) {
 func schemaDiffRouteHost(req *http.Request, devBody string, liveBody string) (*http.Response, error) {
 	switch req.URL.Host {
 	case "dev.example.test":
-		return endpointJSONResponse(http.StatusOK, devBody), nil
+		return cmdtest.JSONResponse(http.StatusOK, devBody), nil
 	case "live.example.test":
-		return endpointJSONResponse(http.StatusOK, liveBody), nil
+		return cmdtest.JSONResponse(http.StatusOK, liveBody), nil
 	default:
-		return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 	}
 }
 
-func schemaDiffFixtureHandler(t *testing.T, devDoc string, liveDoc string, devData string, liveData string) endpointRoundTripper {
+func schemaDiffFixtureHandler(t *testing.T, devDoc string, liveDoc string, devData string, liveData string) cmdtest.RoundTripper {
 	t.Helper()
 	return func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/filter/data-type":
-			return endpointJSONResponse(http.StatusOK, `{"items":[{"id":"data-text","name":"Textstring"}],"total":1}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"items":[{"id":"data-text","name":"Textstring"}],"total":1}`), nil
 		case "/umbraco/management/api/v1/data-type/data-text":
 			return schemaDiffRouteHost(req, devData, liveData)
 		case "/umbraco/management/api/v1/tree/document-type/root":
-			return endpointJSONResponse(http.StatusOK, `{"items":[{"id":"doc-home","alias":"home","name":"Home"}],"total":1}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"items":[{"id":"doc-home","alias":"home","name":"Home"}],"total":1}`), nil
 		case "/umbraco/management/api/v1/document-type/doc-home":
 			return schemaDiffRouteHost(req, devDoc, liveDoc)
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	}
 }
@@ -85,7 +87,7 @@ func TestSchemaDiffIdenticalProfilesReturnsEqual(t *testing.T) {
 	data := `{"id":"data-text","name":"Textstring","editorAlias":"Umbraco.TextBox","updateDate":"2026-01-01T00:00:00Z"}`
 	deps := schemaDiffTestDeps(schemaDiffFixtureHandler(t, doc, doc, data, data))
 
-	output, err := execute(buildRootWithCollections(t, deps), "schema", "diff", "dev", "live")
+	output, err := cmdtest.Execute(buildRootWithCollections(t, deps), "schema", "diff", "dev", "live")
 	if err != nil {
 		t.Fatalf("schema diff identical failed: %v", err)
 	}
@@ -103,7 +105,7 @@ func TestSchemaDiffChangedDoctypeReturnsNonZeroAndJSON(t *testing.T) {
 	liveData := `{"id":"live-data-text","name":"Textstring","editorAlias":"Umbraco.TextBox"}`
 	deps := schemaDiffTestDeps(schemaDiffFixtureHandler(t, devDoc, liveDoc, devData, liveData))
 
-	output, err := execute(buildRootWithCollections(t, deps), "schema", "diff", "dev", "live")
+	output, err := cmdtest.Execute(buildRootWithCollections(t, deps), "schema", "diff", "dev", "live")
 	if err == nil || !isSchemaDiffFound(err) {
 		t.Fatalf("expected schema differences error, got %v", err)
 	}
@@ -130,7 +132,7 @@ func TestSchemaDiffExitZeroSuppressesDifferenceExitCode(t *testing.T) {
 	data := `{"id":"data-text","name":"Textstring","editorAlias":"Umbraco.TextBox"}`
 	deps := schemaDiffTestDeps(schemaDiffFixtureHandler(t, devDoc, liveDoc, data, data))
 
-	if _, err := execute(buildRootWithCollections(t, deps), "schema", "diff", "dev", "live", "--exit-zero"); err != nil {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), "schema", "diff", "dev", "live", "--exit-zero"); err != nil {
 		t.Fatalf("schema diff --exit-zero failed: %v", err)
 	}
 }
@@ -141,9 +143,9 @@ func TestSchemaDiffDatatypeScopeAndIncludeSkipsDoctypeFetch(t *testing.T) {
 	deps := schemaDiffTestDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/filter/data-type":
-			return endpointJSONResponse(http.StatusOK, `{"items":[{"id":"data-text","name":"Textstring"},{"id":"data-other","name":"Other"}],"total":2}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"items":[{"id":"data-text","name":"Textstring"},{"id":"data-other","name":"Other"}],"total":2}`), nil
 		case "/umbraco/management/api/v1/data-type/data-text":
 			return schemaDiffRouteHost(req,
 				`{"id":"data-text","name":"Textstring","editorAlias":"Umbraco.TextBox"}`,
@@ -154,13 +156,13 @@ func TestSchemaDiffDatatypeScopeAndIncludeSkipsDoctypeFetch(t *testing.T) {
 				`{"id":"data-other","name":"Other","editorAlias":"Umbraco.TextArea"}`)
 		case "/umbraco/management/api/v1/tree/document-type/root", "/umbraco/management/api/v1/document-type/doc-home":
 			doctypeFetches++
-			return endpointJSONResponse(http.StatusInternalServerError, `{"title":"doctype fetch should not run"}`), nil
+			return cmdtest.JSONResponse(http.StatusInternalServerError, `{"title":"doctype fetch should not run"}`), nil
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	output, err := execute(buildRootWithCollections(t, deps), "schema", "diff", "dev", "live", "--entity", "datatype", "--include", "Textstring")
+	output, err := cmdtest.Execute(buildRootWithCollections(t, deps), "schema", "diff", "dev", "live", "--entity", "datatype", "--include", "Textstring")
 	if err == nil || !isSchemaDiffFound(err) {
 		t.Fatalf("expected schema differences error, got %v", err)
 	}
@@ -179,14 +181,14 @@ func TestSchemaDiffMissingProfileLabelsEnvSide(t *testing.T) {
 	deps := schemaDiffTestDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/filter/data-type", "/umbraco/management/api/v1/tree/document-type/root":
-			return endpointJSONResponse(http.StatusOK, `{"items":[],"total":0}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"items":[],"total":0}`), nil
 		}
-		return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 	})
 
-	_, err := execute(buildRootWithCollections(t, deps), "schema", "diff", "dev", "missing")
+	_, err := cmdtest.Execute(buildRootWithCollections(t, deps), "schema", "diff", "dev", "missing")
 	if err == nil || !strings.Contains(err.Error(), `envB "missing"`) {
 		t.Fatalf("expected envB missing profile error, got %v", err)
 	}
@@ -201,7 +203,7 @@ func TestSchemaDiffHumanOutput(t *testing.T) {
 	deps.EnvOutput = config.OutputPlain
 	deps.OutputFlag = &outputMode
 
-	output, err := execute(buildRootWithCollections(t, deps), "schema", "diff", "dev", "live")
+	output, err := cmdtest.Execute(buildRootWithCollections(t, deps), "schema", "diff", "dev", "live")
 	if err != nil {
 		t.Fatalf("schema diff human output failed: %v", err)
 	}
@@ -213,10 +215,10 @@ func TestSchemaDiffHumanOutput(t *testing.T) {
 func TestSchemaDiffUnknownEntityFails(t *testing.T) {
 	prepareSchemaDiffProfiles(t)
 	deps := schemaDiffTestDeps(func(req *http.Request) (*http.Response, error) {
-		return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 	})
 
-	_, err := execute(buildRootWithCollections(t, deps), "schema", "diff", "dev", "live", "--entity", "webhook")
+	_, err := cmdtest.Execute(buildRootWithCollections(t, deps), "schema", "diff", "dev", "live", "--entity", "webhook")
 	if err == nil || !strings.Contains(err.Error(), `unknown schema diff entity "webhook"`) {
 		t.Fatalf("expected unknown entity error, got %v", err)
 	}
@@ -245,18 +247,18 @@ func TestSchemaDiffFetchErrorLabelsEnvironment(t *testing.T) {
 	deps := schemaDiffTestDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/filter/data-type":
 			if req.URL.Host == "live.example.test" {
-				return endpointJSONResponse(http.StatusInternalServerError, `{"title":"boom"}`), nil
+				return cmdtest.JSONResponse(http.StatusInternalServerError, `{"title":"boom"}`), nil
 			}
-			return endpointJSONResponse(http.StatusOK, `{"items":[],"total":0}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"items":[],"total":0}`), nil
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	_, err := execute(buildRootWithCollections(t, deps), "schema", "diff", "dev", "live", "--entity", "datatype")
+	_, err := cmdtest.Execute(buildRootWithCollections(t, deps), "schema", "diff", "dev", "live", "--entity", "datatype")
 	if err == nil || !strings.Contains(fmt.Sprint(err), `envB "live" datatype fetch failed`) {
 		t.Fatalf("expected envB datatype fetch error, got %v", err)
 	}
@@ -267,26 +269,26 @@ func TestSchemaDiffTemplateWalksNestedTreeAndDetectsContentChange(t *testing.T) 
 	deps := schemaDiffTestDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/tree/template/root":
-			return endpointJSONResponse(http.StatusOK, `{"items":[{"id":"tpl-master","alias":"master","name":"Master","hasChildren":true}],"total":1}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"items":[{"id":"tpl-master","alias":"master","name":"Master","hasChildren":true}],"total":1}`), nil
 		case "/umbraco/management/api/v1/tree/template/children":
 			if req.URL.Query().Get("parentId") != "tpl-master" {
-				return endpointJSONResponse(http.StatusNotFound, `null`), nil
+				return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 			}
-			return endpointJSONResponse(http.StatusOK, `{"items":[{"id":"tpl-home","alias":"homePage","name":"Home Page","hasChildren":false}],"total":1}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"items":[{"id":"tpl-home","alias":"homePage","name":"Home Page","hasChildren":false}],"total":1}`), nil
 		case "/umbraco/management/api/v1/template/tpl-master":
-			return endpointJSONResponse(http.StatusOK, `{"id":"tpl-master","alias":"master","name":"Master","content":"<html></html>","masterTemplate":null}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"id":"tpl-master","alias":"master","name":"Master","content":"<html></html>","masterTemplate":null}`), nil
 		case "/umbraco/management/api/v1/template/tpl-home":
 			return schemaDiffRouteHost(req,
 				`{"id":"tpl-home","alias":"homePage","name":"Home Page","content":"<h1>v1</h1>","masterTemplate":{"id":"tpl-master"}}`,
 				`{"id":"tpl-home","alias":"homePage","name":"Home Page","content":"<h1>v2</h1>","masterTemplate":{"id":"tpl-master"}}`)
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	out, err := execute(buildRootWithCollections(t, deps), "schema", "diff", "dev", "live", "--entity", "template", "--exit-zero")
+	out, err := cmdtest.Execute(buildRootWithCollections(t, deps), "schema", "diff", "dev", "live", "--entity", "template", "--exit-zero")
 	if err != nil {
 		t.Fatalf("template diff failed: %v", err)
 	}
@@ -309,17 +311,17 @@ func TestSchemaDiffLanguageUsesIsoCodeIdentity(t *testing.T) {
 	deps := schemaDiffTestDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/language":
 			return schemaDiffRouteHost(req,
 				`{"items":[{"isoCode":"en-US","name":"English (US)","isDefault":true,"isMandatory":true,"fallbackIsoCode":null}],"total":1}`,
 				`{"items":[{"isoCode":"en-US","name":"English (US)","isDefault":true,"isMandatory":false,"fallbackIsoCode":null},{"isoCode":"da-DK","name":"Danish","isDefault":false,"isMandatory":false,"fallbackIsoCode":"en-US"}],"total":2}`)
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	out, err := execute(buildRootWithCollections(t, deps), "schema", "diff", "dev", "live", "--entity", "language", "--exit-zero")
+	out, err := cmdtest.Execute(buildRootWithCollections(t, deps), "schema", "diff", "dev", "live", "--entity", "language", "--exit-zero")
 	if err != nil {
 		t.Fatalf("language diff failed: %v", err)
 	}
@@ -338,19 +340,19 @@ func TestSchemaDiffDictionaryComparesTranslations(t *testing.T) {
 	deps := schemaDiffTestDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/dictionary":
-			return endpointJSONResponse(http.StatusOK, `{"items":[{"id":"dict-greeting","name":"Greeting"}],"total":1}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"items":[{"id":"dict-greeting","name":"Greeting"}],"total":1}`), nil
 		case "/umbraco/management/api/v1/dictionary/dict-greeting":
 			return schemaDiffRouteHost(req,
 				`{"id":"dict-greeting","name":"Greeting","translations":[{"isoCode":"en-US","translation":"Hello"}]}`,
 				`{"id":"dict-greeting","name":"Greeting","translations":[{"isoCode":"en-US","translation":"Hi there"}]}`)
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	out, err := execute(buildRootWithCollections(t, deps), "schema", "diff", "dev", "live", "--entity", "dictionary", "--exit-zero")
+	out, err := cmdtest.Execute(buildRootWithCollections(t, deps), "schema", "diff", "dev", "live", "--entity", "dictionary", "--exit-zero")
 	if err != nil {
 		t.Fatalf("dictionary diff failed: %v", err)
 	}
@@ -375,21 +377,21 @@ func TestSchemaDiffMediatypeMapsDataTypeReferences(t *testing.T) {
 		}
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/filter/data-type":
-			return endpointJSONResponse(http.StatusOK, `{"items":[{"id":"`+dataID+`","name":"Upload"}],"total":1}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"items":[{"id":"`+dataID+`","name":"Upload"}],"total":1}`), nil
 		case "/umbraco/management/api/v1/data-type/data-dev", "/umbraco/management/api/v1/data-type/data-live":
-			return endpointJSONResponse(http.StatusOK, `{"id":"`+dataID+`","name":"Upload","editorAlias":"Umbraco.UploadField","values":[]}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"id":"`+dataID+`","name":"Upload","editorAlias":"Umbraco.UploadField","values":[]}`), nil
 		case "/umbraco/management/api/v1/tree/media-type/root":
-			return endpointJSONResponse(http.StatusOK, `{"items":[{"id":"mt-image","alias":"image","name":"Image"}],"total":1}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"items":[{"id":"mt-image","alias":"image","name":"Image"}],"total":1}`), nil
 		case "/umbraco/management/api/v1/media-type/mt-image":
-			return endpointJSONResponse(http.StatusOK, `{"id":"mt-image","alias":"image","name":"Image","properties":[{"alias":"umbracoFile","dataType":{"id":"`+dataID+`"}}]}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"id":"mt-image","alias":"image","name":"Image","properties":[{"alias":"umbracoFile","dataType":{"id":"`+dataID+`"}}]}`), nil
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	out, err := execute(buildRootWithCollections(t, deps), "schema", "diff", "dev", "live", "--entity", "mediatype")
+	out, err := cmdtest.Execute(buildRootWithCollections(t, deps), "schema", "diff", "dev", "live", "--entity", "mediatype")
 	if err != nil {
 		t.Fatalf("mediatype diff failed: %v", err)
 	}
@@ -411,22 +413,22 @@ func TestSchemaDiffDictionaryDetectsParentMoves(t *testing.T) {
 		}
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/dictionary":
-			return endpointJSONResponse(http.StatusOK, `{"items":[
+			return cmdtest.JSONResponse(http.StatusOK, `{"items":[
 				{"id":"`+parentID+`","name":"`+parentName+`","parent":null},
 				{"id":"dict-greeting","name":"Greeting","parent":{"id":"`+parentID+`"}}
 			],"total":2}`), nil
 		case "/umbraco/management/api/v1/dictionary/dict-common", "/umbraco/management/api/v1/dictionary/dict-forms":
-			return endpointJSONResponse(http.StatusOK, `{"id":"`+parentID+`","name":"`+parentName+`","translations":[]}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"id":"`+parentID+`","name":"`+parentName+`","translations":[]}`), nil
 		case "/umbraco/management/api/v1/dictionary/dict-greeting":
-			return endpointJSONResponse(http.StatusOK, `{"id":"dict-greeting","name":"Greeting","translations":[{"isoCode":"en-US","translation":"Hello"}]}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"id":"dict-greeting","name":"Greeting","translations":[{"isoCode":"en-US","translation":"Hello"}]}`), nil
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	out, err := execute(buildRootWithCollections(t, deps), "schema", "diff", "dev", "live", "--entity", "dictionary", "--include", "Greeting", "--exit-zero")
+	out, err := cmdtest.Execute(buildRootWithCollections(t, deps), "schema", "diff", "dev", "live", "--entity", "dictionary", "--include", "Greeting", "--exit-zero")
 	if err != nil {
 		t.Fatalf("dictionary parent-move diff failed: %v", err)
 	}

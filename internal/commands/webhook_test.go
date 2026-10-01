@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
+
+	"umbraco-cli/internal/commands/cmdtest"
 )
 
 func TestNormalizeWebhookEventsMapsObjectsToAliases(t *testing.T) {
@@ -51,18 +53,18 @@ func TestWebhookUpdateEventsPatchReplacesInBothForms(t *testing.T) {
 		"objects": `{"events":[{"eventName":"Content Deleted","eventType":"Content","alias":"Umbraco.ContentDelete"}]}`,
 	} {
 		var putBody map[string]any
-		deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+		deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 			switch req.URL.Path {
 			case "/umbraco/management/api/v1/security/back-office/token":
-				return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+				return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 			default:
 				if req.Method == http.MethodGet {
-					return endpointJSONResponse(http.StatusOK, `{"id":"wh-1","url":"https://localhost/x","enabled":true,"contentTypeKeys":[],"headers":{},"events":[{"eventName":"Content Published","eventType":"Content","alias":"Umbraco.ContentPublish"},{"eventName":"Content Deleted","eventType":"Content","alias":"Umbraco.ContentDelete"}]}`), nil
+					return cmdtest.JSONResponse(http.StatusOK, `{"id":"wh-1","url":"https://localhost/x","enabled":true,"contentTypeKeys":[],"headers":{},"events":[{"eventName":"Content Published","eventType":"Content","alias":"Umbraco.ContentPublish"},{"eventName":"Content Deleted","eventType":"Content","alias":"Umbraco.ContentDelete"}]}`), nil
 				}
 				if err := json.NewDecoder(req.Body).Decode(&putBody); err != nil {
 					t.Fatalf("decode put body: %v", err)
 				}
-				return endpointJSONResponse(http.StatusOK, `null`), nil
+				return cmdtest.JSONResponse(http.StatusOK, `null`), nil
 			}
 		})
 
@@ -72,7 +74,7 @@ func TestWebhookUpdateEventsPatchReplacesInBothForms(t *testing.T) {
 			root.PersistentFlags().StringVarP(deps.OutputFlag, "output", "o", *deps.OutputFlag, "Output format: json, table, plain")
 		}
 		RegisterWebhook(root, deps)
-		if _, err := execute(root, "webhook", "update", "wh-1", "--merge-json", patch); err != nil {
+		if _, err := cmdtest.Execute(root, "webhook", "update", "wh-1", "--merge-json", patch); err != nil {
 			t.Fatalf("%s: update failed: %v", name, err)
 		}
 		events, _ := putBody["events"].([]any)

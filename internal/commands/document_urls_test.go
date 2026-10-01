@@ -6,26 +6,28 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"umbraco-cli/internal/commands/cmdtest"
 )
 
 func TestDocumentURLsBatchesIDsAndPlainAbsoluteOutput(t *testing.T) {
 	var observedIDs []string
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/document/urls":
 			observedIDs = req.URL.Query()["id"]
-			return endpointJSONResponse(http.StatusOK, `[
+			return cmdtest.JSONResponse(http.StatusOK, `[
 				{"id":"doc-1","urlInfos":[{"culture":"en-US","url":"/products/","provider":"umbDocumentUrlProvider","message":null}]},
 				{"id":"doc-2","urlInfos":[{"culture":"da-DK","url":"/da/produkter/","provider":"umbDocumentUrlProvider","message":null}]}
 			]`), nil
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	output, err := execute(buildRootWithCollections(t, deps), "document", "urls", "doc-1", "doc-2", "--absolute", "-o", "plain")
+	output, err := cmdtest.Execute(buildRootWithCollections(t, deps), "document", "urls", "doc-1", "doc-2", "--absolute", "-o", "plain")
 	if err != nil {
 		t.Fatalf("document urls failed: %v", err)
 	}
@@ -39,23 +41,23 @@ func TestDocumentURLsBatchesIDsAndPlainAbsoluteOutput(t *testing.T) {
 }
 
 func TestDocumentURLsJSONPassthroughAndCultureFilter(t *testing.T) {
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/document/urls":
-			return endpointJSONResponse(http.StatusOK, `[
+			return cmdtest.JSONResponse(http.StatusOK, `[
 				{"id":"doc-1","urlInfos":[
 					{"culture":"en-US","url":"/products/","provider":"umbDocumentUrlProvider","message":null},
 					{"culture":"da-DK","url":"/da/produkter/","provider":"umbDocumentUrlProvider","message":null}
 				]}
 			]`), nil
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	output, err := execute(buildRootWithCollections(t, deps), "document", "urls", "doc-1", "--culture", "da-DK", "-o", "json")
+	output, err := cmdtest.Execute(buildRootWithCollections(t, deps), "document", "urls", "doc-1", "--culture", "da-DK", "-o", "json")
 	if err != nil {
 		t.Fatalf("document urls failed: %v", err)
 	}
@@ -74,20 +76,20 @@ func TestDocumentURLsJSONPassthroughAndCultureFilter(t *testing.T) {
 }
 
 func TestDocumentURLsTableIncludesMessage(t *testing.T) {
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/document/urls":
-			return endpointJSONResponse(http.StatusOK, `[
+			return cmdtest.JSONResponse(http.StatusOK, `[
 				{"id":"doc-1","urlInfos":[{"culture":"en-US","url":"","provider":"umbDocumentUrlProvider","message":"Document is not published"}]}
 			]`), nil
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	output, err := execute(buildRootWithCollections(t, deps), "document", "urls", "doc-1", "-o", "table")
+	output, err := cmdtest.Execute(buildRootWithCollections(t, deps), "document", "urls", "doc-1", "-o", "table")
 	if !isDocumentURLsMissing(err) {
 		t.Fatalf("expected missing URL error, got %v", err)
 	}
@@ -99,20 +101,20 @@ func TestDocumentURLsTableIncludesMessage(t *testing.T) {
 }
 
 func TestDocumentURLsAllowsNullURLAndPreservesMessage(t *testing.T) {
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/document/urls":
-			return endpointJSONResponse(http.StatusOK, `[
+			return cmdtest.JSONResponse(http.StatusOK, `[
 				{"id":"doc-1","urlInfos":[{"culture":"en-US","url":null,"provider":"umbDocumentUrlProvider","message":"Document is not published"}]}
 			]`), nil
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	output, err := execute(buildRootWithCollections(t, deps), "document", "urls", "doc-1", "-o", "json")
+	output, err := cmdtest.Execute(buildRootWithCollections(t, deps), "document", "urls", "doc-1", "-o", "json")
 	if !isDocumentURLsMissing(err) {
 		t.Fatalf("expected missing URL error, got %v", err)
 	}
@@ -130,18 +132,18 @@ func TestDocumentURLsAllowsNullURLAndPreservesMessage(t *testing.T) {
 }
 
 func TestDocumentURLsMissingURLReturnsNonZeroWithPlainOutput(t *testing.T) {
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/document/urls":
-			return endpointJSONResponse(http.StatusOK, `[{"id":"doc-1","urlInfos":[]}]`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `[{"id":"doc-1","urlInfos":[]}]`), nil
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	output, err := execute(buildRootWithCollections(t, deps), "document", "urls", "doc-1", "-o", "plain")
+	output, err := cmdtest.Execute(buildRootWithCollections(t, deps), "document", "urls", "doc-1", "-o", "plain")
 	if !isDocumentURLsMissing(err) {
 		t.Fatalf("expected missing URL error, got %v", err)
 	}
@@ -151,43 +153,43 @@ func TestDocumentURLsMissingURLReturnsNonZeroWithPlainOutput(t *testing.T) {
 }
 
 func TestDocumentURLsMissingReturnedIDReturnsNonZero(t *testing.T) {
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/document/urls":
-			return endpointJSONResponse(http.StatusOK, `[]`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `[]`), nil
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	_, err := execute(buildRootWithCollections(t, deps), "document", "urls", "doc-1", "-o", "json")
+	_, err := cmdtest.Execute(buildRootWithCollections(t, deps), "document", "urls", "doc-1", "-o", "json")
 	if !isDocumentURLsMissing(err) {
 		t.Fatalf("expected missing URL error, got %v", err)
 	}
 }
 
 func TestDocumentGetWithURLsAttachesBeforeFields(t *testing.T) {
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/document/doc-1":
-			return endpointJSONResponse(http.StatusOK, `{"id":"doc-1","name":"Products","values":[]}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"id":"doc-1","name":"Products","values":[]}`), nil
 		case "/umbraco/management/api/v1/document/urls":
 			if got := req.URL.Query()["id"]; !reflect.DeepEqual(got, []string{"doc-1"}) {
 				t.Fatalf("unexpected url ids: %#v", got)
 			}
-			return endpointJSONResponse(http.StatusOK, `[
+			return cmdtest.JSONResponse(http.StatusOK, `[
 				{"id":"doc-1","urlInfos":[{"culture":"en-US","url":"/products/","provider":"umbDocumentUrlProvider","message":null}]}
 			]`), nil
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	output, err := execute(buildRootWithCollections(t, deps), "document", "get", "doc-1", "--with-urls", "--fields", "id,urls", "-o", "json")
+	output, err := cmdtest.Execute(buildRootWithCollections(t, deps), "document", "get", "doc-1", "--with-urls", "--fields", "id,urls", "-o", "json")
 	if err != nil {
 		t.Fatalf("document get --with-urls failed: %v", err)
 	}
@@ -205,22 +207,22 @@ func TestDocumentGetWithURLsAttachesBeforeFields(t *testing.T) {
 }
 
 func TestDocumentGetWithURLsAllowsNullURL(t *testing.T) {
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/document/doc-1":
-			return endpointJSONResponse(http.StatusOK, `{"id":"doc-1","name":"Products","values":[]}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"id":"doc-1","name":"Products","values":[]}`), nil
 		case "/umbraco/management/api/v1/document/urls":
-			return endpointJSONResponse(http.StatusOK, `[
+			return cmdtest.JSONResponse(http.StatusOK, `[
 				{"id":"doc-1","urlInfos":[{"culture":"en-US","url":null,"provider":"umbDocumentUrlProvider","message":"Document is not published"}]}
 			]`), nil
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	output, err := execute(buildRootWithCollections(t, deps), "document", "get", "doc-1", "--with-urls", "--fields", "id,urls", "-o", "json")
+	output, err := cmdtest.Execute(buildRootWithCollections(t, deps), "document", "get", "doc-1", "--with-urls", "--fields", "id,urls", "-o", "json")
 	if err != nil {
 		t.Fatalf("document get --with-urls failed: %v", err)
 	}

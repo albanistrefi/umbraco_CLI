@@ -11,9 +11,12 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
+
+	"umbraco-cli/internal/commands/cmdkit"
+	"umbraco-cli/internal/commands/cmdtest"
 )
 
-func buildLogsRoot(deps Dependencies) *cobra.Command {
+func buildLogsRoot(deps cmdkit.Dependencies) *cobra.Command {
 	root := &cobra.Command{Use: "umbraco", SilenceErrors: true, SilenceUsage: true}
 	root.SetErr(io.Discard)
 	if deps.OutputFlag != nil {
@@ -23,11 +26,11 @@ func buildLogsRoot(deps Dependencies) *cobra.Command {
 	return root
 }
 
-func logsTailDeps(handler func(poll int64, req *http.Request) (*http.Response, error)) Dependencies {
+func logsTailDeps(handler func(poll int64, req *http.Request) (*http.Response, error)) cmdkit.Dependencies {
 	var polls int64
-	return endpointDeps(func(req *http.Request) (*http.Response, error) {
+	return cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		if req.URL.Path == "/umbraco/management/api/v1/security/back-office/token" {
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		}
 		return handler(atomic.AddInt64(&polls, 1), req)
 	})
@@ -38,19 +41,19 @@ func TestLogsTailPrintsEachEntryOnceAsNDJSON(t *testing.T) {
 	deps := logsTailDeps(func(poll int64, req *http.Request) (*http.Response, error) {
 		lastStartDate.Store(req.URL.Query().Get("startDate"))
 		if poll == 1 {
-			return endpointJSONResponse(http.StatusOK, `{"items":[
+			return cmdtest.JSONResponse(http.StatusOK, `{"items":[
 				{"timestamp":"2026-07-03T10:00:01Z","level":"Information","renderedMessage":"first"},
 				{"timestamp":"2026-07-03T10:00:02Z","level":"Information","renderedMessage":"second"}
 			],"total":2}`), nil
 		}
 		// Later polls replay the boundary entry plus one new one.
-		return endpointJSONResponse(http.StatusOK, `{"items":[
+		return cmdtest.JSONResponse(http.StatusOK, `{"items":[
 			{"timestamp":"2026-07-03T10:00:02Z","level":"Information","renderedMessage":"second"},
 			{"timestamp":"2026-07-03T10:00:03Z","level":"Information","renderedMessage":"third"}
 		],"total":2}`), nil
 	})
 
-	out, err := execute(buildLogsRoot(deps), "logs", "tail", "--since", "2026-07-03T10:00:00Z", "--interval", "1ms", "--for", "40ms")
+	out, err := cmdtest.Execute(buildLogsRoot(deps), "logs", "tail", "--since", "2026-07-03T10:00:00Z", "--interval", "1ms", "--for", "40ms")
 	if err != nil {
 		t.Fatalf("logs tail failed: %v", err)
 	}
@@ -75,13 +78,13 @@ func TestLogsTailPrintsEachEntryOnceAsNDJSON(t *testing.T) {
 
 func TestLogsTailFiltersByLevelClientSide(t *testing.T) {
 	deps := logsTailDeps(func(poll int64, req *http.Request) (*http.Response, error) {
-		return endpointJSONResponse(http.StatusOK, `{"items":[
+		return cmdtest.JSONResponse(http.StatusOK, `{"items":[
 			{"timestamp":"2026-07-03T10:00:01Z","level":"Information","renderedMessage":"noise"},
 			{"timestamp":"2026-07-03T10:00:02Z","level":"Error","renderedMessage":"boom"}
 		],"total":2}`), nil
 	})
 
-	out, err := execute(buildLogsRoot(deps), "logs", "tail", "--since", "2026-07-03T10:00:00Z", "--level", "Error", "--interval", "1ms", "--for", "20ms")
+	out, err := cmdtest.Execute(buildLogsRoot(deps), "logs", "tail", "--since", "2026-07-03T10:00:00Z", "--level", "Error", "--interval", "1ms", "--for", "20ms")
 	if err != nil {
 		t.Fatalf("logs tail failed: %v", err)
 	}
@@ -95,12 +98,12 @@ func TestLogsTailFiltersByLevelClientSide(t *testing.T) {
 
 func TestLogsTailPlainOutputFormatsLines(t *testing.T) {
 	deps := logsTailDeps(func(poll int64, req *http.Request) (*http.Response, error) {
-		return endpointJSONResponse(http.StatusOK, `{"items":[
+		return cmdtest.JSONResponse(http.StatusOK, `{"items":[
 			{"timestamp":"2026-07-03T10:00:01Z","level":"Warning","renderedMessage":"careful"}
 		],"total":1}`), nil
 	})
 
-	out, err := execute(buildLogsRoot(deps), "logs", "tail", "-o", "plain", "--since", "2026-07-03T10:00:00Z", "--interval", "1ms", "--for", "20ms")
+	out, err := cmdtest.Execute(buildLogsRoot(deps), "logs", "tail", "-o", "plain", "--since", "2026-07-03T10:00:00Z", "--interval", "1ms", "--for", "20ms")
 	if err != nil {
 		t.Fatalf("logs tail failed: %v", err)
 	}
@@ -111,12 +114,12 @@ func TestLogsTailPlainOutputFormatsLines(t *testing.T) {
 
 func TestLogsTailRedactsSensitiveValues(t *testing.T) {
 	deps := logsTailDeps(func(poll int64, req *http.Request) (*http.Response, error) {
-		return endpointJSONResponse(http.StatusOK, `{"items":[
+		return cmdtest.JSONResponse(http.StatusOK, `{"items":[
 			{"timestamp":"2026-07-03T10:00:01Z","level":"Information","renderedMessage":"login by user@example.test"}
 		],"total":1}`), nil
 	})
 
-	out, err := execute(buildLogsRoot(deps), "logs", "tail", "--redact-default", "--since", "2026-07-03T10:00:00Z", "--interval", "1ms", "--for", "20ms")
+	out, err := cmdtest.Execute(buildLogsRoot(deps), "logs", "tail", "--redact-default", "--since", "2026-07-03T10:00:00Z", "--interval", "1ms", "--for", "20ms")
 	if err != nil {
 		t.Fatalf("logs tail failed: %v", err)
 	}
@@ -134,7 +137,7 @@ func TestLogsTailRejectsInvalidSince(t *testing.T) {
 		return nil, nil
 	})
 
-	if _, err := execute(buildLogsRoot(deps), "logs", "tail", "--since", "not-a-time", "--for", "10ms"); err == nil || !strings.Contains(err.Error(), "invalid --since") {
+	if _, err := cmdtest.Execute(buildLogsRoot(deps), "logs", "tail", "--since", "not-a-time", "--for", "10ms"); err == nil || !strings.Contains(err.Error(), "invalid --since") {
 		t.Fatalf("expected invalid --since error, got %v", err)
 	}
 }
@@ -169,13 +172,13 @@ func TestLogsTailPrintsNewEntriesWhenServerIgnoresStartDate(t *testing.T) {
 		q := req.URL.Query()
 		requests = append(requests, q.Get("orderDirection")+"/skip="+q.Get("skip"))
 		if q.Get("orderDirection") != "Descending" {
-			return endpointJSONResponse(http.StatusOK, logPage(0, tailPageSize, false)), nil // the day's oldest 500: the bug
+			return cmdtest.JSONResponse(http.StatusOK, logPage(0, tailPageSize, false)), nil // the day's oldest 500: the bug
 		}
-		return endpointJSONResponse(http.StatusOK, logPage(200, tailPageSize, true)), nil // newest 500 of 700
+		return cmdtest.JSONResponse(http.StatusOK, logPage(200, tailPageSize, true)), nil // newest 500 of 700
 	})
 
 	// --since 10:11:35 = second 695; entries 695..699 are new.
-	out, err := execute(buildLogsRoot(deps), "logs", "tail", "--since", "2026-07-03T10:11:35Z", "--interval", "1h", "--for", "50ms")
+	out, err := cmdtest.Execute(buildLogsRoot(deps), "logs", "tail", "--since", "2026-07-03T10:11:35Z", "--interval", "1h", "--for", "50ms")
 	if err != nil {
 		t.Fatalf("logs tail failed: %v", err)
 	}
@@ -202,7 +205,7 @@ func TestLogsTailPagesBackThroughBurstsWithSkip(t *testing.T) {
 		skip, _ := strconv.Atoi(q.Get("skip"))
 		remaining := burst - skip
 		if remaining <= 0 {
-			return endpointJSONResponse(http.StatusOK, `{"items":[],"total":0}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"items":[],"total":0}`), nil
 		}
 		count := tailPageSize
 		if remaining < count {
@@ -210,10 +213,10 @@ func TestLogsTailPagesBackThroughBurstsWithSkip(t *testing.T) {
 		}
 		// Entries 1..1200; page at skip covers the newest-first slice.
 		start := burst - skip - count + 1
-		return endpointJSONResponse(http.StatusOK, logPage(start, count, true)), nil
+		return cmdtest.JSONResponse(http.StatusOK, logPage(start, count, true)), nil
 	})
 
-	out, err := execute(buildLogsRoot(deps), "logs", "tail", "--since", "2026-07-03T10:00:01Z", "--interval", "1h", "--for", "50ms")
+	out, err := cmdtest.Execute(buildLogsRoot(deps), "logs", "tail", "--since", "2026-07-03T10:00:01Z", "--interval", "1h", "--for", "50ms")
 	if err != nil {
 		t.Fatalf("logs tail failed: %v", err)
 	}
@@ -231,17 +234,17 @@ func TestLogsTailPagesBackThroughBurstsWithSkip(t *testing.T) {
 
 func TestLogsTailJSONFlagAndHeartbeat(t *testing.T) {
 	jsonDeps := logsTailDeps(func(poll int64, req *http.Request) (*http.Response, error) {
-		return endpointJSONResponse(http.StatusOK, `{"items":[{"timestamp":"2026-07-03T10:00:01Z","level":"Information","renderedMessage":"fresh"}],"total":1}`), nil
+		return cmdtest.JSONResponse(http.StatusOK, `{"items":[{"timestamp":"2026-07-03T10:00:01Z","level":"Information","renderedMessage":"fresh"}],"total":1}`), nil
 	})
-	out, err := execute(buildLogsRoot(jsonDeps), "logs", "tail", "-o", "plain", "--json", "--since", "2026-07-03T10:00:00Z", "--interval", "1ms", "--for", "20ms")
+	out, err := cmdtest.Execute(buildLogsRoot(jsonDeps), "logs", "tail", "-o", "plain", "--json", "--since", "2026-07-03T10:00:00Z", "--interval", "1ms", "--for", "20ms")
 	if err != nil || !strings.HasPrefix(strings.TrimSpace(out), "{") || !strings.Contains(out, `"renderedMessage":"fresh"`) {
 		t.Fatalf("expected --json to force NDJSON like deploy watch --json, got err=%v out=%s", err, out)
 	}
 
 	deps := logsTailDeps(func(poll int64, req *http.Request) (*http.Response, error) {
-		return endpointJSONResponse(http.StatusOK, `{"items":[{"timestamp":"2026-07-03T09:00:00Z","level":"Information","renderedMessage":"old"}],"total":1}`), nil
+		return cmdtest.JSONResponse(http.StatusOK, `{"items":[{"timestamp":"2026-07-03T09:00:00Z","level":"Information","renderedMessage":"old"}],"total":1}`), nil
 	})
-	out, status, err := executeWithErr(buildLogsRoot(deps), "logs", "tail", "-o", "plain", "--json", "--since", "2026-07-03T10:00:00Z", "--interval", "1ms", "--heartbeat", "5ms", "--for", "60ms")
+	out, status, err := cmdtest.ExecuteWithErr(buildLogsRoot(deps), "logs", "tail", "-o", "plain", "--json", "--since", "2026-07-03T10:00:00Z", "--interval", "1ms", "--heartbeat", "5ms", "--for", "60ms")
 	if err != nil {
 		t.Fatalf("logs tail failed: %v", err)
 	}
@@ -264,9 +267,9 @@ func TestLogsTailStopsInsteadOfSkippingWhenBacklogExceedsPageCap(t *testing.T) {
 	deps := logsTailDeps(func(poll int64, req *http.Request) (*http.Response, error) {
 		polls++
 		skip, _ := strconv.Atoi(req.URL.Query().Get("skip"))
-		return endpointJSONResponse(http.StatusOK, logPage(20000-skip-tailPageSize+1, tailPageSize, true)), nil
+		return cmdtest.JSONResponse(http.StatusOK, logPage(20000-skip-tailPageSize+1, tailPageSize, true)), nil
 	})
-	out, err := execute(buildLogsRoot(deps), "logs", "tail", "--since", "2026-07-03T10:00:00Z", "--interval", "1ms", "--for", "1s")
+	out, err := cmdtest.Execute(buildLogsRoot(deps), "logs", "tail", "--since", "2026-07-03T10:00:00Z", "--interval", "1ms", "--for", "1s")
 	if err == nil || !strings.Contains(err.Error(), "more than 10000 entries have arrived since 2026-07-03T10:00:00Z") || !strings.Contains(err.Error(), "logs search --from") {
 		t.Fatalf("expected a backlog error naming the remedy, got %v", err)
 	}

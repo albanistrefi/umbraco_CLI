@@ -9,24 +9,26 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"umbraco-cli/internal/commands/cmdtest"
 )
 
 func TestAPIPassthroughGETPreservesRepeatedQueryParams(t *testing.T) {
 	var observedIDs []string
 
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/item/document/ancestors":
 			observedIDs = req.URL.Query()["id"]
-			return datatypeJSONResponse(http.StatusOK, `{"total":2,"items":[{"id":"doc-1"},{"id":"doc-2"}]}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"total":2,"items":[{"id":"doc-1"},{"id":"doc-2"}]}`), nil
 		default:
-			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	output, err := execute(buildRootWithCollections(t, deps), "api", "GET", "/item/document/ancestors?id=doc-1&id=doc-2")
+	output, err := cmdtest.Execute(buildRootWithCollections(t, deps), "api", "GET", "/item/document/ancestors?id=doc-1&id=doc-2")
 	if err != nil {
 		t.Fatalf("api GET failed: %v", err)
 	}
@@ -54,10 +56,10 @@ func TestAPIPassthroughPOSTReadsBodyFile(t *testing.T) {
 	}
 	var observedBody map[string]any
 
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/some/endpoint":
 			if req.Method != http.MethodPost {
 				t.Fatalf("expected POST, got %s", req.Method)
@@ -65,13 +67,13 @@ func TestAPIPassthroughPOSTReadsBodyFile(t *testing.T) {
 			if err := json.NewDecoder(req.Body).Decode(&observedBody); err != nil {
 				t.Fatalf("failed to decode request body: %v", err)
 			}
-			return datatypeJSONResponse(http.StatusCreated, `{"created":true}`), nil
+			return cmdtest.JSONResponse(http.StatusCreated, `{"created":true}`), nil
 		default:
-			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	output, err := execute(buildRootWithCollections(t, deps), "api", "POST", "/umbraco/management/api/v1/some/endpoint", "--body", "@"+bodyPath)
+	output, err := cmdtest.Execute(buildRootWithCollections(t, deps), "api", "POST", "/umbraco/management/api/v1/some/endpoint", "--body", "@"+bodyPath)
 	if err != nil {
 		t.Fatalf("api POST failed: %v", err)
 	}
@@ -89,18 +91,18 @@ func TestAPIPassthroughPOSTReadsBodyFile(t *testing.T) {
 }
 
 func TestAPIPassthroughPrintsErrorStatusAndBody(t *testing.T) {
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/missing":
-			return datatypeJSONResponse(http.StatusNotFound, `{"title":"missing"}`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `{"title":"missing"}`), nil
 		default:
-			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	output, err := execute(buildRootWithCollections(t, deps), "api", "GET", "/missing")
+	output, err := cmdtest.Execute(buildRootWithCollections(t, deps), "api", "GET", "/missing")
 	if err != nil {
 		t.Fatalf("api GET should print non-2xx API responses without failing command execution: %v", err)
 	}
@@ -125,10 +127,10 @@ func TestAPIPassthroughFormSendsMultipartAndRawPathSkipsPrefix(t *testing.T) {
 	}
 	var observedPath, observedID, observedFile, observedHeader string
 
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/custom/upload":
 			observedPath = req.URL.Path
 			observedHeader = req.Header.Get("X-Custom")
@@ -143,13 +145,13 @@ func TestAPIPassthroughFormSendsMultipartAndRawPathSkipsPrefix(t *testing.T) {
 			defer func() { _ = file.Close() }()
 			content, _ := io.ReadAll(file)
 			observedFile = string(content)
-			return datatypeJSONResponse(http.StatusCreated, `{"id":"tmp-1"}`), nil
+			return cmdtest.JSONResponse(http.StatusCreated, `{"id":"tmp-1"}`), nil
 		default:
-			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	output, err := execute(buildRootWithCollections(t, deps), "api", "POST", "/umbraco/custom/upload", "--raw-path",
+	output, err := cmdtest.Execute(buildRootWithCollections(t, deps), "api", "POST", "/umbraco/custom/upload", "--raw-path",
 		"--form", "id=tmp-1", "--form", "file=@"+filePath, "--header", "X-Custom: yes")
 	if err != nil {
 		t.Fatalf("api POST --form failed: %v", err)
@@ -167,16 +169,16 @@ func TestAPIPassthroughFormSendsMultipartAndRawPathSkipsPrefix(t *testing.T) {
 }
 
 func TestAPIPassthroughRejectsFormWithBodyAndBadHeader(t *testing.T) {
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
-		return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
+		return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 	})
-	if _, err := execute(buildRootWithCollections(t, deps), "api", "POST", "/temporary-file", "--form", "id=1", "--body", `{}`); err == nil {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), "api", "POST", "/temporary-file", "--form", "id=1", "--body", `{}`); err == nil {
 		t.Fatalf("expected --form with --body to be rejected")
 	}
-	if _, err := execute(buildRootWithCollections(t, deps), "api", "GET", "/temporary-file", "--form", "id=1"); err == nil {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), "api", "GET", "/temporary-file", "--form", "id=1"); err == nil {
 		t.Fatalf("expected --form with GET to be rejected")
 	}
-	if _, err := execute(buildRootWithCollections(t, deps), "api", "GET", "/server/status", "--header", "novalue"); err == nil {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), "api", "GET", "/server/status", "--header", "novalue"); err == nil {
 		t.Fatalf("expected malformed --header to be rejected")
 	}
 }
@@ -194,17 +196,17 @@ func TestAPIPassthroughCanonicalizesHeadersLastWins(t *testing.T) {
 func TestAPIPassthroughOutWritesBinaryBodyVerbatim(t *testing.T) {
 	outPath := filepath.Join(t.TempDir(), "asset", "logo.png")
 	binary := []byte{0x89, 'P', 'N', 'G', 0xff, 0xfe, 0x00, 0x01}
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/media/abc/logo.png":
 			return &http.Response{StatusCode: http.StatusPartialContent, Header: http.Header{"Content-Type": []string{"image/png"}}, Body: io.NopCloser(bytes.NewReader(binary))}, nil
 		default:
-			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
-	output, err := execute(buildRootWithCollections(t, deps), "api", "GET", "/media/abc/logo.png", "--raw-path", "--out", outPath)
+	output, err := cmdtest.Execute(buildRootWithCollections(t, deps), "api", "GET", "/media/abc/logo.png", "--raw-path", "--out", outPath)
 	if err != nil {
 		t.Fatalf("api --out failed: %v", err)
 	}
@@ -222,7 +224,7 @@ func TestAPIPassthroughOutWritesBinaryBodyVerbatim(t *testing.T) {
 	if entries, _ := os.ReadDir(filepath.Dir(outPath)); len(entries) != 1 {
 		t.Fatalf("expected no leftover .part file, got %v", entries)
 	}
-	if _, err := execute(buildRootWithCollections(t, deps), "api", "POST", "/x", "--out", outPath); err == nil {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), "api", "POST", "/x", "--out", outPath); err == nil {
 		t.Fatalf("expected --out with POST to be rejected")
 	}
 }
@@ -230,27 +232,27 @@ func TestAPIPassthroughOutWritesBinaryBodyVerbatim(t *testing.T) {
 func TestAPIDryRunPreviewIncludesHeaders(t *testing.T) {
 	filePath := filepath.Join(t.TempDir(), "x.svg")
 	_ = os.WriteFile(filePath, []byte("<svg/>"), 0o644)
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
-		return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
+		return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 	})
-	output, err := execute(buildRootWithCollections(t, deps), "api", "POST", "/temporary-file", "--dry-run", "--form", "file=@"+filePath, "--header", "X-Test: 1")
+	output, err := cmdtest.Execute(buildRootWithCollections(t, deps), "api", "POST", "/temporary-file", "--dry-run", "--form", "file=@"+filePath, "--header", "X-Test: 1")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(output, `"X-Test": "1"`) {
 		t.Fatalf("expected headers in the dry-run preview, got %s", output)
 	}
-	output, err = execute(buildRootWithCollections(t, deps), "api", "GET", "/server/status", "--dry-run", "--header", "X-Test: 2")
+	output, err = cmdtest.Execute(buildRootWithCollections(t, deps), "api", "GET", "/server/status", "--dry-run", "--header", "X-Test: 2")
 	if err != nil || !strings.Contains(output, `"X-Test": "2"`) {
 		t.Fatalf("expected headers in the JSON dry-run preview, got err=%v out=%s", err, output)
 	}
 }
 
 func TestAPIDryRunPreviewIncludesImplicitHeaders(t *testing.T) {
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
-		return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
+		return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 	})
-	output, err := execute(buildRootWithCollections(t, deps), "api", "POST", "/server/status", "--dry-run", "--body", `{}`, "--header", "x-test: 1")
+	output, err := cmdtest.Execute(buildRootWithCollections(t, deps), "api", "POST", "/server/status", "--dry-run", "--body", `{}`, "--header", "x-test: 1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -262,7 +264,7 @@ func TestAPIDryRunPreviewIncludesImplicitHeaders(t *testing.T) {
 	if strings.Contains(output, "token-123") {
 		t.Fatalf("dry-run must not leak the token")
 	}
-	output, _ = execute(buildRootWithCollections(t, deps), "api", "GET", "/server/status", "--dry-run")
+	output, _ = cmdtest.Execute(buildRootWithCollections(t, deps), "api", "GET", "/server/status", "--dry-run")
 	if strings.Contains(output, "Content-Type") {
 		t.Fatalf("a bodiless GET must not claim a Content-Type: %s", output)
 	}
@@ -270,24 +272,24 @@ func TestAPIDryRunPreviewIncludesImplicitHeaders(t *testing.T) {
 
 func TestAPIPassthroughSendsOtherUmbracoMountsRelativeToHostRoot(t *testing.T) {
 	var observed []string
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		if req.URL.Path == "/umbraco/management/api/v1/security/back-office/token" {
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		}
 		observed = append(observed, req.URL.Path)
-		return endpointJSONResponse(http.StatusOK, `[]`), nil
+		return cmdtest.JSONResponse(http.StatusOK, `[]`), nil
 	})
 	// Field report: the Deploy API path was prefixed with the core API root
 	// and 404ed; another /umbraco/ mount must go out as-is without --raw-path.
-	if _, err := execute(buildRootWithCollections(t, deps), "api", "GET", "/umbraco/deploy/management/api/v1/configuration/client"); err != nil {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), "api", "GET", "/umbraco/deploy/management/api/v1/configuration/client"); err != nil {
 		t.Fatalf("api failed: %v", err)
 	}
 	// A full core Management API path is still normalized, and a relative
 	// path still gets the prefix.
-	if _, err := execute(buildRootWithCollections(t, deps), "api", "GET", "/umbraco/management/api/v1/server/status"); err != nil {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), "api", "GET", "/umbraco/management/api/v1/server/status"); err != nil {
 		t.Fatalf("api failed: %v", err)
 	}
-	if _, err := execute(buildRootWithCollections(t, deps), "api", "GET", "/server/status"); err != nil {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), "api", "GET", "/server/status"); err != nil {
 		t.Fatalf("api failed: %v", err)
 	}
 	want := []string{"/umbraco/deploy/management/api/v1/configuration/client", "/umbraco/management/api/v1/server/status", "/umbraco/management/api/v1/server/status"}

@@ -13,6 +13,8 @@ import (
 
 	"umbraco-cli/internal/api"
 	"umbraco-cli/internal/auth"
+	"umbraco-cli/internal/commands/cmdkit"
+	"umbraco-cli/internal/commands/cmdtest"
 	"umbraco-cli/internal/config"
 )
 
@@ -30,7 +32,7 @@ func dictionaryJSONResponse(status int, body string) *http.Response {
 	}
 }
 
-func dictionaryDeps(handler dictionaryRoundTripper) Dependencies {
+func dictionaryDeps(handler dictionaryRoundTripper) cmdkit.Dependencies {
 	cfg := config.Config{
 		BaseURL:      "https://example.test",
 		ClientID:     "client-id",
@@ -39,7 +41,7 @@ func dictionaryDeps(handler dictionaryRoundTripper) Dependencies {
 	httpClient := &http.Client{Transport: handler}
 	output := "json"
 
-	return Dependencies{
+	return cmdkit.Dependencies{
 		Client:     api.NewClient(cfg, httpClient, auth.New(cfg, httpClient)),
 		EnvOutput:  config.OutputJSON,
 		OutputFlag: &output,
@@ -120,7 +122,7 @@ func TestDictionaryImportDryRunPlansCreateUpdateAndSkip(t *testing.T) {
 		}
 	})
 
-	output, err := execute(
+	output, err := cmdtest.Execute(
 		buildRootWithCollections(t, deps),
 		"dictionary", "import",
 		"--file", file,
@@ -219,7 +221,7 @@ func TestDictionaryImportIsIdempotentWithSkipExisting(t *testing.T) {
 		}
 	})
 
-	firstRun, err := execute(
+	firstRun, err := cmdtest.Execute(
 		buildRootWithCollections(t, deps),
 		"dictionary", "import",
 		"--file", file,
@@ -228,7 +230,7 @@ func TestDictionaryImportIsIdempotentWithSkipExisting(t *testing.T) {
 		t.Fatalf("first import failed: %v", err)
 	}
 
-	secondRun, err := execute(
+	secondRun, err := cmdtest.Execute(
 		buildRootWithCollections(t, deps),
 		"dictionary", "import",
 		"--file", file,
@@ -293,7 +295,7 @@ func TestDictionaryImportMergesDuplicateKeysIntoSingleCreate(t *testing.T) {
 		}
 	})
 
-	output, err := execute(
+	output, err := cmdtest.Execute(
 		buildRootWithCollections(t, deps),
 		"dictionary", "import",
 		"--file", file,

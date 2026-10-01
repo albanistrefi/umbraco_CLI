@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"umbraco-cli/internal/commands/cmdtest"
 	"umbraco-cli/internal/config"
 )
 
@@ -30,8 +31,8 @@ func TestAuthLoginPersistsVerifiedCredentials(t *testing.T) {
 		return nil
 	}
 
-	output, err := execute(
-		buildRootWithCollections(t, makeDeps()),
+	output, err := cmdtest.Execute(
+		buildRootWithCollections(t, cmdtest.MakeDeps()),
 		"auth", "login",
 		"--base-url", "https://localhost:44314",
 		"--client-id", "client-id",
@@ -80,8 +81,8 @@ func TestAuthLoginNormalizesBaseURLBeforeVerificationAndPersistence(t *testing.T
 		return nil
 	}
 
-	output, err := execute(
-		buildRootWithCollections(t, makeDeps()),
+	output, err := cmdtest.Execute(
+		buildRootWithCollections(t, cmdtest.MakeDeps()),
 		"auth", "login",
 		"--base-url", "https://localhost:44314/umbraco/",
 		"--client-id", "client-id",
@@ -140,7 +141,7 @@ func TestAuthStatusReportsStoredConfigAndVerification(t *testing.T) {
 	t.Cleanup(func() { verifyStoredAuth = originalVerify })
 	verifyStoredAuth = func(cfg config.Config, httpClient *http.Client) error { return nil }
 
-	output, err := execute(buildRootWithCollections(t, makeDeps()), "auth", "status")
+	output, err := cmdtest.Execute(buildRootWithCollections(t, cmdtest.MakeDeps()), "auth", "status")
 	if err != nil {
 		t.Fatalf("auth status failed: %v", err)
 	}
@@ -185,7 +186,7 @@ func TestAuthStatusReportsFailedVerificationAsUnauthenticated(t *testing.T) {
 		return fmt.Errorf("token request failed: 401")
 	}
 
-	output, err := execute(buildRootWithCollections(t, makeDeps()), "auth", "status")
+	output, err := cmdtest.Execute(buildRootWithCollections(t, cmdtest.MakeDeps()), "auth", "status")
 	if err != nil {
 		t.Fatalf("auth status failed: %v", err)
 	}
@@ -216,12 +217,12 @@ func TestAuthLoginPersistsToSelectedProfile(t *testing.T) {
 	t.Cleanup(func() { verifyStoredAuth = originalVerify })
 	verifyStoredAuth = func(cfg config.Config, httpClient *http.Client) error { return nil }
 
-	deps := makeDeps()
+	deps := cmdtest.MakeDeps()
 	deps.ConfigOptionsProvider = func() config.LoadOptions {
 		return config.LoadOptions{Profile: "dev"}
 	}
 
-	output, err := execute(
+	output, err := cmdtest.Execute(
 		buildRootWithCollections(t, deps),
 		"auth", "login",
 		"--base-url", "https://dev.example.test",
@@ -277,7 +278,7 @@ func TestAuthListRedactsStoredProfiles(t *testing.T) {
 		t.Fatalf("SetActiveProfile failed: %v", err)
 	}
 
-	output, err := execute(buildRootWithCollections(t, makeDeps()), "auth", "list")
+	output, err := cmdtest.Execute(buildRootWithCollections(t, cmdtest.MakeDeps()), "auth", "list")
 	if err != nil {
 		t.Fatalf("auth list failed: %v", err)
 	}
@@ -311,7 +312,7 @@ func TestAuthUseSetsActiveProfile(t *testing.T) {
 		t.Fatalf("WriteUserConfigWithOptions failed: %v", err)
 	}
 
-	output, err := execute(buildRootWithCollections(t, makeDeps()), "auth", "use", "dev")
+	output, err := cmdtest.Execute(buildRootWithCollections(t, cmdtest.MakeDeps()), "auth", "use", "dev")
 	if err != nil {
 		t.Fatalf("auth use failed: %v", err)
 	}
@@ -340,7 +341,7 @@ func TestAuthStatusCheckReportsCommandRequirements(t *testing.T) {
 	})
 	_ = os.Setenv("HOME", homeDir)
 
-	output, err := execute(buildRootWithCollections(t, makeDeps()), "auth", "status", "--check")
+	output, err := cmdtest.Execute(buildRootWithCollections(t, cmdtest.MakeDeps()), "auth", "status", "--check")
 	if err != nil {
 		t.Fatalf("auth status --check failed: %v", err)
 	}
@@ -375,7 +376,7 @@ func TestAuthLogoutClearsStoredCredentials(t *testing.T) {
 		t.Fatalf("WriteUserConfig failed: %v", err)
 	}
 
-	output, err := execute(buildRootWithCollections(t, makeDeps()), "auth", "logout")
+	output, err := cmdtest.Execute(buildRootWithCollections(t, cmdtest.MakeDeps()), "auth", "logout")
 	if err != nil {
 		t.Fatalf("auth logout failed: %v", err)
 	}

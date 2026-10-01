@@ -5,11 +5,13 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"umbraco-cli/internal/commands/cmdtest"
 )
 
 func TestGeneratedSkillsFlattenNestedSubgroups(t *testing.T) {
 	dir := t.TempDir()
-	if _, err := execute(buildRootWithCollections(t, makeDeps()),
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, cmdtest.MakeDeps()),
 		"generate-skills", "--filter", "document", "--output-dir", dir); err != nil {
 		t.Fatalf("generate-skills failed: %v", err)
 	}

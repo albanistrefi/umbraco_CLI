@@ -10,9 +10,12 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
+
+	"umbraco-cli/internal/commands/cmdkit"
+	"umbraco-cli/internal/commands/cmdtest"
 )
 
-func buildFileAssetRoot(deps Dependencies) *cobra.Command {
+func buildFileAssetRoot(deps cmdkit.Dependencies) *cobra.Command {
 	root := &cobra.Command{Use: "umbraco", SilenceErrors: true, SilenceUsage: true}
 	root.SetErr(io.Discard)
 	if deps.OutputFlag != nil {
@@ -25,10 +28,10 @@ func buildFileAssetRoot(deps Dependencies) *cobra.Command {
 	return root
 }
 
-func fileAssetDeps(handler func(req *http.Request) (*http.Response, error)) Dependencies {
-	return endpointDeps(func(req *http.Request) (*http.Response, error) {
+func fileAssetDeps(handler func(req *http.Request) (*http.Response, error)) cmdkit.Dependencies {
+	return cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		if req.URL.Path == "/umbraco/management/api/v1/security/back-office/token" {
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		}
 		return handler(req)
 	})
@@ -40,7 +43,7 @@ func fileAssetDeps(handler func(req *http.Request) (*http.Response, error)) Depe
 func captureURI(observed *string, body string) func(req *http.Request) (*http.Response, error) {
 	return func(req *http.Request) (*http.Response, error) {
 		*observed = req.URL.RequestURI()
-		return endpointJSONResponse(http.StatusOK, body), nil
+		return cmdtest.JSONResponse(http.StatusOK, body), nil
 	}
 }
 
@@ -56,7 +59,7 @@ func TestFileAssetGetEncodesPathWithSeparatorsIntact(t *testing.T) {
 		var observed string
 		deps := fileAssetDeps(captureURI(&observed, `{"name":"a b.cshtml","path":"/My Folder/a b.cshtml","content":"x"}`))
 
-		if _, err := execute(buildFileAssetRoot(deps), tc.group, "get", "/My Folder/Nested/a b.cshtml"); err != nil {
+		if _, err := cmdtest.Execute(buildFileAssetRoot(deps), tc.group, "get", "/My Folder/Nested/a b.cshtml"); err != nil {
 			t.Fatalf("%s get failed: %v", tc.group, err)
 		}
 		want := "/umbraco/management/api/v1/" + tc.resource + "/My%20Folder/Nested/a%20b.cshtml"
@@ -77,10 +80,10 @@ func TestFileAssetRenameSendsPathAsOneDoublyEscapedSegment(t *testing.T) {
 		if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 			t.Fatalf("decode rename body: %v", err)
 		}
-		return endpointJSONResponse(http.StatusCreated, `{"id":"new.cshtml"}`), nil
+		return cmdtest.JSONResponse(http.StatusCreated, `{"id":"new.cshtml"}`), nil
 	})
 
-	if _, err := execute(buildFileAssetRoot(deps), "partial-view", "rename", "/My Folder/a b.cshtml", "--name", "new.cshtml"); err != nil {
+	if _, err := cmdtest.Execute(buildFileAssetRoot(deps), "partial-view", "rename", "/My Folder/a b.cshtml", "--name", "new.cshtml"); err != nil {
 		t.Fatalf("partial-view rename failed: %v", err)
 	}
 	want := "/umbraco/management/api/v1/partial-view/My%2520Folder%252Fa%2520b.cshtml/rename"
@@ -100,14 +103,14 @@ func TestFileAssetChildrenSendsParentPathQueryAndRootShortcut(t *testing.T) {
 	deps := fileAssetDeps(captureURI(&observed, `{"items":[],"total":0}`))
 	root := buildFileAssetRoot(deps)
 
-	if _, err := execute(root, "stylesheet", "children", "/My Folder"); err != nil {
+	if _, err := cmdtest.Execute(root, "stylesheet", "children", "/My Folder"); err != nil {
 		t.Fatalf("stylesheet children failed: %v", err)
 	}
 	if !strings.Contains(observed, "parentPath=%2FMy+Folder") {
 		t.Fatalf("expected parentPath query, got %q", observed)
 	}
 
-	if _, err := execute(root, "stylesheet", "children", "/"); err != nil {
+	if _, err := cmdtest.Execute(root, "stylesheet", "children", "/"); err != nil {
 		t.Fatalf("stylesheet children / failed: %v", err)
 	}
 	if !strings.Contains(observed, "parentPath=%2F") {
@@ -121,10 +124,10 @@ func TestFileAssetCreateBuildsBodyAndReportsFullPath(t *testing.T) {
 		if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 			t.Fatalf("decode create body: %v", err)
 		}
-		return endpointJSONResponse(http.StatusCreated, `{"id":"app.js"}`), nil
+		return cmdtest.JSONResponse(http.StatusCreated, `{"id":"app.js"}`), nil
 	})
 
-	out, err := execute(buildFileAssetRoot(deps), "script", "create", "--path", "/vendor", "--name", "app.js", "--content", "console.log(1);")
+	out, err := cmdtest.Execute(buildFileAssetRoot(deps), "script", "create", "--path", "/vendor", "--name", "app.js", "--content", "console.log(1);")
 	if err != nil {
 		t.Fatalf("script create failed: %v", err)
 	}
@@ -150,10 +153,10 @@ func TestFileAssetCreateAtRootOmitsParent(t *testing.T) {
 		if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 			t.Fatalf("decode create body: %v", err)
 		}
-		return endpointJSONResponse(http.StatusCreated, ``), nil
+		return cmdtest.JSONResponse(http.StatusCreated, ``), nil
 	})
 
-	if _, err := execute(buildFileAssetRoot(deps), "partial-view", "create-folder", "--path", "/", "--name", "Blog"); err != nil {
+	if _, err := cmdtest.Execute(buildFileAssetRoot(deps), "partial-view", "create-folder", "--path", "/", "--name", "Blog"); err != nil {
 		t.Fatalf("partial-view create-folder failed: %v", err)
 	}
 	if _, ok := body["parent"]; ok {
@@ -179,14 +182,14 @@ func TestFileAssetCreateAndUpdateReadContentFile(t *testing.T) {
 			t.Fatalf("decode body: %v", err)
 		}
 		bodies = append(bodies, body)
-		return endpointJSONResponse(http.StatusOK, ``), nil
+		return cmdtest.JSONResponse(http.StatusOK, ``), nil
 	})
 	root := buildFileAssetRoot(deps)
 
-	if _, err := execute(root, "stylesheet", "create", "--path", "/", "--name", "site.css", "--content-file", source); err != nil {
+	if _, err := cmdtest.Execute(root, "stylesheet", "create", "--path", "/", "--name", "site.css", "--content-file", source); err != nil {
 		t.Fatalf("stylesheet create failed: %v", err)
 	}
-	if _, err := execute(root, "stylesheet", "update", "/site.css", "--content-file", source); err != nil {
+	if _, err := cmdtest.Execute(root, "stylesheet", "update", "/site.css", "--content-file", source); err != nil {
 		t.Fatalf("stylesheet update failed: %v", err)
 	}
 	if len(bodies) != 2 {
@@ -207,12 +210,12 @@ func TestFileAssetContentFlagsAreMutuallyExclusiveAndRequired(t *testing.T) {
 	})
 	root := buildFileAssetRoot(deps)
 
-	_, err := execute(root, "script", "create", "--path", "/", "--name", "a.js", "--content", "x", "--content-file", "a.js")
+	_, err := cmdtest.Execute(root, "script", "create", "--path", "/", "--name", "a.js", "--content", "x", "--content-file", "a.js")
 	if err == nil || !strings.Contains(err.Error(), "not both") {
 		t.Fatalf("expected --content/--content-file conflict, got %v", err)
 	}
 
-	_, err = execute(root, "script", "update", "/a.js")
+	_, err = cmdtest.Execute(root, "script", "update", "/a.js")
 	if err == nil || !strings.Contains(err.Error(), "requires --content or --content-file") {
 		t.Fatalf("expected missing content error, got %v", err)
 	}
@@ -225,11 +228,11 @@ func TestFileAssetGetOutWritesContentVerbatim(t *testing.T) {
 		if err != nil {
 			t.Fatalf("marshal fixture: %v", err)
 		}
-		return endpointJSONResponse(http.StatusOK, string(payload)), nil
+		return cmdtest.JSONResponse(http.StatusOK, string(payload)), nil
 	})
 
 	out := filepath.Join(t.TempDir(), "nested", "a.cshtml")
-	result, err := execute(buildFileAssetRoot(deps), "partial-view", "get", "/a.cshtml", "--out", out)
+	result, err := cmdtest.Execute(buildFileAssetRoot(deps), "partial-view", "get", "/a.cshtml", "--out", out)
 	if err != nil {
 		t.Fatalf("partial-view get --out failed: %v", err)
 	}
@@ -258,7 +261,7 @@ func TestFileAssetDeletesAreForceGated(t *testing.T) {
 		{"script", "delete", "/a.js"},
 		{"stylesheet", "delete-folder", "/theme"},
 	} {
-		_, err := execute(root, args...)
+		_, err := cmdtest.Execute(root, args...)
 		if err == nil || !strings.Contains(err.Error(), "--force") {
 			t.Fatalf("%v: expected a force gate, got %v", args, err)
 		}
@@ -271,10 +274,10 @@ func TestFileAssetDeleteFolderUsesFolderRoute(t *testing.T) {
 	deps := fileAssetDeps(func(req *http.Request) (*http.Response, error) {
 		observed = req.URL.RequestURI()
 		method = req.Method
-		return endpointJSONResponse(http.StatusOK, ``), nil
+		return cmdtest.JSONResponse(http.StatusOK, ``), nil
 	})
 
-	if _, err := execute(buildFileAssetRoot(deps), "partial-view", "delete-folder", "/My Folder", "--force"); err != nil {
+	if _, err := cmdtest.Execute(buildFileAssetRoot(deps), "partial-view", "delete-folder", "/My Folder", "--force"); err != nil {
 		t.Fatalf("delete-folder failed: %v", err)
 	}
 	if method != http.MethodDelete || observed != "/umbraco/management/api/v1/partial-view/folder/My%20Folder" {
@@ -294,7 +297,7 @@ func TestFileAssetPathsRejectTraversal(t *testing.T) {
 		{"script", "delete", "/vendor/../../secret.js", "--force"},
 		{"script", "children", "/.."},
 	} {
-		_, err := execute(root, args...)
+		_, err := cmdtest.Execute(root, args...)
 		if err == nil || !strings.Contains(err.Error(), "relative segments") {
 			t.Fatalf("%v: expected a traversal rejection, got %v", args, err)
 		}
@@ -302,8 +305,8 @@ func TestFileAssetPathsRejectTraversal(t *testing.T) {
 }
 
 func TestStaticFileGroupIsReadOnly(t *testing.T) {
-	root := buildFileAssetRoot(makeDeps())
-	group := findChildCommand(root, "static-file")
+	root := buildFileAssetRoot(cmdtest.MakeDeps())
+	group := cmdtest.FindChildCommand(root, "static-file")
 	if group == nil {
 		t.Fatalf("static-file group not registered")
 	}
@@ -330,7 +333,7 @@ func TestStaticFileGetUsesItemEndpoint(t *testing.T) {
 	var observed string
 	deps := fileAssetDeps(captureURI(&observed, `[{"name":"RTE.css","path":"/wwwroot/css/RTE.css","isFolder":false}]`))
 
-	if _, err := execute(buildFileAssetRoot(deps), "static-file", "get", "/wwwroot/css/RTE.css"); err != nil {
+	if _, err := cmdtest.Execute(buildFileAssetRoot(deps), "static-file", "get", "/wwwroot/css/RTE.css"); err != nil {
 		t.Fatalf("static-file get failed: %v", err)
 	}
 	want := "/umbraco/management/api/v1/item/static-file?path=%2Fwwwroot%2Fcss%2FRTE.css"
@@ -344,13 +347,13 @@ func TestStaticFileGetUnwrapsTheMatchingItem(t *testing.T) {
 	// an array. A get of one path must return that entry, not a
 	// one-element array, so --fields and downstream parsing see an object.
 	deps := fileAssetDeps(func(req *http.Request) (*http.Response, error) {
-		return endpointJSONResponse(http.StatusOK, `[
+		return cmdtest.JSONResponse(http.StatusOK, `[
 			{"name":"other.css","path":"/wwwroot/css/other.css","isFolder":false},
 			{"name":"RTE.css","path":"/wwwroot/css/RTE.css","isFolder":false}
 		]`), nil
 	})
 
-	out, err := execute(buildFileAssetRoot(deps), "static-file", "get", "/wwwroot/css/RTE.css", "--fields", "name")
+	out, err := cmdtest.Execute(buildFileAssetRoot(deps), "static-file", "get", "/wwwroot/css/RTE.css", "--fields", "name")
 	if err != nil {
 		t.Fatalf("static-file get failed: %v", err)
 	}
@@ -369,10 +372,10 @@ func TestStaticFileGetUnwrapsTheMatchingItem(t *testing.T) {
 func TestStaticFileGetReportsMissingPath(t *testing.T) {
 	// An unknown path answers 200 with [], which must not read as success.
 	deps := fileAssetDeps(func(req *http.Request) (*http.Response, error) {
-		return endpointJSONResponse(http.StatusOK, `[]`), nil
+		return cmdtest.JSONResponse(http.StatusOK, `[]`), nil
 	})
 
-	out, err := execute(buildFileAssetRoot(deps), "static-file", "get", "/wwwroot/css/nope.css")
+	out, err := cmdtest.Execute(buildFileAssetRoot(deps), "static-file", "get", "/wwwroot/css/nope.css")
 	if err == nil {
 		t.Fatalf("expected a not-found error, got output %s", out)
 	}
@@ -396,7 +399,7 @@ func TestFileAssetPathsRejectBackslashes(t *testing.T) {
 		{"stylesheet", "children", `/theme\..`},
 		{"static-file", "get", `/wwwroot\..\appsettings.json`},
 	} {
-		_, err := execute(root, args...)
+		_, err := cmdtest.Execute(root, args...)
 		if err == nil || !strings.Contains(err.Error(), "backslashes are not allowed") {
 			t.Fatalf("%v: expected a backslash rejection, got %v", args, err)
 		}
@@ -404,9 +407,9 @@ func TestFileAssetPathsRejectBackslashes(t *testing.T) {
 }
 
 func TestFileAssetSnippetsOnlyOnPartialView(t *testing.T) {
-	root := buildFileAssetRoot(makeDeps())
+	root := buildFileAssetRoot(cmdtest.MakeDeps())
 	for _, group := range []string{"script", "stylesheet", "static-file"} {
-		command := findChildCommand(root, group)
+		command := cmdtest.FindChildCommand(root, group)
 		if command == nil {
 			t.Fatalf("%s group not registered", group)
 		}
@@ -416,7 +419,7 @@ func TestFileAssetSnippetsOnlyOnPartialView(t *testing.T) {
 			}
 		}
 	}
-	partialView := findChildCommand(root, "partial-view")
+	partialView := cmdtest.FindChildCommand(root, "partial-view")
 	found := 0
 	for _, child := range partialView.Commands() {
 		if child.Name() == "snippets" || child.Name() == "snippet" {
@@ -443,7 +446,7 @@ func TestFileAssetMutationsSupportDryRun(t *testing.T) {
 		{"partial-view", "create-folder", "--path", "/", "--name", "Blog", "--dry-run"},
 		{"partial-view", "delete-folder", "/Blog", "--dry-run"},
 	} {
-		out, err := execute(root, args...)
+		out, err := cmdtest.Execute(root, args...)
 		if err != nil {
 			t.Fatalf("%v: dry run failed: %v", args, err)
 		}

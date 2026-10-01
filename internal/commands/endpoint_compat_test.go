@@ -5,27 +5,29 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"umbraco-cli/internal/commands/cmdtest"
 )
 
 func TestTemplateRootUsesTreeEndpointAndFallsBack(t *testing.T) {
 	var requests []string
 
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/tree/template/root":
 			requests = append(requests, req.URL.Path)
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		case "/umbraco/management/api/v1/template/root":
 			requests = append(requests, req.URL.Path)
-			return endpointJSONResponse(http.StatusOK, `{"items":[{"id":"tpl-1"}]}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"items":[{"id":"tpl-1"}]}`), nil
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	output, err := execute(buildRootWithCollections(t, deps), "template", "root")
+	output, err := cmdtest.Execute(buildRootWithCollections(t, deps), "template", "root")
 	if err != nil {
 		t.Fatalf("template root failed: %v", err)
 	}
@@ -46,19 +48,19 @@ func TestTemplateRootUsesTreeEndpointAndFallsBack(t *testing.T) {
 func TestTemplateSearchUsesItemSearchEndpoint(t *testing.T) {
 	var observedPath string
 
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/item/template/search":
 			observedPath = req.URL.String()
-			return endpointJSONResponse(http.StatusOK, `{"items":[{"id":"tpl-1","name":"Partner Page"}]}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"items":[{"id":"tpl-1","name":"Partner Page"}]}`), nil
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	_, err := execute(buildRootWithCollections(t, deps), "template", "search", "--query", "Partner Page")
+	_, err := cmdtest.Execute(buildRootWithCollections(t, deps), "template", "search", "--query", "Partner Page")
 	if err != nil {
 		t.Fatalf("template search failed: %v", err)
 	}
@@ -73,31 +75,31 @@ func TestDoctypeRootChildrenAndSearchUseTreeAndItemEndpoints(t *testing.T) {
 	var childrenPath string
 	var searchPath string
 
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/tree/document-type/root":
 			rootPath = req.URL.String()
-			return endpointJSONResponse(http.StatusOK, `{"items":[{"id":"dt-root"}]}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"items":[{"id":"dt-root"}]}`), nil
 		case "/umbraco/management/api/v1/tree/document-type/children":
 			childrenPath = req.URL.String()
-			return endpointJSONResponse(http.StatusOK, `{"items":[{"id":"dt-child"}]}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"items":[{"id":"dt-child"}]}`), nil
 		case "/umbraco/management/api/v1/item/document-type/search":
 			searchPath = req.URL.String()
-			return endpointJSONResponse(http.StatusOK, `{"items":[{"id":"dt-1"}]}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"items":[{"id":"dt-1"}]}`), nil
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	if _, err := execute(buildRootWithCollections(t, deps), "doctype", "root"); err != nil {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), "doctype", "root"); err != nil {
 		t.Fatalf("doctype root failed: %v", err)
 	}
-	if _, err := execute(buildRootWithCollections(t, deps), "doctype", "children", "parent-1"); err != nil {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), "doctype", "children", "parent-1"); err != nil {
 		t.Fatalf("doctype children failed: %v", err)
 	}
-	if _, err := execute(buildRootWithCollections(t, deps), "doctype", "search", "--query", "partnerPage"); err != nil {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), "doctype", "search", "--query", "partnerPage"); err != nil {
 		t.Fatalf("doctype search failed: %v", err)
 	}
 
@@ -115,17 +117,17 @@ func TestDoctypeRootChildrenAndSearchUseTreeAndItemEndpoints(t *testing.T) {
 func TestServerCommandsPreferLongRouteNames(t *testing.T) {
 	var observed []string
 
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/server/information",
 			"/umbraco/management/api/v1/server/configuration",
 			"/umbraco/management/api/v1/server/troubleshooting":
 			observed = append(observed, req.URL.Path)
-			return endpointJSONResponse(http.StatusOK, `{"ok":true}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"ok":true}`), nil
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
@@ -134,7 +136,7 @@ func TestServerCommandsPreferLongRouteNames(t *testing.T) {
 		{"server", "config"},
 		{"server", "troubleshoot"},
 	} {
-		if _, err := execute(buildRootWithCollections(t, deps), args...); err != nil {
+		if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), args...); err != nil {
 			t.Fatalf("%s failed: %v", strings.Join(args, " "), err)
 		}
 	}

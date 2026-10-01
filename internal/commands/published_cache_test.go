@@ -7,9 +7,12 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
+
+	"umbraco-cli/internal/commands/cmdkit"
+	"umbraco-cli/internal/commands/cmdtest"
 )
 
-func buildPublishedCacheRoot(deps Dependencies) *cobra.Command {
+func buildPublishedCacheRoot(deps cmdkit.Dependencies) *cobra.Command {
 	root := &cobra.Command{Use: "umbraco", SilenceErrors: true, SilenceUsage: true}
 	root.SetErr(io.Discard)
 	if deps.OutputFlag != nil {
@@ -21,22 +24,22 @@ func buildPublishedCacheRoot(deps Dependencies) *cobra.Command {
 
 func TestPublishedCacheStatusFallsBackToLegacyRoute(t *testing.T) {
 	var requests []string
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/published-cache/rebuild/status":
 			requests = append(requests, req.URL.Path)
-			return endpointJSONResponse(http.StatusNotFound, `{"error":"not found"}`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `{"error":"not found"}`), nil
 		case "/umbraco/management/api/v1/published-cache/status":
 			requests = append(requests, req.URL.Path)
-			return endpointJSONResponse(http.StatusOK, `"cache is ok"`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `"cache is ok"`), nil
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `{"error":"not found"}`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `{"error":"not found"}`), nil
 		}
 	})
 
-	out, err := execute(buildPublishedCacheRoot(deps), "published-cache", "status")
+	out, err := cmdtest.Execute(buildPublishedCacheRoot(deps), "published-cache", "status")
 	if err != nil {
 		t.Fatalf("published-cache status failed: %v", err)
 	}
@@ -49,12 +52,12 @@ func TestPublishedCacheStatusFallsBackToLegacyRoute(t *testing.T) {
 }
 
 func TestPublishedCacheRebuildRequiresForceOrDryRun(t *testing.T) {
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		t.Fatalf("no HTTP request expected without --force or --dry-run")
 		return nil, nil
 	})
 
-	_, err := execute(buildPublishedCacheRoot(deps), "published-cache", "rebuild")
+	_, err := cmdtest.Execute(buildPublishedCacheRoot(deps), "published-cache", "rebuild")
 	if err == nil || !strings.Contains(err.Error(), "--force") {
 		t.Fatalf("expected force/dry-run gate, got %v", err)
 	}
@@ -62,10 +65,10 @@ func TestPublishedCacheRebuildRequiresForceOrDryRun(t *testing.T) {
 
 func TestPublishedCacheRebuildPostsWithForce(t *testing.T) {
 	var requestedPath, requestedMethod string
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		default:
 			requestedPath = req.URL.Path
 			requestedMethod = req.Method
@@ -73,7 +76,7 @@ func TestPublishedCacheRebuildPostsWithForce(t *testing.T) {
 		}
 	})
 
-	out, err := execute(buildPublishedCacheRoot(deps), "published-cache", "rebuild", "--force")
+	out, err := cmdtest.Execute(buildPublishedCacheRoot(deps), "published-cache", "rebuild", "--force")
 	if err != nil {
 		t.Fatalf("rebuild failed: %v", err)
 	}
@@ -87,12 +90,12 @@ func TestPublishedCacheRebuildPostsWithForce(t *testing.T) {
 
 func TestPublishedCacheRebuildDryRunSkipsRequest(t *testing.T) {
 	requests := 0
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		requests++
-		return endpointJSONResponse(http.StatusOK, `{}`), nil
+		return cmdtest.JSONResponse(http.StatusOK, `{}`), nil
 	})
 
-	out, err := execute(buildPublishedCacheRoot(deps), "published-cache", "rebuild", "--dry-run")
+	out, err := cmdtest.Execute(buildPublishedCacheRoot(deps), "published-cache", "rebuild", "--dry-run")
 	if err != nil {
 		t.Fatalf("rebuild dry-run failed: %v", err)
 	}
@@ -106,10 +109,10 @@ func TestPublishedCacheRebuildDryRunSkipsRequest(t *testing.T) {
 
 func TestPublishedCacheReloadPosts(t *testing.T) {
 	var requestedPath, requestedMethod string
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		default:
 			requestedPath = req.URL.Path
 			requestedMethod = req.Method
@@ -117,7 +120,7 @@ func TestPublishedCacheReloadPosts(t *testing.T) {
 		}
 	})
 
-	out, err := execute(buildPublishedCacheRoot(deps), "published-cache", "reload")
+	out, err := cmdtest.Execute(buildPublishedCacheRoot(deps), "published-cache", "reload")
 	if err != nil {
 		t.Fatalf("reload failed: %v", err)
 	}
@@ -131,25 +134,25 @@ func TestPublishedCacheReloadPosts(t *testing.T) {
 
 func TestPublishedCacheRebuildWithWaitPollsUntilDone(t *testing.T) {
 	var rebuilds, statusPolls int
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/published-cache/rebuild":
 			rebuilds++
 			return &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(""))}, nil
 		case "/umbraco/management/api/v1/published-cache/rebuild/status":
 			statusPolls++
 			if statusPolls == 1 {
-				return endpointJSONResponse(http.StatusOK, `{"isRebuilding":true}`), nil
+				return cmdtest.JSONResponse(http.StatusOK, `{"isRebuilding":true}`), nil
 			}
-			return endpointJSONResponse(http.StatusOK, `{"isRebuilding":false}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"isRebuilding":false}`), nil
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `{"error":"not found"}`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `{"error":"not found"}`), nil
 		}
 	})
 
-	out, err := execute(buildPublishedCacheRoot(deps), "published-cache", "rebuild", "--force", "--wait", "--poll-interval", "1ms", "--timeout", "5s")
+	out, err := cmdtest.Execute(buildPublishedCacheRoot(deps), "published-cache", "rebuild", "--force", "--wait", "--poll-interval", "1ms", "--timeout", "5s")
 	if err != nil {
 		t.Fatalf("rebuild --wait failed: %v", err)
 	}
@@ -162,30 +165,30 @@ func TestPublishedCacheRebuildWithWaitPollsUntilDone(t *testing.T) {
 }
 
 func TestPublishedCacheRebuildWaitTimesOut(t *testing.T) {
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/published-cache/rebuild":
 			return &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(""))}, nil
 		default:
-			return endpointJSONResponse(http.StatusOK, `{"isRebuilding":true}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"isRebuilding":true}`), nil
 		}
 	})
 
-	_, err := execute(buildPublishedCacheRoot(deps), "published-cache", "rebuild", "--force", "--wait", "--poll-interval", "1ms", "--timeout", "10ms")
+	_, err := cmdtest.Execute(buildPublishedCacheRoot(deps), "published-cache", "rebuild", "--force", "--wait", "--poll-interval", "1ms", "--timeout", "10ms")
 	if err == nil || !strings.Contains(err.Error(), "still rebuilding") {
 		t.Fatalf("expected timeout error, got %v", err)
 	}
 }
 
 func TestPublishedCacheRebuildRejectsDryRunWithWait(t *testing.T) {
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		t.Fatalf("no HTTP request expected for flag validation error")
 		return nil, nil
 	})
 
-	_, err := execute(buildPublishedCacheRoot(deps), "published-cache", "rebuild", "--dry-run", "--wait")
+	_, err := cmdtest.Execute(buildPublishedCacheRoot(deps), "published-cache", "rebuild", "--dry-run", "--wait")
 	if err == nil || !strings.Contains(err.Error(), "--wait has nothing to poll for") {
 		t.Fatalf("expected dry-run/wait conflict error, got %v", err)
 	}
@@ -193,24 +196,24 @@ func TestPublishedCacheRebuildRejectsDryRunWithWait(t *testing.T) {
 
 func TestPublishedCacheRebuildWaitFallsBackToLegacyStatusRoute(t *testing.T) {
 	var statusRequests []string
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/published-cache/rebuild":
 			return &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(""))}, nil
 		case "/umbraco/management/api/v1/published-cache/rebuild/status":
 			statusRequests = append(statusRequests, req.URL.Path)
-			return endpointJSONResponse(http.StatusNotFound, `{"error":"not found"}`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `{"error":"not found"}`), nil
 		case "/umbraco/management/api/v1/published-cache/status":
 			statusRequests = append(statusRequests, req.URL.Path)
-			return endpointJSONResponse(http.StatusOK, `"cache is ok"`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `"cache is ok"`), nil
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `{"error":"not found"}`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `{"error":"not found"}`), nil
 		}
 	})
 
-	_, err := execute(buildPublishedCacheRoot(deps), "published-cache", "rebuild", "--force", "--wait", "--poll-interval", "1ms", "--timeout", "5s")
+	_, err := cmdtest.Execute(buildPublishedCacheRoot(deps), "published-cache", "rebuild", "--force", "--wait", "--poll-interval", "1ms", "--timeout", "5s")
 	// The legacy payload has no isRebuilding flag: fail fast with a clear
 	// message instead of burning the timeout, but only after the fallback
 	// route was actually tried.

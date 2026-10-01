@@ -7,35 +7,38 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"umbraco-cli/internal/commands/cmdkit"
+	"umbraco-cli/internal/commands/cmdtest"
 )
 
-func documentBatchDeps(t *testing.T, puts *[]string, failPublishFor string) Dependencies {
+func documentBatchDeps(t *testing.T, puts *[]string, failPublishFor string) cmdkit.Dependencies {
 	t.Helper()
-	return endpointDeps(func(req *http.Request) (*http.Response, error) {
+	return cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch {
 		case req.URL.Path == "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case strings.HasPrefix(req.URL.Path, "/umbraco/management/api/v1/document/"):
 			rest := strings.TrimPrefix(req.URL.Path, "/umbraco/management/api/v1/document/")
 			id := strings.SplitN(rest, "/", 2)[0]
 			if id == "missing" {
-				return endpointJSONResponse(http.StatusNotFound, `{"title":"Not found","status":404}`), nil
+				return cmdtest.JSONResponse(http.StatusNotFound, `{"title":"Not found","status":404}`), nil
 			}
 			if req.Method == http.MethodGet {
-				return endpointJSONResponse(http.StatusOK, `{"id":"`+id+`","variants":[{"culture":null,"segment":null,"name":"Page `+id+`"}],"values":[{"alias":"title","culture":null,"segment":null,"value":"old"}]}`), nil
+				return cmdtest.JSONResponse(http.StatusOK, `{"id":"`+id+`","variants":[{"culture":null,"segment":null,"name":"Page `+id+`"}],"values":[{"alias":"title","culture":null,"segment":null,"value":"old"}]}`), nil
 			}
 			if req.Method == http.MethodPut {
 				*puts = append(*puts, req.URL.Path)
 				if strings.HasSuffix(rest, "/update-and-publish") {
-					return endpointJSONResponse(http.StatusNotFound, `null`), nil // older server: two-step path
+					return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil // older server: two-step path
 				}
 				if strings.HasSuffix(rest, "/publish") && id == failPublishFor {
-					return endpointJSONResponse(http.StatusBadRequest, `{"title":"Publish failed","status":400}`), nil
+					return cmdtest.JSONResponse(http.StatusBadRequest, `{"title":"Publish failed","status":400}`), nil
 				}
-				return endpointNoContent(), nil
+				return cmdtest.NoContent(), nil
 			}
 		}
-		return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 	})
 }
 
@@ -43,15 +46,15 @@ func TestDocumentPublishIDsRunsPerDocumentAndExits4OnFailure(t *testing.T) {
 	var puts []string
 	deps := documentBatchDeps(t, &puts, "b")
 
-	if _, err := execute(buildRootWithCollections(t, deps), "document", "publish", "--ids", "a,b"); err == nil || !strings.Contains(err.Error(), "--force") {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), "document", "publish", "--ids", "a,b"); err == nil || !strings.Contains(err.Error(), "--force") {
 		t.Fatalf("expected the force/dry-run gate on a multi-document publish, got %v", err)
 	}
-	if _, err := execute(buildRootWithCollections(t, deps), "document", "publish", "a", "--ids", "b", "--force"); err == nil || !strings.Contains(err.Error(), "not both") {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), "document", "publish", "a", "--ids", "b", "--force"); err == nil || !strings.Contains(err.Error(), "not both") {
 		t.Fatalf("expected positional and --ids to be exclusive, got %v", err)
 	}
 
-	out, err := execute(buildRootWithCollections(t, deps), "document", "publish", "--ids", "a,b,missing", "--force")
-	if err == nil || batchExitCode(err) != 4 || !strings.Contains(err.Error(), "2 of 3 documents failed") {
+	out, err := cmdtest.Execute(buildRootWithCollections(t, deps), "document", "publish", "--ids", "a,b,missing", "--force")
+	if err == nil || cmdtest.ExitCode(err) != 4 || !strings.Contains(err.Error(), "2 of 3 documents failed") {
 		t.Fatalf("expected exit 4 with a failure summary, got %v", err)
 	}
 	var result documentBatchResult
@@ -83,7 +86,7 @@ func TestDocumentUpdateIDsMergesPerDocumentAndPublishes(t *testing.T) {
 	var puts []string
 	deps := documentBatchDeps(t, &puts, "")
 	dir := t.TempDir()
-	out, err := execute(buildRootWithCollections(t, deps), "document", "update", "--ids", "a,b", "--merge-json", `{"values":[{"alias":"title","value":"new"}]}`, "--save-and-publish", "--backup="+dir, "--force")
+	out, err := cmdtest.Execute(buildRootWithCollections(t, deps), "document", "update", "--ids", "a,b", "--merge-json", `{"values":[{"alias":"title","value":"new"}]}`, "--save-and-publish", "--backup="+dir, "--force")
 	if err != nil {
 		t.Fatalf("document update --ids failed: %v (%s)", err, out)
 	}
@@ -108,7 +111,7 @@ func TestDocumentUpdateIDsMergesPerDocumentAndPublishes(t *testing.T) {
 
 	// An unchanged merge is a skip, not a write.
 	puts = nil
-	out, err = execute(buildRootWithCollections(t, deps), "document", "update", "--ids", "a", "--merge-json", `{"values":[{"alias":"title","value":"old"}]}`, "--force")
+	out, err = cmdtest.Execute(buildRootWithCollections(t, deps), "document", "update", "--ids", "a", "--merge-json", `{"values":[{"alias":"title","value":"old"}]}`, "--force")
 	if err != nil || !strings.Contains(out, `"update": "skipped"`) || len(puts) != 0 {
 		t.Fatalf("expected a skip without a PUT, got err=%v puts=%v out=%s", err, puts, out)
 	}
@@ -120,15 +123,15 @@ func TestDocumentUpdateIDsMergesPerDocumentAndPublishes(t *testing.T) {
 // must not drop the others from any of them.
 func TestDocumentUpdateIDsMergesVariantsPerCulture(t *testing.T) {
 	bodies := map[string]map[string]any{}
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch {
 		case req.URL.Path == "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case strings.HasPrefix(req.URL.Path, "/umbraco/management/api/v1/document/"):
 			rest := strings.TrimPrefix(req.URL.Path, "/umbraco/management/api/v1/document/")
 			id := strings.SplitN(rest, "/", 2)[0]
 			if req.Method == http.MethodGet {
-				return endpointJSONResponse(http.StatusOK, `{"id":"`+id+`","variants":[{"culture":"en-US","segment":null,"name":"English `+id+`"},{"culture":"da-DK","segment":null,"name":"Danish `+id+`"}],"values":[]}`), nil
+				return cmdtest.JSONResponse(http.StatusOK, `{"id":"`+id+`","variants":[{"culture":"en-US","segment":null,"name":"English `+id+`"},{"culture":"da-DK","segment":null,"name":"Danish `+id+`"}],"values":[]}`), nil
 			}
 			if req.Method == http.MethodPut {
 				if rest == id {
@@ -138,13 +141,13 @@ func TestDocumentUpdateIDsMergesVariantsPerCulture(t *testing.T) {
 					}
 					bodies[id] = body
 				}
-				return endpointNoContent(), nil
+				return cmdtest.NoContent(), nil
 			}
 		}
-		return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 	})
 
-	if _, err := execute(
+	if _, err := cmdtest.Execute(
 		buildRootWithCollections(t, deps),
 		"document", "update", "--ids", "a,b",
 		"--merge-json", `{"variants":[{"culture":"da-DK","name":"Renamed"}]}`,
@@ -175,7 +178,7 @@ func TestDocumentUpdateIDsDryRunPlansFirstThreeAndCountsTheRest(t *testing.T) {
 	var puts []string
 	gets := 0
 	base := documentBatchDeps(t, &puts, "")
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		if req.Method == http.MethodGet && strings.HasPrefix(req.URL.Path, "/umbraco/management/api/v1/document/") {
 			gets++
 		}
@@ -183,7 +186,7 @@ func TestDocumentUpdateIDsDryRunPlansFirstThreeAndCountsTheRest(t *testing.T) {
 	})
 	file := t.TempDir() + "/ids.txt"
 	_ = os.WriteFile(file, []byte("a\nb\nc\nd\ne\n"), 0o600)
-	out, err := execute(buildRootWithCollections(t, deps), "document", "update", "--from-file", file, "--property", "title", "--value", "x", "--dry-run")
+	out, err := cmdtest.Execute(buildRootWithCollections(t, deps), "document", "update", "--from-file", file, "--property", "title", "--value", "x", "--dry-run")
 	if err != nil {
 		t.Fatalf("dry-run failed: %v", err)
 	}
@@ -202,21 +205,21 @@ func TestDocumentUpdateIDsDryRunPlansFirstThreeAndCountsTheRest(t *testing.T) {
 
 func TestDocumentPublishIDsPassesFullJSONBodyAndKeepsAuthExitCode(t *testing.T) {
 	var bodies []string
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch {
 		case req.URL.Path == "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case strings.HasSuffix(req.URL.Path, "/publish") && req.Method == http.MethodPut:
 			body, _ := io.ReadAll(req.Body)
 			bodies = append(bodies, string(body))
-			return endpointNoContent(), nil
+			return cmdtest.NoContent(), nil
 		case strings.HasPrefix(req.URL.Path, "/umbraco/management/api/v1/document/") && req.Method == http.MethodGet:
-			return endpointJSONResponse(http.StatusOK, `{"id":"x","variants":[{"name":"P"}],"values":[]}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"id":"x","variants":[{"name":"P"}],"values":[]}`), nil
 		}
-		return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 	})
 	payload := `{"publishSchedules":[{"culture":"en-US"},{"culture":"da-DK"}]}`
-	if _, err := execute(buildRootWithCollections(t, deps), "document", "publish", "--ids", "a,b", "--json", payload, "--force"); err != nil {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), "document", "publish", "--ids", "a,b", "--json", payload, "--force"); err != nil {
 		t.Fatalf("publish --ids --json failed: %v", err)
 	}
 	if len(bodies) != 2 || !strings.Contains(bodies[0], `"da-DK"`) || !strings.Contains(bodies[1], `"da-DK"`) {
@@ -224,37 +227,37 @@ func TestDocumentPublishIDsPassesFullJSONBodyAndKeepsAuthExitCode(t *testing.T) 
 	}
 
 	// An auth failure keeps exit 3 instead of being flattened to 4.
-	unauthorized := endpointDeps(func(req *http.Request) (*http.Response, error) {
-		return endpointJSONResponse(http.StatusUnauthorized, `{"error":"invalid_client"}`), nil
+	unauthorized := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
+		return cmdtest.JSONResponse(http.StatusUnauthorized, `{"error":"invalid_client"}`), nil
 	})
-	_, err := execute(buildRootWithCollections(t, unauthorized), "document", "publish", "--ids", "a,b", "--force")
-	if err == nil || batchExitCode(err) != 3 {
-		t.Fatalf("expected the auth exit code 3 to survive the batch, got %v (code %d)", err, batchExitCode(err))
+	_, err := cmdtest.Execute(buildRootWithCollections(t, unauthorized), "document", "publish", "--ids", "a,b", "--force")
+	if err == nil || cmdtest.ExitCode(err) != 3 {
+		t.Fatalf("expected the auth exit code 3 to survive the batch, got %v (code %d)", err, cmdtest.ExitCode(err))
 	}
 }
 
 func TestDocumentUpdateIDsEmptyValueClearsPropertyOnEveryDocument(t *testing.T) {
 	bodies := map[string]map[string]any{}
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch {
 		case req.URL.Path == "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case strings.HasPrefix(req.URL.Path, "/umbraco/management/api/v1/document/"):
 			id := strings.TrimPrefix(req.URL.Path, "/umbraco/management/api/v1/document/")
 			if req.Method == http.MethodGet {
-				return endpointJSONResponse(http.StatusOK, `{"id":"`+id+`","variants":[{"culture":null,"segment":null,"name":"Page `+id+`"}],"values":[{"alias":"title","culture":null,"segment":null,"value":"old"}]}`), nil
+				return cmdtest.JSONResponse(http.StatusOK, `{"id":"`+id+`","variants":[{"culture":null,"segment":null,"name":"Page `+id+`"}],"values":[{"alias":"title","culture":null,"segment":null,"value":"old"}]}`), nil
 			}
 			if req.Method == http.MethodPut {
 				var body map[string]any
 				_ = json.NewDecoder(req.Body).Decode(&body)
 				bodies[id] = body
-				return endpointNoContent(), nil
+				return cmdtest.NoContent(), nil
 			}
 		}
-		return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 	})
 
-	out, err := execute(buildRootWithCollections(t, deps), "document", "update", "--ids", "a,b", "--property", "title", "--value", "", "--force")
+	out, err := cmdtest.Execute(buildRootWithCollections(t, deps), "document", "update", "--ids", "a,b", "--property", "title", "--value", "", "--force")
 	if err != nil {
 		t.Fatalf("batch update with --value \"\" failed: %v", err)
 	}
