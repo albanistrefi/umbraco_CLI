@@ -14,6 +14,7 @@ import (
 
 	"umbraco-cli/internal/api"
 	"umbraco-cli/internal/commands/cmdkit"
+	"umbraco-cli/internal/safefile"
 )
 
 // mediaInspect answers "which file is this?" in one read: file src and URL,
@@ -129,7 +130,7 @@ func mediaDownload(deps cmdkit.Dependencies) *cobra.Command {
 			if info, statErr := os.Stat(target); strings.HasSuffix(target, "/") || (statErr == nil && info.IsDir()) {
 				// Server-controlled name: sanitize for the host OS and verify
 				// it stays a direct child of the requested directory.
-				child, err := cmdkit.SafeChildPath(target, cmdkit.SanitizeFileName(path.Base(src), "download"))
+				child, err := safefile.ChildPath(target, safefile.Name(path.Base(src), "download"))
 				if err != nil {
 					return err
 				}

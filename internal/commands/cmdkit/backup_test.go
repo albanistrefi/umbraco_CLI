@@ -46,14 +46,3 @@ func TestBackupBinaryNameIsSanitizedAndEnvelopeReservedFirst(t *testing.T) {
 		t.Fatalf("old binary was overwritten: %q → %q", before, after)
 	}
 }
-
-func TestSanitizeFileNameRejectsWindowsDeviceNames(t *testing.T) {
-	for _, name := range []string{"CON", "nul", "COM1", "LPT1.txt", "aux.svg"} {
-		if got := SanitizeFileName(name, "file"); !strings.HasPrefix(got, "_") {
-			t.Fatalf("expected %q to be rewritten, got %q", name, got)
-		}
-	}
-	if got := SanitizeFileName("console.svg", "file"); got != "console.svg" {
-		t.Fatalf("expected ordinary names untouched, got %q", got)
-	}
-}

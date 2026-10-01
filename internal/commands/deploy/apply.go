@@ -14,6 +14,7 @@ import (
 
 	"umbraco-cli/internal/api"
 	"umbraco-cli/internal/commands/cmdkit"
+	"umbraco-cli/internal/safefile"
 )
 
 // deployApplyFailedError is returned when one or more planned writes failed
@@ -469,7 +470,7 @@ func applyEntry(ctx context.Context, deps cmdkit.Dependencies, entry *udaPlanEnt
 		if err := os.MkdirAll(backupDir, 0o755); err != nil {
 			return err
 		}
-		file := filepath.Join(backupDir, cmdkit.SanitizeFileName(entry.Kind+"-"+entry.artifact.GUID, "entity")+".backup.json")
+		file := filepath.Join(backupDir, safefile.Name(entry.Kind+"-"+entry.artifact.GUID, "entity")+".backup.json")
 		saved, err := cmdkit.WriteBackup(file, entry.Kind, entry.artifact.GUID, entry.Path, current, nil)
 		if err != nil {
 			return err
