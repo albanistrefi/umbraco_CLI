@@ -1,4 +1,5 @@
-package commands
+// Package automate holds the Umbraco Automate add-on commands.
+package automate
 
 import (
 	"fmt"
@@ -6,18 +7,21 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/commands/cmdkit"
 )
 
 // Umbraco Automate serves its own Management API mount; every command in
 // this group targets it via APIPrefix. The commands require Automate to be
-// installed on the target instance -- without it the mount 404s.
-const automateAPIPrefix = "/umbraco/automate/management/api/v1"
+// installed on the target instance -- without it the mount 404s. Deploy
+// reuses it to probe and compare Automate artifacts.
+const APIPrefix = "/umbraco/automate/management/api/v1"
 
-func RegisterAutomate(root *cobra.Command, deps Dependencies) {
+// Register attaches the automate command group to root.
+func Register(root *cobra.Command, deps cmdkit.Dependencies) {
 	automate := &cobra.Command{
 		Use:   "automate",
 		Short: "Umbraco Automate operations (event-driven workflow automation)",
-		Long:  "Operate Umbraco Automate: discover the step catalogue, author and trigger automations, manage runs, decide approvals, and roll back via version history. Requires Umbraco Automate on the target instance; targets its Management API mount (" + automateAPIPrefix + ").",
+		Long:  "Operate Umbraco Automate: discover the step catalogue, author and trigger automations, manage runs, decide approvals, and roll back via version history. Requires Umbraco Automate on the target instance; targets its Management API mount (" + APIPrefix + ").",
 	}
 	automate.AddCommand(automateCatalogue(deps))
 	automate.AddCommand(automateAutomation(deps))
@@ -31,25 +35,25 @@ func RegisterAutomate(root *cobra.Command, deps Dependencies) {
 }
 
 func automateOpts(params map[string]any, dryRun bool) api.RequestOptions {
-	return api.RequestOptions{APIPrefix: automateAPIPrefix, Params: params, DryRun: dryRun}
+	return api.RequestOptions{APIPrefix: APIPrefix, Params: params, DryRun: dryRun}
 }
 
 // automateArrayRead builds a read command for the catalogue-style endpoints
 // that return bare arrays (no {items,total} envelope, no pagination).
-func automateArrayRead(deps Dependencies, use string, short string, path string) *cobra.Command {
+func automateArrayRead(deps cmdkit.Dependencies, use string, short string, path string) *cobra.Command {
 	var fields string
 	cmd := &cobra.Command{Use: use, Short: short, Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
 		result, err := deps.Client.Get(cmd.Context(), path, automateOpts(nil, false))
 		if err != nil {
 			return err
 		}
-		return printResult(cmd, deps, applyFieldsProjection(result, fields))
+		return cmdkit.PrintResult(cmd, deps, cmdkit.ApplyFieldsProjection(result, fields))
 	}}
-	addFieldsFlag(cmd, &fields)
+	cmdkit.AddFieldsFlag(cmd, &fields)
 	return cmd
 }
 
-func automateCatalogue(deps Dependencies) *cobra.Command {
+func automateCatalogue(deps cmdkit.Dependencies) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "catalogue",
 		Short: "Discover the building blocks automations are made of",
@@ -69,7 +73,7 @@ func automateCatalogue(deps Dependencies) *cobra.Command {
 
 // automateCatalogueScoped builds the catalogue reads that accept an
 // optional workspace scope (actions and triggers vary per workspace).
-func automateCatalogueScoped(deps Dependencies, use string, short string, path string) *cobra.Command {
+func automateCatalogueScoped(deps cmdkit.Dependencies, use string, short string, path string) *cobra.Command {
 	var fields string
 	var workspaceID string
 	cmd := &cobra.Command{Use: use, Short: short, Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
@@ -81,14 +85,14 @@ func automateCatalogueScoped(deps Dependencies, use string, short string, path s
 		if err != nil {
 			return err
 		}
-		return printResult(cmd, deps, applyFieldsProjection(result, fields))
+		return cmdkit.PrintResult(cmd, deps, cmdkit.ApplyFieldsProjection(result, fields))
 	}}
-	addFieldsFlag(cmd, &fields)
+	cmdkit.AddFieldsFlag(cmd, &fields)
 	cmd.Flags().StringVar(&workspaceID, "workspace-id", "", "Scope to one workspace")
 	return cmd
 }
 
-func automateCatalogueStepTypes(deps Dependencies) *cobra.Command {
+func automateCatalogueStepTypes(deps cmdkit.Dependencies) *cobra.Command {
 	var fields string
 	var stepType string
 	cmd := &cobra.Command{Use: "step-types", Short: "List step types, optionally filtered by kind", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
@@ -100,9 +104,9 @@ func automateCatalogueStepTypes(deps Dependencies) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		return printResult(cmd, deps, applyFieldsProjection(result, fields))
+		return cmdkit.PrintResult(cmd, deps, cmdkit.ApplyFieldsProjection(result, fields))
 	}}
-	addFieldsFlag(cmd, &fields)
+	cmdkit.AddFieldsFlag(cmd, &fields)
 	cmd.Flags().StringVar(&stepType, "type", "", "Step type filter")
 	return cmd
 }
@@ -128,7 +132,7 @@ var automateConditionOperators = []automateConditionOperator{
 	{Operator: "IsNotEmpty", Label: "Is not empty", DeployUDAOperator: 11},
 }
 
-func automateCatalogueOperators(deps Dependencies) *cobra.Command {
+func automateCatalogueOperators(deps cmdkit.Dependencies) *cobra.Command {
 	var fields string
 	cmd := &cobra.Command{
 		Use:   "operators",
@@ -136,14 +140,14 @@ func automateCatalogueOperators(deps Dependencies) *cobra.Command {
 		Long:  "Lists the ConditionOperator values accepted by automation export/import/update payloads. Use the string in the operator field, e.g. {\"operator\":\"NotEquals\"}; Deploy .uda files use integer Operator values, exposed here only as a mapping aid.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return printResult(cmd, deps, applyFieldsProjection(automateConditionOperators, fields))
+			return cmdkit.PrintResult(cmd, deps, cmdkit.ApplyFieldsProjection(automateConditionOperators, fields))
 		},
 	}
-	addFieldsFlag(cmd, &fields)
+	cmdkit.AddFieldsFlag(cmd, &fields)
 	return cmd
 }
 
-func automateCatalogueOutputSchema(deps Dependencies) *cobra.Command {
+func automateCatalogueOutputSchema(deps cmdkit.Dependencies) *cobra.Command {
 	var jsonRaw string
 	cmd := &cobra.Command{
 		Use:   "output-schema <alias>",
@@ -151,7 +155,7 @@ func automateCatalogueOutputSchema(deps Dependencies) *cobra.Command {
 		Long:  "POST /catalogue/step-types/{alias}/output-schema. Steps with hasDynamicOutputSchema=true shape their output by their settings; pass the intended settings via --json to see the fields available for ${...} bindings in later steps.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			body, err := optionalBody(jsonRaw)
+			body, err := cmdkit.OptionalBody(jsonRaw)
 			if err != nil {
 				return err
 			}
@@ -162,14 +166,14 @@ func automateCatalogueOutputSchema(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, deps, result)
+			return cmdkit.PrintResult(cmd, deps, result)
 		},
 	}
 	cmd.Flags().StringVar(&jsonRaw, "json", "", "JSON body; defaults to {\"settings\":{}}")
 	return cmd
 }
 
-func automateAutomation(deps Dependencies) *cobra.Command {
+func automateAutomation(deps cmdkit.Dependencies) *cobra.Command {
 	cmd := &cobra.Command{Use: "automation", Short: "Automation operations"}
 	cmd.AddCommand(automateAutomationList(deps))
 	cmd.AddCommand(automateAutomationGet(deps))
@@ -189,20 +193,20 @@ func automateAutomation(deps Dependencies) *cobra.Command {
 	return cmd
 }
 
-func automateAutomationList(deps Dependencies) *cobra.Command {
+func automateAutomationList(deps cmdkit.Dependencies) *cobra.Command {
 	var filter string
 	var workspaceID string
 	var groupID string
-	cmd := collectionCommand(deps, collectionSpec{
+	cmd := cmdkit.CollectionCommand(deps, cmdkit.CollectionSpec{
 		Use:   "list",
 		Short: "List automations (paginated; --skip/--take/--all)",
-		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
+		Endpoints: func(args []string, params map[string]any) []cmdkit.GetRequestCandidate {
 			for key, value := range map[string]string{"filter": filter, "workspaceId": workspaceID, "groupId": groupID} {
 				if value != "" {
-					params = withParam(params, key, value)
+					params = cmdkit.WithParam(params, key, value)
 				}
 			}
-			return []getRequestCandidate{
+			return []cmdkit.GetRequestCandidate{
 				{Path: "/automations", Opts: automateOpts(params, false)},
 			}
 		},
@@ -213,29 +217,29 @@ func automateAutomationList(deps Dependencies) *cobra.Command {
 	return cmd
 }
 
-func automateAutomationGet(deps Dependencies) *cobra.Command {
-	return getCommand(deps, getSpec{
+func automateAutomationGet(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.GetCommand(deps, cmdkit.GetSpec{
 		Use:       "get <id>",
 		Short:     "Get an automation by ID (trigger, steps, connections, state)",
 		Path:      func(args []string) string { return api.JoinPath("/automations/%s", args[0]) },
-		APIPrefix: automateAPIPrefix,
+		APIPrefix: APIPrefix,
 	})
 }
 
-func automateAutomationRuns(deps Dependencies) *cobra.Command {
-	return collectionCommand(deps, collectionSpec{
+func automateAutomationRuns(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.CollectionCommand(deps, cmdkit.CollectionSpec{
 		Use:   "runs <id>",
 		Short: "List runs for an automation (paginated; --skip/--take/--all)",
 		NArgs: 1,
-		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
-			return []getRequestCandidate{
+		Endpoints: func(args []string, params map[string]any) []cmdkit.GetRequestCandidate {
+			return []cmdkit.GetRequestCandidate{
 				{Path: api.JoinPath("/automations/%s/runs", args[0]), Opts: automateOpts(params, false)},
 			}
 		},
 	})
 }
 
-func automateAutomationTrigger(deps Dependencies) *cobra.Command {
+func automateAutomationTrigger(deps cmdkit.Dependencies) *cobra.Command {
 	var dryRun bool
 	cmd := &cobra.Command{
 		Use:   "trigger <id>",
@@ -246,14 +250,14 @@ func automateAutomationTrigger(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printMutationResult(cmd, deps, "triggered", result, dryRun)
+			return cmdkit.PrintMutationResult(cmd, deps, "triggered", result, dryRun)
 		},
 	}
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
-func automateAutomationExport(deps Dependencies) *cobra.Command {
+func automateAutomationExport(deps cmdkit.Dependencies) *cobra.Command {
 	var include string
 	cmd := &cobra.Command{
 		Use:   "export <id>",
@@ -269,14 +273,14 @@ func automateAutomationExport(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, deps, result)
+			return cmdkit.PrintResult(cmd, deps, result)
 		},
 	}
 	cmd.Flags().StringVar(&include, "include", "", "Export include option")
 	return cmd
 }
 
-func automateRun(deps Dependencies) *cobra.Command {
+func automateRun(deps cmdkit.Dependencies) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "run",
 		Short: "Automation run operations (inspect, replay, suspend, resume, terminate)",
@@ -289,16 +293,16 @@ func automateRun(deps Dependencies) *cobra.Command {
 	return cmd
 }
 
-func automateRunGet(deps Dependencies) *cobra.Command {
-	return getCommand(deps, getSpec{
+func automateRunGet(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.GetCommand(deps, cmdkit.GetSpec{
 		Use:       "get <id>",
 		Short:     "Get a run by ID (per-step status, errors, retries, timing -- resolved step values are not exposed by the API)",
 		Path:      func(args []string) string { return api.JoinPath("/runs/%s", args[0]) },
-		APIPrefix: automateAPIPrefix,
+		APIPrefix: APIPrefix,
 	})
 }
 
-func automateRunAction(deps Dependencies, action string, short string, verb string) *cobra.Command {
+func automateRunAction(deps cmdkit.Dependencies, action string, short string, verb string) *cobra.Command {
 	var dryRun bool
 	cmd := &cobra.Command{
 		Use:   action + " <id>",
@@ -309,21 +313,21 @@ func automateRunAction(deps Dependencies, action string, short string, verb stri
 			if err != nil {
 				return err
 			}
-			return printMutationResult(cmd, deps, verb, result, dryRun)
+			return cmdkit.PrintMutationResult(cmd, deps, verb, result, dryRun)
 		},
 	}
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
-func automateApprovals(deps Dependencies) *cobra.Command {
+func automateApprovals(deps cmdkit.Dependencies) *cobra.Command {
 	cmd := &cobra.Command{Use: "approvals", Short: "Approval-step operations"}
 	cmd.AddCommand(automateArrayRead(deps, "pending", "List approvals waiting for a decision", "/approvals/pending"))
 	cmd.AddCommand(automateApprovalsDecide(deps))
 	return cmd
 }
 
-func automateApprovalsDecide(deps Dependencies) *cobra.Command {
+func automateApprovalsDecide(deps cmdkit.Dependencies) *cobra.Command {
 	var outcome string
 	var comment string
 	var dryRun bool
@@ -343,24 +347,24 @@ func automateApprovalsDecide(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printMutationResult(cmd, deps, "decided", result, dryRun)
+			return cmdkit.PrintMutationResult(cmd, deps, "decided", result, dryRun)
 		},
 	}
 	cmd.Flags().StringVar(&outcome, "outcome", "", "Approval outcome: Approved or Rejected")
 	cmd.Flags().StringVar(&comment, "comment", "", "Approval comment")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	_ = cmd.MarkFlagRequired("outcome")
 	return cmd
 }
 
-func automateMetrics(deps Dependencies) *cobra.Command {
+func automateMetrics(deps cmdkit.Dependencies) *cobra.Command {
 	cmd := &cobra.Command{Use: "metrics", Short: "Run metrics (success rates, totals)"}
 	cmd.AddCommand(automateMetricsRead(deps, "summary", "Get run summary metrics", "/metrics", false))
 	cmd.AddCommand(automateMetricsRead(deps, "by-automation", "Get run metrics grouped by automation", "/metrics/by-automation", true))
 	return cmd
 }
 
-func automateMetricsRead(deps Dependencies, use string, short string, path string, includeTake bool) *cobra.Command {
+func automateMetricsRead(deps cmdkit.Dependencies, use string, short string, path string, includeTake bool) *cobra.Command {
 	var workspaceID string
 	var from string
 	var to string
@@ -379,7 +383,7 @@ func automateMetricsRead(deps Dependencies, use string, short string, path strin
 		if err != nil {
 			return err
 		}
-		return printResult(cmd, deps, result)
+		return cmdkit.PrintResult(cmd, deps, result)
 	}}
 	cmd.Flags().StringVar(&workspaceID, "workspace-id", "", "Workspace ID")
 	cmd.Flags().StringVar(&from, "from", "", "Start date (ISO)")

@@ -1,57 +1,33 @@
-package commands
+package automate
 
 import (
 	"encoding/json"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
 
+	"umbraco-cli/internal/commands/cmdtest"
 	"umbraco-cli/internal/schema"
 )
-
-func TestAutomateCommandRegistersAndSchemaResolves(t *testing.T) {
-	root := buildRootWithCollections(t, makeDeps())
-	automate := findChildCommand(root, "automate")
-	if automate == nil {
-		t.Fatal("missing automate command")
-	}
-	if automate.Hidden {
-		t.Fatal("automate command should be visible now that Automate is publicly launched")
-	}
-
-	output, err := execute(root, "schema", "automate.automation.list")
-	if err != nil {
-		t.Fatalf("Automate schema lookup failed: %v", err)
-	}
-	var payload map[string]any
-	if err := json.Unmarshal([]byte(output), &payload); err != nil {
-		t.Fatalf("failed to decode schema output: %v", err)
-	}
-	if payload["apiRoot"] != automateAPIPrefix || payload["path"] != "/automations" {
-		t.Fatalf("unexpected Automate schema payload: %+v", payload)
-	}
-}
 
 func TestAutomateAutomationListUsesAutomateMountAndQueryFlags(t *testing.T) {
 	var observedPath string
 	observedQuery := map[string][]string{}
 
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
-		return tokenOr404(t, req, func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
+		return cmdtest.TokenOr404(t, req, func(req *http.Request) (*http.Response, error) {
 			if req.URL.Path != "/umbraco/automate/management/api/v1/automations" {
-				return endpointJSONResponse(http.StatusNotFound, `null`), nil
+				return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 			}
 			observedPath = req.URL.Path
 			observedQuery = req.URL.Query()
-			return endpointJSONResponse(http.StatusOK, `{"total":1,"items":[{"id":"auto-1","name":"Publish alert"}]}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"total":1,"items":[{"id":"auto-1","name":"Publish alert"}]}`), nil
 		})
 	})
 
-	output, err := execute(buildRootWithCollections(t, deps),
+	output, err := cmdtest.Execute(buildAutomateRoot(t, deps),
 		"automate", "automation", "list",
 		"--filter", "publish",
 		"--workspace-id", "workspace-1",
@@ -66,11 +42,11 @@ func TestAutomateAutomationListUsesAutomateMountAndQueryFlags(t *testing.T) {
 	if observedPath != "/umbraco/automate/management/api/v1/automations" {
 		t.Fatalf("unexpected request path: %s", observedPath)
 	}
-	assertQueryValue(t, observedQuery, "filter", "publish")
-	assertQueryValue(t, observedQuery, "workspaceId", "workspace-1")
-	assertQueryValue(t, observedQuery, "groupId", "group-1")
-	assertQueryValue(t, observedQuery, "skip", "5")
-	assertQueryValue(t, observedQuery, "take", "10")
+	cmdtest.AssertQueryValue(t, observedQuery, "filter", "publish")
+	cmdtest.AssertQueryValue(t, observedQuery, "workspaceId", "workspace-1")
+	cmdtest.AssertQueryValue(t, observedQuery, "groupId", "group-1")
+	cmdtest.AssertQueryValue(t, observedQuery, "skip", "5")
+	cmdtest.AssertQueryValue(t, observedQuery, "take", "10")
 
 	var payload map[string]any
 	if err := json.Unmarshal([]byte(output), &payload); err != nil {
@@ -82,16 +58,16 @@ func TestAutomateAutomationListUsesAutomateMountAndQueryFlags(t *testing.T) {
 }
 
 func TestAutomateCatalogueProjectsFieldsOnArrayResponses(t *testing.T) {
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
-		return tokenOr404(t, req, func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
+		return cmdtest.TokenOr404(t, req, func(req *http.Request) (*http.Response, error) {
 			if req.URL.Path != "/umbraco/automate/management/api/v1/catalogue/triggers" {
-				return endpointJSONResponse(http.StatusNotFound, `null`), nil
+				return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 			}
-			return endpointJSONResponse(http.StatusOK, `[{"alias":"content.published","name":"Content Published","outputSchema":{"properties":{"big":"schema"}}}]`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `[{"alias":"content.published","name":"Content Published","outputSchema":{"properties":{"big":"schema"}}}]`), nil
 		})
 	})
 
-	output, err := execute(buildRootWithCollections(t, deps),
+	output, err := cmdtest.Execute(buildAutomateRoot(t, deps),
 		"automate", "catalogue", "triggers", "--fields", "alias,name")
 	if err != nil {
 		t.Fatalf("automate catalogue triggers failed: %v", err)
@@ -107,19 +83,19 @@ func TestAutomateCatalogueProjectsFieldsOnArrayResponses(t *testing.T) {
 func TestAutomateCatalogueOutputSchemaSendsSettingsBody(t *testing.T) {
 	var body map[string]any
 
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
-		return tokenOr404(t, req, func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
+		return cmdtest.TokenOr404(t, req, func(req *http.Request) (*http.Response, error) {
 			if req.URL.Path != "/umbraco/automate/management/api/v1/catalogue/step-types/Umbraco.Automate.Http/output-schema" {
-				return endpointJSONResponse(http.StatusNotFound, `null`), nil
+				return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 			}
 			if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 				t.Fatalf("failed to decode request body: %v", err)
 			}
-			return endpointJSONResponse(http.StatusOK, `{"status":{"type":"string"}}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"status":{"type":"string"}}`), nil
 		})
 	})
 
-	_, err := execute(buildRootWithCollections(t, deps),
+	_, err := cmdtest.Execute(buildAutomateRoot(t, deps),
 		"automate", "catalogue", "output-schema", "Umbraco.Automate.Http",
 		"--json", `{"settings":{"url":"https://example.test"}}`,
 	)
@@ -135,12 +111,12 @@ func TestAutomateCatalogueOutputSchemaSendsSettingsBody(t *testing.T) {
 
 func TestAutomateCatalogueOperatorsIsLocalAndDocumentsUDAIntegerMapping(t *testing.T) {
 	requests := 0
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		requests++
-		return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 	})
 
-	output, err := execute(buildRootWithCollections(t, deps),
+	output, err := cmdtest.Execute(buildAutomateRoot(t, deps),
 		"automate", "catalogue", "operators")
 	if err != nil {
 		t.Fatalf("automate catalogue operators failed: %v", err)
@@ -162,7 +138,7 @@ func TestAutomateCatalogueOperatorsIsLocalAndDocumentsUDAIntegerMapping(t *testi
 }
 
 func TestAutomateValidateHelpPointsExistingEditsToImportUpdateDryRun(t *testing.T) {
-	output, err := execute(buildRootWithCollections(t, makeDeps()),
+	output, err := cmdtest.Execute(buildAutomateRoot(t, cmdtest.MakeDeps()),
 		"automate", "automation", "validate", "--help")
 	if err != nil {
 		t.Fatalf("validate help failed: %v", err)
@@ -175,12 +151,12 @@ func TestAutomateValidateHelpPointsExistingEditsToImportUpdateDryRun(t *testing.
 
 func TestAutomateAutomationTriggerDryRunUsesAutomatePathWithoutRequest(t *testing.T) {
 	requests := 0
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		requests++
-		return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 	})
 
-	output, err := execute(buildRootWithCollections(t, deps),
+	output, err := cmdtest.Execute(buildAutomateRoot(t, deps),
 		"automate", "automation", "trigger", "auto-1", "--dry-run",
 	)
 	if err != nil {
@@ -199,7 +175,7 @@ func TestAutomateAutomationTriggerDryRunUsesAutomatePathWithoutRequest(t *testin
 }
 
 func TestAutomateApprovalsDecideBuildsDecisionBody(t *testing.T) {
-	output, err := execute(buildRootWithCollections(t, makeDeps()),
+	output, err := cmdtest.Execute(buildAutomateRoot(t, cmdtest.MakeDeps()),
 		"automate", "approvals", "decide", "run-1", "step-1",
 		"--outcome", "Rejected",
 		"--comment", "Needs changes",
@@ -217,7 +193,7 @@ func TestAutomateApprovalsDecideBuildsDecisionBody(t *testing.T) {
 		t.Fatalf("unexpected decision body: %+v", payload)
 	}
 
-	_, err = execute(buildRootWithCollections(t, makeDeps()),
+	_, err = cmdtest.Execute(buildAutomateRoot(t, cmdtest.MakeDeps()),
 		"automate", "approvals", "decide", "run-1", "step-1", "--outcome", "Maybe", "--dry-run")
 	if err == nil || !strings.Contains(err.Error(), "Approved or Rejected") {
 		t.Fatalf("expected invalid outcome to fail, got %v", err)
@@ -227,17 +203,17 @@ func TestAutomateApprovalsDecideBuildsDecisionBody(t *testing.T) {
 func TestAutomateMetricsByAutomationUsesQueryFlags(t *testing.T) {
 	observedQuery := map[string][]string{}
 
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
-		return tokenOr404(t, req, func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
+		return cmdtest.TokenOr404(t, req, func(req *http.Request) (*http.Response, error) {
 			if req.URL.Path != "/umbraco/automate/management/api/v1/metrics/by-automation" {
-				return endpointJSONResponse(http.StatusNotFound, `null`), nil
+				return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 			}
 			observedQuery = req.URL.Query()
-			return endpointJSONResponse(http.StatusOK, `[{"automationId":"auto-1","totalRuns":3}]`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `[{"automationId":"auto-1","totalRuns":3}]`), nil
 		})
 	})
 
-	_, err := execute(buildRootWithCollections(t, deps),
+	_, err := cmdtest.Execute(buildAutomateRoot(t, deps),
 		"automate", "metrics", "by-automation",
 		"--workspace-id", "workspace-1",
 		"--from", "2026-06-01T00:00:00Z",
@@ -248,23 +224,23 @@ func TestAutomateMetricsByAutomationUsesQueryFlags(t *testing.T) {
 		t.Fatalf("automate metrics by-automation failed: %v", err)
 	}
 
-	assertQueryValue(t, observedQuery, "workspaceId", "workspace-1")
-	assertQueryValue(t, observedQuery, "from", "2026-06-01T00:00:00Z")
-	assertQueryValue(t, observedQuery, "to", "2026-06-08T00:00:00Z")
-	assertQueryValue(t, observedQuery, "take", "5")
+	cmdtest.AssertQueryValue(t, observedQuery, "workspaceId", "workspace-1")
+	cmdtest.AssertQueryValue(t, observedQuery, "from", "2026-06-01T00:00:00Z")
+	cmdtest.AssertQueryValue(t, observedQuery, "to", "2026-06-08T00:00:00Z")
+	cmdtest.AssertQueryValue(t, observedQuery, "take", "5")
 }
 
 func TestAutomateRunActionsHitRunRoutesAndCoalesce(t *testing.T) {
 	var observed []string
 
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
-		return tokenOr404(t, req, func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
+		return cmdtest.TokenOr404(t, req, func(req *http.Request) (*http.Response, error) {
 			observed = append(observed, req.Method+" "+req.URL.Path)
-			return endpointJSONResponse(http.StatusOK, ``), nil
+			return cmdtest.JSONResponse(http.StatusOK, ``), nil
 		})
 	})
 
-	output, err := execute(buildRootWithCollections(t, deps), "automate", "run", "terminate", "run-1")
+	output, err := cmdtest.Execute(buildAutomateRoot(t, deps), "automate", "run", "terminate", "run-1")
 	if err != nil {
 		t.Fatalf("automate run terminate failed: %v", err)
 	}
@@ -281,8 +257,8 @@ func TestAutomateRunActionsHitRunRoutesAndCoalesce(t *testing.T) {
 // schema coverage test only checks direct children of top-level collections,
 // which for automate are all subgroups.
 func TestAutomateCommandsHaveSchemas(t *testing.T) {
-	root := buildRootWithCollections(t, makeDeps())
-	automate := findChildCommand(root, "automate")
+	root := buildAutomateRoot(t, cmdtest.MakeDeps())
+	automate := cmdtest.FindChildCommand(root, "automate")
 	if automate == nil {
 		t.Fatal("missing automate command")
 	}
@@ -312,17 +288,17 @@ func TestAutomateWorkspaceGroupCommandsHitNestedRoutes(t *testing.T) {
 	var observed []string
 	var observedBody map[string]any
 
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
-		return tokenOr404(t, req, func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
+		return cmdtest.TokenOr404(t, req, func(req *http.Request) (*http.Response, error) {
 			observed = append(observed, req.Method+" "+req.URL.Path)
 			if req.Body != nil && (req.Method == http.MethodPost || req.Method == http.MethodPut) {
 				_ = json.NewDecoder(req.Body).Decode(&observedBody)
 			}
-			return endpointJSONResponse(http.StatusOK, ``), nil
+			return cmdtest.JSONResponse(http.StatusOK, ``), nil
 		})
 	})
 
-	if _, err := execute(buildRootWithCollections(t, deps),
+	if _, err := cmdtest.Execute(buildAutomateRoot(t, deps),
 		"automate", "workspace", "group", "add", "ws-1", "--name", "Content flows", "--parent-id", "parent-1"); err != nil {
 		t.Fatalf("workspace group add failed: %v", err)
 	}
@@ -333,7 +309,7 @@ func TestAutomateWorkspaceGroupCommandsHitNestedRoutes(t *testing.T) {
 		t.Fatalf("unexpected group body: %+v", observedBody)
 	}
 
-	if _, err := execute(buildRootWithCollections(t, deps),
+	if _, err := cmdtest.Execute(buildAutomateRoot(t, deps),
 		"automate", "workspace", "group", "remove", "ws-1", "g-1", "--force"); err != nil {
 		t.Fatalf("workspace group remove failed: %v", err)
 	}
@@ -343,7 +319,7 @@ func TestAutomateWorkspaceGroupCommandsHitNestedRoutes(t *testing.T) {
 }
 
 func TestAutomateWorkspaceDeleteRequiresForce(t *testing.T) {
-	_, err := execute(buildRootWithCollections(t, makeDeps()), "automate", "workspace", "delete", "ws-1")
+	_, err := cmdtest.Execute(buildAutomateRoot(t, cmdtest.MakeDeps()), "automate", "workspace", "delete", "ws-1")
 	if err == nil || !strings.Contains(err.Error(), "--force") {
 		t.Fatalf("expected workspace delete to require --force, got %v", err)
 	}
@@ -352,14 +328,14 @@ func TestAutomateWorkspaceDeleteRequiresForce(t *testing.T) {
 func TestAutomateConnectionTestHitsTestRoute(t *testing.T) {
 	var observed []string
 
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
-		return tokenOr404(t, req, func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
+		return cmdtest.TokenOr404(t, req, func(req *http.Request) (*http.Response, error) {
 			observed = append(observed, req.Method+" "+req.URL.Path)
-			return endpointJSONResponse(http.StatusOK, `{"success":true}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"success":true}`), nil
 		})
 	})
 
-	output, err := execute(buildRootWithCollections(t, deps), "automate", "connection", "test", "conn-1")
+	output, err := cmdtest.Execute(buildAutomateRoot(t, deps), "automate", "connection", "test", "conn-1")
 	if err != nil {
 		t.Fatalf("connection test failed: %v", err)
 	}
@@ -372,7 +348,7 @@ func TestAutomateConnectionTestHitsTestRoute(t *testing.T) {
 }
 
 func TestAutomateConnectionDeleteRequiresForce(t *testing.T) {
-	_, err := execute(buildRootWithCollections(t, makeDeps()), "automate", "connection", "delete", "conn-1")
+	_, err := cmdtest.Execute(buildAutomateRoot(t, cmdtest.MakeDeps()), "automate", "connection", "delete", "conn-1")
 	if err == nil || !strings.Contains(err.Error(), "--force") {
 		t.Fatalf("expected connection delete to require --force, got %v", err)
 	}
@@ -382,17 +358,17 @@ func TestAutomateAutomationValidateWrapsExportModel(t *testing.T) {
 	var observedPath string
 	var observedBody map[string]any
 
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
-		return tokenOr404(t, req, func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
+		return cmdtest.TokenOr404(t, req, func(req *http.Request) (*http.Response, error) {
 			observedPath = req.URL.Path
 			if err := json.NewDecoder(req.Body).Decode(&observedBody); err != nil {
 				t.Fatalf("decode body: %v", err)
 			}
-			return endpointJSONResponse(http.StatusOK, `{"success":true,"errors":[],"warnings":[]}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"success":true,"errors":[],"warnings":[]}`), nil
 		})
 	})
 
-	output, err := execute(buildRootWithCollections(t, deps),
+	output, err := cmdtest.Execute(buildAutomateRoot(t, deps),
 		"automate", "automation", "validate",
 		"--workspace-id", "ws-1",
 		"--json", `{"formatVersion":1,"automation":{"alias":"a"}}`,
@@ -414,7 +390,7 @@ func TestAutomateAutomationValidateWrapsExportModel(t *testing.T) {
 		t.Fatalf("expected validation result, got %s", output)
 	}
 
-	_, err = execute(buildRootWithCollections(t, deps),
+	_, err = cmdtest.Execute(buildAutomateRoot(t, deps),
 		"automate", "automation", "validate", "--workspace-id", "ws-1")
 	if err == nil || !strings.Contains(err.Error(), "exactly one of --file or --json") {
 		t.Fatalf("expected missing input to fail, got %v", err)
@@ -425,17 +401,17 @@ func TestAutomateAutomationImportUpdateSendsBareExportModel(t *testing.T) {
 	var observed string
 	var observedBody map[string]any
 
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
-		return tokenOr404(t, req, func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
+		return cmdtest.TokenOr404(t, req, func(req *http.Request) (*http.Response, error) {
 			observed = req.Method + " " + req.URL.Path
 			if err := json.NewDecoder(req.Body).Decode(&observedBody); err != nil {
 				t.Fatalf("decode body: %v", err)
 			}
-			return endpointJSONResponse(http.StatusOK, ``), nil
+			return cmdtest.JSONResponse(http.StatusOK, ``), nil
 		})
 	})
 
-	if _, err := execute(buildRootWithCollections(t, deps),
+	if _, err := cmdtest.Execute(buildAutomateRoot(t, deps),
 		"automate", "automation", "import-update", "auto-1",
 		"--json", `{"formatVersion":1,"automation":{"alias":"a"}}`,
 	); err != nil {
@@ -455,14 +431,14 @@ func TestAutomateAutomationImportUpdateSendsBareExportModel(t *testing.T) {
 func TestAutomateVersionHistoryRoutes(t *testing.T) {
 	var observed []string
 
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
-		return tokenOr404(t, req, func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
+		return cmdtest.TokenOr404(t, req, func(req *http.Request) (*http.Response, error) {
 			observed = append(observed, req.Method+" "+req.URL.Path)
-			return endpointJSONResponse(http.StatusOK, `{"items":[],"total":0}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"items":[],"total":0}`), nil
 		})
 	})
 
-	if _, err := execute(buildRootWithCollections(t, deps),
+	if _, err := cmdtest.Execute(buildAutomateRoot(t, deps),
 		"automate", "version-history", "list", "Automation", "auto-1"); err != nil {
 		t.Fatalf("version-history list failed: %v", err)
 	}
@@ -470,7 +446,7 @@ func TestAutomateVersionHistoryRoutes(t *testing.T) {
 		t.Fatalf("unexpected list request: %v", observed)
 	}
 
-	if _, err := execute(buildRootWithCollections(t, deps),
+	if _, err := cmdtest.Execute(buildAutomateRoot(t, deps),
 		"automate", "version-history", "compare", "Automation", "auto-1", "2", "5"); err != nil {
 		t.Fatalf("version-history compare failed: %v", err)
 	}
@@ -478,7 +454,7 @@ func TestAutomateVersionHistoryRoutes(t *testing.T) {
 		t.Fatalf("unexpected compare request: %v", observed)
 	}
 
-	if _, err := execute(buildRootWithCollections(t, deps),
+	if _, err := cmdtest.Execute(buildAutomateRoot(t, deps),
 		"automate", "version-history", "rollback", "Automation", "auto-1", "2"); err != nil {
 		t.Fatalf("version-history rollback failed: %v", err)
 	}
@@ -487,56 +463,16 @@ func TestAutomateVersionHistoryRoutes(t *testing.T) {
 	}
 }
 
-func TestGenerateSkillsIncludesAutomateByDefault(t *testing.T) {
-	_, err := execute(buildRootWithCollections(t, makeDeps()), "generate-skills", "--include-hidden", "--output-dir", t.TempDir())
-	if err == nil || !strings.Contains(err.Error(), "--include-hidden requires --filter") {
-		t.Fatalf("expected --include-hidden without --filter to fail, got %v", err)
-	}
-
-	dir := t.TempDir()
-	if _, err := execute(buildRootWithCollections(t, makeDeps()),
-		"generate-skills", "--filter", "automate", "--output-dir", dir); err != nil {
-		t.Fatalf("generate-skills failed: %v", err)
-	}
-	content, err := os.ReadFile(filepath.Join(dir, "umbraco-automate", "SKILL.md"))
-	if err != nil {
-		t.Fatalf("expected automate skill in default generation: %v", err)
-	}
-	for _, want := range []string{"automation list", "automation validate", "catalogue operators", "workspace group add", "version-history rollback"} {
-		if !strings.Contains(string(content), want) {
-			t.Fatalf("generated automate skill missing %q:\n%s", want, string(content)[:500])
-		}
-	}
-}
-
-func TestGeneratedSkillsFlattenNestedSubgroups(t *testing.T) {
-	dir := t.TempDir()
-	if _, err := execute(buildRootWithCollections(t, makeDeps()),
-		"generate-skills", "--filter", "document", "--output-dir", dir); err != nil {
-		t.Fatalf("generate-skills failed: %v", err)
-	}
-	content, err := os.ReadFile(filepath.Join(dir, "umbraco-document", "SKILL.md"))
-	if err != nil {
-		t.Fatalf("read generated skill: %v", err)
-	}
-	if !strings.Contains(string(content), "### version rollback") {
-		t.Fatal("expected nested 'document version rollback' to document as a leaf command")
-	}
-	if strings.Contains(string(content), "```bash\numbraco document version\n```") {
-		t.Fatal("subgroup must not render as an empty stub")
-	}
-}
-
 func TestAutomateUpdateMergeStripsResponseOnlyFields(t *testing.T) {
 	var observedBody map[string]any
 
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
-		return tokenOr404(t, req, func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
+		return cmdtest.TokenOr404(t, req, func(req *http.Request) (*http.Response, error) {
 			if req.URL.Path != "/umbraco/automate/management/api/v1/automations/auto-1" {
-				return endpointJSONResponse(http.StatusNotFound, `null`), nil
+				return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 			}
 			if req.Method == http.MethodGet {
-				return endpointJSONResponse(http.StatusOK, `{
+				return cmdtest.JSONResponse(http.StatusOK, `{
 					"id":"auto-1","workspaceId":"ws-1","status":"Draft","health":"Healthy",
 					"publishedVersion":null,"dateCreated":"2026-06-09T10:00:00Z","dateModified":"2026-06-09T10:00:00Z",
 					"alias":"a","name":"Old","steps":[],"connections":[],"version":3
@@ -545,11 +481,11 @@ func TestAutomateUpdateMergeStripsResponseOnlyFields(t *testing.T) {
 			if err := json.NewDecoder(req.Body).Decode(&observedBody); err != nil {
 				t.Fatalf("decode body: %v", err)
 			}
-			return endpointJSONResponse(http.StatusOK, ``), nil
+			return cmdtest.JSONResponse(http.StatusOK, ``), nil
 		})
 	})
 
-	if _, err := execute(buildRootWithCollections(t, deps),
+	if _, err := cmdtest.Execute(buildAutomateRoot(t, deps),
 		"automate", "automation", "update", "auto-1", "--merge-json", `{"name":"New"}`); err != nil {
 		t.Fatalf("automation update failed: %v", err)
 	}

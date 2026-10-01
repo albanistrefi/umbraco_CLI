@@ -1,9 +1,10 @@
-package commands
+package automate
 
 import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/commands/cmdkit"
 )
 
 // Version history is the undo path for Automate entities: every save of an
@@ -11,7 +12,7 @@ import (
 // inspected, compared, and rolled back to. Entity types come from
 // 'version-history types' (Automation, Workspace, Connection).
 
-func automateVersionHistory(deps Dependencies) *cobra.Command {
+func automateVersionHistory(deps cmdkit.Dependencies) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "version-history",
 		Short: "Entity version history: list, inspect, compare, roll back",
@@ -24,11 +25,11 @@ func automateVersionHistory(deps Dependencies) *cobra.Command {
 	return cmd
 }
 
-func automateVersionHistoryTypes(deps Dependencies) *cobra.Command {
+func automateVersionHistoryTypes(deps cmdkit.Dependencies) *cobra.Command {
 	return automateArrayRead(deps, "types", "List the entity types that keep version history", "/version-history/supported-types")
 }
 
-func automateVersionHistoryList(deps Dependencies) *cobra.Command {
+func automateVersionHistoryList(deps cmdkit.Dependencies) *cobra.Command {
 	var skip, take int
 	cmd := &cobra.Command{
 		Use:   "list <entity-type> <entity-id>",
@@ -36,18 +37,18 @@ func automateVersionHistoryList(deps Dependencies) *cobra.Command {
 		Long:  "GET /version-history/{entityType}/{entityId}. entity-type is one of 'version-history types' (e.g. Automation); entity-id is the entity's GUID. The response wraps the versions array with currentVersion/publishedVersion/totalVersions, so it does not follow the standard {items,total} envelope.",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			result, err := deps.Client.Get(cmd.Context(), api.JoinPath("/version-history/%s/%s", args[0], args[1]), automateOpts(applyPaginationParams(nil, skip, take), false))
+			result, err := deps.Client.Get(cmd.Context(), api.JoinPath("/version-history/%s/%s", args[0], args[1]), automateOpts(cmdkit.ApplyPaginationParams(nil, skip, take), false))
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, deps, result)
+			return cmdkit.PrintResult(cmd, deps, result)
 		},
 	}
-	addPaginationFlags(cmd, &skip, &take)
+	cmdkit.AddPaginationFlags(cmd, &skip, &take)
 	return cmd
 }
 
-func automateVersionHistoryGet(deps Dependencies) *cobra.Command {
+func automateVersionHistoryGet(deps cmdkit.Dependencies) *cobra.Command {
 	var fields string
 	cmd := &cobra.Command{
 		Use:   "get <entity-type> <entity-id> <version>",
@@ -58,14 +59,14 @@ func automateVersionHistoryGet(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, deps, applyFieldsProjection(result, fields))
+			return cmdkit.PrintResult(cmd, deps, cmdkit.ApplyFieldsProjection(result, fields))
 		},
 	}
-	addFieldsFlag(cmd, &fields)
+	cmdkit.AddFieldsFlag(cmd, &fields)
 	return cmd
 }
 
-func automateVersionHistoryCompare(deps Dependencies) *cobra.Command {
+func automateVersionHistoryCompare(deps cmdkit.Dependencies) *cobra.Command {
 	return &cobra.Command{
 		Use:   "compare <entity-type> <entity-id> <from-version> <to-version>",
 		Short: "Compare two stored versions of an entity",
@@ -75,12 +76,12 @@ func automateVersionHistoryCompare(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, deps, result)
+			return cmdkit.PrintResult(cmd, deps, result)
 		},
 	}
 }
 
-func automateVersionHistoryRollback(deps Dependencies) *cobra.Command {
+func automateVersionHistoryRollback(deps cmdkit.Dependencies) *cobra.Command {
 	var dryRun bool
 	cmd := &cobra.Command{
 		Use:   "rollback <entity-type> <entity-id> <version>",
@@ -92,9 +93,9 @@ func automateVersionHistoryRollback(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printMutationResult(cmd, deps, "rolledBack", result, dryRun)
+			return cmdkit.PrintMutationResult(cmd, deps, "rolledBack", result, dryRun)
 		},
 	}
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }

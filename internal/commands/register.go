@@ -3,6 +3,7 @@ package commands
 import (
 	"github.com/spf13/cobra"
 
+	"umbraco-cli/internal/commands/automate"
 	"umbraco-cli/internal/commands/forms"
 )
 
@@ -46,7 +47,7 @@ func RegisterAll(root *cobra.Command, deps Dependencies) {
 	RegisterTree(root, deps)
 	RegisterAPI(root, deps)
 	RegisterAuth(root, deps)
-	RegisterAutomate(root, deps)
+	automate.Register(root, deps)
 	RegisterEngage(root, deps)
 	RegisterSchema(root, deps)
 	RegisterGenerateSkills(root, deps)

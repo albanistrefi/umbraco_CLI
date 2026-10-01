@@ -1,4 +1,4 @@
-package commands
+package automate
 
 import (
 	"fmt"
@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/commands/cmdkit"
 )
 
 // The export/validate/import round-trip is the agent-friendliest authoring
@@ -25,16 +26,16 @@ func automateExportModelInput(file string, jsonRaw string) (map[string]any, erro
 		return nil, fmt.Errorf("provide the export model via exactly one of --file or --json")
 	}
 	if hasJSON {
-		return parsePayload(jsonRaw)
+		return cmdkit.ParsePayload(jsonRaw)
 	}
 	payload, err := os.ReadFile(file)
 	if err != nil {
 		return nil, err
 	}
-	return parseJSONObject(string(payload), "--file")
+	return cmdkit.ParseJSONObject(string(payload), "--file")
 }
 
-func automateAutomationValidate(deps Dependencies) *cobra.Command {
+func automateAutomationValidate(deps cmdkit.Dependencies) *cobra.Command {
 	var workspaceID string
 	var file string
 	var jsonRaw string
@@ -44,7 +45,7 @@ func automateAutomationValidate(deps Dependencies) *cobra.Command {
 		Long:  "POST /automations/import/validate. Checks an export model against a workspace -- step aliases, connection references, binding syntax -- and reports success/errors/warnings for creating/importing a new automation. It does not validate overwriting an existing automation; for edits use 'automation import-update <id> --dry-run' to preflight the update request shape.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := requireValue("--workspace-id", workspaceID); err != nil {
+			if err := cmdkit.RequireValue("--workspace-id", workspaceID); err != nil {
 				return err
 			}
 			exportModel, err := automateExportModelInput(file, jsonRaw)
@@ -56,7 +57,7 @@ func automateAutomationValidate(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, deps, result)
+			return cmdkit.PrintResult(cmd, deps, result)
 		},
 	}
 	cmd.Flags().StringVar(&workspaceID, "workspace-id", "", "Workspace the definition would be imported into (required)")
@@ -65,7 +66,7 @@ func automateAutomationValidate(deps Dependencies) *cobra.Command {
 	return cmd
 }
 
-func automateAutomationImport(deps Dependencies) *cobra.Command {
+func automateAutomationImport(deps cmdkit.Dependencies) *cobra.Command {
 	var workspaceID string
 	var file string
 	var jsonRaw string
@@ -76,7 +77,7 @@ func automateAutomationImport(deps Dependencies) *cobra.Command {
 		Long:  "POST /automations/import. Creates a new draft automation from an export model. Run 'automation validate' first -- it performs the same create/import checks without writing.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := requireValue("--workspace-id", workspaceID); err != nil {
+			if err := cmdkit.RequireValue("--workspace-id", workspaceID); err != nil {
 				return err
 			}
 			exportModel, err := automateExportModelInput(file, jsonRaw)
@@ -88,17 +89,17 @@ func automateAutomationImport(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printMutationResult(cmd, deps, "imported", result, dryRun)
+			return cmdkit.PrintMutationResult(cmd, deps, "imported", result, dryRun)
 		},
 	}
 	cmd.Flags().StringVar(&workspaceID, "workspace-id", "", "Workspace to import into (required)")
 	cmd.Flags().StringVar(&file, "file", "", "Path to an export-model JSON file (from 'automation export')")
 	cmd.Flags().StringVar(&jsonRaw, "json", "", "Export model as inline JSON")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
-func automateAutomationImportUpdate(deps Dependencies) *cobra.Command {
+func automateAutomationImportUpdate(deps cmdkit.Dependencies) *cobra.Command {
 	var file string
 	var jsonRaw string
 	var dryRun bool
@@ -116,11 +117,11 @@ func automateAutomationImportUpdate(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printMutationResult(cmd, deps, "imported", result, dryRun)
+			return cmdkit.PrintMutationResult(cmd, deps, "imported", result, dryRun)
 		},
 	}
 	cmd.Flags().StringVar(&file, "file", "", "Path to an export-model JSON file (from 'automation export')")
 	cmd.Flags().StringVar(&jsonRaw, "json", "", "Export model as inline JSON")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }

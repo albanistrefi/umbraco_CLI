@@ -1,9 +1,10 @@
-package commands
+package automate
 
 import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/commands/cmdkit"
 	"umbraco-cli/internal/schema"
 )
 
@@ -12,7 +13,7 @@ import (
 // reference a connection, and a workspace whitelists which connections its
 // automations may use — so connection discovery precedes authoring.
 
-func automateConnection(deps Dependencies) *cobra.Command {
+func automateConnection(deps cmdkit.Dependencies) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "connection",
 		Short: "Connection operations (credentials automations use for external services)",
@@ -26,28 +27,28 @@ func automateConnection(deps Dependencies) *cobra.Command {
 	return cmd
 }
 
-func automateConnectionList(deps Dependencies) *cobra.Command {
-	return collectionCommand(deps, collectionSpec{
+func automateConnectionList(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.CollectionCommand(deps, cmdkit.CollectionSpec{
 		Use:   "list",
 		Short: "List connections (paginated; --skip/--take/--all)",
-		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
-			return []getRequestCandidate{
+		Endpoints: func(args []string, params map[string]any) []cmdkit.GetRequestCandidate {
+			return []cmdkit.GetRequestCandidate{
 				{Path: "/connections", Opts: automateOpts(params, false)},
 			}
 		},
 	})
 }
 
-func automateConnectionGet(deps Dependencies) *cobra.Command {
-	return getCommand(deps, getSpec{
+func automateConnectionGet(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.GetCommand(deps, cmdkit.GetSpec{
 		Use:       "get <id>",
 		Short:     "Get a connection by ID",
 		Path:      func(args []string) string { return api.JoinPath("/connections/%s", args[0]) },
-		APIPrefix: automateAPIPrefix,
+		APIPrefix: APIPrefix,
 	})
 }
 
-func automateConnectionCreate(deps Dependencies) *cobra.Command {
+func automateConnectionCreate(deps cmdkit.Dependencies) *cobra.Command {
 	var jsonPayload string
 	var dryRun bool
 	var printTemplate bool
@@ -58,12 +59,12 @@ func automateConnectionCreate(deps Dependencies) *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if printTemplate {
-				return printResult(cmd, deps, schema.Templates["automate.connection.create"])
+				return cmdkit.PrintResult(cmd, deps, schema.Templates["automate.connection.create"])
 			}
-			if err := requireValue("--json", jsonPayload); err != nil {
+			if err := cmdkit.RequireValue("--json", jsonPayload); err != nil {
 				return err
 			}
-			body, err := parsePayload(jsonPayload)
+			body, err := cmdkit.ParsePayload(jsonPayload)
 			if err != nil {
 				return err
 			}
@@ -71,35 +72,35 @@ func automateConnectionCreate(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printMutationResult(cmd, deps, "created", result, dryRun)
+			return cmdkit.PrintMutationResult(cmd, deps, "created", result, dryRun)
 		},
 	}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Create payload as JSON")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	cmd.Flags().BoolVar(&printTemplate, "print-template", false, "Print an annotated JSON skeleton; substitute placeholders before passing to --json")
 	return cmd
 }
 
-func automateConnectionUpdate(deps Dependencies) *cobra.Command {
-	return updateCommand(deps, updateSpec{
+func automateConnectionUpdate(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.UpdateCommand(deps, cmdkit.UpdateSpec{
 		Use:             "update <id>",
 		Short:           "Update a connection",
 		Path:            func(args []string) string { return api.JoinPath("/connections/%s", args[0]) },
-		NormalizeMerged: stripFields("id", "dateCreated", "dateModified"),
-		APIPrefix:       automateAPIPrefix,
+		NormalizeMerged: cmdkit.StripFields("id", "dateCreated", "dateModified"),
+		APIPrefix:       APIPrefix,
 	})
 }
 
-func automateConnectionDelete(deps Dependencies) *cobra.Command {
-	return deleteCommand(deps, deleteSpec{
+func automateConnectionDelete(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.DeleteCommand(deps, cmdkit.DeleteSpec{
 		Use:       "delete <id>",
 		Short:     "Permanently delete a connection (automations referencing it will fail)",
 		Path:      func(args []string) string { return api.JoinPath("/connections/%s", args[0]) },
-		APIPrefix: automateAPIPrefix,
+		APIPrefix: APIPrefix,
 	})
 }
 
-func automateConnectionTest(deps Dependencies) *cobra.Command {
+func automateConnectionTest(deps cmdkit.Dependencies) *cobra.Command {
 	var dryRun bool
 	cmd := &cobra.Command{
 		Use:   "test <id>",
@@ -110,9 +111,9 @@ func automateConnectionTest(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printMutationResult(cmd, deps, "tested", result, dryRun)
+			return cmdkit.PrintMutationResult(cmd, deps, "tested", result, dryRun)
 		},
 	}
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }

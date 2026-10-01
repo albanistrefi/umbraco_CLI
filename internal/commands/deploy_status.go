@@ -17,6 +17,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/commands/automate"
 	"umbraco-cli/internal/config"
 )
 
@@ -245,7 +246,7 @@ func compareArtifacts(ctx context.Context, deps Dependencies, artifacts []udaArt
 	automateProbed := false
 	for _, artifact := range artifacts {
 		if strings.HasPrefix(artifact.Kind, "umbraco-automate-") && artifact.Err == nil {
-			_, automateErr = deps.Client.Get(ctx, "/automations", api.RequestOptions{APIPrefix: automateAPIPrefix, Params: map[string]any{"skip": 0, "take": 1}})
+			_, automateErr = deps.Client.Get(ctx, "/automations", api.RequestOptions{APIPrefix: automate.APIPrefix, Params: map[string]any{"skip": 0, "take": 1}})
 			automateProbed = true
 			break
 		}
@@ -369,7 +370,7 @@ func compareAutomateArtifact(ctx context.Context, deps Dependencies, artifact ud
 		result.Reason = fmt.Sprintf("no comparison implemented for kind %s", artifact.Kind)
 		return result
 	}
-	remote, err := deps.Client.Get(ctx, api.JoinPath(fetchPath, artifact.GUID), api.RequestOptions{APIPrefix: automateAPIPrefix})
+	remote, err := deps.Client.Get(ctx, api.JoinPath(fetchPath, artifact.GUID), api.RequestOptions{APIPrefix: automate.APIPrefix})
 	if err != nil {
 		if isAPIStatus(err, http.StatusNotFound) {
 			result.Status = "missing-remote"

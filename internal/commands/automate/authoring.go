@@ -1,9 +1,10 @@
-package commands
+package automate
 
 import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/commands/cmdkit"
 	"umbraco-cli/internal/schema"
 )
 
@@ -12,7 +13,7 @@ import (
 // (where automations live), and connections (external credentials), these
 // close the loop that lets an agent build an automation end to end.
 
-func automateAutomationCreate(deps Dependencies) *cobra.Command {
+func automateAutomationCreate(deps cmdkit.Dependencies) *cobra.Command {
 	var jsonPayload string
 	var dryRun bool
 	var printTemplate bool
@@ -25,12 +26,12 @@ Creating leaves the automation as a draft -- 'automation publish <id>' makes it 
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if printTemplate {
-				return printResult(cmd, deps, schema.Templates["automate.automation.create"])
+				return cmdkit.PrintResult(cmd, deps, schema.Templates["automate.automation.create"])
 			}
-			if err := requireValue("--json", jsonPayload); err != nil {
+			if err := cmdkit.RequireValue("--json", jsonPayload); err != nil {
 				return err
 			}
-			body, err := parsePayload(jsonPayload)
+			body, err := cmdkit.ParsePayload(jsonPayload)
 			if err != nil {
 				return err
 			}
@@ -38,17 +39,17 @@ Creating leaves the automation as a draft -- 'automation publish <id>' makes it 
 			if err != nil {
 				return err
 			}
-			return printMutationResult(cmd, deps, "created", result, dryRun)
+			return cmdkit.PrintMutationResult(cmd, deps, "created", result, dryRun)
 		},
 	}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Create payload as JSON")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	cmd.Flags().BoolVar(&printTemplate, "print-template", false, "Print an annotated JSON skeleton; substitute placeholders before passing to --json")
 	return cmd
 }
 
-func automateAutomationUpdate(deps Dependencies) *cobra.Command {
-	return updateCommand(deps, updateSpec{
+func automateAutomationUpdate(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.UpdateCommand(deps, cmdkit.UpdateSpec{
 		Use:   "update <id>",
 		Short: "Update an automation",
 		Long: `PUT /automations/{id}. The update model requires the automation's current version field for optimistic concurrency; --merge-json picks it up from the fetch automatically, making it the safe default for partial edits (e.g. renaming, tweaking one step's settings).
@@ -57,24 +58,24 @@ Updating creates a new draft version; 'automation publish <id>' makes it live.`,
 		Path: func(args []string) string { return api.JoinPath("/automations/%s", args[0]) },
 		// UpdateAutomationRequestModel declares additionalProperties: false;
 		// strip the response-only fields the merge fetch echoes back.
-		NormalizeMerged: stripFields("id", "workspaceId", "status", "health", "publishedVersion", "dateCreated", "dateModified", "disabledUtc", "warningIssuedUtc"),
-		APIPrefix:       automateAPIPrefix,
+		NormalizeMerged: cmdkit.StripFields("id", "workspaceId", "status", "health", "publishedVersion", "dateCreated", "dateModified", "disabledUtc", "warningIssuedUtc"),
+		APIPrefix:       APIPrefix,
 	})
 }
 
-func automateAutomationDelete(deps Dependencies) *cobra.Command {
-	return deleteCommand(deps, deleteSpec{
+func automateAutomationDelete(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.DeleteCommand(deps, cmdkit.DeleteSpec{
 		Use:       "delete <id>",
 		Short:     "Permanently delete an automation (including its run history)",
 		Path:      func(args []string) string { return api.JoinPath("/automations/%s", args[0]) },
-		APIPrefix: automateAPIPrefix,
+		APIPrefix: APIPrefix,
 	})
 }
 
 // automateAutomationLifecycle builds the body-less POST lifecycle actions:
 // publish (make the current draft live), unpublish (stop triggering), and
 // re-enable (clear the disabled state after repeated failures).
-func automateAutomationLifecycle(deps Dependencies, action string, short string, verb string) *cobra.Command {
+func automateAutomationLifecycle(deps cmdkit.Dependencies, action string, short string, verb string) *cobra.Command {
 	var dryRun bool
 	cmd := &cobra.Command{
 		Use:   action + " <id>",
@@ -85,14 +86,14 @@ func automateAutomationLifecycle(deps Dependencies, action string, short string,
 			if err != nil {
 				return err
 			}
-			return printMutationResult(cmd, deps, verb, result, dryRun)
+			return cmdkit.PrintMutationResult(cmd, deps, verb, result, dryRun)
 		},
 	}
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
-func automateAutomationAncestors(deps Dependencies) *cobra.Command {
+func automateAutomationAncestors(deps cmdkit.Dependencies) *cobra.Command {
 	return &cobra.Command{
 		Use:   "ancestors <id>",
 		Short: "Get an automation's location (workspace and group breadcrumb)",
@@ -102,7 +103,7 @@ func automateAutomationAncestors(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, deps, result)
+			return cmdkit.PrintResult(cmd, deps, result)
 		},
 	}
 }
