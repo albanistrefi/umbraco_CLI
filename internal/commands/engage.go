@@ -80,6 +80,7 @@ func RegisterEngage(root *cobra.Command, deps Dependencies) {
 	engage.AddCommand(engageAnnotation(deps))
 	engage.AddCommand(engageStats(deps))
 	engage.AddCommand(engageReporting(deps))
+	engage.AddCommand(engageMainSwitch(deps))
 	root.AddCommand(engage)
 }
 

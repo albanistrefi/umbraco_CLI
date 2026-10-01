@@ -356,6 +356,8 @@ func engageAnnotation(deps Dependencies) *cobra.Command {
 	list.Flags().StringVar(&node, "node", "", "Only annotations on this page (document GUID)")
 	list.Flags().StringVar(&culture, "culture", "", "With --node: only this culture")
 	group.AddCommand(list)
+	group.AddCommand(engageAnnotationCreate(deps))
+	group.AddCommand(engageAnnotationDelete(deps))
 	return group
 }
 
@@ -384,5 +386,6 @@ func engageReporting(deps Dependencies) *cobra.Command {
 		Long: "GET /reporting/generation/status. Non-realtime analytics queries read the reporting tables, so a missing or stale generation explains empty or old 'analytics query' results.",
 		Path: "/reporting/generation/status",
 	}))
+	group.AddCommand(engageReportingGenerate(deps))
 	return group
 }
