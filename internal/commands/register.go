@@ -9,9 +9,11 @@ import (
 	"umbraco-cli/internal/commands/forms"
 )
 
-// RegisterAll attaches every command group to root. It is the single
-// registration list: the production root in internal/cli and the roots built by
-// the tests both call it, so a group added here cannot be missing from either.
+// RegisterAll attaches every command group to root, core and add-on alike. It
+// is the single registration list: the production root in internal/cli and the
+// full-tree roots built by the tests both call it, so a group added here cannot
+// be missing from either. Add-ons live in their own packages and are wired in
+// through their Register functions.
 func RegisterAll(root *cobra.Command, deps Dependencies) {
 	RegisterDocument(root, deps)
 	RegisterElement(root, deps)
