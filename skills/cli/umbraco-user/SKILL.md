@@ -2,7 +2,7 @@
 name: umbraco-user
 description: "Backoffice user management (accounts, state, groups, API credentials)"
 metadata:
-  version: 0.4.25
+  version: 0.4.26
   requires:
     bins:
       - umbraco

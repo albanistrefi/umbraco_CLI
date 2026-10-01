@@ -2,7 +2,7 @@
 name: umbraco-tag
 description: "Tag reads across tagged content"
 metadata:
-  version: 0.4.25
+  version: 0.4.26
   requires:
     bins:
       - umbraco
