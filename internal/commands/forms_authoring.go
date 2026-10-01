@@ -198,7 +198,23 @@ func formsMoveBody(jsonPayload string, to string, toRoot bool) (map[string]any, 
 	}
 	switch {
 	case strings.TrimSpace(jsonPayload) != "":
-		return parsePayload(jsonPayload)
+		body, err := parsePayload(jsonPayload)
+		if err != nil {
+			return nil, err
+		}
+		// A missing parentId deserialises like null, which means "move to
+		// the root"; require it to be stated so --json '{}' cannot do that.
+		parentID, present := body["parentId"]
+		if !present {
+			return nil, fmt.Errorf("--json must set \"parentId\": a Forms folder GUID, or null to move to the root (or use --to / --to-root)")
+		}
+		if parentID != nil {
+			text, ok := parentID.(string)
+			if !ok || !isUUIDLike(text) {
+				return nil, fmt.Errorf("parentId must be a Forms folder GUID or null, got %v", parentID)
+			}
+		}
+		return body, nil
 	case toRoot:
 		return map[string]any{"parentId": nil}, nil
 	default:

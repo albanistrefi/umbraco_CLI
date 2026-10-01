@@ -276,10 +276,22 @@ func TestFormsMoveBodies(t *testing.T) {
 		{"forms", "move", formsTestFormID},
 		{"forms", "move", formsTestFormID, "--to", formsTestFolderID, "--to-root"},
 		{"forms", "move", formsTestFormID, "--to", "folder-name"},
+		{"forms", "move", formsTestFormID, "--json", `{}`, "--dry-run"},
+		{"forms", "move-folder", formsTestFolderID, "--json", `{"parentId":"folder-name"}`, "--dry-run"},
+		{"forms", "move-folder", formsTestFolderID, "--json", `{"parentId":7}`, "--dry-run"},
 	} {
 		if _, err := fake.run(t, args...); err == nil {
 			t.Fatalf("expected %v to be refused", args)
 		}
+	}
+	if len(fake.sent(http.MethodPut)) != 2 {
+		t.Fatalf("refused moves must not send a request, got %d PUTs", len(fake.sent(http.MethodPut)))
+	}
+	if _, err := fake.run(t, "forms", "move", formsTestFormID, "--json", `{"parentId":null}`); err != nil {
+		t.Fatalf("an explicit null parentId must still move to the root: %v", err)
+	}
+	if body := fake.sent(http.MethodPut)[2].body.(map[string]any); body["parentId"] != nil {
+		t.Fatalf("expected the raw null parentId sent, got %+v", body)
 	}
 }
 
