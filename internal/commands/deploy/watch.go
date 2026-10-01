@@ -43,6 +43,7 @@ func deployWatch(deps cmdkit.Dependencies) *cobra.Command {
 	var heartbeat time.Duration
 	var jsonOut bool
 	var skipIndexVerify bool
+	var logFlags watchLogFlags
 
 	cmd := &cobra.Command{
 		Use:   "watch",
@@ -51,11 +52,16 @@ func deployWatch(deps cmdkit.Dependencies) *cobra.Command {
 
 Signals: the newest log entry's ProcessId/MachineName (an app recycle means the deploy landed), the management token endpoint probed unauthenticated (503/unreachable = down; 401 = app alive and rejecting the probe — the earliest all-clear, typically ~15s before public pages return), configured health paths on the public host, and Examine index health (deploys can trigger full index rebuilds, during which search is empty — "deploy succeeded" and "the site works" are different questions).
 
-Phases: baseline → restarting → app-alive → serving → landed → settling → verified | failed | timeout. Everything is baselined before arming — a signal already true on the target is not a signal. Verified requires the environment to stay healthy for a full --settle window after everything first looks good: deployment pipelines can disturb the environment AFTER the app is already serving (observed in production: Umbraco Deploy wiped every Examine index 27 seconds after a single-sample check had passed, leaving search empty for 17 minutes), so a single passing sample is not verification. An interrupted settle (index rebuild, health flap) is emitted as settle-interrupted and the window restarts once the environment recovers. Transitions are emitted with timestamps as they are observed (fast recycles may skip phases); silence between transitions means "still in the current phase", and --heartbeat writes a periodic still-alive line to stderr so silence is never ambiguous. Success is never inferred from silence: reaching --timeout without verification exits 6 (status unknown), and sustained downtime or post-landing health failure beyond --escalation exits 5.`,
+Phases: baseline → restarting → app-alive → serving → landed → settling → verified | failed | timeout. Everything is baselined before arming — a signal already true on the target is not a signal. Verified requires the environment to stay healthy for a full --settle window after everything first looks good: deployment pipelines can disturb the environment AFTER the app is already serving (observed in production: Umbraco Deploy wiped every Examine index 27 seconds after a single-sample check had passed, leaving search empty for 17 minutes), so a single passing sample is not verification. An interrupted settle (index rebuild, health flap) is emitted as settle-interrupted and the window restarts once the environment recovers. Transitions are emitted with timestamps as they are observed (fast recycles may skip phases); silence between transitions means "still in the current phase", and --heartbeat writes a periodic still-alive line to stderr so silence is never ambiguous. Success is never inferred from silence: reaching --timeout without verification exits 6 (status unknown), and sustained downtime or post-landing health failure beyond --escalation exits 5.
+
+Every --json line has a "type": "phase" for the transitions above. --logs adds the deploy's log entries to the same stream, read with the 'logs tail' poller from the newest entry at baseline: "log" lines (timestamp, category, level, sourceContext, message, exception's first line; e-mail addresses, tokens and secrets masked) for app start/stop (lifecycle), migrations and upgrades (migration), Examine indexer suspend/resume/rebuild (indexer), Umbraco Deploy entries (deploy), --logs-match hits (match) and anything at --logs-level or above (level, default Error); and "log-monitor" lines when the log viewer is unavailable (expected during the restart) or resumes, when a burst outran the poller (gap, with the unread window), and once when the watch ends (stopped, with counts of what was read, emitted and excluded). Known chronic noise is dropped before categories apply: delivery-api-disabled (the Delivery API index populator's "not enabled" line), ready-probe-upgrading (the umbraco-ready health check failing with "Level: Upgrading" while migrations run) and automate-workflow-lock-pk (SQL 2627 on PK_umbracoAutomateWorkflowLock); --logs-keep turns one off, --logs-exclude adds more. Log lines never change phases or the exit code, and the monitor stops with the watch.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if interval <= 0 {
 				return fmt.Errorf("--interval must be greater than zero")
+			}
+			if err := logFlags.validate(cmd); err != nil {
+				return err
 			}
 			base := strings.TrimRight(deps.CurrentConfig().BaseURL, "/")
 			public := base
@@ -86,24 +92,49 @@ Phases: baseline → restarting → app-alive → serving → landed → settlin
 				return err
 			}
 			emit := watchEmitter(cmd.OutOrStdout(), jsonOut)
+			baselineDetail := map[string]any{
+				"processId":      baseline.ProcessID,
+				"machineName":    baseline.MachineName,
+				"healthyPaths":   machine.baselineHealthy,
+				"unhealthyPaths": unhealthyPathNames(baseline.Health),
+				"ignoredIndexes": cmdkit.SortedKeys(machine.baselineBadIndexes),
+			}
+			var logs *logMonitor
+			if logFlags.enabled {
+				logs = newLogMonitor(ctx, deps.Client, baseline.NewestLogAt, logFlags)
+				baselineDetail["logs"] = map[string]any{"excluding": logs.exclusionNames(), "level": logFlags.level}
+			}
 			emit(watchEvent{
 				Timestamp: baseline.At.UTC().Format(time.RFC3339),
 				Phase:     "baseline",
-				Detail: map[string]any{
-					"processId":      baseline.ProcessID,
-					"machineName":    baseline.MachineName,
-					"healthyPaths":   machine.baselineHealthy,
-					"unhealthyPaths": unhealthyPathNames(baseline.Health),
-					"ignoredIndexes": cmdkit.SortedKeys(machine.baselineBadIndexes),
-				},
+				Detail:    baselineDetail,
 			})
+			// Log events of a tick go out before its phase transitions (the
+			// entries happened first). At a terminal state the monitor drains
+			// once more and stops with the watch.
+			drainLogs := func() {
+				if logs == nil {
+					return
+				}
+				for _, event := range logs.poll(ctx) {
+					emit(event)
+				}
+			}
+			stopLogs := func() {
+				if logs == nil {
+					return
+				}
+				emit(logs.stopped(machine.phase))
+			}
 
 			started := time.Now()
 			deadline := started.Add(timeout)
 			lastHeartbeat := started
 			timeoutErr := func() error {
+				drainLogs()
 				reason := fmt.Sprintf("no verification within %s (last phase: %s) — deployment status unknown", timeout, machine.phase)
 				emit(watchEvent{Timestamp: time.Now().UTC().Format(time.RFC3339), Phase: "timeout", Detail: map[string]any{"reason": reason}})
+				stopLogs()
 				return deployWatchTimeoutError{reason: reason}
 			}
 			for {
@@ -125,13 +156,16 @@ Phases: baseline → restarting → app-alive → serving → landed → settlin
 
 				observation := probes.observe(ctx)
 				events, terminal := machine.observe(observation)
+				drainLogs()
 				for _, event := range events {
 					emit(event)
 				}
 				switch terminal {
 				case watchOutcomeVerified:
+					stopLogs()
 					return nil
 				case watchOutcomeFailed:
+					stopLogs()
 					return deployWatchFailedError{reason: machine.failureReason}
 				}
 
@@ -139,7 +173,11 @@ Phases: baseline → restarting → app-alive → serving → landed → settlin
 					return timeoutErr()
 				}
 				if heartbeat > 0 && time.Since(lastHeartbeat) >= heartbeat {
-					fmt.Fprintf(cmd.ErrOrStderr(), "%s still watching — phase %s, elapsed %s\n", time.Now().UTC().Format(time.RFC3339), machine.phase, time.Since(started).Round(time.Second))
+					logStatus := ""
+					if logs != nil {
+						logStatus = fmt.Sprintf(", logs: %d read, %d emitted", logs.seen, logs.total())
+					}
+					fmt.Fprintf(cmd.ErrOrStderr(), "%s still watching — phase %s, elapsed %s%s\n", time.Now().UTC().Format(time.RFC3339), machine.phase, time.Since(started).Round(time.Second), logStatus)
 					lastHeartbeat = time.Now()
 				}
 			}
@@ -155,38 +193,64 @@ Phases: baseline → restarting → app-alive → serving → landed → settlin
 	cmd.Flags().DurationVar(&heartbeat, "heartbeat", time.Minute, "Interval for still-alive lines on stderr; 0 disables")
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "Emit phase transitions as NDJSON")
 	cmd.Flags().BoolVar(&skipIndexVerify, "skip-index-verify", false, "Do not require Examine indexes to be healthy for the verified phase")
+	addWatchLogFlags(cmd, &logFlags)
 	return cmd
 }
 
-// watchEvent is one emitted phase transition.
+// watchEvent is one emitted phase transition, type "phase".
 type watchEvent struct {
 	Timestamp string         `json:"timestamp"`
 	Phase     string         `json:"phase"`
+	Type      string         `json:"type"`
 	Detail    map[string]any `json:"detail,omitempty"`
 }
 
-func watchEmitter(out io.Writer, jsonOut bool) func(watchEvent) {
+// watchEmitter writes phase transitions, log entries and log-monitor events
+// to one stream: NDJSON with a "type" on every line, or one text line each.
+func watchEmitter(out io.Writer, jsonOut bool) func(any) {
 	encoder := json.NewEncoder(out)
-	return func(event watchEvent) {
+	return func(value any) {
+		if event, ok := value.(watchEvent); ok && event.Type == "" {
+			event.Type = "phase"
+			value = event
+		}
 		if jsonOut {
-			_ = encoder.Encode(event)
+			_ = encoder.Encode(value)
 			return
 		}
-		detail := ""
-		if len(event.Detail) > 0 {
-			parts := make([]string, 0, len(event.Detail))
-			keys := make([]string, 0, len(event.Detail))
-			for key := range event.Detail {
-				keys = append(keys, key)
+		switch event := value.(type) {
+		case watchEvent:
+			fmt.Fprintf(out, "%s %s%s\n", event.Timestamp, event.Phase, formatWatchDetail(event.Detail))
+		case watchLogEvent:
+			source := ""
+			if event.SourceContext != "" {
+				source = " " + event.SourceContext + ":"
 			}
-			sort.Strings(keys)
-			for _, key := range keys {
-				parts = append(parts, fmt.Sprintf("%s=%v", key, event.Detail[key]))
+			exception := ""
+			if event.Exception != "" {
+				exception = " — " + event.Exception
 			}
-			detail = " — " + strings.Join(parts, " ")
+			fmt.Fprintf(out, "%s log [%s] %s%s %s%s\n", event.Timestamp, event.Category, event.Level, source, api.SanitizeTerminalText(event.Message), api.SanitizeTerminalText(exception))
+		case watchLogMonitorEvent:
+			fmt.Fprintf(out, "%s log-monitor %s%s\n", event.Timestamp, event.Status, formatWatchDetail(event.Detail))
 		}
-		fmt.Fprintf(out, "%s %s%s\n", event.Timestamp, event.Phase, detail)
 	}
+}
+
+func formatWatchDetail(detail map[string]any) string {
+	if len(detail) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(detail))
+	for key := range detail {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(detail))
+	for _, key := range keys {
+		parts = append(parts, fmt.Sprintf("%s=%v", key, detail[key]))
+	}
+	return " — " + strings.Join(parts, " ")
 }
 
 // watchObservation is one poll of the target environment. Unknown values
@@ -199,6 +263,7 @@ type watchObservation struct {
 	MgmtStatus  int // HTTP status of the unauthenticated token probe; 0 = unreachable
 	ProcessID   string
 	MachineName string
+	NewestLogAt time.Time       // timestamp of the newest log entry, by the server's clock
 	LogErr      error           // the typed error from the log probe, surfaced at baseline
 	Health      map[string]bool // per health path; nil when the probe errored entirely
 	BadIndexes  []string        // rebuilding/unhealthy index names; nil = unknown this tick
@@ -457,7 +522,7 @@ func (p *watchProbes) observe(ctx context.Context) watchObservation {
 	obs.MgmtAlive, obs.MgmtStatus = p.probeManagement(ctx)
 	obs.Health = p.probeHealth(ctx)
 	if obs.MgmtAlive {
-		obs.ProcessID, obs.MachineName, obs.LogErr = p.newestProcess(ctx)
+		obs.ProcessID, obs.MachineName, obs.NewestLogAt, obs.LogErr = p.newestProcess(ctx)
 		if !p.skipIndexes {
 			obs.BadIndexes = p.badIndexes(ctx)
 		}
@@ -537,25 +602,26 @@ func (p *watchProbes) healthClient(secretHeader string, secretSent bool) *http.C
 	return &client
 }
 
-func (p *watchProbes) newestProcess(ctx context.Context) (string, string, error) {
+func (p *watchProbes) newestProcess(ctx context.Context) (string, string, time.Time, error) {
 	result, err := p.deps.Client.Get(ctx, cmdkit.LogViewerLogPath, api.RequestOptions{Params: map[string]any{
 		"take": 1, "skip": 0, "orderDirection": "Descending",
 	}})
 	if err != nil {
-		return "", "", err
+		return "", "", time.Time{}, err
 	}
 	envelope, ok := result.(map[string]any)
 	if !ok {
-		return "", "", nil
+		return "", "", time.Time{}, nil
 	}
 	items, _ := envelope["items"].([]any)
 	if len(items) == 0 {
-		return "", "", nil
+		return "", "", time.Time{}, nil
 	}
 	entry, ok := items[0].(map[string]any)
 	if !ok {
-		return "", "", nil
+		return "", "", time.Time{}, nil
 	}
+	newestAt, _ := cmdkit.LogEntryTimestamp(entry)
 	var processID, machineName string
 	if properties, ok := entry["properties"].([]any); ok {
 		for _, item := range properties {
@@ -573,7 +639,7 @@ func (p *watchProbes) newestProcess(ctx context.Context) (string, string, error)
 			}
 		}
 	}
-	return processID, machineName, nil
+	return processID, machineName, newestAt, nil
 }
 
 func (p *watchProbes) badIndexes(ctx context.Context) []string {
