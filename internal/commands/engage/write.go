@@ -1,4 +1,4 @@
-package commands
+package engage
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/commands/cmdkit"
 )
 
 // Engage saves configuration entities through one upsert route per entity:
@@ -51,7 +52,7 @@ type engageWriteSpec struct {
 }
 
 // engageEntityWrites builds create/update/(delete) for one entity.
-func engageEntityWrites(deps Dependencies, entity engageEntity) []*cobra.Command {
+func engageEntityWrites(deps cmdkit.Dependencies, entity engageEntity) []*cobra.Command {
 	spec := entity.Write
 	commands := []*cobra.Command{engageCreate(deps, entity), engageUpdate(deps, entity)}
 	if spec.DeletePath != "" {
@@ -70,7 +71,7 @@ func engageEntityWrites(deps Dependencies, entity engageEntity) []*cobra.Command
 	return commands
 }
 
-func engageCreate(deps Dependencies, entity engageEntity) *cobra.Command {
+func engageCreate(deps cmdkit.Dependencies, entity engageEntity) *cobra.Command {
 	spec := entity.Write
 	var jsonPayload string
 	var dryRun, printTemplate bool
@@ -88,25 +89,25 @@ func engageCreate(deps Dependencies, entity engageEntity) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if printTemplate {
 				if spec.EmptyPath == "" {
-					return printResult(cmd, deps, spec.Scaffold())
+					return cmdkit.PrintResult(cmd, deps, spec.Scaffold())
 				}
 				result, err := engageGet(cmd, deps, spec.EmptyPath, nil)
 				if err != nil {
 					return err
 				}
-				return printResult(cmd, deps, result)
+				return cmdkit.PrintResult(cmd, deps, result)
 			}
-			if err := requireValue("--json", jsonPayload); err != nil {
+			if err := cmdkit.RequireValue("--json", jsonPayload); err != nil {
 				return err
 			}
-			userBody, err := parsePayload(jsonPayload)
+			userBody, err := cmdkit.ParsePayload(jsonPayload)
 			if err != nil {
 				return err
 			}
 			if id, ok := userBody["id"]; ok && !isZeroEngageID(id) {
 				return fmt.Errorf("engage %s create sends `id` 0; --json carries `id` %v, which would update that %s. Use 'umbraco engage %s update <%s>' instead", entity.Group, id, entity.Noun, entity.Group, entity.IDField)
 			}
-			body := mergeAliasPayload(spec.Scaffold(), userBody)
+			body := cmdkit.MergeAliasPayload(spec.Scaffold(), userBody)
 			body["id"] = 0
 			if err := ensureEngageGUID(body, spec.BodyIDField); err != nil {
 				return err
@@ -123,11 +124,11 @@ func engageCreate(deps Dependencies, entity engageEntity) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Create payload as JSON (merged onto the create defaults)")
 	cmd.Flags().BoolVar(&printTemplate, "print-template", false, "Print a JSON skeleton; edit it and pass it to --json")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
-func engageUpdate(deps Dependencies, entity engageEntity) *cobra.Command {
+func engageUpdate(deps cmdkit.Dependencies, entity engageEntity) *cobra.Command {
 	spec := entity.Write
 	var jsonPayload, mergeJSON string
 	var dryRun bool
@@ -152,9 +153,9 @@ func engageUpdate(deps Dependencies, entity engageEntity) *cobra.Command {
 			var input map[string]any
 			var err error
 			if hasJSON {
-				input, err = parsePayload(jsonPayload)
+				input, err = cmdkit.ParsePayload(jsonPayload)
 			} else {
-				input, err = parseJSONObject(mergeJSON, "--merge-json")
+				input, err = cmdkit.ParseJSONObject(mergeJSON, "--merge-json")
 			}
 			if err != nil {
 				return err
@@ -165,7 +166,7 @@ func engageUpdate(deps Dependencies, entity engageEntity) *cobra.Command {
 			}
 			body := input
 			if !hasJSON {
-				body = mergeAliasPayload(current, input)
+				body = cmdkit.MergeAliasPayload(current, input)
 			}
 			if err := pinEngageIdentity(command, body, current, spec.BodyIDField, guid); err != nil {
 				return err
@@ -182,7 +183,7 @@ func engageUpdate(deps Dependencies, entity engageEntity) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Full replacement payload as JSON (fields not mentioned are reset by the server)")
 	cmd.Flags().StringVar(&mergeJSON, "merge-json", "", "Partial JSON deep-merged into the current entity before the save (fields not mentioned are preserved)")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
@@ -201,7 +202,7 @@ type engageDeleteSpec struct {
 // engageDelete is deleteCommand for Engage's query-parameter ids, with the
 // id kind validated before the force gate so a wrong id never needs --force
 // to be noticed.
-func engageDelete(deps Dependencies, spec engageDeleteSpec) *cobra.Command {
+func engageDelete(deps cmdkit.Dependencies, spec engageDeleteSpec) *cobra.Command {
 	var force, dryRun bool
 	cmd := &cobra.Command{
 		Use:   spec.Use,
@@ -212,21 +213,21 @@ func engageDelete(deps Dependencies, spec engageDeleteSpec) *cobra.Command {
 			if err := validateEngageID("engage "+cmd.Parent().Name()+" "+cmd.Name(), args[0], spec.IDKind, spec.IDField, spec.ListCommand); err != nil {
 				return err
 			}
-			if err := requireForceOrDryRun(cmd, spec.Consequence, force, dryRun); err != nil {
+			if err := cmdkit.RequireForceOrDryRun(cmd, spec.Consequence, force, dryRun); err != nil {
 				return err
 			}
 			result, err := deps.Client.Delete(cmd.Context(), spec.Path, engageWriteOpts(map[string]any{spec.Param: strings.TrimSpace(args[0])}, dryRun))
 			if err != nil {
 				return engageError(err)
 			}
-			if err := printMutationResult(cmd, deps, "deleted", result, dryRun); err != nil {
+			if err := cmdkit.PrintMutationResult(cmd, deps, "deleted", result, dryRun); err != nil {
 				return err
 			}
 			return engageValidationFailure(cmd, result)
 		},
 	}
 	cmd.Flags().BoolVar(&force, "force", false, "Confirm permanent deletion")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
@@ -236,12 +237,12 @@ func engageWriteOpts(params map[string]any, dryRun bool) api.RequestOptions {
 	return opts
 }
 
-func engageFetchObject(ctx context.Context, deps Dependencies, path string, params map[string]any) (map[string]any, error) {
+func engageFetchObject(ctx context.Context, deps cmdkit.Dependencies, path string, params map[string]any) (map[string]any, error) {
 	result, err := deps.Client.Get(ctx, path, engageOpts(params))
 	if err != nil {
 		return nil, engageError(err)
 	}
-	return objectFromResult("GET "+path, result)
+	return cmdkit.ObjectFromResult("GET "+path, result)
 }
 
 // isZeroEngageID reports whether a body `id` means "new": 0, "0", or null.
@@ -266,16 +267,16 @@ func ensureEngageGUID(body map[string]any, field string) error {
 	if value, present := body[field]; present && value != nil {
 		text, ok := value.(string)
 		if !ok {
-			return fmt.Errorf("`%s` must be a GUID string, got %s", field, jsonShapeName(value))
+			return fmt.Errorf("`%s` must be a GUID string, got %s", field, cmdkit.JSONShapeName(value))
 		}
 		if strings.TrimSpace(text) != "" {
-			if !isUUIDLike(text) {
+			if !cmdkit.IsUUIDLike(text) {
 				return fmt.Errorf("`%s` must be a GUID, got %q", field, text)
 			}
 			return nil
 		}
 	}
-	guid, err := newUUIDv4()
+	guid, err := cmdkit.NewUUIDv4()
 	if err != nil {
 		return fmt.Errorf("failed to generate `%s`: %w", field, err)
 	}
@@ -297,7 +298,7 @@ func pinEngageIdentity(command string, body map[string]any, current map[string]a
 	if value, present := body[field]; present && value != nil {
 		given, ok := value.(string)
 		if !ok {
-			return fmt.Errorf("%s: `%s` must be a GUID string, got %s", command, field, jsonShapeName(value))
+			return fmt.Errorf("%s: `%s` must be a GUID string, got %s", command, field, cmdkit.JSONShapeName(value))
 		}
 		if strings.TrimSpace(given) != "" && !strings.EqualFold(strings.TrimSpace(given), guid) {
 			return fmt.Errorf("%s: --json carries `%s` %q, which is not the entity being updated (%s)", command, field, given, guid)
@@ -334,7 +335,7 @@ func finishEngageBody(body map[string]any, spec *engageWriteSpec) error {
 // entity, a wrapper with validationResults (personas, journeys), or a bare
 // GUID string (goals, traffic filters); the last is turned into an object so
 // the output stays a JSON object.
-func printEngageSave(cmd *cobra.Command, deps Dependencies, verb string, result any, body map[string]any, field string, dryRun bool) error {
+func printEngageSave(cmd *cobra.Command, deps cmdkit.Dependencies, verb string, result any, body map[string]any, field string, dryRun bool) error {
 	if !dryRun {
 		switch value := result.(type) {
 		case string:
@@ -343,7 +344,7 @@ func printEngageSave(cmd *cobra.Command, deps Dependencies, verb string, result 
 			result = map[string]any{verb: true, field: body[field]}
 		}
 	}
-	if err := printResult(cmd, deps, result); err != nil {
+	if err := cmdkit.PrintResult(cmd, deps, result); err != nil {
 		return err
 	}
 	return engageValidationFailure(cmd, result)

@@ -72,7 +72,6 @@ var (
 	mergeParams                = cmdkit.MergeParams
 	mutateWithFallback         = cmdkit.MutateWithFallback
 	newUUIDv4                  = cmdkit.NewUUIDv4
-	objectFromResult           = cmdkit.ObjectFromResult
 	optionalBody               = cmdkit.OptionalBody
 	parseJSONObject            = cmdkit.ParseJSONObject
 	parseParams                = cmdkit.ParseParams

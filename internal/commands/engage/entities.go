@@ -1,4 +1,4 @@
-package commands
+package engage
 
 import (
 	"encoding/json"
@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"umbraco-cli/internal/commands/cmdkit"
 )
 
 // Write specs for the Engage configuration entities. Scaffolds mirror the
@@ -139,7 +141,7 @@ func normalizeEngageGoal(body map[string]any) error {
 
 // engageSegmentUpdatePriority wraps POST /segments/update-priority, whose
 // body is a bare array of {id, sortOrder} with the numeric segment ids.
-func engageSegmentUpdatePriority(deps Dependencies) *cobra.Command {
+func engageSegmentUpdatePriority(deps cmdkit.Dependencies) *cobra.Command {
 	var jsonPayload, order string
 	var dryRun bool
 	cmd := &cobra.Command{
@@ -157,12 +159,12 @@ func engageSegmentUpdatePriority(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return engageError(err)
 			}
-			return printMutationResult(cmd, deps, "updated", result, dryRun)
+			return cmdkit.PrintMutationResult(cmd, deps, "updated", result, dryRun)
 		},
 	}
 	cmd.Flags().StringVar(&order, "order", "", "Comma-separated numeric segment ids, highest priority first")
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Raw [{\"id\":7,\"sortOrder\":0},...] array")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 

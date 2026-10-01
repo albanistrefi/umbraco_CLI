@@ -1,4 +1,5 @@
-package commands
+// Package engage holds the Umbraco Engage add-on commands.
+package engage
 
 import (
 	"errors"
@@ -10,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/commands/cmdkit"
 )
 
 // Umbraco Engage serves its own Management API mount, authorised with the
@@ -21,7 +23,8 @@ import (
 // command validates the kind up front and names the field to copy.
 const engageAPIPrefix = "/umbraco/engage/management/api/v1"
 
-func RegisterEngage(root *cobra.Command, deps Dependencies) {
+// Register attaches the engage command group to root.
+func Register(root *cobra.Command, deps cmdkit.Dependencies) {
 	engage := &cobra.Command{
 		Use:   "engage",
 		Short: "Umbraco Engage operations (analytics, segments, personas, journeys, goals, A/B tests, personalization)",
@@ -42,7 +45,7 @@ func RegisterEngage(root *cobra.Command, deps Dependencies) {
 			{Name: "days", Param: "amountOfDays", Kind: engageFlagInt, Usage: "Window in days for the per-segment visitor statistics"},
 		},
 		Write: engageSegmentWrite,
-		Extra: []func(Dependencies) *cobra.Command{engageSegmentUpdatePriority},
+		Extra: []func(cmdkit.Dependencies) *cobra.Command{engageSegmentUpdatePriority},
 	}))
 	engage.AddCommand(engageEntityGroup(deps, engageEntity{
 		Group: "persona", Noun: "persona", Short: "Personas (implicit personalization)",
@@ -111,7 +114,7 @@ func engageError(err error) error {
 	return err
 }
 
-func engageGet(cmd *cobra.Command, deps Dependencies, path string, params map[string]any) (any, error) {
+func engageGet(cmd *cobra.Command, deps cmdkit.Dependencies, path string, params map[string]any) (any, error) {
 	result, err := deps.Client.Get(cmd.Context(), path, engageOpts(params))
 	if err != nil {
 		return nil, engageError(err)
@@ -137,7 +140,7 @@ func validateEngageID(command string, value string, kind engageIDKind, field str
 			return fmt.Errorf("%s expects the numeric `%s` from '%s', got %q", command, field, listCommand, value)
 		}
 	default:
-		if !isUUIDLike(value) {
+		if !cmdkit.IsUUIDLike(value) {
 			return fmt.Errorf("%s expects the GUID `%s` from '%s' (not the numeric `id`), got %q", command, field, listCommand, value)
 		}
 	}
@@ -208,7 +211,7 @@ type engageReadSpec struct {
 // engageRead builds an argument-free read with --fields projection. Engage
 // list routes answer bare arrays without an {items,total} envelope and are
 // not paged, so there are no pagination flags.
-func engageRead(deps Dependencies, spec engageReadSpec) *cobra.Command {
+func engageRead(deps cmdkit.Dependencies, spec engageReadSpec) *cobra.Command {
 	var fields string
 	cmd := &cobra.Command{Use: spec.Use, Short: spec.Short, Long: spec.Long, Args: cobra.NoArgs}
 	params := bindEngageFlags(cmd, spec.Flags)
@@ -217,9 +220,9 @@ func engageRead(deps Dependencies, spec engageReadSpec) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		return printResult(cmd, deps, applyFieldsProjection(result, fields))
+		return cmdkit.PrintResult(cmd, deps, cmdkit.ApplyFieldsProjection(result, fields))
 	}
-	addFieldsFlag(cmd, &fields)
+	cmdkit.AddFieldsFlag(cmd, &fields)
 	return cmd
 }
 
@@ -234,7 +237,7 @@ type engageGetSpec struct {
 	ListCommand string
 }
 
-func engageGetByID(deps Dependencies, spec engageGetSpec) *cobra.Command {
+func engageGetByID(deps cmdkit.Dependencies, spec engageGetSpec) *cobra.Command {
 	var fields string
 	cmd := &cobra.Command{
 		Use:   spec.Use,
@@ -249,10 +252,10 @@ func engageGetByID(deps Dependencies, spec engageGetSpec) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, deps, applyFieldsProjection(result, fields))
+			return cmdkit.PrintResult(cmd, deps, cmdkit.ApplyFieldsProjection(result, fields))
 		},
 	}
-	addFieldsFlag(cmd, &fields)
+	cmdkit.AddFieldsFlag(cmd, &fields)
 	return cmd
 }
 
@@ -270,12 +273,12 @@ type engageEntity struct {
 	// a delete route).
 	Write *engageWriteSpec
 	// Extra commands appended after the generated ones.
-	Extra []func(Dependencies) *cobra.Command
+	Extra []func(cmdkit.Dependencies) *cobra.Command
 }
 
 // engageEntityGroup builds the list/get pair shared by the configuration
 // entities (segments, personas, journeys, ...).
-func engageEntityGroup(deps Dependencies, entity engageEntity) *cobra.Command {
+func engageEntityGroup(deps cmdkit.Dependencies, entity engageEntity) *cobra.Command {
 	group := &cobra.Command{Use: entity.Group, Short: entity.Short}
 	listCommand := "umbraco engage " + entity.Group + " list"
 	group.AddCommand(engageRead(deps, engageReadSpec{
@@ -306,7 +309,7 @@ func engageEntityGroup(deps Dependencies, entity engageEntity) *cobra.Command {
 	return group
 }
 
-func engageGoal(deps Dependencies) *cobra.Command {
+func engageGoal(deps cmdkit.Dependencies) *cobra.Command {
 	group := &cobra.Command{Use: "goal", Short: "Goals (conversions tracked by analytics, A/B tests and scoring)"}
 	group.AddCommand(engageRead(deps, engageReadSpec{
 		Use: "list", Short: "List every goal (GET /goals/all)",
@@ -329,7 +332,7 @@ func engageGoal(deps Dependencies) *cobra.Command {
 	return group
 }
 
-func engageABTest(deps Dependencies) *cobra.Command {
+func engageABTest(deps cmdkit.Dependencies) *cobra.Command {
 	group := &cobra.Command{
 		Use:   "abtest",
 		Short: "A/B tests, their variants, and A/B test projects",
@@ -367,7 +370,7 @@ func engageABTest(deps Dependencies) *cobra.Command {
 // "installed and serving data" from "installed but disabled" (409).
 const engageDataProbePath = "/goal/all/types"
 
-func engageStatus(deps Dependencies) *cobra.Command {
+func engageStatus(deps cmdkit.Dependencies) *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
 		Short: "Report Engage's version, license, main switch, add-ons, and whether its data is reachable",
@@ -407,7 +410,7 @@ func engageStatus(deps Dependencies) *cobra.Command {
 				}
 				status["unavailable"] = unavailable
 			}
-			return printResult(cmd, deps, status)
+			return cmdkit.PrintResult(cmd, deps, status)
 		},
 	}
 }

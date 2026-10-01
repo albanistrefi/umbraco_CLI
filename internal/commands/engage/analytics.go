@@ -1,4 +1,4 @@
-package commands
+package engage
 
 import (
 	"fmt"
@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+
+	"umbraco-cli/internal/commands/cmdkit"
 )
 
 // engageMetrics and engageDimensions are the MetricModel and DimensionModel
@@ -86,7 +88,7 @@ func parseEngageDate(flag string, value string) (string, error) {
 	return "", fmt.Errorf("%s must be an ISO 8601 date (YYYY-MM-DD) or RFC 3339 date-time, got %q", flag, value)
 }
 
-func engageAnalytics(deps Dependencies) *cobra.Command {
+func engageAnalytics(deps cmdkit.Dependencies) *cobra.Command {
 	group := &cobra.Command{
 		Use:   "analytics",
 		Short: "Query Engage analytics (metrics by dimensions over a date range)",
@@ -99,19 +101,19 @@ func engageAnalytics(deps Dependencies) *cobra.Command {
 	return group
 }
 
-func engageNameCatalogue(deps Dependencies, use string, short string, names []string) *cobra.Command {
+func engageNameCatalogue(deps cmdkit.Dependencies, use string, short string, names []string) *cobra.Command {
 	return &cobra.Command{
 		Use:   use,
 		Short: short,
 		Long:  short + ". Taken from the Engage 18.1.0 OpenAPI document; names are matched case-insensitively.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return printResult(cmd, deps, names)
+			return cmdkit.PrintResult(cmd, deps, names)
 		},
 	}
 }
 
-func engageAnalyticsQuery(deps Dependencies) *cobra.Command {
+func engageAnalyticsQuery(deps cmdkit.Dependencies) *cobra.Command {
 	var metricsRaw, dimensionsRaw, from, to, filter, node, culture, sortBy, jsonPayload string
 	var page, pageSize int
 	var ascending, realtime, includeSubpages, dryRun bool
@@ -134,7 +136,7 @@ func engageAnalyticsQuery(deps Dependencies) *cobra.Command {
 						return fmt.Errorf("--json sends the body verbatim and cannot be combined with --%s", name)
 					}
 				}
-				parsed, err := parsePayload(jsonPayload)
+				parsed, err := cmdkit.ParsePayload(jsonPayload)
 				if err != nil {
 					return err
 				}
@@ -155,7 +157,7 @@ func engageAnalyticsQuery(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return engageError(err)
 			}
-			return printResult(cmd, deps, result)
+			return cmdkit.PrintResult(cmd, deps, result)
 		},
 	}
 	cmd.Flags().StringVar(&metricsRaw, "metrics", "", "Comma-separated metric names (required unless --json), e.g. pageviews,sessions")
@@ -172,7 +174,7 @@ func engageAnalyticsQuery(deps Dependencies) *cobra.Command {
 	cmd.Flags().BoolVar(&realtime, "realtime", false, "Query the realtime (unaggregated) data instead of the reporting tables")
 	cmd.Flags().BoolVar(&includeSubpages, "include-subpages", false, "With --node: include the page's descendants")
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Full AnalyticsQueryGetModel body, sent verbatim")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
@@ -219,7 +221,7 @@ func buildEngageAnalyticsQuery(in engageAnalyticsQueryInput, now time.Time) (map
 	}
 	filter := strings.TrimSpace(in.Filter)
 	if node := strings.TrimSpace(in.Node); node != "" {
-		if !isUUIDLike(node) {
+		if !cmdkit.IsUUIDLike(node) {
 			return nil, fmt.Errorf("--node expects a document GUID, got %q", node)
 		}
 		clause := "NodeId=='" + node
@@ -269,7 +271,7 @@ func buildEngageAnalyticsQuery(in engageAnalyticsQueryInput, now time.Time) (map
 	return body, nil
 }
 
-func engageAnalyticsDistinct(deps Dependencies) *cobra.Command {
+func engageAnalyticsDistinct(deps cmdkit.Dependencies) *cobra.Command {
 	var dimension string
 	cmd := &cobra.Command{
 		Use:   "distinct",
@@ -277,7 +279,7 @@ func engageAnalyticsDistinct(deps Dependencies) *cobra.Command {
 		Long:  "GET /analytics/distinct?dimension=<name>. Useful for building --filter values, e.g. the countries or device categories Engage has seen.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := requireValue("--dimension", dimension); err != nil {
+			if err := cmdkit.RequireValue("--dimension", dimension); err != nil {
 				return err
 			}
 			names, err := canonicalEngageNames("--dimension", dimension, engageDimensions, "umbraco engage analytics dimensions")
@@ -291,14 +293,14 @@ func engageAnalyticsDistinct(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, deps, result)
+			return cmdkit.PrintResult(cmd, deps, result)
 		},
 	}
 	cmd.Flags().StringVar(&dimension, "dimension", "", "Dimension name (see 'analytics dimensions')")
 	return cmd
 }
 
-func engageAnnotation(deps Dependencies) *cobra.Command {
+func engageAnnotation(deps cmdkit.Dependencies) *cobra.Command {
 	group := &cobra.Command{Use: "annotation", Short: "Analytics annotations (notes pinned to dates on the analytics charts)"}
 	var fields, from, to, node, culture string
 	var global bool
@@ -330,7 +332,7 @@ func engageAnnotation(deps Dependencies) *cobra.Command {
 			case global:
 				path = "/annotations/global"
 			case strings.TrimSpace(node) != "":
-				if !isUUIDLike(node) {
+				if !cmdkit.IsUUIDLike(node) {
 					return fmt.Errorf("--node expects a document GUID, got %q", node)
 				}
 				path = "/annotations/page"
@@ -346,10 +348,10 @@ func engageAnnotation(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, deps, applyFieldsProjection(result, fields))
+			return cmdkit.PrintResult(cmd, deps, cmdkit.ApplyFieldsProjection(result, fields))
 		},
 	}
-	addFieldsFlag(list, &fields)
+	cmdkit.AddFieldsFlag(list, &fields)
 	list.Flags().StringVar(&from, "from", "", "Start of the range: YYYY-MM-DD or RFC 3339")
 	list.Flags().StringVar(&to, "to", "", "End of the range: YYYY-MM-DD or RFC 3339")
 	list.Flags().BoolVar(&global, "global", false, "Only annotations not tied to a page")
@@ -361,7 +363,7 @@ func engageAnnotation(deps Dependencies) *cobra.Command {
 	return group
 }
 
-func engageStats(deps Dependencies) *cobra.Command {
+func engageStats(deps cmdkit.Dependencies) *cobra.Command {
 	group := &cobra.Command{
 		Use:   "stats",
 		Short: "Aggregate counts (pageviews, visitors, identified profiles); no per-visitor data",
@@ -379,7 +381,7 @@ func engageStats(deps Dependencies) *cobra.Command {
 	return group
 }
 
-func engageReporting(deps Dependencies) *cobra.Command {
+func engageReporting(deps cmdkit.Dependencies) *cobra.Command {
 	group := &cobra.Command{Use: "reporting", Short: "Engage's aggregated reporting tables"}
 	group.AddCommand(engageRead(deps, engageReadSpec{
 		Use: "status", Short: "Whether the reporting tables exist, are being generated, and when they were last generated (GET /reporting/generation/status)",

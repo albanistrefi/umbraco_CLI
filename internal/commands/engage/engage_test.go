@@ -1,4 +1,4 @@
-package commands
+package engage
 
 import (
 	"encoding/json"
@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/commands/cmdkit"
+	"umbraco-cli/internal/commands/cmdtest"
 )
 
 const (
@@ -20,12 +22,12 @@ const (
 
 // engageTestDeps serves the token route plus the given Engage routes (keyed
 // by path below the Engage prefix) and records every Engage request URL.
-func engageTestDeps(t *testing.T, routes map[string]func(req *http.Request) *http.Response) (Dependencies, *[]string) {
+func engageTestDeps(t *testing.T, routes map[string]func(req *http.Request) *http.Response) (cmdkit.Dependencies, *[]string) {
 	t.Helper()
 	requests := []string{}
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		if req.URL.Path == engageTestTokenPath {
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		}
 		requests = append(requests, req.Method+" "+req.URL.RequestURI())
 		route := strings.TrimPrefix(req.URL.Path, engageAPIPrefix)
@@ -35,20 +37,20 @@ func engageTestDeps(t *testing.T, routes map[string]func(req *http.Request) *htt
 		if handler, ok := routes[route]; ok {
 			return handler(req), nil
 		}
-		return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 	})
 	return deps, &requests
 }
 
 func engageJSON(status int, body string) func(req *http.Request) *http.Response {
-	return func(req *http.Request) *http.Response { return datatypeJSONResponse(status, body) }
+	return func(req *http.Request) *http.Response { return cmdtest.JSONResponse(status, body) }
 }
 
 func TestEngageListUsesEngagePrefixAndProjectsBareArrays(t *testing.T) {
 	deps, requests := engageTestDeps(t, map[string]func(*http.Request) *http.Response{
 		"/segments/all": engageJSON(http.StatusOK, `[{"id":7,"unique":"`+engageTestGUID+`","name":"Returning visitors","rules":[]}]`),
 	})
-	output, err := execute(buildRootWithCollections(t, deps), "engage", "segment", "list", "--days", "14", "--fields", "unique,name")
+	output, err := cmdtest.Execute(buildEngageRoot(t, deps), "engage", "segment", "list", "--days", "14", "--fields", "unique,name")
 	if err != nil {
 		t.Fatalf("engage segment list failed: %v", err)
 	}
@@ -79,7 +81,7 @@ func TestEngageGetSendsGUIDAsQueryParam(t *testing.T) {
 		{"engage", "abtest", "get", "12"},
 		{"engage", "abtest", "variants", "12"},
 	} {
-		if _, err := execute(buildRootWithCollections(t, deps), args...); err != nil {
+		if _, err := cmdtest.Execute(buildEngageRoot(t, deps), args...); err != nil {
 			t.Fatalf("%v failed: %v", args, err)
 		}
 	}
@@ -98,11 +100,11 @@ func TestEngageGetSendsGUIDAsQueryParam(t *testing.T) {
 func TestEngageGetRejectsWrongIDKindWithoutRequest(t *testing.T) {
 	deps, requests := engageTestDeps(t, nil)
 
-	_, err := execute(buildRootWithCollections(t, deps), "engage", "persona", "get", "3")
+	_, err := cmdtest.Execute(buildEngageRoot(t, deps), "engage", "persona", "get", "3")
 	if err == nil || !strings.Contains(err.Error(), "GUID `unique`") || !strings.Contains(err.Error(), "umbraco engage persona list") {
 		t.Fatalf("expected a GUID hint naming the list command, got %v", err)
 	}
-	_, err = execute(buildRootWithCollections(t, deps), "engage", "abtest", "get", engageTestGUID)
+	_, err = cmdtest.Execute(buildEngageRoot(t, deps), "engage", "abtest", "get", engageTestGUID)
 	if err == nil || !strings.Contains(err.Error(), "numeric `id`") {
 		t.Fatalf("expected a numeric-id hint, got %v", err)
 	}
@@ -115,7 +117,7 @@ func TestEngageUnavailableKeepsAPIErrorAndAddsHint(t *testing.T) {
 	deps, _ := engageTestDeps(t, map[string]func(*http.Request) *http.Response{
 		"/persona/all": engageJSON(http.StatusConflict, engageUnavailable),
 	})
-	_, err := execute(buildRootWithCollections(t, deps), "engage", "persona", "list")
+	_, err := cmdtest.Execute(buildEngageRoot(t, deps), "engage", "persona", "list")
 	var apiErr *api.APIError
 	if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusConflict {
 		t.Fatalf("expected the 409 APIError to survive (exit code 4), got %v", err)
@@ -127,7 +129,7 @@ func TestEngageUnavailableKeepsAPIErrorAndAddsHint(t *testing.T) {
 
 func TestEngageMissingRouteHintsEngageNotInstalled(t *testing.T) {
 	deps, _ := engageTestDeps(t, nil)
-	_, err := execute(buildRootWithCollections(t, deps), "engage", "config")
+	_, err := cmdtest.Execute(buildEngageRoot(t, deps), "engage", "config")
 	if err == nil || !strings.Contains(err.Error(), "Umbraco Engage may not be installed") {
 		t.Fatalf("expected a not-installed hint on a bare 404, got %v", err)
 	}
@@ -152,7 +154,7 @@ func TestEngageStatusReportsAvailability(t *testing.T) {
 		{"unavailable", engageJSON(http.StatusConflict, engageUnavailable), false},
 	} {
 		deps, _ := engageTestDeps(t, engageStatusRoutes(tc.probe))
-		output, err := execute(buildRootWithCollections(t, deps), "engage", "status")
+		output, err := cmdtest.Execute(buildEngageRoot(t, deps), "engage", "status")
 		if err != nil {
 			t.Fatalf("%s: engage status failed: %v", tc.name, err)
 		}
@@ -178,8 +180,8 @@ func TestEngageStatusReportsAvailability(t *testing.T) {
 
 func TestEngageStatusReturnsOtherProbeFailures(t *testing.T) {
 	deps, _ := engageTestDeps(t, engageStatusRoutes(engageJSON(http.StatusInternalServerError, `{"title":"boom"}`)))
-	_, err := execute(buildRootWithCollections(t, deps), "engage", "status")
-	if !isAPIStatus(err, http.StatusInternalServerError) {
+	_, err := cmdtest.Execute(buildEngageRoot(t, deps), "engage", "status")
+	if !cmdkit.IsAPIStatus(err, http.StatusInternalServerError) {
 		t.Fatalf("expected the 500 to be returned as an API error, got %v", err)
 	}
 }
@@ -192,10 +194,10 @@ func TestEngageAnalyticsQueryBuildsBackOfficeBody(t *testing.T) {
 			if err := json.Unmarshal(raw, &body); err != nil {
 				t.Fatalf("decode body: %v", err)
 			}
-			return datatypeJSONResponse(http.StatusOK, `{"columns":[],"rows":[],"currentPage":1,"rowsPerPage":20,"totalRows":0,"totalPages":0,"fromRow":0,"toRow":0,"reportsExist":true}`)
+			return cmdtest.JSONResponse(http.StatusOK, `{"columns":[],"rows":[],"currentPage":1,"rowsPerPage":20,"totalRows":0,"totalPages":0,"fromRow":0,"toRow":0,"reportsExist":true}`)
 		},
 	})
-	_, err := execute(buildRootWithCollections(t, deps), "engage", "analytics", "query",
+	_, err := cmdtest.Execute(buildEngageRoot(t, deps), "engage", "analytics", "query",
 		"--metrics", "Pageviews, SESSIONS", "--dimensions", "pagepath,nodeid",
 		"--from", "2026-09-01", "--to", "2026-10-01T00:00:00Z",
 		"--filter", "deviceCategory=='mobile'", "--node", engageTestGUID, "--include-subpages", "--culture", "en-US",
@@ -257,7 +259,7 @@ func TestEngageAnalyticsQueryRejectsBadInputLocally(t *testing.T) {
 		{[]string{"--metrics", "pageviews", "--page", "0"}, "--page is 1-based"},
 		{[]string{"--json", `{"metrics":["pageviews"]}`, "--metrics", "sessions"}, "cannot be combined with --metrics"},
 	} {
-		_, err := execute(buildRootWithCollections(t, deps), append([]string{"engage", "analytics", "query"}, tc.args...)...)
+		_, err := cmdtest.Execute(buildEngageRoot(t, deps), append([]string{"engage", "analytics", "query"}, tc.args...)...)
 		if err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Fatalf("%v: expected error containing %q, got %v", tc.args, tc.want, err)
 		}
@@ -269,7 +271,7 @@ func TestEngageAnalyticsQueryRejectsBadInputLocally(t *testing.T) {
 
 func TestEngageAnalyticsQueryDryRunPrintsPlanWithoutRequest(t *testing.T) {
 	deps, requests := engageTestDeps(t, nil)
-	output, err := execute(buildRootWithCollections(t, deps), "engage", "analytics", "query", "--json", `{"metrics":["pageviews"],"dimensions":[]}`, "--dry-run")
+	output, err := cmdtest.Execute(buildEngageRoot(t, deps), "engage", "analytics", "query", "--json", `{"metrics":["pageviews"],"dimensions":[]}`, "--dry-run")
 	if err != nil {
 		t.Fatalf("dry-run failed: %v", err)
 	}
@@ -285,7 +287,7 @@ func TestEngageAnalyticsDistinctCanonicalisesDimension(t *testing.T) {
 	deps, requests := engageTestDeps(t, map[string]func(*http.Request) *http.Response{
 		"/analytics/distinct": engageJSON(http.StatusOK, `["Denmark","Netherlands"]`),
 	})
-	if _, err := execute(buildRootWithCollections(t, deps), "engage", "analytics", "distinct", "--dimension", "COUNTRY"); err != nil {
+	if _, err := cmdtest.Execute(buildEngageRoot(t, deps), "engage", "analytics", "distinct", "--dimension", "COUNTRY"); err != nil {
 		t.Fatalf("distinct failed: %v", err)
 	}
 	if len(*requests) != 1 || (*requests)[0] != "GET "+engageAPIPrefix+"/analytics/distinct?dimension=country" {
@@ -304,7 +306,7 @@ func TestEngageAnnotationListRoutes(t *testing.T) {
 		{"--global"},
 		{"--node", engageTestGUID, "--culture", "en-US"},
 	} {
-		if _, err := execute(buildRootWithCollections(t, deps), append([]string{"engage", "annotation", "list"}, args...)...); err != nil {
+		if _, err := cmdtest.Execute(buildEngageRoot(t, deps), append([]string{"engage", "annotation", "list"}, args...)...); err != nil {
 			t.Fatalf("%v failed: %v", args, err)
 		}
 	}
@@ -316,7 +318,7 @@ func TestEngageAnnotationListRoutes(t *testing.T) {
 	if strings.Join(*requests, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("unexpected requests:\n%s", strings.Join(*requests, "\n"))
 	}
-	if _, err := execute(buildRootWithCollections(t, deps), "engage", "annotation", "list", "--global", "--node", engageTestGUID); err == nil {
+	if _, err := cmdtest.Execute(buildEngageRoot(t, deps), "engage", "annotation", "list", "--global", "--node", engageTestGUID); err == nil {
 		t.Fatalf("--global with --node must be refused")
 	}
 }

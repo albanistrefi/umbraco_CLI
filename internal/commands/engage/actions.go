@@ -1,4 +1,4 @@
-package commands
+package engage
 
 import (
 	"errors"
@@ -10,13 +10,14 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/commands/cmdkit"
 )
 
 // Site-wide Engage actions: the main switch, reporting regeneration and
 // analytics annotations. The switch and the regeneration affect the whole
 // site rather than one entity, so both are gated like hard deletes.
 
-func engageMainSwitch(deps Dependencies) *cobra.Command {
+func engageMainSwitch(deps cmdkit.Dependencies) *cobra.Command {
 	group := &cobra.Command{
 		Use:   "main-switch",
 		Short: "Engage's site-wide main switch (get, on, off)",
@@ -28,7 +29,7 @@ func engageMainSwitch(deps Dependencies) *cobra.Command {
 	return group
 }
 
-func engageSwitchAction(deps Dependencies, use string, path string, short string, consequence string) *cobra.Command {
+func engageSwitchAction(deps cmdkit.Dependencies, use string, path string, short string, consequence string) *cobra.Command {
 	var force, dryRun bool
 	cmd := &cobra.Command{
 		Use:   use,
@@ -36,7 +37,7 @@ func engageSwitchAction(deps Dependencies, use string, path string, short string
 		Long:  "POST " + path + " (no body), then reads GET /main-switch back. Requires --force (or --dry-run to rehearse).",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := requireForceOrDryRun(cmd, consequence, force, dryRun); err != nil {
+			if err := cmdkit.RequireForceOrDryRun(cmd, consequence, force, dryRun); err != nil {
 				return err
 			}
 			result, err := deps.Client.Post(cmd.Context(), path, nil, engageWriteOpts(nil, dryRun))
@@ -44,17 +45,17 @@ func engageSwitchAction(deps Dependencies, use string, path string, short string
 				return engageError(err)
 			}
 			if dryRun {
-				return printResult(cmd, deps, result)
+				return cmdkit.PrintResult(cmd, deps, result)
 			}
 			state, err := engageGet(cmd, deps, "/main-switch", nil)
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, deps, map[string]any{"mainSwitch": state})
+			return cmdkit.PrintResult(cmd, deps, map[string]any{"mainSwitch": state})
 		},
 	}
 	cmd.Flags().BoolVar(&force, "force", false, "Confirm the site-wide switch")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
@@ -63,7 +64,7 @@ func engageSwitchAction(deps Dependencies, use string, path string, short string
 // the generation start means a generation is already running.
 const engageReportingGenerationTitle = "Umbraco Engage is unavailable"
 
-func engageReportingGenerate(deps Dependencies) *cobra.Command {
+func engageReportingGenerate(deps cmdkit.Dependencies) *cobra.Command {
 	var force, dryRun bool
 	cmd := &cobra.Command{
 		Use:   "generate",
@@ -72,18 +73,18 @@ func engageReportingGenerate(deps Dependencies) *cobra.Command {
 			"The back office warns that regenerating can affect site performance, so this requires --force (or --dry-run to rehearse). A 409 other than \"Umbraco Engage is unavailable\" means a generation is already running.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := requireForceOrDryRun(cmd, "regenerates every reporting table, which can slow the site while it runs", force, dryRun); err != nil {
+			if err := cmdkit.RequireForceOrDryRun(cmd, "regenerates every reporting table, which can slow the site while it runs", force, dryRun); err != nil {
 				return err
 			}
 			result, err := deps.Client.Post(cmd.Context(), "/reporting/generation/start", nil, engageWriteOpts(nil, dryRun))
 			if err != nil {
 				return engageReportingError(engageError(err))
 			}
-			return printMutationResult(cmd, deps, "started", result, dryRun)
+			return cmdkit.PrintMutationResult(cmd, deps, "started", result, dryRun)
 		},
 	}
 	cmd.Flags().BoolVar(&force, "force", false, "Confirm the regeneration")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
@@ -98,7 +99,7 @@ func engageReportingError(err error) error {
 	return err
 }
 
-func engageAnnotationCreate(deps Dependencies) *cobra.Command {
+func engageAnnotationCreate(deps cmdkit.Dependencies) *cobra.Command {
 	var jsonPayload string
 	var dryRun, printTemplate bool
 	cmd := &cobra.Command{
@@ -113,12 +114,12 @@ func engageAnnotationCreate(deps Dependencies) *cobra.Command {
 				if err != nil {
 					return err
 				}
-				return printResult(cmd, deps, result)
+				return cmdkit.PrintResult(cmd, deps, result)
 			}
-			if err := requireValue("--json", jsonPayload); err != nil {
+			if err := cmdkit.RequireValue("--json", jsonPayload); err != nil {
 				return err
 			}
-			body, err := parsePayload(jsonPayload)
+			body, err := cmdkit.ParsePayload(jsonPayload)
 			if err != nil {
 				return err
 			}
@@ -136,16 +137,16 @@ func engageAnnotationCreate(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return engageError(err)
 			}
-			return printMutationResult(cmd, deps, "created", result, dryRun)
+			return cmdkit.PrintMutationResult(cmd, deps, "created", result, dryRun)
 		},
 	}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Annotation payload as JSON")
 	cmd.Flags().BoolVar(&printTemplate, "print-template", false, "Print the server's blank annotation; edit it and pass it to --json")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
-func engageAnnotationDelete(deps Dependencies) *cobra.Command {
+func engageAnnotationDelete(deps cmdkit.Dependencies) *cobra.Command {
 	return engageDelete(deps, engageDeleteSpec{
 		Use:         "delete <id>",
 		Short:       "Permanently delete an annotation by its numeric `id`",
@@ -202,9 +203,9 @@ func validateEngageAnnotation(body map[string]any) error {
 	for i, entry := range variants {
 		variant, ok := entry.(map[string]any)
 		if !ok {
-			return fmt.Errorf("pageVariants[%d] must be an object, got %s", i, jsonShapeName(entry))
+			return fmt.Errorf("pageVariants[%d] must be an object, got %s", i, cmdkit.JSONShapeName(entry))
 		}
-		if unique, ok := variant["unique"].(string); !ok || !isUUIDLike(unique) {
+		if unique, ok := variant["unique"].(string); !ok || !cmdkit.IsUUIDLike(unique) {
 			return fmt.Errorf("pageVariants[%d].unique must be a document GUID", i)
 		}
 		if culture, present := variant["culture"]; present && culture != nil {
