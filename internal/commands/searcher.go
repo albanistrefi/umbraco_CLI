@@ -8,12 +8,13 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/commands/cmdkit"
 )
 
 // RegisterSearcher wires the Examine searcher group. It is the read side of
 // the indexer group: 'indexer' answers "is the index healthy", 'searcher'
 // answers "what does the index actually return for this term".
-func RegisterSearcher(root *cobra.Command, deps Dependencies) {
+func RegisterSearcher(root *cobra.Command, deps cmdkit.Dependencies) {
 	searcher := &cobra.Command{
 		Use:   "searcher",
 		Short: "Examine searcher queries",
@@ -32,14 +33,14 @@ Task → command:
 	root.AddCommand(searcher)
 }
 
-func searcherList(deps Dependencies) *cobra.Command {
-	return collectionCommand(deps, collectionSpec{
+func searcherList(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.CollectionCommand(deps, cmdkit.CollectionSpec{
 		Use:   "list",
 		Short: "List Examine searchers (paginated; --skip/--take/--all)",
 		Long:  "GET /searcher. Names listed here are the <searcher-name> argument of 'searcher query'. The list only covers searchers registered standalone, so it can be empty on instances that register indexes only: fall back to 'indexer list --fields name,searcherName' and try both names.",
 		NArgs: 0,
-		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
-			return []getRequestCandidate{
+		Endpoints: func(args []string, params map[string]any) []cmdkit.GetRequestCandidate {
+			return []cmdkit.GetRequestCandidate{
 				{Path: "/searcher", Opts: api.RequestOptions{Params: params}},
 			}
 		},
@@ -51,20 +52,20 @@ func searcherList(deps Dependencies) *cobra.Command {
 // search archetype sends) and the searcher itself is a path segment, so the
 // search builder's NoArgs/`query` contract does not fit. --query is kept as
 // an alias of --term for consistency with the other search commands.
-func searcherQuery(deps Dependencies) *cobra.Command {
+func searcherQuery(deps cmdkit.Dependencies) *cobra.Command {
 	var term string
 	var query string
-	cmd := collectionCommand(deps, collectionSpec{
+	cmd := cmdkit.CollectionCommand(deps, cmdkit.CollectionSpec{
 		Use:   "query <searcher-name>",
 		Short: "Run a term against one Examine searcher (paginated; --skip/--take/--all)",
 		Long:  "GET /searcher/{searcherName}/query?term=. Returns the raw Examine hits (id, score, fields) so you can tell \"the document is not in the index\" apart from \"the index has it under different values\". Searcher names come from 'searcher list' or from 'indexer list --fields name,searcherName' — the accepted name is often the index name (ExternalIndex) rather than the searcherName the index reports, so try both when the server answers 404 \"Could not find a valid searcher\". --query is an alias of --term.",
 		NArgs: 1,
-		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
+		Endpoints: func(args []string, params map[string]any) []cmdkit.GetRequestCandidate {
 			// Raw --params wins on collisions (CONVENTIONS.md), so the flag
 			// only fills term when --params did not supply one. The clone
 			// keeps the caller's params map untouched.
-			searchParams := mergeParams(maps.Clone(params), map[string]any{"term": searcherTerm(term, query)})
-			return []getRequestCandidate{
+			searchParams := cmdkit.MergeParams(maps.Clone(params), map[string]any{"term": searcherTerm(term, query)})
+			return []cmdkit.GetRequestCandidate{
 				{Path: api.JoinPath("/searcher/%s/query", args[0]), Opts: api.RequestOptions{Params: searchParams}},
 			}
 		},
@@ -93,7 +94,7 @@ func searcherParamsTerm(cmd *cobra.Command) (string, error) {
 	if flag == nil {
 		return "", nil
 	}
-	params, err := parseParams(flag.Value.String())
+	params, err := cmdkit.ParseParams(flag.Value.String())
 	if err != nil {
 		return "", err
 	}

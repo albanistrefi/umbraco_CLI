@@ -6,10 +6,11 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/commands/cmdkit"
 	"umbraco-cli/internal/schema"
 )
 
-func RegisterUserGroup(root *cobra.Command, deps Dependencies) {
+func RegisterUserGroup(root *cobra.Command, deps cmdkit.Dependencies) {
 	userGroup := &cobra.Command{
 		Use:   "user-group",
 		Short: "Backoffice user group management (permission sets)",
@@ -24,18 +25,18 @@ func RegisterUserGroup(root *cobra.Command, deps Dependencies) {
 	root.AddCommand(userGroup)
 }
 
-func userGroupList(deps Dependencies) *cobra.Command {
+func userGroupList(deps cmdkit.Dependencies) *cobra.Command {
 	var filter string
-	cmd := collectionCommand(deps, collectionSpec{
+	cmd := cmdkit.CollectionCommand(deps, cmdkit.CollectionSpec{
 		Use:   "list",
 		Short: "List user groups (paginated; --skip/--take/--all, --filter for substring search)",
-		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
+		Endpoints: func(args []string, params map[string]any) []cmdkit.GetRequestCandidate {
 			if filter != "" {
-				return []getRequestCandidate{
-					{Path: "/filter/user-group", Opts: api.RequestOptions{Params: withParam(params, "filter", filter)}},
+				return []cmdkit.GetRequestCandidate{
+					{Path: "/filter/user-group", Opts: api.RequestOptions{Params: cmdkit.WithParam(params, "filter", filter)}},
 				}
 			}
-			return []getRequestCandidate{
+			return []cmdkit.GetRequestCandidate{
 				{Path: "/user-group", Opts: api.RequestOptions{Params: params}},
 			}
 		},
@@ -44,15 +45,15 @@ func userGroupList(deps Dependencies) *cobra.Command {
 	return cmd
 }
 
-func userGroupGet(deps Dependencies) *cobra.Command {
-	return getCommand(deps, getSpec{
+func userGroupGet(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.GetCommand(deps, cmdkit.GetSpec{
 		Use:   "get <id>",
 		Short: "Get a user group by ID",
 		Path:  func(args []string) string { return api.JoinPath("/user-group/%s", args[0]) },
 	})
 }
 
-func userGroupCreate(deps Dependencies) *cobra.Command {
+func userGroupCreate(deps cmdkit.Dependencies) *cobra.Command {
 	var jsonPayload string
 	var dryRun bool
 	var printTemplate bool
@@ -63,41 +64,41 @@ func userGroupCreate(deps Dependencies) *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if printTemplate {
-				return printResult(cmd, deps, schema.Templates["user-group.create"])
+				return cmdkit.PrintResult(cmd, deps, schema.Templates["user-group.create"])
 			}
-			if err := requireValue("--json", jsonPayload); err != nil {
+			if err := cmdkit.RequireValue("--json", jsonPayload); err != nil {
 				return err
 			}
-			body, err := parsePayload(jsonPayload)
+			body, err := cmdkit.ParsePayload(jsonPayload)
 			if err != nil {
 				return err
 			}
-			if _, err := ensurePayloadID(body); err != nil {
+			if _, err := cmdkit.EnsurePayloadID(body); err != nil {
 				return err
 			}
 			result, err := deps.Client.Post(cmd.Context(), "/user-group", body, api.RequestOptions{DryRun: dryRun})
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, deps, createResult(result, body, "alias"))
+			return cmdkit.PrintResult(cmd, deps, cmdkit.CreateResult(result, body, "alias"))
 		},
 	}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Create payload as JSON")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	cmd.Flags().BoolVar(&printTemplate, "print-template", false, "Print an annotated JSON skeleton; substitute placeholders before passing to --json")
 	return cmd
 }
 
-func userGroupUpdate(deps Dependencies) *cobra.Command {
-	return updateCommand(deps, updateSpec{
+func userGroupUpdate(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.UpdateCommand(deps, cmdkit.UpdateSpec{
 		Use:   "update <id>",
 		Short: "Update a user group",
 		Path:  func(args []string) string { return api.JoinPath("/user-group/%s", args[0]) },
 	})
 }
 
-func userGroupDelete(deps Dependencies) *cobra.Command {
-	return deleteCommand(deps, deleteSpec{
+func userGroupDelete(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.DeleteCommand(deps, cmdkit.DeleteSpec{
 		Use:   "delete <id>",
 		Short: "Permanently delete a user group",
 		Path: func(args []string) string {
@@ -106,14 +107,14 @@ func userGroupDelete(deps Dependencies) *cobra.Command {
 	})
 }
 
-func userGroupAddUsers(deps Dependencies) *cobra.Command {
+func userGroupAddUsers(deps cmdkit.Dependencies) *cobra.Command {
 	return userGroupMembershipCommand(deps, "add-users", "Add users to a user group", "added",
 		func(ctx *cobra.Command, path string, body any, dryRun bool) (any, error) {
 			return deps.Client.Post(ctx.Context(), path, body, api.RequestOptions{DryRun: dryRun})
 		})
 }
 
-func userGroupRemoveUsers(deps Dependencies) *cobra.Command {
+func userGroupRemoveUsers(deps cmdkit.Dependencies) *cobra.Command {
 	return userGroupMembershipCommand(deps, "remove-users", "Remove users from a user group", "removed",
 		func(ctx *cobra.Command, path string, body any, dryRun bool) (any, error) {
 			return deps.Client.Request(ctx.Context(), "DELETE", path, body, api.RequestOptions{DryRun: dryRun})
@@ -122,7 +123,7 @@ func userGroupRemoveUsers(deps Dependencies) *cobra.Command {
 
 // userGroupMembershipCommand builds add-users/remove-users: both send a
 // [{id},...] array body to /user-group/{id}/users, differing only in method.
-func userGroupMembershipCommand(deps Dependencies, use string, short string, verb string, send func(cmd *cobra.Command, path string, body any, dryRun bool) (any, error)) *cobra.Command {
+func userGroupMembershipCommand(deps cmdkit.Dependencies, use string, short string, verb string, send func(cmd *cobra.Command, path string, body any, dryRun bool) (any, error)) *cobra.Command {
 	var idsCSV string
 	var dryRun bool
 	cmd := &cobra.Command{
@@ -130,7 +131,7 @@ func userGroupMembershipCommand(deps Dependencies, use string, short string, ver
 		Short: short,
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ids := uniqueCSV(idsCSV)
+			ids := cmdkit.UniqueCSV(idsCSV)
 			if len(ids) == 0 {
 				return fmt.Errorf("user-group %s requires --ids <comma-separated user guids>", use)
 			}
@@ -138,10 +139,10 @@ func userGroupMembershipCommand(deps Dependencies, use string, short string, ver
 			if err != nil {
 				return err
 			}
-			return printMutationResult(cmd, deps, verb, result, dryRun)
+			return cmdkit.PrintMutationResult(cmd, deps, verb, result, dryRun)
 		},
 	}
 	cmd.Flags().StringVar(&idsCSV, "ids", "", "Comma-separated user GUIDs (required)")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }

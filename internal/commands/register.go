@@ -4,6 +4,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/commands/automate"
+	"umbraco-cli/internal/commands/cmdkit"
 	"umbraco-cli/internal/commands/deploy"
 	"umbraco-cli/internal/commands/engage"
 	"umbraco-cli/internal/commands/forms"
@@ -14,7 +15,7 @@ import (
 // full-tree roots built by the tests both call it, so a group added here cannot
 // be missing from either. Add-ons live in their own packages and are wired in
 // through their Register functions.
-func RegisterAll(root *cobra.Command, deps Dependencies) {
+func RegisterAll(root *cobra.Command, deps cmdkit.Dependencies) {
 	RegisterDocument(root, deps)
 	RegisterElement(root, deps)
 	RegisterBlueprint(root, deps)

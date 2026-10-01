@@ -7,9 +7,10 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/commands/cmdkit"
 )
 
-func RegisterPublishedCache(root *cobra.Command, deps Dependencies) {
+func RegisterPublishedCache(root *cobra.Command, deps cmdkit.Dependencies) {
 	cache := &cobra.Command{Use: "published-cache", Short: "Published content cache operations"}
 	cache.AddCommand(readOnlyEndpointWithFallback(deps, "status", "Get published cache rebuild status", "/published-cache/rebuild/status", "/published-cache/status"))
 	cache.AddCommand(publishedCacheRebuild(deps))
@@ -17,7 +18,7 @@ func RegisterPublishedCache(root *cobra.Command, deps Dependencies) {
 	root.AddCommand(cache)
 }
 
-func publishedCacheRebuild(deps Dependencies) *cobra.Command {
+func publishedCacheRebuild(deps cmdkit.Dependencies) *cobra.Command {
 	var force bool
 	var dryRun bool
 	var wait bool
@@ -29,7 +30,7 @@ func publishedCacheRebuild(deps Dependencies) *cobra.Command {
 		Long:  "POST /published-cache/rebuild. Rebuilds the published content cache from the database — the standard fix for stale published content. Expensive on large sites; with --wait, polls the rebuild status until isRebuilding clears or --timeout elapses (mirroring 'indexer rebuild --wait').",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := requireForceOrDryRun(cmd, "rebuilds the entire published cache and is expensive on large sites", force, dryRun); err != nil {
+			if err := cmdkit.RequireForceOrDryRun(cmd, "rebuilds the entire published cache and is expensive on large sites", force, dryRun); err != nil {
 				return err
 			}
 			if dryRun && wait {
@@ -42,16 +43,16 @@ func publishedCacheRebuild(deps Dependencies) *cobra.Command {
 				return err
 			}
 			if !wait {
-				return printMutationResult(cmd, deps, "rebuilding", result, dryRun)
+				return cmdkit.PrintMutationResult(cmd, deps, "rebuilding", result, dryRun)
 			}
 
 			deadline := time.Now().Add(timeout)
 			for {
 				// Same fallback list as the status command: older servers
 				// only expose the legacy route.
-				statusPayload, err := getWithFallback(ctx, deps.Client,
-					getRequestCandidate{Path: "/published-cache/rebuild/status", Opts: api.RequestOptions{}},
-					getRequestCandidate{Path: "/published-cache/status", Opts: api.RequestOptions{}},
+				statusPayload, err := cmdkit.GetWithFallback(ctx, deps.Client,
+					cmdkit.GetRequestCandidate{Path: "/published-cache/rebuild/status", Opts: api.RequestOptions{}},
+					cmdkit.GetRequestCandidate{Path: "/published-cache/status", Opts: api.RequestOptions{}},
 				)
 				if err != nil {
 					return fmt.Errorf("polling rebuild status failed: %w", err)
@@ -64,7 +65,7 @@ func publishedCacheRebuild(deps Dependencies) *cobra.Command {
 					return fmt.Errorf("the rebuild was triggered, but this server does not expose the isRebuilding flag so --wait cannot poll it; check 'published-cache status' manually")
 				}
 				if !rebuilding {
-					return printResult(cmd, deps, map[string]any{
+					return cmdkit.PrintResult(cmd, deps, map[string]any{
 						"rebuilt": true,
 						"waited":  time.Since(deadline.Add(-timeout)).String(),
 					})
@@ -81,7 +82,7 @@ func publishedCacheRebuild(deps Dependencies) *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&force, "force", false, "Confirm the rebuild")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	cmd.Flags().BoolVar(&wait, "wait", false, "Poll the rebuild status after triggering until isRebuilding clears or --timeout elapses")
 	cmd.Flags().DurationVar(&timeout, "timeout", 60*time.Second, "How long to wait when --wait is set (e.g. 30s, 2m)")
 	cmd.Flags().DurationVar(&pollInterval, "poll-interval", time.Second, "How often to poll when --wait is set")
@@ -100,7 +101,7 @@ func publishedCacheIsRebuilding(payload any) (bool, bool) {
 	return rebuilding, ok
 }
 
-func publishedCacheReload(deps Dependencies) *cobra.Command {
+func publishedCacheReload(deps cmdkit.Dependencies) *cobra.Command {
 	var dryRun bool
 	cmd := &cobra.Command{
 		Use:   "reload",
@@ -112,9 +113,9 @@ func publishedCacheReload(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printMutationResult(cmd, deps, "reloaded", result, dryRun)
+			return cmdkit.PrintMutationResult(cmd, deps, "reloaded", result, dryRun)
 		},
 	}
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }

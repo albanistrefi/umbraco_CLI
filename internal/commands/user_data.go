@@ -7,9 +7,10 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/commands/cmdkit"
 )
 
-func RegisterUserData(root *cobra.Command, deps Dependencies) {
+func RegisterUserData(root *cobra.Command, deps cmdkit.Dependencies) {
 	userData := &cobra.Command{
 		Use:   "user-data",
 		Short: "Key/value data stored for the authenticated user",
@@ -34,27 +35,27 @@ Task → command:
 	root.AddCommand(userData)
 }
 
-func userDataList(deps Dependencies) *cobra.Command {
+func userDataList(deps cmdkit.Dependencies) *cobra.Command {
 	var groupsCSV string
 	var identifiersCSV string
-	cmd := collectionCommand(deps, collectionSpec{
+	cmd := cmdkit.CollectionCommand(deps, cmdkit.CollectionSpec{
 		Use:   "list",
 		Short: "List the authenticated user's data entries (paginated; --skip/--take/--all)",
 		Long:  "GET /user-data. --groups and --identifiers are comma-separated lists sent as repeated query values. --params wins on key collisions.",
-		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
+		Endpoints: func(args []string, params map[string]any) []cmdkit.GetRequestCandidate {
 			// The spec params map must not be mutated; withParam clones per
 			// key and --params keeps precedence on collisions.
 			for key, csv := range map[string]string{"groups": groupsCSV, "identifiers": identifiersCSV} {
-				values := uniqueCSV(csv)
+				values := cmdkit.UniqueCSV(csv)
 				if len(values) == 0 {
 					continue
 				}
 				if _, exists := params[key]; exists {
 					continue
 				}
-				params = withParam(params, key, stringsToAny(values))
+				params = cmdkit.WithParam(params, key, cmdkit.StringsToAny(values))
 			}
-			return []getRequestCandidate{
+			return []cmdkit.GetRequestCandidate{
 				{Path: "/user-data", Opts: api.RequestOptions{Params: params}},
 			}
 		},
@@ -64,16 +65,16 @@ func userDataList(deps Dependencies) *cobra.Command {
 	return cmd
 }
 
-func userDataGet(deps Dependencies) *cobra.Command {
-	return getCommand(deps, getSpec{
+func userDataGet(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.GetCommand(deps, cmdkit.GetSpec{
 		Use:   "get <key>",
 		Short: "Get one user data entry by key (GUID)",
 		Path:  func(args []string) string { return api.JoinPath("/user-data/%s", args[0]) },
 	})
 }
 
-func userDataDelete(deps Dependencies) *cobra.Command {
-	return deleteCommand(deps, deleteSpec{
+func userDataDelete(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.DeleteCommand(deps, cmdkit.DeleteSpec{
 		Use:   "delete <key>",
 		Short: "Permanently delete one user data entry by key (GUID)",
 		Path:  func(args []string) string { return api.JoinPath("/user-data/%s", args[0]) },
@@ -84,7 +85,7 @@ func userDataDelete(deps Dependencies) *cobra.Command {
 // create model keys the entry on "key", not the "id" that createCommand
 // generates, and the group/identifier/value triple is small enough to pass
 // as flags.
-func userDataCreate(deps Dependencies) *cobra.Command {
+func userDataCreate(deps cmdkit.Dependencies) *cobra.Command {
 	var jsonPayload string
 	var key string
 	var group string
@@ -105,7 +106,7 @@ func userDataCreate(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printMutationResult(cmd, deps, "created", result, dryRun)
+			return cmdkit.PrintMutationResult(cmd, deps, "created", result, dryRun)
 		},
 	}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Create payload as JSON")
@@ -113,7 +114,7 @@ func userDataCreate(deps Dependencies) *cobra.Command {
 	cmd.Flags().StringVar(&group, "group", "", "Entry group")
 	cmd.Flags().StringVar(&identifier, "identifier", "", "Entry identifier within the group")
 	cmd.Flags().StringVar(&value, "value", "", "Entry value")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
@@ -121,7 +122,7 @@ func userDataCreate(deps Dependencies) *cobra.Command {
 // PUT goes to the collection endpoint with the key inside the body, and the
 // update model requires every field, so there is nothing to merge against
 // (GET /user-data/{id} does not echo the key back).
-func userDataUpdate(deps Dependencies) *cobra.Command {
+func userDataUpdate(deps cmdkit.Dependencies) *cobra.Command {
 	var jsonPayload string
 	var group string
 	var identifier string
@@ -141,14 +142,14 @@ func userDataUpdate(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printMutationResult(cmd, deps, "updated", result, dryRun)
+			return cmdkit.PrintMutationResult(cmd, deps, "updated", result, dryRun)
 		},
 	}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Full replacement payload as JSON")
 	cmd.Flags().StringVar(&group, "group", "", "Entry group")
 	cmd.Flags().StringVar(&identifier, "identifier", "", "Entry identifier within the group")
 	cmd.Flags().StringVar(&value, "value", "", "Entry value")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
@@ -159,12 +160,12 @@ func userDataUpdate(deps Dependencies) *cobra.Command {
 // is refused rather than silently rewriting that other entry.
 func userDataBody(jsonPayload string, key string, group string, identifier string, value string, requireKey bool) (map[string]any, error) {
 	if requireKey {
-		if err := requireValue("<key>", key); err != nil {
+		if err := cmdkit.RequireValue("<key>", key); err != nil {
 			return nil, err
 		}
 	}
 	if strings.TrimSpace(jsonPayload) != "" {
-		body, err := parsePayload(jsonPayload)
+		body, err := cmdkit.ParsePayload(jsonPayload)
 		if err != nil {
 			return nil, err
 		}
@@ -179,7 +180,7 @@ func userDataBody(jsonPayload string, key string, group string, identifier strin
 	// Ordered, so a caller missing several flags always hears about the
 	// first one in flag order rather than a random one.
 	for _, required := range [][2]string{{"--group", group}, {"--identifier", identifier}, {"--value", value}} {
-		if err := requireValue(required[0], required[1]); err != nil {
+		if err := cmdkit.RequireValue(required[0], required[1]); err != nil {
 			return nil, err
 		}
 	}

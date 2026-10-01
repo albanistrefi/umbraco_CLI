@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+
+	"umbraco-cli/internal/commands/cmdkit"
 )
 
 // Query-side helpers for the logs command group: flag structs, --params
@@ -76,7 +78,7 @@ func addLogQueryFlags(cmd *cobra.Command, flags *logQueryFlags) {
 }
 
 func logParamsFromFlags(raw string, flags logQueryFlags) (map[string]any, logRuntimeOptions, error) {
-	parsed, err := parseParams(raw)
+	parsed, err := cmdkit.ParseParams(raw)
 	if err != nil {
 		return nil, logRuntimeOptions{}, err
 	}

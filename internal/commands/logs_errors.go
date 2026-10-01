@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/commands/cmdkit"
 )
 
 // logsErrors answers "is anything broken, and is any of it NEW?" after an
@@ -21,7 +22,7 @@ import (
 // wall of entries. Known-chronic classes are suppressed per invocation via
 // --suppress/--suppress-contains — deliberately configuration, not code,
 // because chronic noise differs per site and changes as bugs are fixed.
-func logsErrors(deps Dependencies) *cobra.Command {
+func logsErrors(deps cmdkit.Dependencies) *cobra.Command {
 	var since string
 	var until string
 	var distinct bool
@@ -64,19 +65,19 @@ func logsErrors(deps Dependencies) *cobra.Command {
 				"endDate":   end.Format(time.RFC3339Nano),
 			}
 
-			result, err := getAllPagesWithFallback(
+			result, err := cmdkit.GetAllPagesWithFallback(
 				cmd.Context(),
 				deps.Client,
 				0, 0, maxEntries,
-				getRequestCandidate{Path: logViewerLogPath, Opts: api.RequestOptions{Params: params}},
-				getRequestCandidate{Path: logViewerLegacyListPath, Opts: api.RequestOptions{Params: params}},
+				cmdkit.GetRequestCandidate{Path: cmdkit.LogViewerLogPath, Opts: api.RequestOptions{Params: params}},
+				cmdkit.GetRequestCandidate{Path: logViewerLegacyListPath, Opts: api.RequestOptions{Params: params}},
 			)
 			if err != nil {
 				return friendlyLogViewerError(err)
 			}
 			envelope, ok := result.(map[string]any)
 			if !ok {
-				return printResult(cmd, deps, result)
+				return cmdkit.PrintResult(cmd, deps, result)
 			}
 			items, _ := envelope["items"].([]any)
 			// The window is enforced client-side as well, matching logs
@@ -90,11 +91,11 @@ func logsErrors(deps Dependencies) *cobra.Command {
 				if len(suppress) > 0 || len(suppressContains) > 0 {
 					return fmt.Errorf("--suppress and --suppress-contains require --distinct")
 				}
-				return printResult(cmd, deps, map[string]any{"items": items, "total": len(items)})
+				return cmdkit.PrintResult(cmd, deps, map[string]any{"items": items, "total": len(items)})
 			}
 
 			groups, suppressed := groupErrorClasses(items, suppress, suppressContains)
-			return printResult(cmd, deps, map[string]any{
+			return cmdkit.PrintResult(cmd, deps, map[string]any{
 				"classes":          groups,
 				"totalEntries":     len(items),
 				"suppressedGroups": suppressed,
@@ -226,8 +227,8 @@ func groupErrorClasses(items []any, suppress []string, suppressContains []string
 			suppressedCount++
 			continue
 		}
-		class.Levels = sortedKeys(levelSets[fingerprint])
-		class.SourceContexts = sortedKeys(sourceSets[fingerprint])
+		class.Levels = cmdkit.SortedKeys(levelSets[fingerprint])
+		class.SourceContexts = cmdkit.SortedKeys(sourceSets[fingerprint])
 		classes = append(classes, *class)
 	}
 	// Newest-first-seen so brand-new breakage tops the list; chronic classes

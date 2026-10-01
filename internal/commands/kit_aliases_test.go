@@ -11,6 +11,7 @@ import (
 )
 
 type (
+	Dependencies         = cmdkit.Dependencies
 	backupEnvelope       = cmdkit.BackupEnvelope
 	endpointRoundTripper = cmdtest.RoundTripper
 )

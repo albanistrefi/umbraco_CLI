@@ -13,9 +13,10 @@ import (
 	"github.com/spf13/cobra"
 
 	managementapi "umbraco-cli/internal/api"
+	"umbraco-cli/internal/commands/cmdkit"
 )
 
-func RegisterAPI(root *cobra.Command, deps Dependencies) {
+func RegisterAPI(root *cobra.Command, deps cmdkit.Dependencies) {
 	var bodyRaw string
 	var dryRun bool
 	var headerFlags []string
@@ -90,7 +91,7 @@ func RegisterAPI(root *cobra.Command, deps Dependencies) {
 				if !errors.As(err, &apiErr) {
 					return err
 				}
-				return printResult(cmd, deps, map[string]any{
+				return cmdkit.PrintResult(cmd, deps, map[string]any{
 					"ok":         false,
 					"statusCode": apiErr.StatusCode,
 					"method":     method,
@@ -101,7 +102,7 @@ func RegisterAPI(root *cobra.Command, deps Dependencies) {
 				})
 			}
 
-			return printResult(cmd, deps, map[string]any{
+			return cmdkit.PrintResult(cmd, deps, map[string]any{
 				"ok":         true,
 				"statusCode": result.StatusCode,
 				"method":     method,
@@ -117,7 +118,7 @@ func RegisterAPI(root *cobra.Command, deps Dependencies) {
 	cmd.Flags().StringArrayVar(&formFlags, "form", nil, "Multipart form field as field=value or field=@path for a file (repeatable; replaces the JSON body)")
 	cmd.Flags().BoolVar(&rawPath, "raw-path", false, "Send the path relative to the host root instead of /umbraco/management/api/v1")
 	cmd.Flags().StringVar(&outFile, "out", "", "GET only: write the response body verbatim to this file (binary-safe; use for /media/... assets with --raw-path) and print a summary instead of the body")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	root.AddCommand(cmd)
 }
 
@@ -286,9 +287,9 @@ func parseAPIBody(raw string) (any, error) {
 // apiDownload writes a GET response body to disk without decoding it, so
 // binary assets survive (the structured output path re-encodes bodies as
 // JSON strings, which mangles non-UTF-8 bytes).
-func apiDownload(cmd *cobra.Command, deps Dependencies, path string, outFile string, opts managementapi.RequestOptions) error {
+func apiDownload(cmd *cobra.Command, deps cmdkit.Dependencies, path string, outFile string, opts managementapi.RequestOptions) error {
 	if opts.DryRun {
-		return printResult(cmd, deps, map[string]any{"dryRun": true, "method": http.MethodGet, "path": path, "params": opts.Params, "out": outFile})
+		return cmdkit.PrintResult(cmd, deps, map[string]any{"dryRun": true, "method": http.MethodGet, "path": path, "params": opts.Params, "out": outFile})
 	}
 	if dir := filepath.Dir(outFile); dir != "." {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -311,7 +312,7 @@ func apiDownload(cmd *cobra.Command, deps Dependencies, path string, outFile str
 		if !errors.As(err, &apiErr) {
 			return err
 		}
-		return printResult(cmd, deps, map[string]any{
+		return cmdkit.PrintResult(cmd, deps, map[string]any{
 			"ok":         false,
 			"statusCode": apiErr.StatusCode,
 			"method":     http.MethodGet,
@@ -333,7 +334,7 @@ func apiDownload(cmd *cobra.Command, deps Dependencies, path string, outFile str
 		_ = os.Remove(tmpName)
 		return fmt.Errorf("failed to write %s: %w", outFile, err)
 	}
-	return printResult(cmd, deps, map[string]any{
+	return cmdkit.PrintResult(cmd, deps, map[string]any{
 		"ok":          true,
 		"statusCode":  result.StatusCode,
 		"method":      http.MethodGet,

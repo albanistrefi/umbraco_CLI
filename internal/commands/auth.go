@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/auth"
+	"umbraco-cli/internal/commands/cmdkit"
 	"umbraco-cli/internal/config"
 )
 
@@ -23,7 +24,7 @@ var verifyStoredAuth = func(cfg config.Config, httpClient *http.Client) error {
 	return err
 }
 
-func RegisterAuth(root *cobra.Command, deps Dependencies) {
+func RegisterAuth(root *cobra.Command, deps cmdkit.Dependencies) {
 	authCmd := &cobra.Command{Use: "auth", Short: "Persistent authentication helpers"}
 	authCmd.AddCommand(authLogin(deps))
 	authCmd.AddCommand(authList(deps))
@@ -33,7 +34,7 @@ func RegisterAuth(root *cobra.Command, deps Dependencies) {
 	root.AddCommand(authCmd)
 }
 
-func authLogin(deps Dependencies) *cobra.Command {
+func authLogin(deps cmdkit.Dependencies) *cobra.Command {
 	var baseURL string
 	var clientID string
 	var clientSecret string
@@ -76,7 +77,7 @@ func authLogin(deps Dependencies) *cobra.Command {
 			source := authConfigSource(selection, !selection.Explicit && !selection.Active)
 
 			if dryRun {
-				return printResult(cmd, deps, map[string]any{
+				return cmdkit.PrintResult(cmd, deps, map[string]any{
 					"loggedIn": false,
 					"dryRun":   true,
 					"baseUrl":  cfg.BaseURL,
@@ -99,7 +100,7 @@ func authLogin(deps Dependencies) *cobra.Command {
 				return err
 			}
 
-			return printResult(cmd, deps, map[string]any{
+			return cmdkit.PrintResult(cmd, deps, map[string]any{
 				"loggedIn": true,
 				"baseUrl":  cfg.BaseURL,
 				"source":   source,
@@ -114,7 +115,7 @@ func authLogin(deps Dependencies) *cobra.Command {
 	return cmd
 }
 
-func authList(deps Dependencies) *cobra.Command {
+func authList(deps cmdkit.Dependencies) *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
 		Short: "List stored auth profiles without exposing secrets",
@@ -142,7 +143,7 @@ func authList(deps Dependencies) *cobra.Command {
 					"clientSecret":    redactedSecret(profile.Config.ClientSecret),
 				})
 			}
-			return printResult(cmd, deps, map[string]any{
+			return cmdkit.PrintResult(cmd, deps, map[string]any{
 				"activeProfile": activeProfile,
 				"profiles":      items,
 				"count":         len(items),
@@ -151,7 +152,7 @@ func authList(deps Dependencies) *cobra.Command {
 	}
 }
 
-func authUse(deps Dependencies) *cobra.Command {
+func authUse(deps cmdkit.Dependencies) *cobra.Command {
 	return &cobra.Command{
 		Use:   "use <profile>",
 		Short: "Set the active stored auth profile",
@@ -175,7 +176,7 @@ func authUse(deps Dependencies) *cobra.Command {
 			if strings.TrimSpace(profile) == "default" {
 				active = "default"
 			}
-			return printResult(cmd, deps, map[string]any{
+			return cmdkit.PrintResult(cmd, deps, map[string]any{
 				"activeProfile": active,
 				"profile":       profile,
 				"path":          path,
@@ -184,7 +185,7 @@ func authUse(deps Dependencies) *cobra.Command {
 	}
 }
 
-func authStatus(deps Dependencies) *cobra.Command {
+func authStatus(deps cmdkit.Dependencies) *cobra.Command {
 	var check bool
 	cmd := &cobra.Command{
 		Use:   "status",
@@ -241,14 +242,14 @@ func authStatus(deps Dependencies) *cobra.Command {
 			if check {
 				result["permissionCheck"] = authPermissionCheck()
 			}
-			return printResult(cmd, deps, result)
+			return cmdkit.PrintResult(cmd, deps, result)
 		},
 	}
 	cmd.Flags().BoolVar(&check, "check", false, "List command permission requirements for the resolved user context")
 	return cmd
 }
 
-func authLogout(deps Dependencies) *cobra.Command {
+func authLogout(deps cmdkit.Dependencies) *cobra.Command {
 	var dryRun bool
 	cmd := &cobra.Command{
 		Use:   "logout",
@@ -261,7 +262,7 @@ func authLogout(deps Dependencies) *cobra.Command {
 			}
 			source := authConfigSource(selection, !selection.Explicit && !selection.Active)
 			if dryRun {
-				return printResult(cmd, deps, map[string]any{
+				return cmdkit.PrintResult(cmd, deps, map[string]any{
 					"loggedOut": false,
 					"dryRun":    true,
 					"source":    source,
@@ -271,7 +272,7 @@ func authLogout(deps Dependencies) *cobra.Command {
 			if err := config.ClearUserAuthWithOptions(deps.ConfigOptions()); err != nil {
 				return err
 			}
-			return printResult(cmd, deps, map[string]any{
+			return cmdkit.PrintResult(cmd, deps, map[string]any{
 				"loggedOut": true,
 				"source":    source,
 			})

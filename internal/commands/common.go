@@ -6,10 +6,11 @@ import (
 	"os"
 	"strings"
 
+	"umbraco-cli/internal/commands/cmdkit"
 	"umbraco-cli/internal/config"
 )
 
-func resolveOutputFormat(deps Dependencies) (config.OutputFormat, error) {
+func resolveOutputFormat(deps cmdkit.Dependencies) (config.OutputFormat, error) {
 	if requested := strings.TrimSpace(deps.RequestedOutput()); requested != "" {
 		return config.ParseOutputFormat(requested)
 	}
