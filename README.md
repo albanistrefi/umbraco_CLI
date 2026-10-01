@@ -3,7 +3,7 @@
 The agent-first command line for Umbraco — CMS, Forms, Automate, and Engage. Built on
 the Management APIs, it goes beyond them: exhaustive content search,
 cross-environment schema diff, log tailing, and safe, rehearsable bulk
-operations — 455 commands with a scriptable exit-code contract.
+operations — 475 commands with a scriptable exit-code contract.
 
 Core behavior:
 - `--json` and `--params` are primary machine inputs
@@ -366,7 +366,7 @@ testing) are not part of this repo — get those from
 - `language` (7) — incl. `cultures` for the ISO codes new languages can use
 - `tag` (1) — `tag list` across tagged content, filterable by `--query`/`--group`/`--culture`
 - `user-data` (5) — the authenticated account's key/value store: list/get/create/update/delete
-- `forms` (6, read-only)
+- `forms` (21) — Umbraco Forms: browse the form tree, `create` (merged onto the server scaffold)/`update`/`copy`/`move`/force-gated `delete`, `copy-workflows`, folders (`create-folder`/`update-folder`/`move-folder`/empty-checked `delete-folder`), submitted `records` with `record-action` (approve/reject; delete is force-gated), `record-update` and `record-workflow-retry`, and the `prevalue-source` subgroup. Read and write access is governed by the API user's Forms permissions
 - `models-builder` (3)
 - `logs` (6) — incl. `tail` for following new entries as they arrive
 - `server` (5)
@@ -384,7 +384,7 @@ testing) are not part of this repo — get those from
 - `automate` (8 subgroups) — requires [Umbraco Automate](https://docs.umbraco.com/umbraco-automate) on the target instance; see below
 - `engage` (16) — requires [Umbraco Engage](https://docs.umbraco.com/umbraco-engage) on the target instance; what it may read or change is governed by the API user's permissions; see below
 
-Total: **455 runnable commands** counting every nested subcommand. Group counts above are direct subcommands; nested subgroups like `document version`, `document bin`, and the `automate` and `engage` subgroups add the rest.
+Total: **475 runnable commands** counting every nested subcommand. Group counts above are direct subcommands; nested subgroups like `document version`, `document bin`, and the `automate` and `engage` subgroups add the rest.
 
 ## Umbraco Automate
 
