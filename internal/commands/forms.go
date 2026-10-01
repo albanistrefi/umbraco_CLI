@@ -93,12 +93,20 @@ func asString(v any) string {
 func RegisterForms(root *cobra.Command, deps Dependencies) {
 	forms := &cobra.Command{
 		Use:   "forms",
-		Short: "Umbraco Forms operations (read-only)",
-		Long:  "Read-focused commands for the Umbraco Forms Management API. Useful for resolving form and field GUIDs when composing Umbraco.Forms.Automate flows, and for inspecting submitted records.",
+		Short: "Umbraco Forms operations: forms, folders, records, prevalue sources",
+		Long: "Commands for the Umbraco Forms Management API (" + formsAPIPrefix + "): browse and author forms and folders, act on submitted records (approve, reject, delete, edit, retry workflows), and manage prevalue sources. " +
+			"What the CLI may read or change is governed by the API user's Forms permissions (manage forms, manage workflows, view/edit/delete entries, ...); a refused operation comes back as the server's 403. " +
+			"Every mutation takes --dry-run; deletes and destructive record actions also need --force. Useful for resolving form and field GUIDs when composing Umbraco.Forms.Automate flows.",
 	}
 	forms.AddCommand(formsList(deps))
 	forms.AddCommand(formsChildren(deps))
 	forms.AddCommand(formsGet(deps))
+	forms.AddCommand(formsCreate(deps))
+	forms.AddCommand(formsUpdate(deps))
+	forms.AddCommand(formsDelete(deps))
+	forms.AddCommand(formsCopy(deps))
+	forms.AddCommand(formsMove(deps))
+	forms.AddCommand(formsCopyWorkflows(deps))
 	forms.AddCommand(formsRecords(deps))
 	forms.AddCommand(formsRecord(deps))
 	forms.AddCommand(formsRecordWorkflowLog(deps))
