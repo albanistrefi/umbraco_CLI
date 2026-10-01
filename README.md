@@ -1,9 +1,9 @@
 # Umbraco CLI (Agent-First)
 
-The agent-first command line for Umbraco — CMS, Forms, and Automate. Built on
+The agent-first command line for Umbraco — CMS, Forms, Automate, and Engage. Built on
 the Management APIs, it goes beyond them: exhaustive content search,
 cross-environment schema diff, log tailing, and safe, rehearsable bulk
-operations — 390 commands with a scriptable exit-code contract.
+operations — 425 commands with a scriptable exit-code contract.
 
 Core behavior:
 - `--json` and `--params` are primary machine inputs
@@ -382,8 +382,9 @@ testing) are not part of this repo — get those from
 - `auth` (5)
 - `schema` — runtime schema introspection (`umbraco schema <command>`) plus `schema diff <envA> <envB>` cross-environment comparison across doctype, datatype, mediatype, membertype, template, language, and dictionary
 - `automate` (8 subgroups) — requires [Umbraco Automate](https://docs.umbraco.com/umbraco-automate) on the target instance; see below
+- `engage` (15, read-only) — requires [Umbraco Engage](https://docs.umbraco.com/umbraco-engage) on the target instance; see below
 
-Total: **390 runnable commands** counting every nested subcommand. Group counts above are direct subcommands; nested subgroups like `document version`, `document bin`, and the `automate` subgroups add the rest.
+Total: **425 runnable commands** counting every nested subcommand. Group counts above are direct subcommands; nested subgroups like `document version`, `document bin`, and the `automate` and `engage` subgroups add the rest.
 
 ## Umbraco Automate
 
@@ -402,6 +403,33 @@ umbraco automate automation validate --workspace-id <ws> --file automation.json
 umbraco automate automation import-update <id> --file automation.json --dry-run
 umbraco automate automation runs <id> --take 10
 ```
+
+## Umbraco Engage
+
+The `engage` command group reads the [Umbraco Engage](https://docs.umbraco.com/umbraco-engage)
+Management API: status and configuration, segments, personas, customer
+journeys, goals, A/B tests, applied personalizations, campaign and referral
+groups, traffic filters, annotations, aggregate statistics, and the analytics
+query behind the back-office charts. It is read-only, and it does not expose
+visitor profiles, which hold personal data about individual visitors.
+
+Engage entities carry a numeric `id` and a GUID `unique` (`key` on goals and
+traffic filters). Most `get` commands take the GUID; the A/B test reads take
+the numeric id. Each `get` rejects the wrong kind before calling the API.
+
+```bash
+umbraco engage status
+umbraco engage segment list --fields unique,name
+umbraco engage persona get <unique>
+umbraco engage abtest list --fields id,name,status
+umbraco engage analytics query --metrics pageviews,sessions --dimensions date --from 2026-09-01 --to 2026-10-01
+umbraco engage analytics query --metrics pageviews --dimensions pagePath --filter "deviceCategory=='mobile'" --page-size 20
+umbraco engage analytics distinct --dimension country
+```
+
+When Engage's database schema alignment is incomplete, Engage answers every
+data read with HTTP 409 "Umbraco Engage is unavailable" (exit code 4);
+`engage status` reports this as `dataAvailable: false`.
 
 ## Agent Safety Rules
 
