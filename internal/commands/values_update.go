@@ -3,34 +3,11 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
-	"os"
-	"strings"
-
-	"umbraco-cli/internal/commands/cmdkit"
-	"umbraco-cli/internal/config"
 )
-
-func resolveOutputFormat(deps cmdkit.Dependencies) (config.OutputFormat, error) {
-	if requested := strings.TrimSpace(deps.RequestedOutput()); requested != "" {
-		return config.ParseOutputFormat(requested)
-	}
-	if envOutput := deps.CurrentEnvOutput(); envOutput != "" {
-		return envOutput, nil
-	}
-
-	info, err := os.Stdout.Stat()
-	if err != nil {
-		return config.OutputJSON, nil
-	}
-	if (info.Mode() & os.ModeCharDevice) == 0 {
-		return config.OutputJSON, nil
-	}
-	return config.OutputPlain, nil
-}
 
 // buildUpdatePropertiesPatch normalizes the three accepted input shapes for
 // "<resource> update-properties --json" into a {"values":[...]} envelope ready
-// to merge into the current resource via mergeAliasPayload. Used by both
+// to merge into the current resource via cmdkit.MergeAliasPayload. Used by both
 // document update-properties and member update-properties — any future
 // resource with the same values[] shape can reuse it.
 //
@@ -110,16 +87,4 @@ func coalescePutResult(result any, dryRun bool) any {
 		return true
 	}
 	return result
-}
-
-func decodeResult[T any](raw any) (T, error) {
-	var result T
-	encoded, err := json.Marshal(raw)
-	if err != nil {
-		return result, err
-	}
-	if err := json.Unmarshal(encoded, &result); err != nil {
-		return result, err
-	}
-	return result, nil
 }
