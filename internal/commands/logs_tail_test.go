@@ -172,9 +172,9 @@ func TestLogsTailPrintsNewEntriesWhenServerIgnoresStartDate(t *testing.T) {
 		q := req.URL.Query()
 		requests = append(requests, q.Get("orderDirection")+"/skip="+q.Get("skip"))
 		if q.Get("orderDirection") != "Descending" {
-			return cmdtest.JSONResponse(http.StatusOK, logPage(0, tailPageSize, false)), nil // the day's oldest 500: the bug
+			return cmdtest.JSONResponse(http.StatusOK, logPage(0, cmdkit.LogTailPageSize, false)), nil // the day's oldest 500: the bug
 		}
-		return cmdtest.JSONResponse(http.StatusOK, logPage(200, tailPageSize, true)), nil // newest 500 of 700
+		return cmdtest.JSONResponse(http.StatusOK, logPage(200, cmdkit.LogTailPageSize, true)), nil // newest 500 of 700
 	})
 
 	// --since 10:11:35 = second 695; entries 695..699 are new.
@@ -207,7 +207,7 @@ func TestLogsTailPagesBackThroughBurstsWithSkip(t *testing.T) {
 		if remaining <= 0 {
 			return cmdtest.JSONResponse(http.StatusOK, `{"items":[],"total":0}`), nil
 		}
-		count := tailPageSize
+		count := cmdkit.LogTailPageSize
 		if remaining < count {
 			count = remaining
 		}
@@ -267,7 +267,7 @@ func TestLogsTailStopsInsteadOfSkippingWhenBacklogExceedsPageCap(t *testing.T) {
 	deps := logsTailDeps(func(poll int64, req *http.Request) (*http.Response, error) {
 		polls++
 		skip, _ := strconv.Atoi(req.URL.Query().Get("skip"))
-		return cmdtest.JSONResponse(http.StatusOK, logPage(20000-skip-tailPageSize+1, tailPageSize, true)), nil
+		return cmdtest.JSONResponse(http.StatusOK, logPage(20000-skip-cmdkit.LogTailPageSize+1, cmdkit.LogTailPageSize, true)), nil
 	})
 	out, err := cmdtest.Execute(buildLogsRoot(deps), "logs", "tail", "--since", "2026-07-03T10:00:00Z", "--interval", "1ms", "--for", "1s")
 	if err == nil || !strings.Contains(err.Error(), "more than 10000 entries have arrived since 2026-07-03T10:00:00Z") || !strings.Contains(err.Error(), "logs search --from") {
@@ -276,7 +276,7 @@ func TestLogsTailStopsInsteadOfSkippingWhenBacklogExceedsPageCap(t *testing.T) {
 	if strings.TrimSpace(out) != "" {
 		t.Fatalf("expected no partial output, got %d bytes", len(out))
 	}
-	if polls != tailMaxPagesPerPoll {
-		t.Fatalf("expected exactly one poll of %d pages, got %d requests", tailMaxPagesPerPoll, polls)
+	if polls != cmdkit.LogTailMaxPagesPerPoll {
+		t.Fatalf("expected exactly one poll of %d pages, got %d requests", cmdkit.LogTailMaxPagesPerPoll, polls)
 	}
 }

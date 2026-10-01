@@ -4,13 +4,13 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/commands/cmdkit"
 	"umbraco-cli/internal/jsonvalue"
 )
 
@@ -75,7 +75,7 @@ func (opts logRedactionOptions) enabled() bool {
 
 func logEntryMatches(entry map[string]any, opts logRuntimeOptions) bool {
 	if opts.from != nil || opts.to != nil {
-		timestamp, ok := logEntryTimestamp(entry)
+		timestamp, ok := cmdkit.LogEntryTimestamp(entry)
 		if !ok {
 			return false
 		}
@@ -105,18 +105,6 @@ func logEntryMatches(entry map[string]any, opts logRuntimeOptions) bool {
 		return false
 	}
 	return true
-}
-
-func logEntryTimestamp(entry map[string]any) (time.Time, bool) {
-	raw := jsonvalue.String(entry["timestamp"])
-	if raw == "" {
-		return time.Time{}, false
-	}
-	parsed, err := parseLogTime(raw)
-	if err != nil {
-		return time.Time{}, false
-	}
-	return parsed, true
 }
 
 func logPropertiesMap(entry map[string]any) map[string]any {
@@ -313,12 +301,6 @@ func containsFold(value string, needle string) bool {
 	return strings.Contains(strings.ToLower(value), strings.ToLower(needle))
 }
 
-var (
-	logEmailPattern            = regexp.MustCompile(`(?i)[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}`)
-	logBearerTokenPattern      = regexp.MustCompile(`(?i)\bBearer\s+[a-z0-9._~+/=-]+`)
-	logSecretAssignmentPattern = regexp.MustCompile(`(?i)("?(?:access_token|refresh_token|id_token|client_secret|password|secret|api[_-]?key|authorization)"?\s*[:=]\s*"?)[^",}\s]+`)
-)
-
 func redactLogValue(value any, opts logRedactionOptions) any {
 	if !opts.enabled() {
 		return value
@@ -349,17 +331,7 @@ func redactLogValue(value any, opts logRedactionOptions) any {
 }
 
 func redactLogString(value string, opts logRedactionOptions) string {
-	result := value
-	if opts.emails {
-		result = logEmailPattern.ReplaceAllString(result, "[redacted-email]")
-	}
-	if opts.tokens {
-		result = logBearerTokenPattern.ReplaceAllString(result, "Bearer [redacted-token]")
-	}
-	if opts.secrets || opts.tokens {
-		result = logSecretAssignmentPattern.ReplaceAllString(result, `${1}[redacted]`)
-	}
-	return result
+	return cmdkit.RedactLogText(value, opts.emails, opts.tokens, opts.secrets)
 }
 
 func logSensitiveKey(key string) bool {

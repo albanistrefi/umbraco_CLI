@@ -41,7 +41,7 @@ func logsErrors(deps cmdkit.Dependencies) *cobra.Command {
 			}
 			start := time.Now().UTC().Add(-24 * time.Hour)
 			if strings.TrimSpace(since) != "" {
-				parsed, err := parseLogTime(since)
+				parsed, err := cmdkit.ParseLogTime(since)
 				if err != nil {
 					return fmt.Errorf("invalid --since: %w", err)
 				}
@@ -53,7 +53,7 @@ func logsErrors(deps cmdkit.Dependencies) *cobra.Command {
 			// collection and produce duplicates and gaps against an open end.
 			end := time.Now().UTC()
 			if strings.TrimSpace(until) != "" {
-				parsed, err := parseLogTime(until)
+				parsed, err := cmdkit.ParseLogTime(until)
 				if err != nil {
 					return fmt.Errorf("invalid --until: %w", err)
 				}
@@ -70,7 +70,7 @@ func logsErrors(deps cmdkit.Dependencies) *cobra.Command {
 				deps.Client,
 				0, 0, maxEntries,
 				cmdkit.GetRequestCandidate{Path: cmdkit.LogViewerLogPath, Opts: api.RequestOptions{Params: params}},
-				cmdkit.GetRequestCandidate{Path: logViewerLegacyListPath, Opts: api.RequestOptions{Params: params}},
+				cmdkit.GetRequestCandidate{Path: cmdkit.LogViewerLegacyListPath, Opts: api.RequestOptions{Params: params}},
 			)
 			if err != nil {
 				return friendlyLogViewerError(err)

@@ -11,7 +11,6 @@ import (
 
 const (
 	logViewerMessageTemplatePath        = "/log-viewer/message-template"
-	logViewerLegacyListPath             = "/log-viewer"
 	logViewerLegacySearchPath           = "/log-viewer/search"
 	logViewerLegacyMessageTemplatesPath = "/log-viewer/templates"
 )
@@ -44,7 +43,7 @@ func logsList(deps cmdkit.Dependencies) *cobra.Command {
 			cmd.Context(),
 			deps.Client,
 			cmdkit.GetRequestCandidate{Path: cmdkit.LogViewerLogPath, Opts: api.RequestOptions{Params: params}},
-			cmdkit.GetRequestCandidate{Path: logViewerLegacyListPath, Opts: api.RequestOptions{Params: params}},
+			cmdkit.GetRequestCandidate{Path: cmdkit.LogViewerLegacyListPath, Opts: api.RequestOptions{Params: params}},
 		)
 		if err != nil {
 			return friendlyLogViewerError(err)

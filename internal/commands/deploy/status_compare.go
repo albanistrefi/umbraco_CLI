@@ -154,8 +154,9 @@ func compareContentTypeArtifact(artifact map[string]any, remote map[string]any) 
 			diffs = append(diffs, "defaultTemplate")
 		}
 	}
-	if listView, ok := artifact["ListView"].(string); ok {
-		_, want := parseUdi(listView)
+	// Deploy writes ListView as a bare GUID, not a Udi; guidLikeEqual
+	// accepts either, so the value is compared as written.
+	if want, ok := artifact["ListView"].(string); ok {
 		got := ""
 		if ref, ok := remote["collection"].(map[string]any); ok {
 			got, _ = ref["id"].(string)
@@ -396,10 +397,17 @@ func compareRelationTypeArtifact(artifact map[string]any, remote map[string]any)
 			diffs = append(diffs, "isDependency")
 		}
 	}
-	for artifactKey, remoteKey := range map[string]string{"ParentObjectType": "parentObjectType", "ChildObjectType": "childObjectType"} {
+	// The Management API returns the object types as parentObject/childObject
+	// {id, name}; the flat parentObjectType/childObjectType are read as a
+	// fallback. The diff names are kept as they were reported before.
+	for artifactKey, remoteKey := range map[string]string{"ParentObjectType": "parentObject", "ChildObjectType": "childObject"} {
 		if value, ok := artifact[artifactKey].(string); ok && value != "" {
-			if !guidLikeEqual(value, udaStringField(remote, remoteKey)) {
-				diffs = append(diffs, remoteKey)
+			remoteValue := udaStringField(remote, remoteKey+"Type")
+			if object, ok := remote[remoteKey].(map[string]any); ok {
+				remoteValue = udaStringField(object, "id")
+			}
+			if !guidLikeEqual(value, remoteValue) {
+				diffs = append(diffs, remoteKey+"Type")
 			}
 		}
 	}

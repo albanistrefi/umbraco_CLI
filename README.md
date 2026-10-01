@@ -102,7 +102,7 @@ Scripts and CI gates can rely on the exit code to tell failure classes apart:
 | 4 | The Management API answered with an error status (4xx/5xx) |
 | 5 | `deploy watch` reached its failed phase (sustained downtime or post-landing health failure beyond `--escalation`) |
 | 6 | `deploy watch` reached `--timeout` without verification — deployment status unknown, never inferred |
-| 7 | `deploy status` ran cleanly and found drifted or missing entities (suppress with `--exit-zero`) |
+| 7 | `deploy status` ran cleanly and found drifted or missing entities (suppress with `--exit-zero`); `deploy watch --uda-dir` verified the environment, but artifacts the deploy should have changed are still drifted or missing after Umbraco Deploy's schema pass ended, or the pass did not complete |
 
 `deploy apply` uses exit 4 for a failed or still-drifting write (it is an API-level failure), never exit 7.
 
@@ -396,7 +396,7 @@ testing) are not part of this repo — get those from
 - `logs` (6) — incl. `tail` for following new entries as they arrive
 - `server` (5)
 - `health` (4)
-- `deploy` (5) — effect-based deployment observation, schema application, and Umbraco Deploy content transfer (`transfer --node <id> [--descendants] --dry-run`, `queue list|add|remove|clear`; keeps GUIDs identical across environments, waits on the session with exit 5/6 on failure/timeout): `watch` polls an environment for state deltas only a deploy can cause (app recycle via ProcessId, 503→401→200 recovery, index rebuilds) and emits phase transitions; `status` compares local Deploy `.uda` artifacts against the environment per entity as a pre-flight drift check; `apply` is its write side — Deploy's "Update schema" from the CLI: creates missing entities with their artifact GUIDs and full-replaces drifted ones in dependency order, backs up every updated entity, re-verifies each write, and refuses to run without `--dry-run` or `--force`
+- `deploy` (5) — effect-based deployment observation, schema application, and Umbraco Deploy content transfer (`transfer --node <id> [--descendants] --dry-run`, `queue list|add|remove|clear`; keeps GUIDs identical across environments, waits on the session with exit 5/6 on failure/timeout): `watch` polls an environment for state deltas only a deploy can cause (app recycle via ProcessId, 503→401→200 recovery, index rebuilds) and emits phase transitions, with `--logs` adding the deploy's own log entries (lifecycle, migrations, indexer suspend/resume/rebuild, Deploy, errors; known noise excluded) to the same stream as `type: "log"` lines that never change phases or the exit code, and `--uda-dir` turning the artifacts that are drifted or missing at baseline into tripwires re-checked after landing (verified waits for them or for Deploy's logged schema-pass end; exit 7 if any is still drifted or missing then); `status` compares local Deploy `.uda` artifacts against the environment per entity as a pre-flight drift check; `apply` is its write side — Deploy's "Update schema" from the CLI: creates missing entities with their artifact GUIDs and full-replaces drifted ones in dependency order, backs up every updated entity, re-verifies each write, and refuses to run without `--dry-run` or `--force`
 - `published-cache` (3) — status / rebuild / reload, for stale-content incident response
 - `indexer` (3) — Examine index health and rebuilds, with `--wait` polling
 - `searcher` (2) — the read side of Examine: `list` the searchers, `query <searcher-name> --term <text>` for the raw hits behind a missing search result
