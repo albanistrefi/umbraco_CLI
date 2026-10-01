@@ -11,14 +11,6 @@ import (
 // document versions, and document lifecycle. Each test pins the route and
 // body shape the Management API expects.
 
-func tokenOr404(t *testing.T, req *http.Request, handler func(req *http.Request) (*http.Response, error)) (*http.Response, error) {
-	t.Helper()
-	if req.URL.Path == "/umbraco/management/api/v1/security/back-office/token" {
-		return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
-	}
-	return handler(req)
-}
-
 func TestWebhookLogsScopesToWebhookWhenIDGiven(t *testing.T) {
 	var observedPath string
 	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {

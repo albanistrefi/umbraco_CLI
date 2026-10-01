@@ -2,21 +2,12 @@ package commands
 
 import (
 	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
 	"os"
 	"strings"
 	"testing"
 )
-
-func batchExitCode(err error) int {
-	var coder interface{ ExitCode() int }
-	if errors.As(err, &coder) {
-		return coder.ExitCode()
-	}
-	return 1
-}
 
 func documentBatchDeps(t *testing.T, puts *[]string, failPublishFor string) Dependencies {
 	t.Helper()

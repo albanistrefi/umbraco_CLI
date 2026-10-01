@@ -2,45 +2,10 @@ package commands
 
 import (
 	"encoding/json"
-	"io"
 	"net/http"
 	"strings"
 	"testing"
-
-	"umbraco-cli/internal/api"
-	"umbraco-cli/internal/auth"
-	"umbraco-cli/internal/config"
 )
-
-type datatypeRoundTripper func(*http.Request) (*http.Response, error)
-
-func (fn datatypeRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
-	return fn(req)
-}
-
-func datatypeJSONResponse(status int, body string) *http.Response {
-	return &http.Response{
-		StatusCode: status,
-		Header:     http.Header{"Content-Type": []string{"application/json"}},
-		Body:       io.NopCloser(strings.NewReader(body)),
-	}
-}
-
-func datatypeDeps(handler datatypeRoundTripper) Dependencies {
-	cfg := config.Config{
-		BaseURL:      "https://example.test",
-		ClientID:     "client-id",
-		ClientSecret: "client-secret",
-	}
-	httpClient := &http.Client{Transport: handler}
-	output := "json"
-
-	return Dependencies{
-		Client:     api.NewClient(cfg, httpClient, auth.New(cfg, httpClient)),
-		EnvOutput:  config.OutputJSON,
-		OutputFlag: &output,
-	}
-}
 
 func TestDatatypeListUsesFilterEndpointWithPagination(t *testing.T) {
 	var observedPath string

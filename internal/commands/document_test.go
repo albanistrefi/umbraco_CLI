@@ -15,18 +15,6 @@ import (
 	"unicode/utf8"
 )
 
-// endpointNoContent simulates a 204 No Content reply (the shape Umbraco
-// returns for successful document update / publish PUTs). The HTTP client's
-// parseResponse maps an empty body to nil, which is what reaches the
-// command layer.
-func endpointNoContent() *http.Response {
-	return &http.Response{
-		StatusCode: http.StatusNoContent,
-		Header:     http.Header{},
-		Body:       io.NopCloser(strings.NewReader("")),
-	}
-}
-
 func TestDocumentSearchUsesItemSearchEndpointAndFallsBack(t *testing.T) {
 	var requests []string
 

@@ -587,11 +587,3 @@ func TestLogsLevelsIsHiddenAndUnsupported(t *testing.T) {
 		t.Fatalf("expected unsupported logs levels error, got %v", err)
 	}
 }
-
-func assertQueryValue(t *testing.T, values map[string][]string, key string, expected string) {
-	t.Helper()
-	actual := values[key]
-	if len(actual) != 1 || actual[0] != expected {
-		t.Fatalf("expected query %s=%q, got %+v", key, expected, actual)
-	}
-}

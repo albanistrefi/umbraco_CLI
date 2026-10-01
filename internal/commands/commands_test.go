@@ -1,56 +1,22 @@
 package commands
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"sort"
 	"testing"
 
 	"github.com/spf13/cobra"
 
-	"umbraco-cli/internal/api"
-	"umbraco-cli/internal/config"
+	"umbraco-cli/internal/commands/cmdtest"
 	"umbraco-cli/internal/schema"
 )
 
-func makeDeps() Dependencies {
-	cfg := config.Config{BaseURL: "https://example.test"}
-	client := api.NewClient(cfg, http.DefaultClient, nil)
-	output := "json"
-	return Dependencies{Client: client, Config: cfg, HTTPClient: http.DefaultClient, EnvOutput: config.OutputJSON, OutputFlag: &output}
-}
-
+// buildRootWithCollections builds the full production command tree, add-ons
+// included, for core tests.
 func buildRootWithCollections(t *testing.T, deps Dependencies) *cobra.Command {
 	t.Helper()
-	root := &cobra.Command{Use: "umbraco", SilenceErrors: true, SilenceUsage: true}
-	root.SetErr(io.Discard)
-	if deps.OutputFlag != nil {
-		root.PersistentFlags().StringVarP(deps.OutputFlag, "output", "o", *deps.OutputFlag, "Output format: json, table, plain")
-	}
-	RegisterAll(root, deps)
-	return root
-}
-
-func execute(root *cobra.Command, args ...string) (string, error) {
-	buf := &bytes.Buffer{}
-	root.SetOut(buf)
-	root.SetErr(io.Discard)
-	root.SetArgs(args)
-	err := root.Execute()
-	return buf.String(), err
-}
-
-func executeWithErr(root *cobra.Command, args ...string) (string, string, error) {
-	out := &bytes.Buffer{}
-	errOut := &bytes.Buffer{}
-	root.SetOut(out)
-	root.SetErr(errOut)
-	root.SetArgs(args)
-	err := root.Execute()
-	return out.String(), errOut.String(), err
+	return cmdtest.BuildRoot(t, deps, RegisterAll)
 }
 
 func TestCommandCountsMatchMVP(t *testing.T) {
@@ -255,15 +221,6 @@ func TestDocumentPublishPrefersJSONOverCultureInDryRun(t *testing.T) {
 	if !ok || len(cultures) != 1 || cultures[0] != "da-DK" {
 		t.Fatalf("expected --json cultures to take precedence, got: %+v", body)
 	}
-}
-
-func findChildCommand(root *cobra.Command, name string) *cobra.Command {
-	for _, command := range root.Commands() {
-		if command.Name() == name {
-			return command
-		}
-	}
-	return nil
 }
 
 func TestDatatypeSchemaMatchesCompatibilityPrimaryEndpoints(t *testing.T) {

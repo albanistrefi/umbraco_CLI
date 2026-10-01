@@ -2,47 +2,10 @@ package commands
 
 import (
 	"encoding/json"
-	"io"
 	"net/http"
 	"strings"
 	"testing"
-
-	"umbraco-cli/internal/api"
-	"umbraco-cli/internal/auth"
-	"umbraco-cli/internal/config"
 )
-
-type endpointRoundTripper func(*http.Request) (*http.Response, error)
-
-func (fn endpointRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
-	return fn(req)
-}
-
-func endpointJSONResponse(status int, body string) *http.Response {
-	return &http.Response{
-		StatusCode: status,
-		Header:     http.Header{"Content-Type": []string{"application/json"}},
-		Body:       io.NopCloser(strings.NewReader(body)),
-	}
-}
-
-func endpointDeps(handler endpointRoundTripper) Dependencies {
-	cfg := config.Config{
-		BaseURL:      "https://example.test",
-		ClientID:     "client-id",
-		ClientSecret: "client-secret",
-	}
-	httpClient := &http.Client{Transport: handler}
-	output := "json"
-
-	return Dependencies{
-		Client:     api.NewClient(cfg, httpClient, auth.New(cfg, httpClient)),
-		Config:     cfg,
-		HTTPClient: httpClient,
-		EnvOutput:  config.OutputJSON,
-		OutputFlag: &output,
-	}
-}
 
 func TestTemplateRootUsesTreeEndpointAndFallsBack(t *testing.T) {
 	var requests []string
