@@ -33,6 +33,9 @@ func writeUserConfigAtPath(path string, cfg Config) error {
 		ClientID:     strings.TrimSpace(cfg.ClientID),
 		ClientSecret: strings.TrimSpace(cfg.ClientSecret),
 		OutputFormat: strings.TrimSpace(string(cfg.OutputFormat)),
+
+		BasicAuthSharedSecret:       strings.TrimSpace(cfg.BasicAuthSharedSecret),
+		BasicAuthSharedSecretHeader: strings.TrimSpace(cfg.BasicAuthSharedSecretHeader),
 	}
 	encoded, err := json.MarshalIndent(payload, "", "  ")
 	if err != nil {
@@ -58,6 +61,7 @@ func ClearUserAuth() error {
 
 	cfg.ClientID = ""
 	cfg.ClientSecret = ""
+	cfg.BasicAuthSharedSecret = ""
 	return WriteUserConfig(cfg)
 }
 
@@ -72,5 +76,6 @@ func ClearUserAuthWithOptions(opts LoadOptions) error {
 
 	cfg.ClientID = ""
 	cfg.ClientSecret = ""
+	cfg.BasicAuthSharedSecret = ""
 	return writeUserConfigAtPath(selection.Path, cfg)
 }

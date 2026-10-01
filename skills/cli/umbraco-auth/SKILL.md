@@ -66,6 +66,8 @@ umbraco auth login
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--base-url` | string | — | Umbraco base URL |
+| `--basic-auth-shared-secret` | string | — | The environment's Umbraco:CMS:BasicAuth:SharedSecret value, sent so add-on APIs (Deploy, Forms, Engage) get past basic authentication on Umbraco Cloud non-live environments; an empty value removes it |
+| `--basic-auth-shared-secret-header` | string | — | Header the shared secret is sent in (default X-Authentication-Shared-Secret) |
 | `--client-id` | string | — | Management API client ID |
 | `--client-secret` | string | — | Management API client secret |
 | `--dry-run` | bool | false | Verify credentials without persisting them |

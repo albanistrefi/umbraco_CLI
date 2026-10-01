@@ -14,6 +14,7 @@ import (
 
 	"umbraco-cli/internal/api"
 	"umbraco-cli/internal/commands/cmdkit"
+	"umbraco-cli/internal/config"
 	"umbraco-cli/internal/version"
 )
 
@@ -70,6 +71,7 @@ Phases: baseline → restarting → app-alive → serving → landed → settlin
 			}
 			probes := &watchProbes{
 				deps:        deps,
+				cfg:         deps.CurrentConfig(),
 				httpClient:  watchHTTPClient(deps),
 				tokenURL:    base + "/umbraco/management/api/v1/security/back-office/token",
 				publicURL:   public,
@@ -144,7 +146,7 @@ Phases: baseline → restarting → app-alive → serving → landed → settlin
 		},
 	}
 
-	cmd.Flags().StringArrayVar(&healthPaths, "health-path", nil, "Public path that must return 2xx for the serving/verified phases (repeatable; default /)")
+	cmd.Flags().StringArrayVar(&healthPaths, "health-path", nil, "Public path that must return 2xx for the serving/verified phases (repeatable; default /). A redirect to a login page counts as unhealthy: on a basic-auth protected environment (Umbraco Cloud non-live) set basicAuthSharedSecret in the profile")
 	cmd.Flags().StringVar(&publicURL, "public-url", "", "Public host for health paths when it differs from the management base URL")
 	cmd.Flags().DurationVar(&interval, "interval", 5*time.Second, "Poll interval")
 	cmd.Flags().DurationVar(&timeout, "timeout", 30*time.Minute, "Give up after this long without verification (exit 6, status unknown)")
@@ -435,6 +437,7 @@ func unhealthyPathNames(health map[string]bool) []string {
 // restart window are expected signals, not command errors.
 type watchProbes struct {
 	deps        cmdkit.Dependencies
+	cfg         config.Config
 	httpClient  *http.Client
 	tokenURL    string
 	publicURL   string
@@ -498,7 +501,8 @@ func (p *watchProbes) probeHealth(ctx context.Context) map[string]bool {
 			continue
 		}
 		request.Header.Set("User-Agent", version.UserAgent())
-		response, err := p.httpClient.Do(request)
+		secretHeader, secretSent := api.SetBasicAuthSecret(request, p.cfg)
+		response, err := p.healthClient(secretHeader, secretSent).Do(request)
 		if err != nil {
 			cancel()
 			health[path] = false
@@ -510,6 +514,27 @@ func (p *watchProbes) probeHealth(ctx context.Context) map[string]bool {
 		health[path] = response.StatusCode >= 200 && response.StatusCode < 300
 	}
 	return health
+}
+
+// healthClient follows redirects as before, except to a login page: a
+// basic-auth protected environment (Umbraco Cloud non-live) answers a
+// public path with a redirect to its login form, which is a 200 and was
+// counted as the site serving. Stopping there leaves the 3xx as the status.
+func (p *watchProbes) healthClient(secretHeader string, secretSent bool) *http.Client {
+	client := *p.httpClient
+	client.CheckRedirect = func(next *http.Request, via []*http.Request) error {
+		if api.IsLoginRedirect(next.URL.String()) {
+			return http.ErrUseLastResponse
+		}
+		if len(via) >= 10 {
+			return fmt.Errorf("stopped after 10 redirects")
+		}
+		if secretSent && !strings.EqualFold(next.URL.Host, via[0].URL.Host) {
+			next.Header.Del(secretHeader)
+		}
+		return nil
+	}
+	return &client
 }
 
 func (p *watchProbes) newestProcess(ctx context.Context) (string, string, error) {

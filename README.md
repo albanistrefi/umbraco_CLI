@@ -96,7 +96,7 @@ Scripts and CI gates can rely on the exit code to tell failure classes apart:
 | Code | Meaning |
 |------|---------|
 | 0 | Success |
-| 1 | Usage or local error (invalid flags, bad payloads, missing files) |
+| 1 | Usage or local error (invalid flags, bad payloads, missing files, a command group run without a subcommand) |
 | 2 | `schema diff` ran cleanly and found differences (suppress with `--exit-zero`) |
 | 3 | Authentication or credential failure (fix credentials/base URL, not the command) |
 | 4 | The Management API answered with an error status (4xx/5xx) |
@@ -175,6 +175,31 @@ Example user config:
   "outputFormat": "json"
 }
 ```
+
+### Environments behind basic authentication (Umbraco Cloud non-live)
+
+Umbraco Cloud's Public Access turns on the CMS basic authentication
+(`Umbraco:CMS:BasicAuth`), usually on every environment except live. The core
+Management API is exempt from it, so `server status` and the core commands
+work, but add-on APIs (Deploy, Forms, Engage) and the public site are not:
+they answer with a redirect to `/umbraco/basic-auth/login`, which the CLI
+reports as `blocked by basic authentication` (exit 3). The gate also accepts
+a shared-secret header, sent alongside the bearer token, so store the
+environment's `Umbraco:CMS:BasicAuth:SharedSecret` in the profile:
+
+```bash
+umbraco --profile dev auth login --base-url "https://dev-<project>.<region>.umbraco.io" --client-id "..." --client-secret "..." --basic-auth-shared-secret "<SharedSecret Value>"
+```
+
+or add `"basicAuthSharedSecret"` (and `"basicAuthSharedSecretHeader"` when the
+environment's `HeaderName` is not the default `X-Authentication-Shared-Secret`)
+to `~/.umbraco/<profile>.config.json`; without a profile selected,
+`UMBRACO_BASIC_AUTH_SHARED_SECRET` and `UMBRACO_BASIC_AUTH_SHARED_SECRET_HEADER`
+do the same. The secret is only sent to the profile's base URL host, never
+across a redirect to another host, and `--dry-run` previews show it as `***`.
+`auth status` and `auth list` report `hasBasicAuthSharedSecret` without the
+value, and `auth logout` removes it with the other credentials. Allow-listing
+the machine's IP in Public Access works too and needs no CLI setting.
 
 ### Local HTTPS trust
 

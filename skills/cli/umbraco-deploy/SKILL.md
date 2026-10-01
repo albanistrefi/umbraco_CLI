@@ -80,7 +80,7 @@ Phases: baseline → restarting → app-alive → serving → landed → settlin
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--escalation` | duration | 10m0s | Treat sustained downtime or post-landing health failure longer than this as failed (exit 5) |
-| `--health-path` | stringArray | [] | Public path that must return 2xx for the serving/verified phases (repeatable; default /) |
+| `--health-path` | stringArray | [] | Public path that must return 2xx for the serving/verified phases (repeatable; default /). A redirect to a login page counts as unhealthy: on a basic-auth protected environment (Umbraco Cloud non-live) set basicAuthSharedSecret in the profile |
 | `--heartbeat` | duration | 1m0s | Interval for still-alive lines on stderr; 0 disables |
 | `--interval` | duration | 5s | Poll interval |
 | `--json` | bool | false | Emit phase transitions as NDJSON |

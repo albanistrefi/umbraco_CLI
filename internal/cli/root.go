@@ -57,6 +57,11 @@ func NewRootCommand() *cobra.Command {
 	}
 
 	commands.RegisterAll(root, deps)
+	// Cobra adds its completion group during Execute; adding it here first
+	// lets requireSubcommands cover it like every other group. Its scripts
+	// are written to the writer set at this point (stdout).
+	root.InitDefaultCompletionCmd()
+	requireSubcommands(root)
 
 	return root
 }
