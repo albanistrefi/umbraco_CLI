@@ -9,6 +9,7 @@ import (
 
 	"umbraco-cli/internal/api"
 	"umbraco-cli/internal/commands/cmdkit"
+	"umbraco-cli/internal/uuid"
 )
 
 // Form authoring: create, change, copy, move, and delete form definitions.
@@ -121,7 +122,7 @@ func formsCopy(deps cmdkit.Dependencies) *cobra.Command {
 					body["newName"] = strings.TrimSpace(name)
 				}
 				if strings.TrimSpace(to) != "" {
-					if !cmdkit.IsUUIDLike(to) {
+					if !uuid.Valid(to) {
 						return fmt.Errorf("--to must be a Forms folder GUID, got %q", to)
 					}
 					body["copyToFolderId"] = strings.TrimSpace(to)
@@ -211,7 +212,7 @@ func formsMoveBody(jsonPayload string, to string, toRoot bool) (map[string]any, 
 		}
 		if parentID != nil {
 			text, ok := parentID.(string)
-			if !ok || !cmdkit.IsUUIDLike(text) {
+			if !ok || !uuid.Valid(text) {
 				return nil, fmt.Errorf("parentId must be a Forms folder GUID or null, got %v", parentID)
 			}
 		}
@@ -219,7 +220,7 @@ func formsMoveBody(jsonPayload string, to string, toRoot bool) (map[string]any, 
 	case toRoot:
 		return map[string]any{"parentId": nil}, nil
 	default:
-		if !cmdkit.IsUUIDLike(to) {
+		if !uuid.Valid(to) {
 			return nil, fmt.Errorf("--to must be a Forms folder GUID, got %q", to)
 		}
 		return map[string]any{"parentId": strings.TrimSpace(to)}, nil
@@ -258,7 +259,7 @@ func formsCopyWorkflows(deps cmdkit.Dependencies) *cobra.Command {
 				}
 				body = parsed
 			} else {
-				if !cmdkit.IsUUIDLike(to) {
+				if !uuid.Valid(to) {
 					return fmt.Errorf("copy-workflows requires --to <destination form GUID>")
 				}
 				ids := cmdkit.UniqueCSV(workflowIDs)
@@ -266,7 +267,7 @@ func formsCopyWorkflows(deps cmdkit.Dependencies) *cobra.Command {
 					return fmt.Errorf("copy-workflows requires --workflow-ids <comma-separated workflow GUIDs>")
 				}
 				for _, id := range ids {
-					if !cmdkit.IsUUIDLike(id) {
+					if !uuid.Valid(id) {
 						return fmt.Errorf("--workflow-ids must be workflow GUIDs, got %q", id)
 					}
 				}

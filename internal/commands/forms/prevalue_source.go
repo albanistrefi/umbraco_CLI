@@ -9,6 +9,7 @@ import (
 
 	"umbraco-cli/internal/api"
 	"umbraco-cli/internal/commands/cmdkit"
+	"umbraco-cli/internal/uuid"
 )
 
 // Prevalue sources feed the options of list-style form fields (dropdowns,
@@ -87,7 +88,7 @@ func formsPrevalueSourceCreate(deps cmdkit.Dependencies) *cobra.Command {
 				if name, _ := body["name"].(string); strings.TrimSpace(name) == "" {
 					return fmt.Errorf("prevalue-source create requires a name: pass --json '{\"name\": …, \"fieldPreValueSourceTypeId\": …}'")
 				}
-				if typeID := cmdkit.AsString(body["fieldPreValueSourceTypeId"]); !cmdkit.IsUUIDLike(typeID) || typeID == "00000000-0000-0000-0000-000000000000" {
+				if typeID := cmdkit.AsString(body["fieldPreValueSourceTypeId"]); !uuid.Valid(typeID) || typeID == "00000000-0000-0000-0000-000000000000" {
 					return fmt.Errorf("prevalue-source create requires \"fieldPreValueSourceTypeId\": an id from 'umbraco forms prevalue-source types'")
 				}
 				if id, ok := body["id"].(string); ok && strings.TrimSpace(id) != "" {

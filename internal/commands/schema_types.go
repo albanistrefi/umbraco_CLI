@@ -10,6 +10,7 @@ import (
 
 	"umbraco-cli/internal/api"
 	"umbraco-cli/internal/commands/cmdkit"
+	"umbraco-cli/internal/uuid"
 )
 
 // schemaTypeSpec parameterizes the shared command surface of the
@@ -436,7 +437,7 @@ func schemaTypeCreateFolder(deps cmdkit.Dependencies, use string, resource strin
 			if parentRef, set := body["parent"]; set && parentRef != nil {
 				parentMap, ok := parentRef.(map[string]any)
 				parentID, _ := parentMap["id"].(string)
-				if !ok || !cmdkit.IsUUIDLike(strings.TrimSpace(parentID)) {
+				if !ok || !uuid.Valid(strings.TrimSpace(parentID)) {
 					return fmt.Errorf("parent must be {\"id\": \"<folder GUID>\"}, got %v", parentRef)
 				}
 			}
@@ -444,7 +445,7 @@ func schemaTypeCreateFolder(deps cmdkit.Dependencies, use string, resource strin
 			if err != nil {
 				return err
 			}
-			if !cmdkit.IsUUIDLike(folderID) {
+			if !uuid.Valid(folderID) {
 				return fmt.Errorf("id must be a GUID, got %q", folderID)
 			}
 			ctx := cmd.Context()
@@ -493,7 +494,7 @@ func schemaTypeDeleteFolder(deps cmdkit.Dependencies, use string, resource strin
 // version rather than the argument.
 func resolveSchemaTypeID(ctx context.Context, client *api.Client, resource string, use string, display string, value string) (string, error) {
 	value = strings.TrimSpace(value)
-	if cmdkit.IsUUIDLike(value) {
+	if uuid.Valid(value) {
 		return value, nil
 	}
 	if value == "" || strings.ContainsAny(value, "/?#%") {

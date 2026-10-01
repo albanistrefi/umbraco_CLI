@@ -9,6 +9,7 @@ import (
 
 	"umbraco-cli/internal/commands/cmdkit"
 	"umbraco-cli/internal/commands/cmdtest"
+	"umbraco-cli/internal/uuid"
 )
 
 func TestDoctypeListSupportsFieldsAndReadTriage(t *testing.T) {
@@ -1260,7 +1261,7 @@ func TestDoctypeCreateFolderPostsAndReadsBack(t *testing.T) {
 	if parent["id"] != "16c53fcd-e119-4c96-a327-898adcbfac27" {
 		t.Fatalf("expected parent reference in the POST body, got %+v", posted)
 	}
-	if id, _ := posted["id"].(string); !cmdkit.IsUUIDLike(id) {
+	if id, _ := posted["id"].(string); !uuid.Valid(id) {
 		t.Fatalf("expected a generated folder id, got %+v", posted)
 	}
 	var result map[string]any

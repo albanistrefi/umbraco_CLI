@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"io"
 	"strings"
+
+	"umbraco-cli/internal/uuid"
 )
 
 type ReadTriageOptions struct {
@@ -23,7 +25,7 @@ func EnsurePayloadID(body map[string]any) (string, error) {
 	if existing, ok := body["id"].(string); ok && strings.TrimSpace(existing) != "" {
 		return existing, nil
 	}
-	id, err := NewUUIDv4()
+	id, err := uuid.NewV4()
 	if err != nil {
 		return "", fmt.Errorf("failed to generate entity id: %w", err)
 	}

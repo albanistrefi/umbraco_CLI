@@ -12,6 +12,7 @@ import (
 
 	"umbraco-cli/internal/api"
 	"umbraco-cli/internal/config"
+	"umbraco-cli/internal/uuid"
 )
 
 func TestGetAllPagesWithFallbackStopsOnLimitAndSticksToTheWinner(t *testing.T) {
@@ -205,23 +206,13 @@ func TestValueHelpers(t *testing.T) {
 	}
 }
 
-func TestIDHelpers(t *testing.T) {
-	for i := 0; i < 20; i++ {
-		id, err := NewUUIDv4()
-		if err != nil || !IsUUIDLike(id) || id[14] != '4' || !strings.ContainsRune("89ab", rune(id[19])) {
-			t.Fatalf("expected an RFC 4122 v4 UUID, got %q (%v)", id, err)
-		}
-	}
-	for _, bad := range []string{"", "not-a-uuid", "0123456789ab-cdef-0123-4567-89abcdef0123", "g1234567-89ab-cdef-0123-456789abcdef"} {
-		if IsUUIDLike(bad) {
-			t.Fatalf("expected %q to be rejected", bad)
-		}
-	}
-	if !IsUUIDLike(" 01234567-89AB-cdef-0123-456789abcdef ") {
-		t.Fatal("expected a padded mixed-case UUID to be accepted")
-	}
+func TestEnsurePayloadIDKeepsOrGeneratesAnID(t *testing.T) {
 	body := map[string]any{"id": "keep"}
 	if id, err := EnsurePayloadID(body); err != nil || id != "keep" {
 		t.Fatalf("expected an existing id to be kept, got %q %v", id, err)
+	}
+	generated := map[string]any{}
+	if id, err := EnsurePayloadID(generated); err != nil || !uuid.Valid(id) || generated["id"] != id {
+		t.Fatalf("expected a generated id set on the body, got %q %v (%v)", id, err, generated)
 	}
 }

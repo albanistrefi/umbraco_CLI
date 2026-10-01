@@ -12,6 +12,7 @@ import (
 
 	"umbraco-cli/internal/api"
 	"umbraco-cli/internal/commands/cmdkit"
+	"umbraco-cli/internal/uuid"
 )
 
 func RegisterMedia(root *cobra.Command, deps cmdkit.Dependencies) {
@@ -205,11 +206,11 @@ func mediaUpload(deps cmdkit.Dependencies) *cobra.Command {
 			return err
 		}
 
-		tempID, err := cmdkit.NewUUIDv4()
+		tempID, err := uuid.NewV4()
 		if err != nil {
 			return fmt.Errorf("failed to generate temporary file id: %w", err)
 		}
-		mediaID, err := cmdkit.NewUUIDv4()
+		mediaID, err := uuid.NewV4()
 		if err != nil {
 			return fmt.Errorf("failed to generate media id: %w", err)
 		}
@@ -326,7 +327,7 @@ func resolveMediaTypeInfo(ctx context.Context, client *api.Client, value string)
 		normalized = canonical
 	}
 
-	if cmdkit.IsUUIDLike(normalized) {
+	if uuid.Valid(normalized) {
 		return fetchMediaTypeDetail(ctx, client, normalized, value)
 	}
 
@@ -529,7 +530,7 @@ func mediaCreateFolder(deps cmdkit.Dependencies) *cobra.Command {
 				if err != nil {
 					return fmt.Errorf("could not resolve the Folder media type: %w", err)
 				}
-				folderID, err := cmdkit.NewUUIDv4()
+				folderID, err := uuid.NewV4()
 				if err != nil {
 					return fmt.Errorf("failed to generate media id: %w", err)
 				}

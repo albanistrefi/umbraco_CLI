@@ -9,6 +9,7 @@ import (
 
 	"umbraco-cli/internal/api"
 	"umbraco-cli/internal/commands/cmdkit"
+	"umbraco-cli/internal/uuid"
 )
 
 // Engage saves configuration entities through one upsert route per entity:
@@ -270,13 +271,13 @@ func ensureEngageGUID(body map[string]any, field string) error {
 			return fmt.Errorf("`%s` must be a GUID string, got %s", field, cmdkit.JSONShapeName(value))
 		}
 		if strings.TrimSpace(text) != "" {
-			if !cmdkit.IsUUIDLike(text) {
+			if !uuid.Valid(text) {
 				return fmt.Errorf("`%s` must be a GUID, got %q", field, text)
 			}
 			return nil
 		}
 	}
-	guid, err := cmdkit.NewUUIDv4()
+	guid, err := uuid.NewV4()
 	if err != nil {
 		return fmt.Errorf("failed to generate `%s`: %w", field, err)
 	}

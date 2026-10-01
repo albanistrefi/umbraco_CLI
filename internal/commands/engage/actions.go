@@ -11,6 +11,7 @@ import (
 
 	"umbraco-cli/internal/api"
 	"umbraco-cli/internal/commands/cmdkit"
+	"umbraco-cli/internal/uuid"
 )
 
 // Site-wide Engage actions: the main switch, reporting regeneration and
@@ -205,7 +206,7 @@ func validateEngageAnnotation(body map[string]any) error {
 		if !ok {
 			return fmt.Errorf("pageVariants[%d] must be an object, got %s", i, cmdkit.JSONShapeName(entry))
 		}
-		if unique, ok := variant["unique"].(string); !ok || !cmdkit.IsUUIDLike(unique) {
+		if unique, ok := variant["unique"].(string); !ok || !uuid.Valid(unique) {
 			return fmt.Errorf("pageVariants[%d].unique must be a document GUID", i)
 		}
 		if culture, present := variant["culture"]; present && culture != nil {

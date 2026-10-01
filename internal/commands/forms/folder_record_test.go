@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"umbraco-cli/internal/commands/cmdkit"
+	"umbraco-cli/internal/uuid"
 )
 
 const formsTestRecordSetActions = `[
@@ -37,7 +38,7 @@ func TestFormsCreateFolderFillsFlagsAndReadsBack(t *testing.T) {
 		t.Fatalf("forms create-folder --dry-run failed: %v", err)
 	}
 	planned := decodeObject(t, output)["body"].(map[string]any)
-	if value, ok := planned["parentId"]; !ok || value != nil || !cmdkit.IsUUIDLike(cmdkit.AsString(planned["id"])) {
+	if value, ok := planned["parentId"]; !ok || value != nil || !uuid.Valid(cmdkit.AsString(planned["id"])) {
 		t.Fatalf("expected a generated id and parentId null, got %+v", planned)
 	}
 	for _, args := range [][]string{

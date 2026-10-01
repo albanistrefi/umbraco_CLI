@@ -9,8 +9,8 @@ import (
 	"testing"
 
 	"umbraco-cli/internal/api"
-	"umbraco-cli/internal/commands/cmdkit"
 	"umbraco-cli/internal/commands/cmdtest"
+	"umbraco-cli/internal/uuid"
 )
 
 const engageTestGUID2 = "0b8f6c2d-7e1a-4c3b-8d9e-2f1a0b3c4d5e"
@@ -75,14 +75,14 @@ func TestEngageCreateMergesScaffoldAndGeneratesGUIDs(t *testing.T) {
 	if body["id"] != float64(0) || body["title"] != "Group" || body["description"] != "" {
 		t.Fatalf("expected id 0 and --json merged onto the scaffold, got %+v", body)
 	}
-	if unique, _ := body["unique"].(string); !cmdkit.IsUUIDLike(unique) {
+	if unique, _ := body["unique"].(string); !uuid.Valid(unique) {
 		t.Fatalf("expected a generated GUID `unique`, got %v", body["unique"])
 	}
 	personas, _ := body["personas"].([]any)
 	if len(personas) != 1 {
 		t.Fatalf("expected the one persona, got %+v", body["personas"])
 	}
-	if unique, _ := personas[0].(map[string]any)["unique"].(string); !cmdkit.IsUUIDLike(unique) {
+	if unique, _ := personas[0].(map[string]any)["unique"].(string); !uuid.Valid(unique) {
 		t.Fatalf("expected a generated GUID on the nested persona, got %+v", personas[0])
 	}
 	if !strings.Contains(output, `"validationResults"`) {
@@ -119,7 +119,7 @@ func TestEngageCreateRejectsExistingIDAndDryRunSendsNothing(t *testing.T) {
 		t.Fatalf("expected a POST /segments plan with the scaffold defaults, got %+v", plan)
 	}
 	rules, _ := plan.Body["rules"].([]any)
-	if len(rules) != 1 || !cmdkit.IsUUIDLike(rules[0].(map[string]any)["unique"].(string)) {
+	if len(rules) != 1 || !uuid.Valid(rules[0].(map[string]any)["unique"].(string)) {
 		t.Fatalf("expected the rule to get a GUID, got %+v", plan.Body["rules"])
 	}
 }
@@ -312,7 +312,7 @@ func TestEngagePersonalizationEmptiesTheUnusedTargets(t *testing.T) {
 	}
 	pages, _ := plan.Body["pages"].([]any)
 	types, _ := plan.Body["contentTypes"].([]any)
-	if len(pages) != 0 || len(types) != 1 || !cmdkit.IsUUIDLike(types[0].(map[string]any)["key"].(string)) {
+	if len(pages) != 0 || len(types) != 1 || !uuid.Valid(types[0].(map[string]any)["key"].(string)) {
 		t.Fatalf("expected pages emptied and the content type keyed, got %+v", plan.Body)
 	}
 }

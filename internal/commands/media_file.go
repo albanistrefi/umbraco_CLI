@@ -9,6 +9,7 @@ import (
 
 	"umbraco-cli/internal/api"
 	"umbraco-cli/internal/commands/cmdkit"
+	"umbraco-cli/internal/uuid"
 )
 
 // mediaReplaceFile swaps the file behind an existing media item while keeping
@@ -61,7 +62,7 @@ func mediaReplaceFile(deps cmdkit.Dependencies) *cobra.Command {
 				}
 			}
 
-			tempID, err := cmdkit.NewUUIDv4()
+			tempID, err := uuid.NewV4()
 			if err != nil {
 				return fmt.Errorf("failed to generate temporary file id: %w", err)
 			}
@@ -171,7 +172,7 @@ func mediaRestoreBackup(deps cmdkit.Dependencies) *cobra.Command {
 				if err != nil {
 					return err
 				}
-				tempID, err := cmdkit.NewUUIDv4()
+				tempID, err := uuid.NewV4()
 				if err != nil {
 					return fmt.Errorf("failed to generate temporary file id: %w", err)
 				}

@@ -11,6 +11,7 @@ import (
 
 	"umbraco-cli/internal/api"
 	"umbraco-cli/internal/commands/cmdkit"
+	"umbraco-cli/internal/uuid"
 )
 
 // Record writes: state changes (approve/reject/delete via record-set
@@ -98,7 +99,7 @@ func formsRecordAction(deps cmdkit.Dependencies) *cobra.Command {
 				return fmt.Errorf("record-action requires --record-ids <comma-separated record uniqueIds>")
 			}
 			for _, id := range ids {
-				if !cmdkit.IsUUIDLike(id) {
+				if !uuid.Valid(id) {
 					return fmt.Errorf("--record-ids must be record uniqueIds (GUIDs), got %q; the numeric record id is not accepted here", id)
 				}
 			}
@@ -147,7 +148,7 @@ func parseFormsRecordFields(raw string) ([]any, error) {
 		if !ok {
 			return nil, fmt.Errorf("--json entry %d must be an object {\"fieldId\", \"values\"}", i)
 		}
-		if !cmdkit.IsUUIDLike(cmdkit.AsString(entry["fieldId"])) {
+		if !uuid.Valid(cmdkit.AsString(entry["fieldId"])) {
 			return nil, fmt.Errorf("--json entry %d needs \"fieldId\": the field GUID from 'forms get <formId>' (pages → fieldSets → containers → fields)", i)
 		}
 		if _, ok := entry["values"].([]any); !ok {
@@ -170,7 +171,7 @@ func formsRecordUpdate(deps cmdkit.Dependencies) *cobra.Command {
 			if err := cmdkit.RequireValue("--json", jsonPayload); err != nil {
 				return err
 			}
-			if !cmdkit.IsUUIDLike(args[1]) {
+			if !uuid.Valid(args[1]) {
 				return fmt.Errorf("recordId must be the record's uniqueId (GUID), got %q", args[1])
 			}
 			body, err := parseFormsRecordFields(jsonPayload)

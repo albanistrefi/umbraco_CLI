@@ -9,6 +9,7 @@ import (
 
 	"umbraco-cli/internal/api"
 	"umbraco-cli/internal/commands/cmdkit"
+	"umbraco-cli/internal/uuid"
 	"umbraco-cli/internal/validate"
 )
 
@@ -331,7 +332,7 @@ func doctypeAddProperty(deps cmdkit.Dependencies) *cobra.Command {
 				if normalizedType == "" {
 					return fmt.Errorf("--container-type must be Tab or Group, got %q", newContainerType)
 				}
-				newID, err := cmdkit.NewUUIDv4()
+				newID, err := uuid.NewV4()
 				if err != nil {
 					return fmt.Errorf("failed to generate container id: %w", err)
 				}
@@ -344,7 +345,7 @@ func doctypeAddProperty(deps cmdkit.Dependencies) *cobra.Command {
 				return fmt.Errorf("doctype %s already has a property with alias %q", args[0], alias)
 			}
 
-			propertyID, err := cmdkit.NewUUIDv4()
+			propertyID, err := uuid.NewV4()
 			if err != nil {
 				return fmt.Errorf("failed to generate property id: %w", err)
 			}
@@ -507,7 +508,7 @@ func doctypeAddContainer(deps cmdkit.Dependencies) *cobra.Command {
 				parentID = resolved
 			}
 
-			containerID, err := cmdkit.NewUUIDv4()
+			containerID, err := uuid.NewV4()
 			if err != nil {
 				return fmt.Errorf("failed to generate container id: %w", err)
 			}

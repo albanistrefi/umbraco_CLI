@@ -12,6 +12,7 @@ import (
 
 	"umbraco-cli/internal/api"
 	"umbraco-cli/internal/commands/cmdkit"
+	"umbraco-cli/internal/uuid"
 )
 
 // Umbraco Deploy ships its own management API next to the CMS one. The
@@ -392,7 +393,7 @@ transfer keeps running). --wait=false returns the session id immediately.`,
 			} else {
 				for _, raw := range nodes {
 					for _, id := range cmdkit.UniqueCSV(raw) {
-						if !cmdkit.IsUUIDLike(id) {
+						if !uuid.Valid(id) {
 							return fmt.Errorf("--node %q is not a GUID", id)
 						}
 						name, err := resolveDeployEntityName(ctx, deps.Client, resolvedType, id)
@@ -571,7 +572,7 @@ func deployQueue(deps cmdkit.Dependencies) *cobra.Command {
 			ids := []string{}
 			for _, raw := range args {
 				for _, id := range cmdkit.UniqueCSV(raw) {
-					if !cmdkit.IsUUIDLike(id) {
+					if !uuid.Valid(id) {
 						return fmt.Errorf("%q is not a GUID; nothing was queued", id)
 					}
 					ids = append(ids, id)
@@ -609,7 +610,7 @@ func deployQueue(deps cmdkit.Dependencies) *cobra.Command {
 				if err != nil {
 					return err
 				}
-				if !cmdkit.IsUUIDLike(udi) {
+				if !uuid.Valid(udi) {
 					return fmt.Errorf("%q is neither a GUID nor a UDI (umb://document/<32 hex>)", args[0])
 				}
 				udi = "umb://" + resolvedType + "/" + strings.ToLower(strings.ReplaceAll(udi, "-", ""))

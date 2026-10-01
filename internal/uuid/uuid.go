@@ -1,4 +1,5 @@
-package cmdkit
+// Package uuid checks and generates the GUIDs Umbraco keys its entities by.
+package uuid
 
 import (
 	"crypto/rand"
@@ -6,8 +7,8 @@ import (
 	"strings"
 )
 
-// NewUUIDv4 returns a freshly generated random UUID (RFC 4122 v4).
-func NewUUIDv4() (string, error) {
+// NewV4 returns a freshly generated random UUID (RFC 4122 v4).
+func NewV4() (string, error) {
 	var b [16]byte
 	if _, err := rand.Read(b[:]); err != nil {
 		return "", err
@@ -17,7 +18,10 @@ func NewUUIDv4() (string, error) {
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16]), nil
 }
 
-func IsUUIDLike(value string) bool {
+// Valid reports whether value, ignoring surrounding whitespace, has the
+// 8-4-4-4-12 hex-digit shape of a GUID. It checks the shape only, not the
+// version or variant bits.
+func Valid(value string) bool {
 	value = strings.TrimSpace(value)
 	if len(value) != 36 {
 		return false

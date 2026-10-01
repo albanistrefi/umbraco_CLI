@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/uuid"
 )
 
 func TestCreateCommandGeneratesIDAndEchoesIdentity(t *testing.T) {
@@ -28,7 +29,7 @@ func TestCreateCommandGeneratesIDAndEchoesIdentity(t *testing.T) {
 	}
 	got := decodeObject(t, out)
 	id, _ := got["id"].(string)
-	if !IsUUIDLike(id) || got["name"] != "W" || got["kind"] != "k" || got["ignored"] != nil {
+	if !uuid.Valid(id) || got["name"] != "W" || got["kind"] != "k" || got["ignored"] != nil {
 		t.Fatalf("expected a generated id plus identity keys, got %v", got)
 	}
 	if body := server.requests[0].Body; body["id"] != id {

@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/commands/cmdkit"
+	"umbraco-cli/internal/uuid"
 )
 
 // engageMetrics and engageDimensions are the MetricModel and DimensionModel
@@ -221,7 +222,7 @@ func buildEngageAnalyticsQuery(in engageAnalyticsQueryInput, now time.Time) (map
 	}
 	filter := strings.TrimSpace(in.Filter)
 	if node := strings.TrimSpace(in.Node); node != "" {
-		if !cmdkit.IsUUIDLike(node) {
+		if !uuid.Valid(node) {
 			return nil, fmt.Errorf("--node expects a document GUID, got %q", node)
 		}
 		clause := "NodeId=='" + node
@@ -332,7 +333,7 @@ func engageAnnotation(deps cmdkit.Dependencies) *cobra.Command {
 			case global:
 				path = "/annotations/global"
 			case strings.TrimSpace(node) != "":
-				if !cmdkit.IsUUIDLike(node) {
+				if !uuid.Valid(node) {
 					return fmt.Errorf("--node expects a document GUID, got %q", node)
 				}
 				path = "/annotations/page"

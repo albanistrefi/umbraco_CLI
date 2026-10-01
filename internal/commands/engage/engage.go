@@ -12,6 +12,7 @@ import (
 
 	"umbraco-cli/internal/api"
 	"umbraco-cli/internal/commands/cmdkit"
+	"umbraco-cli/internal/uuid"
 )
 
 // Umbraco Engage serves its own Management API mount, authorised with the
@@ -140,7 +141,7 @@ func validateEngageID(command string, value string, kind engageIDKind, field str
 			return fmt.Errorf("%s expects the numeric `%s` from '%s', got %q", command, field, listCommand, value)
 		}
 	default:
-		if !cmdkit.IsUUIDLike(value) {
+		if !uuid.Valid(value) {
 			return fmt.Errorf("%s expects the GUID `%s` from '%s' (not the numeric `id`), got %q", command, field, listCommand, value)
 		}
 	}

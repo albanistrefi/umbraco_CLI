@@ -8,6 +8,7 @@ import (
 
 	"umbraco-cli/internal/api"
 	"umbraco-cli/internal/commands/cmdkit"
+	"umbraco-cli/internal/uuid"
 )
 
 // Forms folders organize the form tree. They are plain {id, name, parentId}
@@ -47,7 +48,7 @@ func formsCreateFolder(deps cmdkit.Dependencies) *cobra.Command {
 				return fmt.Errorf("create-folder requires a folder name: pass --name or a --json payload with \"name\"")
 			}
 			if parentID, set := body["parentId"]; set && parentID != nil {
-				if value, _ := parentID.(string); !cmdkit.IsUUIDLike(value) {
+				if value, _ := parentID.(string); !uuid.Valid(value) {
 					return fmt.Errorf("parentId must be a Forms folder GUID or null, got %v", parentID)
 				}
 			}
@@ -58,7 +59,7 @@ func formsCreateFolder(deps cmdkit.Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if !cmdkit.IsUUIDLike(folderID) {
+			if !uuid.Valid(folderID) {
 				return fmt.Errorf("id must be a GUID, got %q", folderID)
 			}
 			ctx := cmd.Context()

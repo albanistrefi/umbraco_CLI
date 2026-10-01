@@ -10,6 +10,7 @@ import (
 
 	"umbraco-cli/internal/api"
 	"umbraco-cli/internal/commands/cmdkit"
+	"umbraco-cli/internal/uuid"
 )
 
 // guidPattern matches the standard 8-4-4-4-12 lowercase/uppercase hex form
@@ -565,7 +566,7 @@ func ensureBlockGroup(payload map[string]any, name string) (string, map[string]a
 			return cmdkit.AsString(group["key"]), payload
 		}
 	}
-	key, err := cmdkit.NewUUIDv4()
+	key, err := uuid.NewV4()
 	if err != nil {
 		key = strings.ToLower(name)
 	}
