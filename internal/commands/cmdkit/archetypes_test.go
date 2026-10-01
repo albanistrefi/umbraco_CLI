@@ -241,7 +241,7 @@ func TestFetchObjectReportsNonObjects(t *testing.T) {
 	_, err := FetchObject(context.Background(), deps.Client, "/list", api.RequestOptions{})
 	mustContain(t, err, "GET /list returned an array")
 	_, err = FetchObject(context.Background(), deps.Client, "/missing", api.RequestOptions{})
-	if !IsAPIStatus(err, 404) {
+	if !api.IsStatus(err, 404) {
 		t.Fatalf("expected a 404 APIError, got %v", err)
 	}
 }

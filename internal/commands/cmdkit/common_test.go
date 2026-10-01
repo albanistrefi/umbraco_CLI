@@ -2,7 +2,6 @@ package cmdkit
 
 import (
 	"context"
-	"errors"
 	"reflect"
 	"strconv"
 	"strings"
@@ -66,7 +65,7 @@ func TestGetAllPagesWithFallbackCeilingAndNonEnvelope(t *testing.T) {
 		t.Fatalf("expected a non-envelope page verbatim, got %v %v", result, err)
 	}
 	_, err = GetAllPagesWithFallback(context.Background(), deps.Client, 0, 0, 0, GetRequestCandidate{Path: "/broken"})
-	if !IsAPIStatus(err, 500) {
+	if !api.IsStatus(err, 500) {
 		t.Fatalf("expected the 500 to surface, got %v", err)
 	}
 }
@@ -79,11 +78,11 @@ func TestGetWithFallbackErrors(t *testing.T) {
 	mustContain(t, err, "no endpoint candidates were configured")
 
 	_, err = GetWithFallback(context.Background(), deps.Client, GetRequestCandidate{Path: "/a"}, GetRequestCandidate{Path: "/b"})
-	if !IsAPIStatus(err, 404) || len(server.requests) != 2 {
+	if !api.IsStatus(err, 404) || len(server.requests) != 2 {
 		t.Fatalf("expected the last 404 after trying both, got %v", err)
 	}
 	_, err = GetWithFallback(context.Background(), deps.Client, GetRequestCandidate{Path: "/forbidden"}, GetRequestCandidate{Path: "/never"})
-	if !IsAPIStatus(err, 403) || len(server.requests) != 3 {
+	if !api.IsStatus(err, 403) || len(server.requests) != 3 {
 		t.Fatalf("expected a non-404 to stop the fallback, got %v", err)
 	}
 }
@@ -200,9 +199,6 @@ func TestValueHelpers(t *testing.T) {
 	names := TreeItemNames(map[string]any{"name": "Top", "variants": []any{map[string]any{"name": "Variant"}, "bad", map[string]any{"name": ""}}})
 	if !reflect.DeepEqual(names, []string{"Top", "Variant"}) {
 		t.Fatalf("TreeItemNames collects top-level and variant names, got %v", names)
-	}
-	if IsAPIStatus(errors.New("plain"), 404) {
-		t.Fatal("IsAPIStatus needs an APIError")
 	}
 }
 

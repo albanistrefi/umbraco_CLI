@@ -1,12 +1,9 @@
 package cmdkit
 
 import (
-	"errors"
 	"fmt"
 	"sort"
 	"strings"
-
-	"umbraco-cli/internal/api"
 )
 
 func ItemID(item any) string {
@@ -16,11 +13,6 @@ func ItemID(item any) string {
 	}
 	id, _ := entry["id"].(string)
 	return strings.TrimSpace(id)
-}
-
-func IsAPIStatus(err error, status int) bool {
-	var apiErr *api.APIError
-	return errors.As(err, &apiErr) && apiErr.StatusCode == status
 }
 
 func CultureValue(value any) string {

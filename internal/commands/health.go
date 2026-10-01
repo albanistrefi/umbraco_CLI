@@ -41,7 +41,7 @@ func healthGroup(deps cmdkit.Dependencies) *cobra.Command {
 func healthRun(deps cmdkit.Dependencies) *cobra.Command {
 	return &cobra.Command{Use: "run <group-name>", Short: "Run health checks for group", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		result, err := deps.Client.Post(cmd.Context(), api.JoinPath("/health-check-group/%s/check", args[0]), nil, api.RequestOptions{})
-		if cmdkit.IsAPIStatus(err, http.StatusNotFound) {
+		if api.IsStatus(err, http.StatusNotFound) {
 			// Older servers expose GET .../run instead of POST .../check.
 			result, err = deps.Client.Get(cmd.Context(), api.JoinPath("/health-check-group/%s/run", args[0]), api.RequestOptions{})
 		}
@@ -79,7 +79,7 @@ func healthAction(deps cmdkit.Dependencies) *cobra.Command {
 				modern["valueRequired"] = false
 			}
 			result, err := deps.Client.Post(cmd.Context(), "/health-check/execute-action", modern, api.RequestOptions{DryRun: dryRun})
-			if cmdkit.IsAPIStatus(err, http.StatusNotFound) {
+			if api.IsStatus(err, http.StatusNotFound) {
 				// Older servers address the action by id in the path instead.
 				result, err = deps.Client.Post(cmd.Context(), api.JoinPath("/health-check/%s", args[0]), body, api.RequestOptions{DryRun: dryRun})
 			}

@@ -181,7 +181,7 @@ func TestEngageStatusReportsAvailability(t *testing.T) {
 func TestEngageStatusReturnsOtherProbeFailures(t *testing.T) {
 	deps, _ := engageTestDeps(t, engageStatusRoutes(engageJSON(http.StatusInternalServerError, `{"title":"boom"}`)))
 	_, err := cmdtest.Execute(buildEngageRoot(t, deps), "engage", "status")
-	if !cmdkit.IsAPIStatus(err, http.StatusInternalServerError) {
+	if !api.IsStatus(err, http.StatusInternalServerError) {
 		t.Fatalf("expected the 500 to be returned as an API error, got %v", err)
 	}
 }

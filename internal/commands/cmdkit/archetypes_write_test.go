@@ -186,7 +186,7 @@ func TestUpdateCommandReplaceMergeAndBind(t *testing.T) {
 	_, _, err = runKit(t, UpdateCommand(deps, rejecting), "w-1", "--json", `{}`)
 	mustContain(t, err, "rejected input")
 	_, _, err = runKit(t, UpdateCommand(deps, spec), "missing", "--merge-json", `{}`)
-	if !IsAPIStatus(err, 404) {
+	if !api.IsStatus(err, 404) {
 		t.Fatalf("expected the merge fetch 404 to surface, got %v", err)
 	}
 }
@@ -250,7 +250,7 @@ func TestDeleteCommandIsGated(t *testing.T) {
 		t.Fatalf("expected exactly one DELETE, got %+v", server.requests)
 	}
 	_, _, err = runKit(t, DeleteCommand(deps, spec), "missing", "--force")
-	if !IsAPIStatus(err, 404) {
+	if !api.IsStatus(err, 404) {
 		t.Fatalf("expected the 404 to surface, got %v", err)
 	}
 }
@@ -293,7 +293,7 @@ func TestTargetActionCommandFallsBackOnMethodNotAllowed(t *testing.T) {
 
 	before := len(server.requests)
 	_, _, err = runKit(t, TargetActionCommand(deps, spec), "bad", "--to", "p")
-	if !IsAPIStatus(err, 400) || len(server.requests) != before+1 {
+	if !api.IsStatus(err, 400) || len(server.requests) != before+1 {
 		t.Fatalf("expected a non-retriable 400 to stop the fallback, got %v after %d requests", err, len(server.requests)-before)
 	}
 	if _, err := MutateWithFallback(context.Background(), deps.Client, nil, api.RequestOptions{}); err != nil {

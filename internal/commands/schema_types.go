@@ -670,14 +670,14 @@ func fetchSchemaTypeBatch(ctx context.Context, client *api.Client, resource stri
 		if len(out) > 0 {
 			return out, nil
 		}
-	} else if !cmdkit.IsAPIStatus(err, http.StatusNotFound) {
+	} else if !api.IsStatus(err, http.StatusNotFound) {
 		return nil, err
 	}
 	out := []map[string]any{}
 	for _, id := range ids {
 		detail, err := cmdkit.FetchObject(ctx, client, api.JoinPath("/"+resource+"/%s", id), api.RequestOptions{})
 		if err != nil {
-			if cmdkit.IsAPIStatus(err, http.StatusNotFound) {
+			if api.IsStatus(err, http.StatusNotFound) {
 				continue
 			}
 			return nil, err

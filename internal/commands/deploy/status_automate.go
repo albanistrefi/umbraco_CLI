@@ -50,7 +50,7 @@ func compareAutomateArtifact(ctx context.Context, deps cmdkit.Dependencies, arti
 	}
 	remote, err := deps.Client.Get(ctx, api.JoinPath(fetchPath, artifact.GUID), api.RequestOptions{APIPrefix: automate.APIPrefix})
 	if err != nil {
-		if cmdkit.IsAPIStatus(err, http.StatusNotFound) {
+		if api.IsStatus(err, http.StatusNotFound) {
 			result.Status = "missing-remote"
 			result.Reason = "entity does not exist on the target environment"
 			return result

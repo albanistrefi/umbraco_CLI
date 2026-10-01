@@ -312,7 +312,7 @@ func compareArtifact(ctx context.Context, deps cmdkit.Dependencies, artifact uda
 
 	remote, err := cmdkit.FetchObject(ctx, deps.Client, api.JoinPath(fetchPath, artifact.GUID), api.RequestOptions{})
 	if err != nil {
-		if cmdkit.IsAPIStatus(err, http.StatusNotFound) {
+		if api.IsStatus(err, http.StatusNotFound) {
 			result.Status = "missing-remote"
 			result.Reason = "entity does not exist on the target environment"
 			return result

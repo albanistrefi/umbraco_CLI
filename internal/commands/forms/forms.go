@@ -167,7 +167,7 @@ func formsNotAFolderError(id string) error {
 func isFormsFolderID(ctx context.Context, client *api.Client, id string) (bool, error) {
 	result, err := client.Get(ctx, api.JoinPath("/folder/%s", id), formsRequestOpts("", nil))
 	if err != nil {
-		if cmdkit.IsAPIStatus(err, http.StatusNotFound) {
+		if api.IsStatus(err, http.StatusNotFound) {
 			return false, nil
 		}
 		return false, err
@@ -193,7 +193,7 @@ func formsChildren(deps cmdkit.Dependencies) *cobra.Command {
 				formsRequestOpts(fields, nil),
 			)
 			if err != nil {
-				if cmdkit.IsAPIStatus(err, http.StatusNotFound) {
+				if api.IsStatus(err, http.StatusNotFound) {
 					folder, probeErr := isFormsFolderID(cmd.Context(), deps.Client, args[0])
 					if probeErr != nil {
 						return probeErr
@@ -234,7 +234,7 @@ func formsGet(deps cmdkit.Dependencies) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			result, err := deps.Client.Get(cmd.Context(), api.JoinPath("/form/%s", args[0]), formsRequestOpts(fields, nil))
 			if err != nil {
-				if cmdkit.IsAPIStatus(err, http.StatusNotFound) {
+				if api.IsStatus(err, http.StatusNotFound) {
 					folder, probeErr := isFormsFolderID(cmd.Context(), deps.Client, args[0])
 					if probeErr != nil {
 						return probeErr

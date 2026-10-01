@@ -187,7 +187,7 @@ func grepOneDocument(ctx context.Context, client *api.Client, id string, opts do
 	for _, state := range documentGrepStates(opts) {
 		doc, err := fetchDocumentForGrep(ctx, client, id, state)
 		if err != nil {
-			if state == "published" && !opts.Published && cmdkit.IsAPIStatus(err, http.StatusNotFound) {
+			if state == "published" && !opts.Published && api.IsStatus(err, http.StatusNotFound) {
 				continue
 			}
 			skipped = append(skipped, documentGrepSkipped{ID: id, Stage: state, Error: err.Error()})
@@ -263,7 +263,7 @@ func walkDocumentTree(ctx context.Context, client *api.Client, startID string, v
 	visit(startID)
 	children, err := fetchDocumentTreeItems(ctx, client, startID, false)
 	if err != nil {
-		if cmdkit.IsAPIStatus(err, http.StatusNotFound) {
+		if api.IsStatus(err, http.StatusNotFound) {
 			return nil
 		}
 		skip(documentGrepSkipped{ID: startID, Stage: "children", Error: err.Error()})
@@ -287,7 +287,7 @@ func walkDocumentTreeItem(ctx context.Context, client *api.Client, item any, vis
 	visit(id)
 	children, err := fetchDocumentTreeItems(ctx, client, id, false)
 	if err != nil {
-		if cmdkit.IsAPIStatus(err, http.StatusNotFound) {
+		if api.IsStatus(err, http.StatusNotFound) {
 			return
 		}
 		skip(documentGrepSkipped{ID: id, Stage: "children", Error: err.Error()})

@@ -103,7 +103,7 @@ func fetchDeployTarget(ctx context.Context, client *api.Client) (deployTarget, e
 // friendlyDeployAPIError turns the 404 a CMS without Umbraco Deploy answers
 // into a statement instead of a route hint.
 func friendlyDeployAPIError(err error) error {
-	if cmdkit.IsAPIStatus(err, http.StatusNotFound) {
+	if api.IsStatus(err, http.StatusNotFound) {
 		return fmt.Errorf("the Umbraco Deploy management API is not available on this environment (%w); deploy transfer needs the Umbraco.Deploy package installed on the source environment", err)
 	}
 	return err
@@ -158,7 +158,7 @@ func normalizeDeployEntityType(raw string) (string, error) {
 func resolveDeployEntityName(ctx context.Context, client *api.Client, entityType string, id string) (string, error) {
 	if entityType == "document" || entityType == "media" {
 		if _, err := client.Get(ctx, api.JoinPath("/"+entityType+"/%s", id), api.RequestOptions{}); err != nil {
-			if cmdkit.IsAPIStatus(err, http.StatusNotFound) {
+			if api.IsStatus(err, http.StatusNotFound) {
 				return "", fmt.Errorf("%s %s does not exist in this environment", entityType, id)
 			}
 			return "", err
@@ -166,7 +166,7 @@ func resolveDeployEntityName(ctx context.Context, client *api.Client, entityType
 	}
 	result, err := client.Get(ctx, "/entity/name", deployRequestOpts(map[string]any{"id": id, "entityType": entityType}))
 	if err != nil {
-		if cmdkit.IsAPIStatus(err, http.StatusNotFound) {
+		if api.IsStatus(err, http.StatusNotFound) {
 			return "", fmt.Errorf("%s %s does not exist in this environment", entityType, id)
 		}
 		return "", friendlyDeployAPIError(err)

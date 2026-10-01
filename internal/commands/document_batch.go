@@ -251,7 +251,7 @@ func documentBatchOne(ctx context.Context, client *api.Client, opts documentBatc
 			}
 			return
 		}
-		if !cmdkit.IsAPIStatus(err, http.StatusNotFound) {
+		if !api.IsStatus(err, http.StatusNotFound) {
 			fail("update", err)
 			return
 		}

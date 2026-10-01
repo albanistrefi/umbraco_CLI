@@ -423,7 +423,7 @@ func documentUpdate(deps cmdkit.Dependencies) *cobra.Command {
 					"published":      coalescePutResult(atomicResult, dryRun),
 				}, backupFile, "updated"))
 			}
-			if !cmdkit.IsAPIStatus(err, http.StatusNotFound) {
+			if !api.IsStatus(err, http.StatusNotFound) {
 				return err
 			}
 
