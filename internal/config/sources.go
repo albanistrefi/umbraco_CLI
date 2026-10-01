@@ -11,10 +11,12 @@ import (
 )
 
 type rawConfig struct {
-	BaseURL      string
-	ClientID     string
-	ClientSecret string
-	OutputFormat string
+	BaseURL                     string
+	ClientID                    string
+	ClientSecret                string
+	OutputFormat                string
+	BasicAuthSharedSecret       string
+	BasicAuthSharedSecretHeader string
 }
 
 type jsonConfigFile struct {
@@ -23,6 +25,9 @@ type jsonConfigFile struct {
 	ClientID      string `json:"clientId"`
 	ClientSecret  string `json:"clientSecret"`
 	OutputFormat  string `json:"outputFormat"`
+
+	BasicAuthSharedSecret       string `json:"basicAuthSharedSecret,omitempty"`
+	BasicAuthSharedSecretHeader string `json:"basicAuthSharedSecretHeader,omitempty"`
 }
 
 func currentEnv() map[string]string {
@@ -31,6 +36,9 @@ func currentEnv() map[string]string {
 		"UMBRACO_CLIENT_ID":     os.Getenv("UMBRACO_CLIENT_ID"),
 		"UMBRACO_CLIENT_SECRET": os.Getenv("UMBRACO_CLIENT_SECRET"),
 		"UMBRACO_OUTPUT_FORMAT": os.Getenv("UMBRACO_OUTPUT_FORMAT"),
+
+		"UMBRACO_BASIC_AUTH_SHARED_SECRET":        os.Getenv("UMBRACO_BASIC_AUTH_SHARED_SECRET"),
+		"UMBRACO_BASIC_AUTH_SHARED_SECRET_HEADER": os.Getenv("UMBRACO_BASIC_AUTH_SHARED_SECRET_HEADER"),
 	}
 }
 
@@ -40,6 +48,9 @@ func rawConfigFromEnv(env map[string]string) rawConfig {
 		ClientID:     strings.TrimSpace(env["UMBRACO_CLIENT_ID"]),
 		ClientSecret: strings.TrimSpace(env["UMBRACO_CLIENT_SECRET"]),
 		OutputFormat: strings.TrimSpace(env["UMBRACO_OUTPUT_FORMAT"]),
+
+		BasicAuthSharedSecret:       strings.TrimSpace(env["UMBRACO_BASIC_AUTH_SHARED_SECRET"]),
+		BasicAuthSharedSecretHeader: strings.TrimSpace(env["UMBRACO_BASIC_AUTH_SHARED_SECRET_HEADER"]),
 	}
 }
 
@@ -55,6 +66,12 @@ func mergeRawConfig(target *rawConfig, source rawConfig) {
 	}
 	if strings.TrimSpace(source.OutputFormat) != "" {
 		target.OutputFormat = source.OutputFormat
+	}
+	if strings.TrimSpace(source.BasicAuthSharedSecret) != "" {
+		target.BasicAuthSharedSecret = source.BasicAuthSharedSecret
+	}
+	if strings.TrimSpace(source.BasicAuthSharedSecretHeader) != "" {
+		target.BasicAuthSharedSecretHeader = source.BasicAuthSharedSecretHeader
 	}
 }
 
@@ -82,6 +99,9 @@ func loadJSONConfig(path string) (rawConfig, bool, error) {
 		ClientID:     strings.TrimSpace(file.ClientID),
 		ClientSecret: strings.TrimSpace(file.ClientSecret),
 		OutputFormat: strings.TrimSpace(file.OutputFormat),
+
+		BasicAuthSharedSecret:       strings.TrimSpace(file.BasicAuthSharedSecret),
+		BasicAuthSharedSecretHeader: strings.TrimSpace(file.BasicAuthSharedSecretHeader),
 	}, true, nil
 }
 

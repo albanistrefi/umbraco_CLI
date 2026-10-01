@@ -269,7 +269,7 @@ func (c *Client) RequestResult(ctx context.Context, method string, path string, 
 			Valid:   true,
 			Method:  method,
 			Path:    relativePath,
-			Headers: previewHeaders(contentType, opts.Headers),
+			Headers: c.previewHeaders(contentType, opts.Headers),
 			Body:    body,
 		}}, nil
 	}
@@ -299,7 +299,7 @@ func (c *Client) RequestResult(ctx context.Context, method string, path string, 
 		return ResponseResult{}, err
 	}
 
-	if err := rejectLoginPage(resp, method, relativePath); err != nil {
+	if err := c.rejectLoginPage(resp, method, relativePath); err != nil {
 		return ResponseResult{}, err
 	}
 	result, err := parseResponse(resp)
@@ -322,12 +322,16 @@ func (c *Client) RequestResult(ctx context.Context, method string, path string, 
 }
 
 // previewHeaders is the complete header set a dry-run request would carry:
-// the implicit ones the client adds (Authorization redacted, User-Agent,
-// Content-Type when a body is sent) plus caller headers, which override.
-func previewHeaders(contentType string, extra map[string]string) map[string]string {
+// the implicit ones the client adds (Authorization and the basic-auth
+// shared secret redacted, User-Agent, Content-Type when a body is sent) plus
+// caller headers, which override.
+func (c *Client) previewHeaders(contentType string, extra map[string]string) map[string]string {
 	headers := map[string]string{
 		"Authorization": "Bearer ***",
 		"User-Agent":    version.UserAgent(),
+	}
+	if name, _, ok := c.cfg.BasicAuthHeader(); ok {
+		headers[http.CanonicalHeaderKey(name)] = "***"
 	}
 	if contentType != "" {
 		headers["Content-Type"] = contentType
@@ -377,6 +381,7 @@ func (c *Client) sendWithRedirects(ctx context.Context, method string, fullURL s
 			req.Header.Set("Content-Type", contentType)
 		}
 		req.Header.Set("User-Agent", version.UserAgent())
+		secretHeader, secretSent := SetBasicAuthSecret(req, c.cfg)
 		for key, value := range headers {
 			req.Header.Set(key, value)
 		}
@@ -395,7 +400,10 @@ func (c *Client) sendWithRedirects(ctx context.Context, method string, fullURL s
 				if next.Response != nil {
 					status = next.Response.StatusCode
 				}
-				return &AuthRedirectError{Method: method, Path: relativePath, Location: next.URL.String(), StatusCode: status}
+				return &AuthRedirectError{Method: method, Path: relativePath, Location: next.URL.String(), StatusCode: status, SecretSent: secretSent}
+			}
+			if secretSent && !sameHost(next.URL, req.URL) {
+				next.Header.Del(secretHeader)
 			}
 			if policy == redirectFollow {
 				if len(via) >= 10 {
@@ -455,6 +463,9 @@ type AuthRedirectError struct {
 	Location   string
 	StatusCode int
 	HTML       bool
+	// SecretSent records that the profile's basic-auth shared secret went
+	// out with the request, so a basic-auth redirect means it was refused.
+	SecretSent bool
 }
 
 func (e *AuthRedirectError) Error() string {
@@ -469,10 +480,26 @@ func (e *AuthRedirectError) Error() string {
 			what = "returned the backoffice login page instead of JSON"
 		}
 	}
+	if e.BasicAuth() {
+		if e.SecretSent {
+			return fmt.Sprintf("blocked by basic authentication: %s %s %s — the profile's basic-auth shared secret was sent and not accepted. Check basicAuthSharedSecret (and basicAuthSharedSecretHeader, default %s) against the environment's Umbraco:CMS:BasicAuth:SharedSecret Value and HeaderName. Nothing was sent past the redirect", e.Method, e.Path, what, config.DefaultBasicAuthSharedSecretHeader)
+		}
+		return fmt.Sprintf("blocked by basic authentication: %s %s %s — the environment has the CMS basic authentication on (Umbraco Cloud Public Access, usual on non-live environments), which exempts the core Management API but not add-on APIs such as Deploy, Forms and Engage. Set basicAuthSharedSecret in this profile to the environment's Umbraco:CMS:BasicAuth:SharedSecret Value (and basicAuthSharedSecretHeader if its HeaderName is not %s), or allow-list this machine's IP in Public Access. Nothing was sent past the redirect", e.Method, e.Path, what, config.DefaultBasicAuthSharedSecretHeader)
+	}
 	return fmt.Sprintf("authentication required: %s %s %s — the environment did not accept the bearer token for this endpoint. Check that 'umbraco server status' works with the same profile (token and base URL), that the API user may access this area, and that the environment is healthy (a transient backoffice hiccup can produce this too); retry before assuming a permission problem. Nothing was sent past the redirect", e.Method, e.Path, what)
 }
 
 func (*AuthRedirectError) ExitCode() int { return 3 }
+
+// BasicAuth reports whether the redirect went to the CMS basic-auth login
+// (/umbraco/basic-auth/login from CMS 18; /umbraco/?status=false before).
+func (e *AuthRedirectError) BasicAuth() bool {
+	parsed, err := url.Parse(e.Location)
+	if err != nil || e.Location == "" {
+		return false
+	}
+	return strings.Contains(strings.ToLower(parsed.Path), "/basic-auth/") || parsed.Query().Get("status") == "false"
+}
 
 // looksLikeLoginRedirect recognizes the backoffice login redirect Umbraco
 // issues for an unauthenticated request: /umbraco (or /umbraco/login) with
@@ -493,7 +520,7 @@ func looksLikeLoginRedirect(location string) bool {
 // rejectLoginPage turns a 2xx HTML body that is the backoffice login page
 // into an AuthRedirectError on JSON-expecting paths. Other HTML bodies pass
 // through as text (api can legitimately read HTML endpoints).
-func rejectLoginPage(resp *http.Response, method string, relativePath string) error {
+func (c *Client) rejectLoginPage(resp *http.Response, method string, relativePath string) error {
 	if !strings.Contains(strings.ToLower(resp.Header.Get("Content-Type")), "text/html") {
 		return nil
 	}
@@ -506,7 +533,7 @@ func rejectLoginPage(resp *http.Response, method string, relativePath string) er
 	_ = resp.Body.Close()
 	resp.Body = io.NopCloser(bytes.NewReader(body))
 	if isLoginPage(body) {
-		return &AuthRedirectError{Method: method, Path: relativePath, StatusCode: resp.StatusCode, HTML: true}
+		return &AuthRedirectError{Method: method, Path: relativePath, StatusCode: resp.StatusCode, HTML: true, SecretSent: c.sendsBasicAuthSecret(resp.Request)}
 	}
 	return nil
 }
@@ -520,6 +547,41 @@ func isLoginPage(body []byte) bool {
 func drainAndClose(resp *http.Response) {
 	_, _ = io.Copy(io.Discard, resp.Body)
 	_ = resp.Body.Close()
+}
+
+// SetBasicAuthSecret adds the configured basic-auth shared-secret header to
+// req when it targets the configured base URL's host, and reports the
+// header name and whether it was set. The secret belongs to that one
+// environment, so it is never sent anywhere else.
+func SetBasicAuthSecret(req *http.Request, cfg config.Config) (string, bool) {
+	name, value, ok := cfg.BasicAuthHeader()
+	if !ok {
+		return "", false
+	}
+	base, err := url.Parse(cfg.BaseURL)
+	if err != nil || !sameHost(req.URL, base) {
+		return name, false
+	}
+	req.Header.Set(name, value)
+	return name, true
+}
+
+func (c *Client) sendsBasicAuthSecret(req *http.Request) bool {
+	if req == nil {
+		return false
+	}
+	name, _, ok := c.cfg.BasicAuthHeader()
+	return ok && req.Header.Get(name) != ""
+}
+
+func sameHost(a *url.URL, b *url.URL) bool {
+	return a != nil && b != nil && strings.EqualFold(a.Scheme, b.Scheme) && strings.EqualFold(a.Host, b.Host)
+}
+
+// IsLoginRedirect reports whether location is Umbraco's backoffice or
+// basic-auth login page, where an unauthenticated request is sent.
+func IsLoginRedirect(location string) bool {
+	return looksLikeLoginRedirect(location)
 }
 
 func (c *Client) relativeAPIPath(fullURL string) string {
@@ -654,7 +716,7 @@ func (c *Client) MultipartResult(ctx context.Context, method string, path string
 			Valid:   true,
 			Method:  method,
 			Path:    relativePath,
-			Headers: previewHeaders("multipart/form-data; boundary=<generated when sent>", opts.Headers),
+			Headers: c.previewHeaders("multipart/form-data; boundary=<generated when sent>", opts.Headers),
 			Body: map[string]any{
 				"fields": fields,
 				"files":  files,
@@ -685,7 +747,7 @@ func (c *Client) MultipartResult(ctx context.Context, method string, path string
 	if err != nil {
 		return ResponseResult{}, err
 	}
-	if err := rejectLoginPage(resp, method, relativePath); err != nil {
+	if err := c.rejectLoginPage(resp, method, relativePath); err != nil {
 		return ResponseResult{}, err
 	}
 	result, err := parseResponse(resp)
@@ -812,7 +874,7 @@ func (c *Client) GetStream(ctx context.Context, path string, w io.Writer, opts R
 		}
 	}
 	// A 200 login page must not be written to disk as if it were the file.
-	if err := rejectLoginPage(resp, http.MethodGet, relativePath); err != nil {
+	if err := c.rejectLoginPage(resp, http.MethodGet, relativePath); err != nil {
 		return StreamResult{StatusCode: resp.StatusCode}, err
 	}
 	n, err := io.Copy(w, resp.Body)

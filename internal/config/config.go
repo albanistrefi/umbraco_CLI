@@ -20,11 +20,38 @@ const (
 	OutputPlain OutputFormat = "plain"
 )
 
+// DefaultBasicAuthSharedSecretHeader is the CMS default for
+// Umbraco:CMS:BasicAuth:SharedSecret:HeaderName.
+const DefaultBasicAuthSharedSecretHeader = "X-Authentication-Shared-Secret"
+
 type Config struct {
 	BaseURL      string
 	ClientID     string
 	ClientSecret string
 	OutputFormat OutputFormat
+
+	// BasicAuthSharedSecret is the value of the environment's
+	// Umbraco:CMS:BasicAuth:SharedSecret, which lets a request past the
+	// CMS basic authentication that Umbraco Cloud's Public Access turns on.
+	// Core Management API routes are exempt from that gate; add-on mounts
+	// (Deploy, Forms, Engage) and the public site are not. Sent in
+	// BasicAuthSharedSecretHeader, so it never competes with the bearer
+	// token for the Authorization header.
+	BasicAuthSharedSecret       string
+	BasicAuthSharedSecretHeader string
+}
+
+// BasicAuthHeader returns the header name and value to send past the CMS
+// basic authentication, or ok=false when no shared secret is configured.
+func (c Config) BasicAuthHeader() (string, string, bool) {
+	if c.BasicAuthSharedSecret == "" {
+		return "", "", false
+	}
+	header := c.BasicAuthSharedSecretHeader
+	if header == "" {
+		header = DefaultBasicAuthSharedSecretHeader
+	}
+	return header, c.BasicAuthSharedSecret, true
 }
 
 type LoadOptions struct {
@@ -162,6 +189,9 @@ func finalizeRawConfig(raw rawConfig) (Config, error) {
 		BaseURL:      normalizeBaseURL(raw.BaseURL),
 		ClientID:     strings.TrimSpace(raw.ClientID),
 		ClientSecret: strings.TrimSpace(raw.ClientSecret),
+
+		BasicAuthSharedSecret:       strings.TrimSpace(raw.BasicAuthSharedSecret),
+		BasicAuthSharedSecretHeader: strings.TrimSpace(raw.BasicAuthSharedSecretHeader),
 	}
 
 	if cfg.BaseURL == "" {

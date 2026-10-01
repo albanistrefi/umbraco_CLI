@@ -38,6 +38,8 @@ func authLogin(deps cmdkit.Dependencies) *cobra.Command {
 	var baseURL string
 	var clientID string
 	var clientSecret string
+	var sharedSecret string
+	var sharedSecretHeader string
 	var dryRun bool
 
 	cmd := &cobra.Command{
@@ -96,14 +98,23 @@ func authLogin(deps cmdkit.Dependencies) *cobra.Command {
 			existing.BaseURL = cfg.BaseURL
 			existing.ClientID = cfg.ClientID
 			existing.ClientSecret = cfg.ClientSecret
+			// Flags left unset keep what the profile already stores, so a
+			// re-login does not drop a hand-added shared secret.
+			if cmd.Flags().Changed("basic-auth-shared-secret") {
+				existing.BasicAuthSharedSecret = strings.TrimSpace(sharedSecret)
+			}
+			if cmd.Flags().Changed("basic-auth-shared-secret-header") {
+				existing.BasicAuthSharedSecretHeader = strings.TrimSpace(sharedSecretHeader)
+			}
 			if err := config.WriteUserConfigWithOptions(deps.ConfigOptions(), existing); err != nil {
 				return err
 			}
 
 			return cmdkit.PrintResult(cmd, deps, map[string]any{
-				"loggedIn": true,
-				"baseUrl":  cfg.BaseURL,
-				"source":   source,
+				"loggedIn":                 true,
+				"baseUrl":                  cfg.BaseURL,
+				"source":                   source,
+				"hasBasicAuthSharedSecret": existing.BasicAuthSharedSecret != "",
 			})
 		},
 	}
@@ -111,6 +122,8 @@ func authLogin(deps cmdkit.Dependencies) *cobra.Command {
 	cmd.Flags().StringVar(&baseURL, "base-url", "", "Umbraco base URL")
 	cmd.Flags().StringVar(&clientID, "client-id", "", "Management API client ID")
 	cmd.Flags().StringVar(&clientSecret, "client-secret", "", "Management API client secret")
+	cmd.Flags().StringVar(&sharedSecret, "basic-auth-shared-secret", "", "The environment's Umbraco:CMS:BasicAuth:SharedSecret value, sent so add-on APIs (Deploy, Forms, Engage) get past basic authentication on Umbraco Cloud non-live environments; an empty value removes it")
+	cmd.Flags().StringVar(&sharedSecretHeader, "basic-auth-shared-secret-header", "", "Header the shared secret is sent in (default "+config.DefaultBasicAuthSharedSecretHeader+")")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Verify credentials without persisting them")
 	return cmd
 }
@@ -141,6 +154,8 @@ func authList(deps cmdkit.Dependencies) *cobra.Command {
 					"hasClientID":     profile.Config.ClientID != "",
 					"hasClientSecret": profile.Config.ClientSecret != "",
 					"clientSecret":    redactedSecret(profile.Config.ClientSecret),
+
+					"hasBasicAuthSharedSecret": profile.Config.BasicAuthSharedSecret != "",
 				})
 			}
 			return cmdkit.PrintResult(cmd, deps, map[string]any{
@@ -223,6 +238,8 @@ func authStatus(deps cmdkit.Dependencies) *cobra.Command {
 				"baseUrl":        resolved.BaseURL,
 				"source":         source,
 				"authError":      authError,
+
+				"hasBasicAuthSharedSecret": resolved.BasicAuthSharedSecret != "",
 				"userConfig": map[string]any{
 					"present":         hasUserConfig,
 					"profile":         selection.Profile,
@@ -232,11 +249,15 @@ func authStatus(deps cmdkit.Dependencies) *cobra.Command {
 					"hasClientID":     hasUserConfig && userConfig.ClientID != "",
 					"hasClientSecret": hasUserConfig && userConfig.ClientSecret != "",
 					"baseUrl":         userConfig.BaseURL,
+
+					"hasBasicAuthSharedSecret": hasUserConfig && userConfig.BasicAuthSharedSecret != "",
 				},
 				"env": map[string]any{
 					"hasBaseURL":      env["UMBRACO_BASE_URL"] != "",
 					"hasClientID":     env["UMBRACO_CLIENT_ID"] != "",
 					"hasClientSecret": env["UMBRACO_CLIENT_SECRET"] != "",
+
+					"hasBasicAuthSharedSecret": env["UMBRACO_BASIC_AUTH_SHARED_SECRET"] != "",
 				},
 			}
 			if check {
@@ -307,6 +328,8 @@ func currentAuthEnv() map[string]string {
 		"UMBRACO_BASE_URL":      strings.TrimSpace(os.Getenv("UMBRACO_BASE_URL")),
 		"UMBRACO_CLIENT_ID":     strings.TrimSpace(os.Getenv("UMBRACO_CLIENT_ID")),
 		"UMBRACO_CLIENT_SECRET": strings.TrimSpace(os.Getenv("UMBRACO_CLIENT_SECRET")),
+
+		"UMBRACO_BASIC_AUTH_SHARED_SECRET": strings.TrimSpace(os.Getenv("UMBRACO_BASIC_AUTH_SHARED_SECRET")),
 	}
 }
 
