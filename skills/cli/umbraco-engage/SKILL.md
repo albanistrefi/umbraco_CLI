@@ -654,7 +654,7 @@ umbraco engage campaign-group delete <unique> --force [flags]
 umbraco engage campaign-group update <unique>
 ```
 
-Fetches GET /campaign-group?id=<unique> (also under --dry-run, so an unknown GUID fails instead of creating a new campaign group), then POSTs /campaign-group with the entity's numeric `id` and `unique` pinned. Exactly one of --json (full replacement) or --merge-json (deep-merged into the fetched entity; arrays such as rules or scoring entries are replaced wholesale, not merged per entry). `campaigns[]` holds the UTM matches (utmSource, utmMedium, utmCampaign, ...); deleting a group reverts its campaigns to unscored.
+Fetches GET /campaign-group?id=<unique> (also under --dry-run, so an unknown GUID fails instead of creating a new campaign group), then POSTs /campaign-group with the entity's numeric `id` and `unique` pinned. Pass exactly one of --json (full replacement) or --merge-json (deep-merged into the fetched entity; arrays such as rules or scoring entries are replaced wholesale, not merged per entry). `campaigns[]` holds the UTM matches (utmSource, utmMedium, utmCampaign, ...); deleting a group reverts its campaigns to unscored.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
@@ -702,7 +702,7 @@ umbraco engage goal create [flags]
 umbraco engage goal update <key>
 ```
 
-Fetches GET /goal/details?id=<key> (also under --dry-run, so an unknown GUID fails instead of creating a new goal), then POSTs /goal with the entity's numeric `id` and `unique` pinned. Exactly one of --json (full replacement) or --merge-json (deep-merged into the fetched entity; arrays such as rules or scoring entries are replaced wholesale, not merged per entry). `goalTypeId` comes from 'umbraco engage goal types'. Like the back office, `isActive` defaults to false. Engage answers the goal's GUID. Engage's Management API has no goal delete route; deactivate a goal with --merge-json '{"isActive":false}'.
+Fetches GET /goal/details?id=<key> (also under --dry-run, so an unknown GUID fails instead of creating a new goal), then POSTs /goal with the entity's numeric `id` and `unique` pinned. Pass exactly one of --json (full replacement) or --merge-json (deep-merged into the fetched entity; arrays such as rules or scoring entries are replaced wholesale, not merged per entry). `goalTypeId` comes from 'umbraco engage goal types'. Like the back office, `isActive` defaults to false. Engage answers the goal's GUID. Engage's Management API has no goal delete route; deactivate a goal with --merge-json '{"isActive":false}'.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
@@ -773,7 +773,7 @@ umbraco engage journey delete <unique> --force [flags]
 umbraco engage journey update <unique>
 ```
 
-Fetches GET /customer-journey/details?id=<unique> (also under --dry-run, so an unknown GUID fails instead of creating a new customer journey), then POSTs /customer-journey with the entity's numeric `id` and `unique` pinned. Exactly one of --json (full replacement) or --merge-json (deep-merged into the fetched entity; arrays such as rules or scoring entries are replaced wholesale, not merged per entry). A journey holds its steps in `steps[]`; Engage answers {journey, validationResults} and a false `isValid` exits 4.
+Fetches GET /customer-journey/details?id=<unique> (also under --dry-run, so an unknown GUID fails instead of creating a new customer journey), then POSTs /customer-journey with the entity's numeric `id` and `unique` pinned. Pass exactly one of --json (full replacement) or --merge-json (deep-merged into the fetched entity; arrays such as rules or scoring entries are replaced wholesale, not merged per entry). A journey holds its steps in `steps[]`; Engage answers {journey, validationResults} and a false `isValid` exits 4.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
@@ -890,7 +890,7 @@ umbraco engage persona delete <unique> --force [flags]
 umbraco engage persona update <unique>
 ```
 
-Fetches GET /persona/details?id=<unique> (also under --dry-run, so an unknown GUID fails instead of creating a new persona), then POSTs /persona with the entity's numeric `id` and `unique` pinned. Exactly one of --json (full replacement) or --merge-json (deep-merged into the fetched entity; arrays such as rules or scoring entries are replaced wholesale, not merged per entry). A persona group holds its personas in `personas[]`; Engage answers {persona, validationResults} and a false `isValid` exits 4.
+Fetches GET /persona/details?id=<unique> (also under --dry-run, so an unknown GUID fails instead of creating a new persona), then POSTs /persona with the entity's numeric `id` and `unique` pinned. Pass exactly one of --json (full replacement) or --merge-json (deep-merged into the fetched entity; arrays such as rules or scoring entries are replaced wholesale, not merged per entry). A persona group holds its personas in `personas[]`; Engage answers {persona, validationResults} and a false `isValid` exits 4.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
@@ -961,7 +961,7 @@ umbraco engage personalization delete <unique> --force [flags]
 umbraco engage personalization update <unique>
 ```
 
-Fetches GET /applied-personalization/id?id=<unique> (also under --dry-run, so an unknown GUID fails instead of creating a new applied personalization), then POSTs /applied-personalization with the entity's numeric `id` and `unique` pinned. Exactly one of --json (full replacement) or --merge-json (deep-merged into the fetched entity; arrays such as rules or scoring entries are replaced wholesale, not merged per entry). `segmentId` is the segment's numeric `id`. Like the back office, a `ContentType` personalization is saved with `pages` emptied and any other type with `contentTypes` emptied.
+Fetches GET /applied-personalization/id?id=<unique> (also under --dry-run, so an unknown GUID fails instead of creating a new applied personalization), then POSTs /applied-personalization with the entity's numeric `id` and `unique` pinned. Pass exactly one of --json (full replacement) or --merge-json (deep-merged into the fetched entity; arrays such as rules or scoring entries are replaced wholesale, not merged per entry). `segmentId` is the segment's numeric `id`. Like the back office, a `ContentType` personalization is saved with `pages` emptied and any other type with `contentTypes` emptied.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
@@ -1032,7 +1032,7 @@ umbraco engage referral-group delete <unique> --force [flags]
 umbraco engage referral-group update <unique>
 ```
 
-Fetches GET /referral-group?id=<unique> (also under --dry-run, so an unknown GUID fails instead of creating a new referral group), then POSTs /referral-group with the entity's numeric `id` and `unique` pinned. Exactly one of --json (full replacement) or --merge-json (deep-merged into the fetched entity; arrays such as rules or scoring entries are replaced wholesale, not merged per entry). `pages[]` holds the referring pages (pageUrl, domainOnly).
+Fetches GET /referral-group?id=<unique> (also under --dry-run, so an unknown GUID fails instead of creating a new referral group), then POSTs /referral-group with the entity's numeric `id` and `unique` pinned. Pass exactly one of --json (full replacement) or --merge-json (deep-merged into the fetched entity; arrays such as rules or scoring entries are replaced wholesale, not merged per entry). `pages[]` holds the referring pages (pageUrl, domainOnly).
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
@@ -1126,7 +1126,7 @@ umbraco engage segment delete <unique> --force [flags]
 umbraco engage segment update <unique>
 ```
 
-Fetches GET /segments?id=<unique> (also under --dry-run, so an unknown GUID fails instead of creating a new segment), then POSTs /segments with the entity's numeric `id` and `unique` pinned. Exactly one of --json (full replacement) or --merge-json (deep-merged into the fetched entity; arrays such as rules or scoring entries are replaced wholesale, not merged per entry). `controlGroupSize` is a fraction (0.2 = 20%), not the percentage the back office displays; rules come from 'umbraco engage segment get' on an existing segment.
+Fetches GET /segments?id=<unique> (also under --dry-run, so an unknown GUID fails instead of creating a new segment), then POSTs /segments with the entity's numeric `id` and `unique` pinned. Pass exactly one of --json (full replacement) or --merge-json (deep-merged into the fetched entity; arrays such as rules or scoring entries are replaced wholesale, not merged per entry). `controlGroupSize` is a fraction (0.2 = 20%), not the percentage the back office displays; rules come from 'umbraco engage segment get' on an existing segment.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
@@ -1221,7 +1221,7 @@ umbraco engage traffic-filter delete <key> --force [flags]
 umbraco engage traffic-filter update <key>
 ```
 
-Fetches GET /traffic-filter?key=<key> (also under --dry-run, so an unknown GUID fails instead of creating a new traffic filter), then POSTs /traffic-filter with the entity's numeric `id` and `key` pinned. Exactly one of --json (full replacement) or --merge-json (deep-merged into the fetched entity; arrays such as rules or scoring entries are replaced wholesale, not merged per entry). `mode` is Block, Filter or BlockAndFilter. Engage answers the saved filter's `key`.
+Fetches GET /traffic-filter?key=<key> (also under --dry-run, so an unknown GUID fails instead of creating a new traffic filter), then POSTs /traffic-filter with the entity's numeric `id` and `key` pinned. Pass exactly one of --json (full replacement) or --merge-json (deep-merged into the fetched entity; arrays such as rules or scoring entries are replaced wholesale, not merged per entry). `mode` is Block, Filter or BlockAndFilter. Engage answers the saved filter's `key`.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|

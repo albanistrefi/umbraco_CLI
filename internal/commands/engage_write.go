@@ -136,7 +136,7 @@ func engageUpdate(deps Dependencies, entity engageEntity) *cobra.Command {
 		Use:   "update <" + entity.IDField + ">",
 		Short: fmt.Sprintf("Update a %s by its GUID `%s` (POST %s)", entity.Noun, entity.IDField, spec.SavePath),
 		Long: fmt.Sprintf("Fetches GET %s?%s=<%s> (also under --dry-run, so an unknown GUID fails instead of creating a new %s), then POSTs %s with the entity's numeric `id` and `%s` pinned. "+
-			"Exactly one of --json (full replacement) or --merge-json (deep-merged into the fetched entity; arrays such as rules or scoring entries are replaced wholesale, not merged per entry).%s",
+			"Pass exactly one of --json (full replacement) or --merge-json (deep-merged into the fetched entity; arrays such as rules or scoring entries are replaced wholesale, not merged per entry).%s",
 			entity.GetPath, entity.IDParam, entity.IDField, entity.Noun, spec.SavePath, spec.BodyIDField, spec.Notes),
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
