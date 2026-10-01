@@ -2,103 +2,15 @@ package cmdkit
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
-	"umbraco-cli/internal/jsonvalue"
 )
 
-func AddFieldsFlag(cmd *cobra.Command, fields *string) {
-	cmd.Flags().StringVar(fields, "fields", "", "Limit response fields (comma-separated top-level keys)")
-}
-
-func AddDryRunFlag(cmd *cobra.Command, dryRun *bool) {
-	cmd.Flags().BoolVar(dryRun, "dry-run", false, "Print the planned request without executing")
-}
-
-// PrintMutationResult prints the outcome of a mutating command. Umbraco
-// answers 204 No Content for most successful mutations; printing the raw
-// nil surfaced as `null`, which scripts could not tell apart from failure.
-// A real (non-dry-run) empty success becomes {"<verb>": true} instead.
-// Dry-run plans pass through verbatim.
-func PrintMutationResult(cmd *cobra.Command, deps Dependencies, verb string, result any, dryRun bool) error {
-	if !dryRun && result == nil {
-		return PrintResult(cmd, deps, map[string]any{verb: true})
-	}
-	return PrintResult(cmd, deps, result)
-}
-
-// FetchObject retrieves a resource as a generic object, for merge flows
-// that need the current server-side state.
-func FetchObject(ctx context.Context, client *api.Client, path string, opts api.RequestOptions) (map[string]any, error) {
-	result, err := client.Get(ctx, path, opts)
-	if err != nil {
-		return nil, err
-	}
-	return ObjectFromResult("GET "+path, result)
-}
-
-// ObjectFromResult turns a decoded response into an object. A JSON string
-// that itself holds an object is unwrapped (some endpoints double-encode
-// their payload — seen on Umbraco Cloud for Deploy's client configuration);
-// anything else is reported with the request and the shape received, so a
-// surprising body reads as "GET /x returned an array" rather than a bare
-// json.Unmarshal error.
-func ObjectFromResult(request string, result any) (map[string]any, error) {
-	switch value := result.(type) {
-	case map[string]any:
-		return value, nil
-	case string:
-		var nested any
-		if json.Unmarshal([]byte(value), &nested) == nil {
-			if object, ok := nested.(map[string]any); ok {
-				return object, nil
-			}
-		}
-		return nil, fmt.Errorf("%s returned a string, not a JSON object: %s", request, truncateForError(value, 200))
-	case nil:
-		return nil, fmt.Errorf("%s returned an empty body where a JSON object was expected", request)
-	default:
-		encoded, _ := json.Marshal(value)
-		return nil, fmt.Errorf("%s returned %s, not a JSON object: %s", request, jsonvalue.ShapeName(value), truncateForError(string(encoded), 200))
-	}
-}
-
-// truncateForError bounds and sanitizes server-provided text before it is
-// interpolated into an error: control characters and Unicode format
-// characters are stripped (as API error text already is) so a response
-// cannot steer the terminal, and the value is quoted.
-func truncateForError(text string, limit int) string {
-	text = api.SanitizeTerminalText(strings.TrimSpace(text))
-	if len(text) > limit {
-		text = text[:limit] + "…"
-	}
-	return strconv.Quote(text)
-}
-
-// MergeParams folds convenience-flag values into a --params map. The
-// documented precedence on every command that accepts both: --params wins
-// on key collisions, flags fill the gaps.
-func MergeParams(params map[string]any, flagValues map[string]any) map[string]any {
-	if len(flagValues) == 0 {
-		return params
-	}
-	if params == nil {
-		params = map[string]any{}
-	}
-	for key, value := range flagValues {
-		if _, exists := params[key]; !exists {
-			params[key] = value
-		}
-	}
-	return params
-}
-
+// GetSpec configures GetCommand.
 type GetSpec struct {
 	Use   string
 	Short string
@@ -130,6 +42,7 @@ func GetCommand(deps Dependencies, spec GetSpec) *cobra.Command {
 	return cmd
 }
 
+// CollectionSpec configures CollectionCommand.
 type CollectionSpec struct {
 	Use   string
 	Short string
@@ -143,7 +56,7 @@ type CollectionSpec struct {
 	Args cobra.PositionalArgs
 	// Endpoints maps the positional args and resolved query params to the
 	// candidate endpoints in fallback order. Params must not be mutated;
-	// candidates that need extra keys clone via withParam.
+	// candidates that need extra keys clone via WithParam.
 	Endpoints func(args []string, params map[string]any) []GetRequestCandidate
 	// Enrich, when non-nil, post-processes the fetched result before
 	// projection and triage (e.g. resolving referenced entity names).
@@ -226,17 +139,6 @@ func CollectionCommand(deps Dependencies, spec CollectionSpec) *cobra.Command {
 	return cmd
 }
 
-// WithParam clones a params map and sets one extra key, for fallback
-// candidates whose endpoints take an ID as a query parameter.
-func WithParam(params map[string]any, key string, value any) map[string]any {
-	next := make(map[string]any, len(params)+1)
-	for k, v := range params {
-		next[k] = v
-	}
-	next[key] = value
-	return next
-}
-
 // ParamFlag declares a string convenience flag that maps onto a query
 // parameter for search commands.
 type ParamFlag struct {
@@ -245,6 +147,7 @@ type ParamFlag struct {
 	Usage string
 }
 
+// SearchSpec configures SearchCommand.
 type SearchSpec struct {
 	Use   string
 	Short string
@@ -339,6 +242,7 @@ func SearchCommand(deps Dependencies, spec SearchSpec) *cobra.Command {
 	return cmd
 }
 
+// ReferencesSpec configures ReferencesCommand.
 type ReferencesSpec struct {
 	Use   string
 	Short string

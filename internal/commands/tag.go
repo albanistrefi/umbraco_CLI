@@ -34,7 +34,7 @@ func tagList(deps cmdkit.Dependencies) *cobra.Command {
 		Short: "List tags (paginated; --skip/--take/--all)",
 		Long:  "GET /tag. --query matches tag text server-side, --group narrows to one tag group (the tagGroup configured on the tag picker data type), --culture narrows to the tags stored for one language. --params wins on key collisions.",
 		Endpoints: func(args []string, params map[string]any) []cmdkit.GetRequestCandidate {
-			// The spec params map must not be mutated; withParam clones per
+			// The spec params map must not be mutated; cmdkit.WithParam clones per
 			// key and --params keeps precedence on collisions.
 			for key, value := range map[string]string{"query": query, "tagGroup": group, "culture": culture} {
 				if strings.TrimSpace(value) == "" {

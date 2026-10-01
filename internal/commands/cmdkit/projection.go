@@ -4,60 +4,21 @@ import (
 	"fmt"
 	"io"
 	"strings"
-
-	"umbraco-cli/internal/uuid"
 )
 
+// ReadTriageOptions holds --summarize/--ids-only/--first-n.
 type ReadTriageOptions struct {
 	Summarize bool
 	IDsOnly   bool
 	FirstN    int
 }
 
+// OutputTrimOptions holds the document-shaped output flags.
 type OutputTrimOptions struct {
 	Fields  string
 	Summary bool
 	NoEmpty bool
 	Full    bool
-}
-
-func EnsurePayloadID(body map[string]any) (string, error) {
-	if existing, ok := body["id"].(string); ok && strings.TrimSpace(existing) != "" {
-		return existing, nil
-	}
-	id, err := uuid.NewV4()
-	if err != nil {
-		return "", fmt.Errorf("failed to generate entity id: %w", err)
-	}
-	body["id"] = id
-	return id, nil
-}
-
-func CreateResult(result any, body map[string]any, keys ...string) any {
-	if resultMap, ok := result.(map[string]any); ok {
-		if id, ok := resultMap["id"].(string); ok && strings.TrimSpace(id) != "" {
-			return result
-		}
-		if success, ok := resultMap["success"].(bool); ok && !success {
-			return result
-		}
-	}
-	if result != nil {
-		if resultMap, ok := result.(map[string]any); !ok || len(resultMap) != 1 || resultMap["success"] != true {
-			return result
-		}
-	}
-
-	minimal := map[string]any{}
-	for _, key := range append([]string{"id", "name", "alias"}, keys...) {
-		if value, ok := body[key]; ok && value != nil {
-			minimal[key] = value
-		}
-	}
-	if len(minimal) == 0 {
-		return result
-	}
-	return minimal
 }
 
 // ApplyFieldsProjection trims each item in a collection (or the lone object) down to the
@@ -101,6 +62,9 @@ func ApplyFieldsProjection(data any, fields string) any {
 	return data
 }
 
+// ApplyDocumentOutputTrim applies --full/--fields (dotted paths)/--summary/
+// --no-empty to a document-shaped payload, warning on warnings about
+// requested fields that matched nothing.
 func ApplyDocumentOutputTrim(data any, opts OutputTrimOptions, warnings io.Writer) (any, error) {
 	if err := ValidateDocumentOutputTrim(opts); err != nil {
 		return nil, err
@@ -131,6 +95,7 @@ func ApplyDocumentOutputTrim(data any, opts OutputTrimOptions, warnings io.Write
 	return out, nil
 }
 
+// ValidateDocumentOutputTrim rejects --full combined with other trim flags.
 func ValidateDocumentOutputTrim(opts OutputTrimOptions) error {
 	if opts.Full && (strings.TrimSpace(opts.Fields) != "" || opts.Summary || opts.NoEmpty) {
 		return fmt.Errorf("--full cannot be combined with --fields, --summary, or --no-empty")
@@ -359,6 +324,9 @@ func projectFieldsFromAny(value any, keep map[string]struct{}) any {
 	return out
 }
 
+// ApplyReadTriage applies --summarize/--ids-only/--first-n to an item
+// collection (an {items} envelope or a bare array); other shapes pass
+// through.
 func ApplyReadTriage(data any, opts ReadTriageOptions) any {
 	if !opts.Summarize && !opts.IDsOnly && opts.FirstN <= 0 {
 		return data
@@ -415,22 +383,11 @@ func summarizeMap(input map[string]any) map[string]any {
 	return output
 }
 
+// CloneAnyMap shallow-copies a map.
 func CloneAnyMap(input map[string]any) map[string]any {
 	output := make(map[string]any, len(input))
 	for key, value := range input {
 		output[key] = value
 	}
 	return output
-}
-
-func ResultItems(result any) []any {
-	if payload, ok := result.(map[string]any); ok {
-		if items, ok := payload["items"].([]any); ok {
-			return items
-		}
-	}
-	if items, ok := result.([]any); ok {
-		return items
-	}
-	return nil
 }

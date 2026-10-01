@@ -2,9 +2,7 @@ package cmdkit
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"net/http"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -79,6 +77,7 @@ func StripFields(keys ...string) func(map[string]any) error {
 	}
 }
 
+// UpdateSpec configures UpdateCommand.
 type UpdateSpec struct {
 	Use   string
 	Short string
@@ -168,6 +167,7 @@ func UpdateCommand(deps Dependencies, spec UpdateSpec) *cobra.Command {
 	return cmd
 }
 
+// CreateSpec configures CreateCommand.
 type CreateSpec struct {
 	Use   string
 	Short string
@@ -306,37 +306,7 @@ func CreateCommand(deps Dependencies, spec CreateSpec) *cobra.Command {
 	return cmd
 }
 
-// MutationCandidate is one method+path attempt for a mutation whose route
-// or HTTP method moved between Management API versions.
-type MutationCandidate struct {
-	Method string
-	Path   string
-}
-
-// MutateWithFallback issues the mutation against each candidate in order,
-// falling back past 404/405 so commands keep working on both modern and
-// older Management API versions. Dry-run plans the first (modern)
-// candidate. Note a 404 can also mean the target entity does not exist —
-// in that case every candidate 404s and the last error is returned.
-func MutateWithFallback(ctx context.Context, client *api.Client, body any, opts api.RequestOptions, candidates ...MutationCandidate) (any, error) {
-	var lastErr error
-	for i, candidate := range candidates {
-		result, err := client.Request(ctx, candidate.Method, candidate.Path, body, opts)
-		if err == nil {
-			return result, nil
-		}
-		var apiErr *api.APIError
-		retriable := errors.As(err, &apiErr) &&
-			(apiErr.StatusCode == http.StatusNotFound || apiErr.StatusCode == http.StatusMethodNotAllowed)
-		if retriable && i < len(candidates)-1 {
-			lastErr = err
-			continue
-		}
-		return nil, err
-	}
-	return nil, lastErr
-}
-
+// TargetActionSpec configures TargetActionCommand.
 type TargetActionSpec struct {
 	Use   string
 	Short string
@@ -392,6 +362,7 @@ func TargetActionBody(jsonPayload string, to string) (map[string]any, error) {
 	return map[string]any{"target": map[string]any{"id": to}}, nil
 }
 
+// DeleteSpec configures DeleteCommand.
 type DeleteSpec struct {
 	Use   string
 	Short string

@@ -43,6 +43,9 @@ func mergePayloadObjects(current map[string]any, patch map[string]any, atRoot bo
 	return merged
 }
 
+// MergeAliasValue merges one patch value into the current one: objects
+// deep-merge, identifiable object arrays merge entry-wise, anything else is
+// replaced by the patch.
 func MergeAliasValue(current any, patch any) any {
 	currentMap, currentIsMap := current.(map[string]any)
 	patchMap, patchIsMap := patch.(map[string]any)
@@ -53,7 +56,7 @@ func MergeAliasValue(current any, patch any) any {
 	currentArray, currentIsArray := current.([]any)
 	patchArray, patchIsArray := patch.([]any)
 	if currentIsArray && patchIsArray && isAliasObjectArray(currentArray) && isAliasObjectArray(patchArray) {
-		return MergeObjectArrays(currentArray, patchArray, AliasMergeKey)
+		return mergeObjectArrays(currentArray, patchArray, aliasMergeKey)
 	}
 
 	return CloneAliasValue(patch)
@@ -80,13 +83,13 @@ func mergeVariantArrays(current any, patch any) ([]any, bool) {
 	if !isVariantObjectArray(currentArray) || !isVariantObjectArray(patchArray) {
 		return nil, false
 	}
-	return MergeObjectArrays(currentArray, patchArray, variantMergeKey), true
+	return mergeObjectArrays(currentArray, patchArray, variantMergeKey), true
 }
 
-// MergeObjectArrays merges two object arrays entry-wise under the supplied
+// mergeObjectArrays merges two object arrays entry-wise under the supplied
 // identity. Current entries keep their order, patched entries are merged in
 // place, and patch entries with no counterpart are appended.
-func MergeObjectArrays(current []any, patch []any, identity func(any) (string, map[string]any, bool)) []any {
+func mergeObjectArrays(current []any, patch []any, identity func(any) (string, map[string]any, bool)) []any {
 	merged := make([]any, 0, len(current)+len(patch))
 	patchByKey := make(map[string]map[string]any, len(patch))
 	for _, item := range patch {
@@ -133,7 +136,7 @@ func MergeObjectArrays(current []any, patch []any, identity func(any) (string, m
 	return merged
 }
 
-// AliasMergeKey returns the compound key used to match patch entries against
+// aliasMergeKey returns the compound key used to match patch entries against
 // current entries inside an alias-keyed object array (e.g. a document's
 // values[]).
 //
@@ -144,7 +147,7 @@ func MergeObjectArrays(current []any, patch []any, identity func(any) (string, m
 // (e.g. doctype properties, where alias alone is the identity), both fields
 // default to the empty string and the behaviour is identical to the old
 // alias-only key.
-func AliasMergeKey(item any) (string, map[string]any, bool) {
+func aliasMergeKey(item any) (string, map[string]any, bool) {
 	alias, itemMap, ok := AliasObject(item)
 	if !ok {
 		return "", nil, false
@@ -198,6 +201,7 @@ func variantObject(item any) (map[string]any, bool) {
 	return itemMap, true
 }
 
+// AliasObject returns item's non-empty "alias" and the item as an object.
 func AliasObject(item any) (string, map[string]any, bool) {
 	itemMap, ok := item.(map[string]any)
 	if !ok {
@@ -210,6 +214,7 @@ func AliasObject(item any) (string, map[string]any, bool) {
 	return alias, itemMap, true
 }
 
+// CloneObject deep-copies a decoded JSON object.
 func CloneObject(input map[string]any) map[string]any {
 	cloned := make(map[string]any, len(input))
 	for key, value := range input {
@@ -218,6 +223,7 @@ func CloneObject(input map[string]any) map[string]any {
 	return cloned
 }
 
+// CloneAliasValue deep-copies a decoded JSON value.
 func CloneAliasValue(value any) any {
 	switch typed := value.(type) {
 	case map[string]any:

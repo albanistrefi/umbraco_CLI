@@ -21,7 +21,7 @@ func TestMergeAliasObjectArraysKeysByAliasCultureAndSegment(t *testing.T) {
 		map[string]any{"alias": "title", "value": "New da", "culture": "da-DK", "segment": nil},
 	}
 
-	merged := MergeObjectArrays(current, patch, AliasMergeKey)
+	merged := mergeObjectArrays(current, patch, aliasMergeKey)
 	if len(merged) != 3 {
 		t.Fatalf("expected 3 merged entries, got %d: %+v", len(merged), merged)
 	}
@@ -55,7 +55,7 @@ func TestMergeAliasObjectArraysAliasOnlyShapesUnchanged(t *testing.T) {
 		map[string]any{"alias": "title", "name": "Headline"},
 	}
 
-	merged := MergeObjectArrays(current, patch, AliasMergeKey)
+	merged := mergeObjectArrays(current, patch, aliasMergeKey)
 	if len(merged) != 2 {
 		t.Fatalf("expected 2 properties, got %d", len(merged))
 	}
@@ -79,7 +79,7 @@ func TestMergeAliasObjectArraysInvariantPatchDoesNotMatchVariantCurrent(t *testi
 		map[string]any{"alias": "title", "value": "invariant value", "culture": nil},
 	}
 
-	merged := MergeObjectArrays(current, patch, AliasMergeKey)
+	merged := mergeObjectArrays(current, patch, aliasMergeKey)
 	if len(merged) != 2 {
 		t.Fatalf("invariant and variant entries with the same alias must coexist after merge, got %d: %+v", len(merged), merged)
 	}

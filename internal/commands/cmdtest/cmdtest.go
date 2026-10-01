@@ -23,6 +23,7 @@ const TokenPath = "/umbraco/management/api/v1/security/back-office/token"
 // requests inline.
 type RoundTripper func(*http.Request) (*http.Response, error)
 
+// RoundTrip calls fn.
 func (fn RoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	return fn(req)
 }

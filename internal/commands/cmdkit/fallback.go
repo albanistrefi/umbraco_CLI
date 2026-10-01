@@ -9,6 +9,39 @@ import (
 	"umbraco-cli/internal/api"
 )
 
+// MutationCandidate is one method+path attempt for a mutation whose route
+// or HTTP method moved between Management API versions.
+type MutationCandidate struct {
+	Method string
+	Path   string
+}
+
+// MutateWithFallback issues the mutation against each candidate in order,
+// falling back past 404/405 so commands keep working on both modern and
+// older Management API versions. Dry-run plans the first (modern)
+// candidate. Note a 404 can also mean the target entity does not exist —
+// in that case every candidate 404s and the last error is returned.
+func MutateWithFallback(ctx context.Context, client *api.Client, body any, opts api.RequestOptions, candidates ...MutationCandidate) (any, error) {
+	var lastErr error
+	for i, candidate := range candidates {
+		result, err := client.Request(ctx, candidate.Method, candidate.Path, body, opts)
+		if err == nil {
+			return result, nil
+		}
+		var apiErr *api.APIError
+		retriable := errors.As(err, &apiErr) &&
+			(apiErr.StatusCode == http.StatusNotFound || apiErr.StatusCode == http.StatusMethodNotAllowed)
+		if retriable && i < len(candidates)-1 {
+			lastErr = err
+			continue
+		}
+		return nil, err
+	}
+	return nil, lastErr
+}
+
+// GetRequestCandidate is one path+options attempt for a read whose route
+// moved between Management API versions.
 type GetRequestCandidate struct {
 	Path string
 	Opts api.RequestOptions
@@ -119,6 +152,8 @@ func GetAllPagesWithFallback(
 	return map[string]any{"items": all, "total": total}, nil
 }
 
+// GetWithFallback returns the first candidate's response that is not a 404
+// (see getWithFallbackIndex).
 func GetWithFallback(ctx context.Context, client *api.Client, candidates ...GetRequestCandidate) (any, error) {
 	result, _, err := getWithFallbackIndex(ctx, client, candidates...)
 	return result, err

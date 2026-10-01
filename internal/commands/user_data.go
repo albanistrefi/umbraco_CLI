@@ -43,7 +43,7 @@ func userDataList(deps cmdkit.Dependencies) *cobra.Command {
 		Short: "List the authenticated user's data entries (paginated; --skip/--take/--all)",
 		Long:  "GET /user-data. --groups and --identifiers are comma-separated lists sent as repeated query values. --params wins on key collisions.",
 		Endpoints: func(args []string, params map[string]any) []cmdkit.GetRequestCandidate {
-			// The spec params map must not be mutated; withParam clones per
+			// The spec params map must not be mutated; cmdkit.WithParam clones per
 			// key and --params keeps precedence on collisions.
 			for key, csv := range map[string]string{"groups": groupsCSV, "identifiers": identifiersCSV} {
 				values := cmdkit.UniqueCSV(csv)
