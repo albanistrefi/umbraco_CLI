@@ -14,6 +14,7 @@ import (
 	"umbraco-cli/internal/api"
 	"umbraco-cli/internal/commands/cmdkit"
 	"umbraco-cli/internal/config"
+	"umbraco-cli/internal/jsonvalue"
 )
 
 // tailPageSize bounds each request; tailMaxPagesPerPoll bounds how far one
@@ -100,7 +101,7 @@ interrupted or --for elapses; exits 0 on both.`,
 				if runtime.redaction.enabled() {
 					message = redactLogString(message, runtime.redaction)
 				}
-				_, err := fmt.Fprintf(out, "%s [%s] %s\n", cmdkit.StringValue(entry["timestamp"]), cmdkit.StringValue(entry["level"]), message)
+				_, err := fmt.Fprintf(out, "%s [%s] %s\n", jsonvalue.String(entry["timestamp"]), jsonvalue.String(entry["level"]), message)
 				return err
 			}
 

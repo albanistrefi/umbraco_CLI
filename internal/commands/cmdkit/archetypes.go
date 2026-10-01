@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/jsonvalue"
 )
 
 func AddFieldsFlag(cmd *cobra.Command, fields *string) {
@@ -64,22 +65,7 @@ func ObjectFromResult(request string, result any) (map[string]any, error) {
 		return nil, fmt.Errorf("%s returned an empty body where a JSON object was expected", request)
 	default:
 		encoded, _ := json.Marshal(value)
-		return nil, fmt.Errorf("%s returned %s, not a JSON object: %s", request, JSONShapeName(value), truncateForError(string(encoded), 200))
-	}
-}
-
-func JSONShapeName(value any) string {
-	switch value.(type) {
-	case []any:
-		return "an array"
-	case map[string]any:
-		return "an object"
-	case float64:
-		return "a number"
-	case bool:
-		return "a boolean"
-	default:
-		return fmt.Sprintf("%T", value)
+		return nil, fmt.Errorf("%s returned %s, not a JSON object: %s", request, jsonvalue.ShapeName(value), truncateForError(string(encoded), 200))
 	}
 }
 

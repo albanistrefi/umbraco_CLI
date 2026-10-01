@@ -175,15 +175,6 @@ func TestPrintMutationResultAndFlagHelpers(t *testing.T) {
 }
 
 func TestValueHelpers(t *testing.T) {
-	if AsString(nil) != "" || AsString("s") != "s" || AsString(float64(3)) != "3" || AsString(1.5) != "1.5" || AsString(true) != "true" {
-		t.Fatal("AsString renders JSON scalars")
-	}
-	if CultureValue(nil) != "" || CultureValue("en") != "en" || CultureValue(2) != "2" {
-		t.Fatal("CultureValue renders scalars")
-	}
-	if StringValue(nil) != "" || StringValue("x") != "x" || StringValue(4) != "4" {
-		t.Fatal("StringValue renders scalars")
-	}
 	if !reflect.DeepEqual(UniqueCSV(" a,b,,a , c"), []string{"a", "b", "c"}) {
 		t.Fatal("UniqueCSV trims and deduplicates in order")
 	}

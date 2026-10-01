@@ -9,6 +9,7 @@ import (
 
 	"umbraco-cli/internal/api"
 	"umbraco-cli/internal/commands/cmdkit"
+	"umbraco-cli/internal/jsonvalue"
 	"umbraco-cli/internal/uuid"
 )
 
@@ -268,7 +269,7 @@ func ensureEngageGUID(body map[string]any, field string) error {
 	if value, present := body[field]; present && value != nil {
 		text, ok := value.(string)
 		if !ok {
-			return fmt.Errorf("`%s` must be a GUID string, got %s", field, cmdkit.JSONShapeName(value))
+			return fmt.Errorf("`%s` must be a GUID string, got %s", field, jsonvalue.ShapeName(value))
 		}
 		if strings.TrimSpace(text) != "" {
 			if !uuid.Valid(text) {
@@ -299,7 +300,7 @@ func pinEngageIdentity(command string, body map[string]any, current map[string]a
 	if value, present := body[field]; present && value != nil {
 		given, ok := value.(string)
 		if !ok {
-			return fmt.Errorf("%s: `%s` must be a GUID string, got %s", command, field, cmdkit.JSONShapeName(value))
+			return fmt.Errorf("%s: `%s` must be a GUID string, got %s", command, field, jsonvalue.ShapeName(value))
 		}
 		if strings.TrimSpace(given) != "" && !strings.EqualFold(strings.TrimSpace(given), guid) {
 			return fmt.Errorf("%s: --json carries `%s` %q, which is not the entity being updated (%s)", command, field, given, guid)

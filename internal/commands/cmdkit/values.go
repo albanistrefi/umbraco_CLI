@@ -1,7 +1,6 @@
 package cmdkit
 
 import (
-	"fmt"
 	"sort"
 	"strings"
 )
@@ -15,34 +14,6 @@ func ItemID(item any) string {
 	return strings.TrimSpace(id)
 }
 
-func CultureValue(value any) string {
-	switch typed := value.(type) {
-	case nil:
-		return ""
-	case string:
-		return typed
-	default:
-		return fmt.Sprint(typed)
-	}
-}
-
-func AsString(v any) string {
-	switch value := v.(type) {
-	case nil:
-		return ""
-	case string:
-		return value
-	case float64:
-		// JSON numbers decode as float64; render integers without trailing .0
-		if value == float64(int64(value)) {
-			return fmt.Sprintf("%d", int64(value))
-		}
-		return fmt.Sprintf("%v", value)
-	default:
-		return fmt.Sprintf("%v", v)
-	}
-}
-
 func SortedKeys(set map[string]struct{}) []string {
 	keys := make([]string, 0, len(set))
 	for key := range set {
@@ -50,17 +21,6 @@ func SortedKeys(set map[string]struct{}) []string {
 	}
 	sort.Strings(keys)
 	return keys
-}
-
-func StringValue(raw any) string {
-	if raw == nil {
-		return ""
-	}
-	text, ok := raw.(string)
-	if ok {
-		return text
-	}
-	return fmt.Sprint(raw)
 }
 
 func UniqueCSV(s string) []string {

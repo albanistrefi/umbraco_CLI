@@ -11,6 +11,7 @@ import (
 
 	"umbraco-cli/internal/api"
 	"umbraco-cli/internal/commands/cmdkit"
+	"umbraco-cli/internal/jsonvalue"
 	"umbraco-cli/internal/uuid"
 )
 
@@ -204,7 +205,7 @@ func validateEngageAnnotation(body map[string]any) error {
 	for i, entry := range variants {
 		variant, ok := entry.(map[string]any)
 		if !ok {
-			return fmt.Errorf("pageVariants[%d] must be an object, got %s", i, cmdkit.JSONShapeName(entry))
+			return fmt.Errorf("pageVariants[%d] must be an object, got %s", i, jsonvalue.ShapeName(entry))
 		}
 		if unique, ok := variant["unique"].(string); !ok || !uuid.Valid(unique) {
 			return fmt.Errorf("pageVariants[%d].unique must be a document GUID", i)

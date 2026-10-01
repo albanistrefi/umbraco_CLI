@@ -10,6 +10,7 @@ import (
 
 	"umbraco-cli/internal/commands/cmdkit"
 	"umbraco-cli/internal/commands/cmdtest"
+	"umbraco-cli/internal/jsonvalue"
 )
 
 // Forms write commands: every mutation must target the Forms Management API
@@ -158,7 +159,7 @@ func TestFormsCreateRequiresNameAndBindsCallerID(t *testing.T) {
 	if planned["id"] != formsTestOtherID || planned["unique"] != formsTestOtherID {
 		t.Fatalf("expected the caller's id mirrored into unique, got %+v", planned)
 	}
-	if !strings.HasSuffix(cmdkit.AsString(plan["path"]), formsTestPrefix+"/form") {
+	if !strings.HasSuffix(jsonvalue.Text(plan["path"]), formsTestPrefix+"/form") {
 		t.Fatalf("expected the dry-run plan on the Forms prefix, got %+v", plan["path"])
 	}
 }

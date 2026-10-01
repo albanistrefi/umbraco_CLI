@@ -11,6 +11,7 @@ import (
 
 	"umbraco-cli/internal/api"
 	"umbraco-cli/internal/commands/cmdkit"
+	"umbraco-cli/internal/jsonvalue"
 	"umbraco-cli/internal/uuid"
 )
 
@@ -55,10 +56,10 @@ func resolveFormsRecordAction(ctx context.Context, client *api.Client, action st
 		if !ok {
 			continue
 		}
-		alias := cmdkit.AsString(entry["alias"])
+		alias := jsonvalue.Text(entry["alias"])
 		available = append(available, alias)
 		for _, key := range []string{"alias", "id", "name"} {
-			if strings.EqualFold(cmdkit.AsString(entry[key]), strings.TrimSpace(action)) {
+			if strings.EqualFold(jsonvalue.Text(entry[key]), strings.TrimSpace(action)) {
 				return entry, nil
 			}
 		}
@@ -75,7 +76,7 @@ func formsRecordActionDestructive(entry map[string]any) bool {
 		return true
 	}
 	for _, key := range []string{"alias", "name"} {
-		if strings.Contains(strings.ToLower(cmdkit.AsString(entry[key])), "delete") {
+		if strings.Contains(strings.ToLower(jsonvalue.Text(entry[key])), "delete") {
 			return true
 		}
 	}
@@ -108,13 +109,13 @@ func formsRecordAction(deps cmdkit.Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			alias := cmdkit.AsString(action["alias"])
+			alias := jsonvalue.Text(action["alias"])
 			if formsRecordActionDestructive(action) {
 				if err := cmdkit.RequireForceOrDryRun(cmd, fmt.Sprintf("runs the %q record action, which permanently changes the records", alias), force, dryRun); err != nil {
 					return err
 				}
 			}
-			actionID := cmdkit.AsString(action["id"])
+			actionID := jsonvalue.Text(action["id"])
 			body := map[string]any{"recordKeys": cmdkit.StringsToAny(ids)}
 			result, err := deps.Client.Post(ctx, api.JoinPath("/form/%s/record/actions/%s/execute", args[0], actionID), body, api.RequestOptions{APIPrefix: formsAPIPrefix, DryRun: dryRun})
 			if err != nil {
@@ -148,7 +149,7 @@ func parseFormsRecordFields(raw string) ([]any, error) {
 		if !ok {
 			return nil, fmt.Errorf("--json entry %d must be an object {\"fieldId\", \"values\"}", i)
 		}
-		if !uuid.Valid(cmdkit.AsString(entry["fieldId"])) {
+		if !uuid.Valid(jsonvalue.Text(entry["fieldId"])) {
 			return nil, fmt.Errorf("--json entry %d needs \"fieldId\": the field GUID from 'forms get <formId>' (pages → fieldSets → containers → fields)", i)
 		}
 		if _, ok := entry["values"].([]any); !ok {

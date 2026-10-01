@@ -229,9 +229,6 @@ func TestObjectFromResultShapes(t *testing.T) {
 	if _, err := ObjectFromResult("GET /x", strings.Repeat("y", 300)); !strings.Contains(fmt.Sprint(err), "…") {
 		t.Fatalf("expected long bodies to be truncated, got %v", err)
 	}
-	if JSONShapeName(map[string]any{}) != "an object" {
-		t.Fatal("expected map to read as an object")
-	}
 }
 
 func TestFetchObjectReportsNonObjects(t *testing.T) {

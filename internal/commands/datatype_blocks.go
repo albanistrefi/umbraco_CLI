@@ -10,6 +10,7 @@ import (
 
 	"umbraco-cli/internal/api"
 	"umbraco-cli/internal/commands/cmdkit"
+	"umbraco-cli/internal/jsonvalue"
 	"umbraco-cli/internal/uuid"
 )
 
@@ -426,7 +427,7 @@ func datatypeBlockGroups(deps cmdkit.Dependencies) *cobra.Command {
 			counts := map[string]int{}
 			ungrouped := 0
 			for _, block := range loadDatatypeBlocks(payload) {
-				if key := cmdkit.AsString(block["groupKey"]); key != "" {
+				if key := jsonvalue.Text(block["groupKey"]); key != "" {
 					counts[strings.ToLower(key)]++
 				} else {
 					ungrouped++
@@ -434,7 +435,7 @@ func datatypeBlockGroups(deps cmdkit.Dependencies) *cobra.Command {
 			}
 			groups := []map[string]any{}
 			for _, group := range loadBlockGroups(payload) {
-				key := cmdkit.AsString(group["key"])
+				key := jsonvalue.Text(group["key"])
 				groups = append(groups, map[string]any{"key": key, "name": group["name"], "blocks": counts[strings.ToLower(key)]})
 			}
 			return cmdkit.PrintResult(cmd, deps, map[string]any{"datatypeId": args[0], "groups": groups, "ungroupedBlocks": ungrouped})
@@ -531,7 +532,7 @@ func reorderBlocks(blocks []map[string]any, keys []string) ([]map[string]any, er
 func blockKeyOrder(blocks []map[string]any) []string {
 	order := make([]string, 0, len(blocks))
 	for _, block := range blocks {
-		order = append(order, strings.ToLower(cmdkit.AsString(block["contentElementTypeKey"])))
+		order = append(order, strings.ToLower(jsonvalue.Text(block["contentElementTypeKey"])))
 	}
 	return order
 }
@@ -562,8 +563,8 @@ func loadBlockGroups(payload map[string]any) []map[string]any {
 func ensureBlockGroup(payload map[string]any, name string) (string, map[string]any) {
 	name = strings.TrimSpace(name)
 	for _, group := range loadBlockGroups(payload) {
-		if strings.EqualFold(cmdkit.AsString(group["name"]), name) {
-			return cmdkit.AsString(group["key"]), payload
+		if strings.EqualFold(jsonvalue.Text(group["name"]), name) {
+			return jsonvalue.Text(group["key"]), payload
 		}
 	}
 	key, err := uuid.NewV4()
@@ -744,7 +745,7 @@ func requireDatatypeBlockEditor(payload map[string]any, datatypeID string) (stri
 
 func findBlockIndex(blocks []map[string]any, contentElementTypeKey string) int {
 	for i, b := range blocks {
-		if cmdkit.AsString(b["contentElementTypeKey"]) == contentElementTypeKey {
+		if jsonvalue.Text(b["contentElementTypeKey"]) == contentElementTypeKey {
 			return i
 		}
 	}

@@ -13,6 +13,7 @@ import (
 	"umbraco-cli/internal/api"
 	"umbraco-cli/internal/commands/cmdkit"
 	"umbraco-cli/internal/config"
+	"umbraco-cli/internal/jsonvalue"
 )
 
 type documentURLResult struct {
@@ -163,7 +164,7 @@ func filterDocumentURLsByCulture(results []documentURLResult, culture string) []
 		next := result
 		next.URLInfos = make([]documentURLInfo, 0, len(result.URLInfos))
 		for _, info := range result.URLInfos {
-			if cmdkit.CultureValue(info.Culture) == culture {
+			if jsonvalue.String(info.Culture) == culture {
 				next.URLInfos = append(next.URLInfos, info)
 			}
 		}
@@ -236,7 +237,7 @@ func flattenDocumentURLRows(results []documentURLResult) []documentURLRow {
 		for _, info := range result.URLInfos {
 			rows = append(rows, documentURLRow{
 				ID:       result.ID,
-				Culture:  cmdkit.CultureValue(info.Culture),
+				Culture:  jsonvalue.String(info.Culture),
 				URL:      urlValue(info.URL),
 				Provider: info.Provider,
 				Message:  messageValue(info.Message),

@@ -12,6 +12,7 @@ import (
 
 	"umbraco-cli/internal/api"
 	"umbraco-cli/internal/commands/cmdkit"
+	"umbraco-cli/internal/jsonvalue"
 )
 
 // formsAPIPrefix is the mount point for the Umbraco Forms Management API.
@@ -48,7 +49,7 @@ func findFormsRecord(payload any, recordID string) map[string]any {
 		if !ok {
 			continue
 		}
-		if cmdkit.AsString(entry["uniqueId"]) == recordID || cmdkit.AsString(entry["id"]) == recordID {
+		if jsonvalue.Text(entry["uniqueId"]) == recordID || jsonvalue.Text(entry["id"]) == recordID {
 			return entry
 		}
 	}

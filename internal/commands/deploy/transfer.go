@@ -12,6 +12,7 @@ import (
 
 	"umbraco-cli/internal/api"
 	"umbraco-cli/internal/commands/cmdkit"
+	"umbraco-cli/internal/jsonvalue"
 	"umbraco-cli/internal/uuid"
 )
 
@@ -87,11 +88,11 @@ func fetchDeployTarget(ctx context.Context, client *api.Client) (deployTarget, e
 	config, _ := result["clientConfiguration"].(map[string]any)
 	target, _ := config["target"].(map[string]any)
 	out := deployTarget{
-		Name:             cmdkit.StringValue(target["name"]),
-		Type:             cmdkit.StringValue(target["type"]),
-		DeployURL:        cmdkit.StringValue(target["deployUrl"]),
-		URL:              cmdkit.StringValue(target["url"]),
-		CurrentWorkspace: cmdkit.StringValue(config["currentWorkspace"]),
+		Name:             jsonvalue.String(target["name"]),
+		Type:             jsonvalue.String(target["type"]),
+		DeployURL:        jsonvalue.String(target["deployUrl"]),
+		URL:              jsonvalue.String(target["url"]),
+		CurrentWorkspace: jsonvalue.String(config["currentWorkspace"]),
 	}
 	out.AllowIgnoreDependencies, _ = config["allowDeployIgnoreDependencies"].(bool)
 	if out.DeployURL == "" {
@@ -231,12 +232,12 @@ func pollDeploySession(ctx context.Context, client *api.Client, sessionID string
 	}
 	entry, _ := result.(map[string]any)
 	status := deploySessionStatus{
-		SessionID:  cmdkit.StringValue(entry["sessionId"]),
+		SessionID:  jsonvalue.String(entry["sessionId"]),
 		Status:     deployWorkStatusName(entry["status"]),
-		Comment:    cmdkit.StringValue(entry["comment"]),
-		Log:        cmdkit.StringValue(entry["log"]),
-		Exception:  cmdkit.StringValue(entry["exceptionJson"]),
-		ServerTime: cmdkit.StringValue(entry["serverTimeStamp"]),
+		Comment:    jsonvalue.String(entry["comment"]),
+		Log:        jsonvalue.String(entry["log"]),
+		Exception:  jsonvalue.String(entry["exceptionJson"]),
+		ServerTime: jsonvalue.String(entry["serverTimeStamp"]),
 		Raw:        result,
 	}
 	if percent, ok := entry["percent"].(float64); ok {
@@ -456,7 +457,7 @@ transfer keeps running). --wait=false returns the session id immediately.`,
 				return cmdkit.PrintResult(cmd, deps, plan)
 			}
 			started, _ := result.(map[string]any)
-			sessionID := cmdkit.StringValue(started["sessionId"])
+			sessionID := jsonvalue.String(started["sessionId"])
 			if sessionID == "" {
 				return fmt.Errorf("the transfer was accepted but Deploy returned no session id: %v", result)
 			}

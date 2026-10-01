@@ -11,6 +11,7 @@ import (
 
 	"umbraco-cli/internal/api"
 	"umbraco-cli/internal/commands/cmdkit"
+	"umbraco-cli/internal/jsonvalue"
 )
 
 // fileAssetSpec parameterizes the command surface of the file-based assets
@@ -369,7 +370,7 @@ func unwrapFileAssetItem(spec fileAssetSpec, path string, result any) (any, erro
 func writeFileAssetContent(outFile string, result any) (int, error) {
 	object, ok := result.(map[string]any)
 	if !ok {
-		return 0, fmt.Errorf("--out needs a response with a content field, got %s", cmdkit.JSONShapeName(result))
+		return 0, fmt.Errorf("--out needs a response with a content field, got %s", jsonvalue.ShapeName(result))
 	}
 	content, ok := object["content"].(string)
 	if !ok {
