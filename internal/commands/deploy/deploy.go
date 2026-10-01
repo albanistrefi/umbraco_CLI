@@ -1,17 +1,21 @@
-package commands
+// Package deploy holds the Umbraco Deploy add-on commands and the
+// effect-based deployment observation built on the core Management API.
+package deploy
 
 import (
 	"github.com/spf13/cobra"
+
+	"umbraco-cli/internal/commands/cmdkit"
 )
 
-// RegisterDeploy wires the effect-based deployment observation commands.
+// Register wires the effect-based deployment observation commands.
 // There is deliberately no deployment-status API underneath these — a
 // status API reports what a pipeline believes happened, while these
 // commands observe what the target environment is actually doing (app
 // recycles, endpoint availability, index rebuilds). That also makes them
 // host-agnostic: they behave identically on Umbraco Cloud and on-prem, and
 // they are strictly read-only against the environment.
-func RegisterDeploy(root *cobra.Command, deps Dependencies) {
+func Register(root *cobra.Command, deps cmdkit.Dependencies) {
 	deploy := &cobra.Command{
 		Use:   "deploy",
 		Short: "Deployment observation, schema application, and content transfer (watch, status, apply, transfer, queue)",

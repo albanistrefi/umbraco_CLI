@@ -1,4 +1,4 @@
-package commands
+package deploy
 
 import (
 	"context"
@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/commands/cmdkit"
 	"umbraco-cli/internal/version"
 )
 
@@ -31,7 +32,7 @@ type deployWatchTimeoutError struct{ reason string }
 func (e deployWatchTimeoutError) Error() string { return "deploy watch timeout: " + e.reason }
 func (deployWatchTimeoutError) ExitCode() int   { return 6 }
 
-func deployWatch(deps Dependencies) *cobra.Command {
+func deployWatch(deps cmdkit.Dependencies) *cobra.Command {
 	var healthPaths []string
 	var publicURL string
 	var interval time.Duration
@@ -91,7 +92,7 @@ Phases: baseline → restarting → app-alive → serving → landed → settlin
 					"machineName":    baseline.MachineName,
 					"healthyPaths":   machine.baselineHealthy,
 					"unhealthyPaths": unhealthyPathNames(baseline.Health),
-					"ignoredIndexes": sortedKeys(machine.baselineBadIndexes),
+					"ignoredIndexes": cmdkit.SortedKeys(machine.baselineBadIndexes),
 				},
 			})
 
@@ -433,7 +434,7 @@ func unhealthyPathNames(health map[string]bool) []string {
 // watchProbes gathers one observation per poll. Probe failures during a
 // restart window are expected signals, not command errors.
 type watchProbes struct {
-	deps        Dependencies
+	deps        cmdkit.Dependencies
 	httpClient  *http.Client
 	tokenURL    string
 	publicURL   string
@@ -441,7 +442,7 @@ type watchProbes struct {
 	skipIndexes bool
 }
 
-func watchHTTPClient(deps Dependencies) *http.Client {
+func watchHTTPClient(deps cmdkit.Dependencies) *http.Client {
 	if deps.HTTPClient != nil {
 		return deps.HTTPClient
 	}
@@ -512,7 +513,7 @@ func (p *watchProbes) probeHealth(ctx context.Context) map[string]bool {
 }
 
 func (p *watchProbes) newestProcess(ctx context.Context) (string, string, error) {
-	result, err := p.deps.Client.Get(ctx, logViewerLogPath, api.RequestOptions{Params: map[string]any{
+	result, err := p.deps.Client.Get(ctx, cmdkit.LogViewerLogPath, api.RequestOptions{Params: map[string]any{
 		"take": 1, "skip": 0, "orderDirection": "Descending",
 	}})
 	if err != nil {
@@ -566,7 +567,7 @@ func (p *watchProbes) badIndexes(ctx context.Context) []string {
 		if !ok {
 			continue
 		}
-		status := indexerHealthStatus(entry)
+		status := cmdkit.IndexerHealthStatus(entry)
 		if status != "" && !strings.EqualFold(status, "Healthy") {
 			if name, _ := entry["name"].(string); name != "" {
 				bad = append(bad, name)

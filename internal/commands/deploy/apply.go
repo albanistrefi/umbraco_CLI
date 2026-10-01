@@ -1,4 +1,4 @@
-package commands
+package deploy
 
 import (
 	"context"
@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/commands/cmdkit"
 )
 
 // deployApplyFailedError is returned when one or more planned writes failed
@@ -62,7 +63,7 @@ type udaPlanEntry struct {
 	create   bool
 }
 
-func deployApply(deps Dependencies) *cobra.Command {
+func deployApply(deps cmdkit.Dependencies) *cobra.Command {
 	var udaDir string
 	var kinds []string
 	var dryRun bool
@@ -165,7 +166,7 @@ Exit 0 when every planned write applied and verified; exit 4 when any artifact c
 					"notRun":         summary["not-run"],
 				},
 			}
-			if err := printResult(cmd, deps, payload); err != nil {
+			if err := cmdkit.PrintResult(cmd, deps, payload); err != nil {
 				return err
 			}
 			if planErrors > 0 {
@@ -186,7 +187,7 @@ Exit 0 when every planned write applied and verified; exit 4 when any artifact c
 	cmd.Flags().BoolVar(&continueOnError, "continue-on-error", false, "Keep applying after a failed write (default: stop, leaving later entries not-run)")
 	cmd.Flags().BoolVar(&includeBodies, "bodies", false, "Include the exact request bodies in the plan output")
 	cmd.Flags().IntVar(&concurrency, "concurrency", 8, "Maximum concurrent environment lookups during comparison")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
@@ -409,7 +410,7 @@ func deferForwardReferences(body map[string]any, isForward func(kind string, gui
 // executeApplyPlan performs the writes in order, backing up updated
 // entities, verifying each result, and running the fix-up pass for
 // deferred references.
-func executeApplyPlan(ctx context.Context, deps Dependencies, plan []udaPlanEntry, backupDir string, continueOnError bool) {
+func executeApplyPlan(ctx context.Context, deps cmdkit.Dependencies, plan []udaPlanEntry, backupDir string, continueOnError bool) {
 	stopped := false
 	fixups := []int{}
 	for i := range plan {
@@ -455,21 +456,21 @@ func executeApplyPlan(ctx context.Context, deps Dependencies, plan []udaPlanEntr
 	}
 }
 
-func applyEntry(ctx context.Context, deps Dependencies, entry *udaPlanEntry, backupDir string) error {
+func applyEntry(ctx context.Context, deps cmdkit.Dependencies, entry *udaPlanEntry, backupDir string) error {
 	if entry.create {
 		_, err := deps.Client.Post(ctx, entry.Path, entry.Body, api.RequestOptions{})
 		return err
 	}
 	if backupDir != "" {
-		current, err := fetchObject(ctx, deps.Client, entry.Path, api.RequestOptions{})
+		current, err := cmdkit.FetchObject(ctx, deps.Client, entry.Path, api.RequestOptions{})
 		if err != nil {
 			return fmt.Errorf("backup read failed: %w", err)
 		}
 		if err := os.MkdirAll(backupDir, 0o755); err != nil {
 			return err
 		}
-		file := filepath.Join(backupDir, sanitizeFileName(entry.Kind+"-"+entry.artifact.GUID, "entity")+".backup.json")
-		saved, err := writeBackup(file, entry.Kind, entry.artifact.GUID, entry.Path, current, nil)
+		file := filepath.Join(backupDir, cmdkit.SanitizeFileName(entry.Kind+"-"+entry.artifact.GUID, "entity")+".backup.json")
+		saved, err := cmdkit.WriteBackup(file, entry.Kind, entry.artifact.GUID, entry.Path, current, nil)
 		if err != nil {
 			return err
 		}
@@ -481,13 +482,13 @@ func applyEntry(ctx context.Context, deps Dependencies, entry *udaPlanEntry, bac
 
 // verifyEntry re-reads the entity and reruns the status comparer, so
 // "applied" means the environment now matches the artifact.
-func verifyEntry(ctx context.Context, deps Dependencies, entry *udaPlanEntry) {
+func verifyEntry(ctx context.Context, deps cmdkit.Dependencies, entry *udaPlanEntry) {
 	fetchPath, comparer := udaComparer(entry.Kind)
 	if comparer == nil {
 		entry.Result = "applied"
 		return
 	}
-	remote, err := fetchObject(ctx, deps.Client, api.JoinPath(fetchPath, entry.artifact.GUID), api.RequestOptions{})
+	remote, err := cmdkit.FetchObject(ctx, deps.Client, api.JoinPath(fetchPath, entry.artifact.GUID), api.RequestOptions{})
 	if err != nil {
 		entry.Result, entry.Error = "failed", "the write was accepted but re-reading the entity failed: "+err.Error()
 		return

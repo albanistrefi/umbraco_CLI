@@ -1,4 +1,4 @@
-package commands
+package deploy
 
 import (
 	"encoding/json"
@@ -7,35 +7,38 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+
+	"umbraco-cli/internal/commands/cmdkit"
+	"umbraco-cli/internal/commands/cmdtest"
 )
 
 // deployTransferServer mocks the Deploy management API: a configured target,
 // entity names, a queue, an instant transfer that returns a session, and a
 // status endpoint that walks the given statuses one poll at a time.
-func deployTransferServer(t *testing.T, statuses []string, opts map[string]any) (Dependencies, *[]string, *[]map[string]any) {
+func deployTransferServer(t *testing.T, statuses []string, opts map[string]any) (cmdkit.Dependencies, *[]string, *[]map[string]any) {
 	t.Helper()
 	var requests []string
 	var bodies []map[string]any
 	var polls int64
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		path := strings.TrimPrefix(req.URL.Path, "/umbraco/deploy/management/api/v1")
 		if req.URL.Path == "/umbraco/management/api/v1/security/back-office/token" {
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		}
 		if !strings.HasPrefix(req.URL.Path, "/umbraco/deploy/") {
 			if strings.HasPrefix(req.URL.Path, "/umbraco/management/api/v1/document/") {
 				if strings.HasSuffix(req.URL.Path, "dead") {
-					return endpointJSONResponse(http.StatusNotFound, `{"title":"Not found","status":404}`), nil
+					return cmdtest.JSONResponse(http.StatusNotFound, `{"title":"Not found","status":404}`), nil
 				}
-				return endpointJSONResponse(http.StatusOK, `{"id":"x"}`), nil
+				return cmdtest.JSONResponse(http.StatusOK, `{"id":"x"}`), nil
 			}
 			if strings.HasPrefix(req.URL.Path, "/umbraco/management/api/v1/tree/document/children") {
 				if req.URL.Query().Get("parentId") == "aaaaaaaa-0000-4000-8000-000000000001" {
-					return endpointJSONResponse(http.StatusOK, `{"total":2,"items":[{"id":"aaaaaaaa-0000-4000-8000-000000000002","hasChildren":true},{"id":"aaaaaaaa-0000-4000-8000-000000000003","hasChildren":false}]}`), nil
+					return cmdtest.JSONResponse(http.StatusOK, `{"total":2,"items":[{"id":"aaaaaaaa-0000-4000-8000-000000000002","hasChildren":true},{"id":"aaaaaaaa-0000-4000-8000-000000000003","hasChildren":false}]}`), nil
 				}
-				return endpointJSONResponse(http.StatusOK, `{"total":1,"items":[{"id":"aaaaaaaa-0000-4000-8000-000000000004","hasChildren":false}]}`), nil
+				return cmdtest.JSONResponse(http.StatusOK, `{"total":1,"items":[{"id":"aaaaaaaa-0000-4000-8000-000000000004","hasChildren":false}]}`), nil
 			}
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 		requests = append(requests, req.Method+" "+path)
 		body := map[string]any{}
@@ -47,20 +50,20 @@ func deployTransferServer(t *testing.T, statuses []string, opts map[string]any) 
 		switch path {
 		case "/configuration/client":
 			allow, _ := opts["allowIgnore"].(bool)
-			return endpointJSONResponse(http.StatusOK, `{"clientConfiguration":{"currentWorkspace":"Local","allowDeployIgnoreDependencies":`+map[bool]string{true: "true", false: "false"}[allow]+`,"target":{"name":"Development","type":"development","deployUrl":"https://dev.example.test/umbraco/backoffice/deploy/environment","url":"https://dev.example.test"}}}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"clientConfiguration":{"currentWorkspace":"Local","allowDeployIgnoreDependencies":`+map[bool]string{true: "true", false: "false"}[allow]+`,"target":{"name":"Development","type":"development","deployUrl":"https://dev.example.test/umbraco/backoffice/deploy/environment","url":"https://dev.example.test"}}}`), nil
 		case "/entity/name":
 			if req.URL.Query().Get("id") == "aaaaaaaa-0000-4000-8000-00000000dead" {
-				return endpointJSONResponse(http.StatusNotFound, `{"title":"Not found","status":404}`), nil
+				return cmdtest.JSONResponse(http.StatusNotFound, `{"title":"Not found","status":404}`), nil
 			}
-			return endpointJSONResponse(http.StatusOK, `"Sector A"`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `"Sector A"`), nil
 		case "/queue":
-			return endpointJSONResponse(http.StatusOK, `[{"udi":{"uriValue":"umb://document/aaaaaaaa00004000800000000000000a","entityType":"document"},"culture":"*","name":"Queued","includeDescendants":true,"releaseDate":null}]`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `[{"udi":{"uriValue":"umb://document/aaaaaaaa00004000800000000000000a","entityType":"document"},"culture":"*","name":"Queued","includeDescendants":true,"releaseDate":null}]`), nil
 		case "/queue/add":
-			return endpointJSONResponse(http.StatusOK, `{"udi":{"uriValue":"umb://document/aaaaaaaa00004000800000000000000a","entityType":"document"},"culture":"*","name":"Queued","includeDescendants":false,"releaseDate":null}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"udi":{"uriValue":"umb://document/aaaaaaaa00004000800000000000000a","entityType":"document"},"culture":"*","name":"Queued","includeDescendants":false,"releaseDate":null}`), nil
 		case "/queue/remove", "/queue/clear":
-			return endpointNoContent(), nil
+			return cmdtest.NoContent(), nil
 		case "/deploy/instant", "/deploy":
-			return endpointJSONResponse(http.StatusOK, `{"sessionId":"11111111-2222-4333-8444-555555555555"}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"sessionId":"11111111-2222-4333-8444-555555555555"}`), nil
 		case "/status/status":
 			index := int(atomic.AddInt64(&polls, 1)) - 1
 			if index >= len(statuses) {
@@ -71,16 +74,16 @@ func deployTransferServer(t *testing.T, statuses []string, opts map[string]any) 
 			if status == "Failed" {
 				extra = `,"comment":"Dependency missing","log":"line1\nline2","exceptionJson":"{\"Message\":\"boom\"}"`
 			}
-			return endpointJSONResponse(http.StatusOK, `{"sessionId":"11111111-2222-4333-8444-555555555555","status":"`+status+`","percent":`+map[bool]string{true: "100", false: "40"}[deployTerminalStatus(status)]+`,"mismatchList":[]`+extra+`}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"sessionId":"11111111-2222-4333-8444-555555555555","status":"`+status+`","percent":`+map[bool]string{true: "100", false: "40"}[deployTerminalStatus(status)]+`,"mismatchList":[]`+extra+`}`), nil
 		}
-		return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 	})
 	return deps, &requests, &bodies
 }
 
 func TestDeployTransferDryRunResolvesTargetNamesAndDescendantsWithoutSending(t *testing.T) {
 	deps, requests, _ := deployTransferServer(t, []string{"Completed"}, nil)
-	out, err := execute(buildRootWithCollections(t, deps), "deploy", "transfer", "--node", "aaaaaaaa-0000-4000-8000-000000000001", "--descendants", "--dry-run")
+	out, err := cmdtest.Execute(buildDeployRoot(deps), "deploy", "transfer", "--node", "aaaaaaaa-0000-4000-8000-000000000001", "--descendants", "--dry-run")
 	if err != nil {
 		t.Fatalf("dry-run failed: %v", err)
 	}
@@ -114,20 +117,20 @@ func TestDeployTransferDryRunResolvesTargetNamesAndDescendantsWithoutSending(t *
 
 func TestDeployTransferRequiresForceAndValidatesInput(t *testing.T) {
 	deps, requests, _ := deployTransferServer(t, []string{"Completed"}, nil)
-	root := buildRootWithCollections(t, deps)
-	if _, err := execute(root, "deploy", "transfer", "--node", "aaaaaaaa-0000-4000-8000-000000000001"); err == nil || !strings.Contains(err.Error(), "--force") {
+	root := buildDeployRoot(deps)
+	if _, err := cmdtest.Execute(root, "deploy", "transfer", "--node", "aaaaaaaa-0000-4000-8000-000000000001"); err == nil || !strings.Contains(err.Error(), "--force") {
 		t.Fatalf("expected the force/dry-run gate, got %v", err)
 	}
-	if _, err := execute(buildRootWithCollections(t, deps), "deploy", "transfer", "--dry-run"); err == nil || !strings.Contains(err.Error(), "--node") {
+	if _, err := cmdtest.Execute(buildDeployRoot(deps), "deploy", "transfer", "--dry-run"); err == nil || !strings.Contains(err.Error(), "--node") {
 		t.Fatalf("expected a missing-source error, got %v", err)
 	}
-	if _, err := execute(buildRootWithCollections(t, deps), "deploy", "transfer", "--node", "not-a-guid", "--dry-run"); err == nil || !strings.Contains(err.Error(), "is not a GUID") {
+	if _, err := cmdtest.Execute(buildDeployRoot(deps), "deploy", "transfer", "--node", "not-a-guid", "--dry-run"); err == nil || !strings.Contains(err.Error(), "is not a GUID") {
 		t.Fatalf("expected GUID validation, got %v", err)
 	}
-	if _, err := execute(buildRootWithCollections(t, deps), "deploy", "transfer", "--node", "aaaaaaaa-0000-4000-8000-00000000dead", "--dry-run"); err == nil || !strings.Contains(err.Error(), "does not exist in this environment") {
+	if _, err := cmdtest.Execute(buildDeployRoot(deps), "deploy", "transfer", "--node", "aaaaaaaa-0000-4000-8000-00000000dead", "--dry-run"); err == nil || !strings.Contains(err.Error(), "does not exist in this environment") {
 		t.Fatalf("expected an unknown-id error from the name lookup, got %v", err)
 	}
-	if _, err := execute(buildRootWithCollections(t, deps), "deploy", "transfer", "--node", "aaaaaaaa-0000-4000-8000-000000000001", "--ignore-dependencies", "--dry-run"); err == nil || !strings.Contains(err.Error(), "allowDeployIgnoreDependencies=false") {
+	if _, err := cmdtest.Execute(buildDeployRoot(deps), "deploy", "transfer", "--node", "aaaaaaaa-0000-4000-8000-000000000001", "--ignore-dependencies", "--dry-run"); err == nil || !strings.Contains(err.Error(), "allowDeployIgnoreDependencies=false") {
 		t.Fatalf("expected the ignore-dependencies gate, got %v", err)
 	}
 	if len(*requests) == 0 {
@@ -137,7 +140,7 @@ func TestDeployTransferRequiresForceAndValidatesInput(t *testing.T) {
 
 func TestDeployTransferWaitsForSessionAndReportsCompletion(t *testing.T) {
 	deps, requests, bodies := deployTransferServer(t, []string{"New", "Executing", "Completed"}, nil)
-	out, stderr, err := executeWithErr(buildRootWithCollections(t, deps), "deploy", "transfer", "--node", "aaaaaaaa-0000-4000-8000-000000000001", "--force", "--interval", "1ms")
+	out, stderr, err := cmdtest.ExecuteWithErr(buildDeployRoot(deps), "deploy", "transfer", "--node", "aaaaaaaa-0000-4000-8000-000000000001", "--force", "--interval", "1ms")
 	if err != nil {
 		t.Fatalf("transfer failed: %v (%s)", err, out)
 	}
@@ -165,8 +168,8 @@ func TestDeployTransferWaitsForSessionAndReportsCompletion(t *testing.T) {
 
 func TestDeployTransferFailureExits5WithLogAndTimeoutExits6(t *testing.T) {
 	deps, _, _ := deployTransferServer(t, []string{"Executing", "Failed"}, nil)
-	out, _, err := executeWithErr(buildRootWithCollections(t, deps), "deploy", "transfer", "--node", "aaaaaaaa-0000-4000-8000-000000000001", "--force", "--interval", "1ms")
-	if err == nil || batchExitCode(err) != 5 || !strings.Contains(err.Error(), "Failed: Dependency missing") {
+	out, _, err := cmdtest.ExecuteWithErr(buildDeployRoot(deps), "deploy", "transfer", "--node", "aaaaaaaa-0000-4000-8000-000000000001", "--force", "--interval", "1ms")
+	if err == nil || cmdtest.ExitCode(err) != 5 || !strings.Contains(err.Error(), "Failed: Dependency missing") {
 		t.Fatalf("expected exit 5 with the server comment, got %v", err)
 	}
 	var result map[string]any
@@ -176,15 +179,15 @@ func TestDeployTransferFailureExits5WithLogAndTimeoutExits6(t *testing.T) {
 	}
 
 	slow, _, _ := deployTransferServer(t, []string{"Executing"}, nil)
-	_, _, err = executeWithErr(buildRootWithCollections(t, slow), "deploy", "transfer", "--node", "aaaaaaaa-0000-4000-8000-000000000001", "--force", "--interval", "1ms", "--timeout", "20ms")
-	if err == nil || batchExitCode(err) != 6 || !strings.Contains(err.Error(), "still Executing") {
+	_, _, err = cmdtest.ExecuteWithErr(buildDeployRoot(slow), "deploy", "transfer", "--node", "aaaaaaaa-0000-4000-8000-000000000001", "--force", "--interval", "1ms", "--timeout", "20ms")
+	if err == nil || cmdtest.ExitCode(err) != 6 || !strings.Contains(err.Error(), "still Executing") {
 		t.Fatalf("expected exit 6 on timeout, got %v", err)
 	}
 }
 
 func TestDeployTransferQueueModeAndNoWait(t *testing.T) {
 	deps, requests, bodies := deployTransferServer(t, []string{"Completed"}, nil)
-	out, err := execute(buildRootWithCollections(t, deps), "deploy", "transfer", "--queue", "--force", "--wait=false")
+	out, err := cmdtest.Execute(buildDeployRoot(deps), "deploy", "transfer", "--queue", "--force", "--wait=false")
 	if err != nil {
 		t.Fatalf("queue transfer failed: %v", err)
 	}
@@ -208,18 +211,18 @@ func TestDeployTransferQueueModeAndNoWait(t *testing.T) {
 	if !found {
 		t.Fatalf("expected POST /deploy for the queue, got %v", *requests)
 	}
-	if _, err := execute(buildRootWithCollections(t, deps), "deploy", "transfer", "--queue", "--node", "aaaaaaaa-0000-4000-8000-000000000001", "--dry-run"); err == nil || !strings.Contains(err.Error(), "not both") {
+	if _, err := cmdtest.Execute(buildDeployRoot(deps), "deploy", "transfer", "--queue", "--node", "aaaaaaaa-0000-4000-8000-000000000001", "--dry-run"); err == nil || !strings.Contains(err.Error(), "not both") {
 		t.Fatalf("expected --queue and --node to be exclusive, got %v", err)
 	}
-	if _, err := execute(buildRootWithCollections(t, deps), "deploy", "transfer", "--queue", "--culture", "en-US", "--dry-run"); err == nil || !strings.Contains(err.Error(), "--culture applies to --node items") {
+	if _, err := cmdtest.Execute(buildDeployRoot(deps), "deploy", "transfer", "--queue", "--culture", "en-US", "--dry-run"); err == nil || !strings.Contains(err.Error(), "--culture applies to --node items") {
 		t.Fatalf("expected node-only flags rejected in queue mode, got %v", err)
 	}
 }
 
 func TestDeployQueueCommands(t *testing.T) {
 	deps, requests, bodies := deployTransferServer(t, nil, nil)
-	root := buildRootWithCollections(t, deps)
-	out, err := execute(root, "deploy", "queue", "add", "aaaaaaaa-0000-4000-8000-00000000000a", "--descendants", "--type", "media")
+	root := buildDeployRoot(deps)
+	out, err := cmdtest.Execute(root, "deploy", "queue", "add", "aaaaaaaa-0000-4000-8000-00000000000a", "--descendants", "--type", "media")
 	if err != nil || !strings.Contains(out, `"count": 1`) {
 		t.Fatalf("queue add failed: %v %s", err, out)
 	}
@@ -228,27 +231,27 @@ func TestDeployQueueCommands(t *testing.T) {
 		t.Fatalf("unexpected add body: %+v", added)
 	}
 	before := len(*requests)
-	if _, err := execute(buildRootWithCollections(t, deps), "deploy", "queue", "add", "aaaaaaaa-0000-4000-8000-00000000000a", "not-a-guid"); err == nil || !strings.Contains(err.Error(), "nothing was queued") {
+	if _, err := cmdtest.Execute(buildDeployRoot(deps), "deploy", "queue", "add", "aaaaaaaa-0000-4000-8000-00000000000a", "not-a-guid"); err == nil || !strings.Contains(err.Error(), "nothing was queued") {
 		t.Fatalf("expected batch validation before any write, got %v", err)
 	}
 	if len(*requests) != before {
 		t.Fatalf("expected no queue/add request for an invalid batch, got %v", (*requests)[before:])
 	}
-	out, err = execute(buildRootWithCollections(t, deps), "deploy", "queue", "list")
+	out, err = cmdtest.Execute(buildDeployRoot(deps), "deploy", "queue", "list")
 	if err != nil || !strings.Contains(out, `"total": 1`) || !strings.Contains(out, "Queued") {
 		t.Fatalf("queue list failed: %v %s", err, out)
 	}
-	if _, err := execute(buildRootWithCollections(t, deps), "deploy", "queue", "remove", "AAAAAAAA-0000-4000-8000-00000000000A"); err != nil {
+	if _, err := cmdtest.Execute(buildDeployRoot(deps), "deploy", "queue", "remove", "AAAAAAAA-0000-4000-8000-00000000000A"); err != nil {
 		t.Fatalf("queue remove failed: %v", err)
 	}
 	removed := (*bodies)[len(*bodies)-1]
 	if removed["udi"] != "umb://document/aaaaaaaa00004000800000000000000a" || removed["culture"] != "*" {
 		t.Fatalf("expected a GUID turned into a document UDI, got %+v", removed)
 	}
-	if _, err := execute(buildRootWithCollections(t, deps), "deploy", "queue", "clear"); err == nil || !strings.Contains(err.Error(), "--force") {
+	if _, err := cmdtest.Execute(buildDeployRoot(deps), "deploy", "queue", "clear"); err == nil || !strings.Contains(err.Error(), "--force") {
 		t.Fatalf("expected the clear gate, got %v", err)
 	}
-	if out, err := execute(buildRootWithCollections(t, deps), "deploy", "queue", "clear", "--force"); err != nil || !strings.Contains(out, `"cleared": true`) {
+	if out, err := cmdtest.Execute(buildDeployRoot(deps), "deploy", "queue", "clear", "--force"); err != nil || !strings.Contains(out, `"cleared": true`) {
 		t.Fatalf("queue clear failed: %v %s", err, out)
 	}
 	if (*requests)[len(*requests)-1] != "POST /queue/clear" {
@@ -257,13 +260,13 @@ func TestDeployQueueCommands(t *testing.T) {
 }
 
 func TestDeployTransferExplainsMissingDeployPackage(t *testing.T) {
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		if req.URL.Path == "/umbraco/management/api/v1/security/back-office/token" {
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		}
-		return endpointJSONResponse(http.StatusNotFound, `null`), nil
+		return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 	})
-	_, err := execute(buildRootWithCollections(t, deps), "deploy", "transfer", "--node", "aaaaaaaa-0000-4000-8000-000000000001", "--dry-run")
+	_, err := cmdtest.Execute(buildDeployRoot(deps), "deploy", "transfer", "--node", "aaaaaaaa-0000-4000-8000-000000000001", "--dry-run")
 	if err == nil || !strings.Contains(err.Error(), "Umbraco Deploy management API is not available") {
 		t.Fatalf("expected a missing-package explanation, got %v", err)
 	}
@@ -278,35 +281,35 @@ func TestDeployTransferAcceptsDoubleEncodedClientConfiguration(t *testing.T) {
 	// the request instead of leaking a bare decoder error.
 	config := `{"clientConfiguration":{"currentWorkspace":"Development","allowDeployIgnoreDependencies":false,"target":{"name":"Live","type":"live","deployUrl":"https://live.example.test/umbraco/backoffice/deploy/environment"}}}`
 	encoded, _ := json.Marshal(config)
-	serve := func(configBody string) Dependencies {
-		return endpointDeps(func(req *http.Request) (*http.Response, error) {
+	serve := func(configBody string) cmdkit.Dependencies {
+		return cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 			switch {
 			case req.URL.Path == "/umbraco/management/api/v1/security/back-office/token":
-				return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+				return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 			case req.URL.Path == "/umbraco/deploy/management/api/v1/configuration/client":
-				return endpointJSONResponse(http.StatusOK, configBody), nil
+				return cmdtest.JSONResponse(http.StatusOK, configBody), nil
 			case req.URL.Path == "/umbraco/deploy/management/api/v1/entity/name":
-				return endpointJSONResponse(http.StatusOK, `"Page"`), nil
+				return cmdtest.JSONResponse(http.StatusOK, `"Page"`), nil
 			case strings.HasPrefix(req.URL.Path, "/umbraco/management/api/v1/document/"):
-				return endpointJSONResponse(http.StatusOK, `{"id":"x"}`), nil
+				return cmdtest.JSONResponse(http.StatusOK, `{"id":"x"}`), nil
 			}
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		})
 	}
-	out, err := execute(buildRootWithCollections(t, serve(string(encoded))), "deploy", "transfer", "--node", "aaaaaaaa-0000-4000-8000-000000000001", "--dry-run")
+	out, err := cmdtest.Execute(buildDeployRoot(serve(string(encoded))), "deploy", "transfer", "--node", "aaaaaaaa-0000-4000-8000-000000000001", "--dry-run")
 	if err != nil {
 		t.Fatalf("dry-run with a double-encoded configuration failed: %v", err)
 	}
 	if !strings.Contains(out, `"name": "Live"`) {
 		t.Fatalf("expected the unwrapped target, got %s", out)
 	}
-	_, err = execute(buildRootWithCollections(t, serve(`["not","an","object"]`)), "deploy", "transfer", "--node", "aaaaaaaa-0000-4000-8000-000000000001", "--dry-run")
+	_, err = cmdtest.Execute(buildDeployRoot(serve(`["not","an","object"]`)), "deploy", "transfer", "--node", "aaaaaaaa-0000-4000-8000-000000000001", "--dry-run")
 	if err == nil || !strings.Contains(err.Error(), "GET /configuration/client returned an array, not a JSON object") {
 		t.Fatalf("expected a shape error naming the request, got %v", err)
 	}
 	// Server text in the error is sanitized: terminal controls are stripped
 	// and the value is quoted.
-	_, err = execute(buildRootWithCollections(t, serve(`"\u001b[31mred\u001b[0m \u202ebidi"`)), "deploy", "transfer", "--node", "aaaaaaaa-0000-4000-8000-000000000001", "--dry-run")
+	_, err = cmdtest.Execute(buildDeployRoot(serve(`"\u001b[31mred\u001b[0m \u202ebidi"`)), "deploy", "transfer", "--node", "aaaaaaaa-0000-4000-8000-000000000001", "--dry-run")
 	if err == nil || strings.Contains(err.Error(), "\x1b") || strings.Contains(err.Error(), "\u202e") || !strings.Contains(err.Error(), `returned a string, not a JSON object: "`) {
 		t.Fatalf("expected a sanitized, quoted string error, got %q", err)
 	}

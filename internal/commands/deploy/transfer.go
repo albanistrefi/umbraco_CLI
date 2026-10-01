@@ -1,4 +1,4 @@
-package commands
+package deploy
 
 import (
 	"context"
@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/commands/cmdkit"
 )
 
 // Umbraco Deploy ships its own management API next to the CMS one. The
@@ -78,18 +79,18 @@ type deployTarget struct {
 }
 
 func fetchDeployTarget(ctx context.Context, client *api.Client) (deployTarget, error) {
-	result, err := fetchObject(ctx, client, "/configuration/client", deployRequestOpts(nil))
+	result, err := cmdkit.FetchObject(ctx, client, "/configuration/client", deployRequestOpts(nil))
 	if err != nil {
 		return deployTarget{}, friendlyDeployAPIError(err)
 	}
 	config, _ := result["clientConfiguration"].(map[string]any)
 	target, _ := config["target"].(map[string]any)
 	out := deployTarget{
-		Name:             stringValue(target["name"]),
-		Type:             stringValue(target["type"]),
-		DeployURL:        stringValue(target["deployUrl"]),
-		URL:              stringValue(target["url"]),
-		CurrentWorkspace: stringValue(config["currentWorkspace"]),
+		Name:             cmdkit.StringValue(target["name"]),
+		Type:             cmdkit.StringValue(target["type"]),
+		DeployURL:        cmdkit.StringValue(target["deployUrl"]),
+		URL:              cmdkit.StringValue(target["url"]),
+		CurrentWorkspace: cmdkit.StringValue(config["currentWorkspace"]),
 	}
 	out.AllowIgnoreDependencies, _ = config["allowDeployIgnoreDependencies"].(bool)
 	if out.DeployURL == "" {
@@ -101,7 +102,7 @@ func fetchDeployTarget(ctx context.Context, client *api.Client) (deployTarget, e
 // friendlyDeployAPIError turns the 404 a CMS without Umbraco Deploy answers
 // into a statement instead of a route hint.
 func friendlyDeployAPIError(err error) error {
-	if isAPIStatus(err, http.StatusNotFound) {
+	if cmdkit.IsAPIStatus(err, http.StatusNotFound) {
 		return fmt.Errorf("the Umbraco Deploy management API is not available on this environment (%w); deploy transfer needs the Umbraco.Deploy package installed on the source environment", err)
 	}
 	return err
@@ -156,7 +157,7 @@ func normalizeDeployEntityType(raw string) (string, error) {
 func resolveDeployEntityName(ctx context.Context, client *api.Client, entityType string, id string) (string, error) {
 	if entityType == "document" || entityType == "media" {
 		if _, err := client.Get(ctx, api.JoinPath("/"+entityType+"/%s", id), api.RequestOptions{}); err != nil {
-			if isAPIStatus(err, http.StatusNotFound) {
+			if cmdkit.IsAPIStatus(err, http.StatusNotFound) {
 				return "", fmt.Errorf("%s %s does not exist in this environment", entityType, id)
 			}
 			return "", err
@@ -164,7 +165,7 @@ func resolveDeployEntityName(ctx context.Context, client *api.Client, entityType
 	}
 	result, err := client.Get(ctx, "/entity/name", deployRequestOpts(map[string]any{"id": id, "entityType": entityType}))
 	if err != nil {
-		if isAPIStatus(err, http.StatusNotFound) {
+		if cmdkit.IsAPIStatus(err, http.StatusNotFound) {
 			return "", fmt.Errorf("%s %s does not exist in this environment", entityType, id)
 		}
 		return "", friendlyDeployAPIError(err)
@@ -187,20 +188,20 @@ func countDescendants(ctx context.Context, client *api.Client, entityType string
 	for len(pending) > 0 {
 		parent := pending[0]
 		pending = pending[1:]
-		result, err := getAllPagesWithFallback(ctx, client, 0, 0, 0,
-			getRequestCandidate{Path: "/tree/" + entityType + "/children", Opts: api.RequestOptions{Params: map[string]any{"parentId": parent}}},
+		result, err := cmdkit.GetAllPagesWithFallback(ctx, client, 0, 0, 0,
+			cmdkit.GetRequestCandidate{Path: "/tree/" + entityType + "/children", Opts: api.RequestOptions{Params: map[string]any{"parentId": parent}}},
 		)
 		if err != nil {
 			return count, false, err
 		}
-		for _, item := range resultItems(result) {
+		for _, item := range cmdkit.ResultItems(result) {
 			count++
 			if count >= deployDescendantCountCap {
 				return count, true, nil
 			}
 			entry, _ := item.(map[string]any)
 			if hasChildren, _ := entry["hasChildren"].(bool); hasChildren {
-				if childID := itemID(entry); childID != "" {
+				if childID := cmdkit.ItemID(entry); childID != "" {
 					pending = append(pending, childID)
 				}
 			}
@@ -229,12 +230,12 @@ func pollDeploySession(ctx context.Context, client *api.Client, sessionID string
 	}
 	entry, _ := result.(map[string]any)
 	status := deploySessionStatus{
-		SessionID:  stringValue(entry["sessionId"]),
+		SessionID:  cmdkit.StringValue(entry["sessionId"]),
 		Status:     deployWorkStatusName(entry["status"]),
-		Comment:    stringValue(entry["comment"]),
-		Log:        stringValue(entry["log"]),
-		Exception:  stringValue(entry["exceptionJson"]),
-		ServerTime: stringValue(entry["serverTimeStamp"]),
+		Comment:    cmdkit.StringValue(entry["comment"]),
+		Log:        cmdkit.StringValue(entry["log"]),
+		Exception:  cmdkit.StringValue(entry["exceptionJson"]),
+		ServerTime: cmdkit.StringValue(entry["serverTimeStamp"]),
 		Raw:        result,
 	}
 	if percent, ok := entry["percent"].(float64); ok {
@@ -292,7 +293,7 @@ func waitForDeploySession(ctx context.Context, client *api.Client, sessionID str
 	}
 }
 
-func deployTransfer(deps Dependencies) *cobra.Command {
+func deployTransfer(deps cmdkit.Dependencies) *cobra.Command {
 	var nodes []string
 	var entityType string
 	var descendants bool
@@ -357,7 +358,7 @@ transfer keeps running). --wait=false returns the session id immediately.`,
 			if err != nil {
 				return err
 			}
-			if err := requireForceOrDryRun(cmd, "transfers content to another environment", force, dryRun); err != nil {
+			if err := cmdkit.RequireForceOrDryRun(cmd, "transfers content to another environment", force, dryRun); err != nil {
 				return err
 			}
 
@@ -380,7 +381,7 @@ transfer keeps running). --wait=false returns the session id immediately.`,
 				if err != nil {
 					return friendlyDeployAPIError(err)
 				}
-				for _, raw := range resultItems(queued) {
+				for _, raw := range cmdkit.ResultItems(queued) {
 					if entry, ok := raw.(map[string]any); ok {
 						items = append(items, entry)
 					}
@@ -390,8 +391,8 @@ transfer keeps running). --wait=false returns the session id immediately.`,
 				}
 			} else {
 				for _, raw := range nodes {
-					for _, id := range uniqueCSV(raw) {
-						if !isUUIDLike(id) {
+					for _, id := range cmdkit.UniqueCSV(raw) {
+						if !cmdkit.IsUUIDLike(id) {
 							return fmt.Errorf("--node %q is not a GUID", id)
 						}
 						name, err := resolveDeployEntityName(ctx, deps.Client, resolvedType, id)
@@ -451,10 +452,10 @@ transfer keeps running). --wait=false returns the session id immediately.`,
 			if dryRun {
 				plan["dryRun"] = true
 				plan["request"] = result
-				return printResult(cmd, deps, plan)
+				return cmdkit.PrintResult(cmd, deps, plan)
 			}
 			started, _ := result.(map[string]any)
-			sessionID := stringValue(started["sessionId"])
+			sessionID := cmdkit.StringValue(started["sessionId"])
 			if sessionID == "" {
 				return fmt.Errorf("the transfer was accepted but Deploy returned no session id: %v", result)
 			}
@@ -462,7 +463,7 @@ transfer keeps running). --wait=false returns the session id immediately.`,
 			if !wait {
 				plan["status"] = "started"
 				plan["hint"] = "poll with: umbraco api POST /umbraco/deploy/management/api/v1/status/status --raw-path --body '{\"sessionId\":\"" + sessionID + "\"}'"
-				return printResult(cmd, deps, plan)
+				return cmdkit.PrintResult(cmd, deps, plan)
 			}
 
 			errOut := cmd.ErrOrStderr()
@@ -493,7 +494,7 @@ transfer keeps running). --wait=false returns the session id immediately.`,
 					plan["exception"] = final.Exception
 				}
 			}
-			if err := printResult(cmd, deps, plan); err != nil {
+			if err := cmdkit.PrintResult(cmd, deps, plan); err != nil {
 				return err
 			}
 			if waitErr != nil {
@@ -522,13 +523,13 @@ transfer keeps running). --wait=false returns the session id immediately.`,
 	cmd.Flags().DurationVar(&interval, "interval", 3*time.Second, "Session poll interval while waiting")
 	cmd.Flags().DurationVar(&timeout, "timeout", 30*time.Minute, "Give up waiting after this long (exit 6; the transfer keeps running)")
 	cmd.Flags().BoolVar(&force, "force", false, "Confirm the transfer when not using --dry-run")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
 // deployQueue is the "queue for transfer" side: accumulate items, review
 // them, transfer them together with 'deploy transfer --queue'.
-func deployQueue(deps Dependencies) *cobra.Command {
+func deployQueue(deps cmdkit.Dependencies) *cobra.Command {
 	group := &cobra.Command{
 		Use:   "queue",
 		Short: "Umbraco Deploy transfer queue (list, add, remove, clear)",
@@ -543,8 +544,8 @@ func deployQueue(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return friendlyDeployAPIError(err)
 			}
-			items := resultItems(result)
-			return printResult(cmd, deps, map[string]any{"items": items, "total": len(items)})
+			items := cmdkit.ResultItems(result)
+			return cmdkit.PrintResult(cmd, deps, map[string]any{"items": items, "total": len(items)})
 		},
 	})
 
@@ -569,8 +570,8 @@ func deployQueue(deps Dependencies) *cobra.Command {
 			// the third id does not leave the first two queued.
 			ids := []string{}
 			for _, raw := range args {
-				for _, id := range uniqueCSV(raw) {
-					if !isUUIDLike(id) {
+				for _, id := range cmdkit.UniqueCSV(raw) {
+					if !cmdkit.IsUUIDLike(id) {
 						return fmt.Errorf("%q is not a GUID; nothing was queued", id)
 					}
 					ids = append(ids, id)
@@ -585,13 +586,13 @@ func deployQueue(deps Dependencies) *cobra.Command {
 				}
 				queued = append(queued, result)
 			}
-			return printResult(cmd, deps, map[string]any{"queued": queued, "count": len(queued), "dryRun": addDryRun})
+			return cmdkit.PrintResult(cmd, deps, map[string]any{"queued": queued, "count": len(queued), "dryRun": addDryRun})
 		},
 	}
 	add.Flags().StringVar(&addType, "type", "document", "Entity type: document, media, member, dictionary-item, form")
 	add.Flags().BoolVar(&addDescendants, "descendants", false, "Queue the whole subtree under each id")
 	add.Flags().StringVar(&addCulture, "culture", "", "Only this culture's variant (default: all cultures)")
-	addDryRunFlag(add, &addDryRun)
+	cmdkit.AddDryRunFlag(add, &addDryRun)
 	group.AddCommand(add)
 
 	var removeCulture string
@@ -608,7 +609,7 @@ func deployQueue(deps Dependencies) *cobra.Command {
 				if err != nil {
 					return err
 				}
-				if !isUUIDLike(udi) {
+				if !cmdkit.IsUUIDLike(udi) {
 					return fmt.Errorf("%q is neither a GUID nor a UDI (umb://document/<32 hex>)", args[0])
 				}
 				udi = "umb://" + resolvedType + "/" + strings.ToLower(strings.ReplaceAll(udi, "-", ""))
@@ -622,14 +623,14 @@ func deployQueue(deps Dependencies) *cobra.Command {
 				return friendlyDeployAPIError(err)
 			}
 			if removeDryRun {
-				return printResult(cmd, deps, result)
+				return cmdkit.PrintResult(cmd, deps, result)
 			}
-			return printResult(cmd, deps, map[string]any{"removed": true, "udi": udi, "culture": cultureValue})
+			return cmdkit.PrintResult(cmd, deps, map[string]any{"removed": true, "udi": udi, "culture": cultureValue})
 		},
 	}
 	remove.Flags().StringVar(&removeType, "type", "document", "Entity type when passing a GUID: document, media, member, dictionary-item, form")
 	remove.Flags().StringVar(&removeCulture, "culture", "", "Culture the item was queued with (default: all cultures)")
-	addDryRunFlag(remove, &removeDryRun)
+	cmdkit.AddDryRunFlag(remove, &removeDryRun)
 	group.AddCommand(remove)
 
 	var clearForce bool
@@ -639,18 +640,18 @@ func deployQueue(deps Dependencies) *cobra.Command {
 		Short: "Empty the transfer queue",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := requireForceOrDryRun(cmd, "discards every queued transfer item", clearForce, clearDryRun); err != nil {
+			if err := cmdkit.RequireForceOrDryRun(cmd, "discards every queued transfer item", clearForce, clearDryRun); err != nil {
 				return err
 			}
 			result, err := deps.Client.Post(cmd.Context(), "/queue/clear", map[string]any{}, api.RequestOptions{APIPrefix: deployAPIPrefix, DryRun: clearDryRun})
 			if err != nil {
 				return friendlyDeployAPIError(err)
 			}
-			return printMutationResult(cmd, deps, "cleared", result, clearDryRun)
+			return cmdkit.PrintMutationResult(cmd, deps, "cleared", result, clearDryRun)
 		},
 	}
 	clear.Flags().BoolVar(&clearForce, "force", false, "Confirm clearing the queue")
-	addDryRunFlag(clear, &clearDryRun)
+	cmdkit.AddDryRunFlag(clear, &clearDryRun)
 	group.AddCommand(clear)
 	return group
 }

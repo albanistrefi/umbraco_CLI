@@ -1,4 +1,4 @@
-package commands
+package deploy
 
 import (
 	"encoding/json"
@@ -10,15 +10,18 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
+
+	"umbraco-cli/internal/commands/cmdkit"
+	"umbraco-cli/internal/commands/cmdtest"
 )
 
-func buildDeployRoot(deps Dependencies) *cobra.Command {
+func buildDeployRoot(deps cmdkit.Dependencies) *cobra.Command {
 	root := &cobra.Command{Use: "umbraco", SilenceErrors: true, SilenceUsage: true}
 	root.SetErr(io.Discard)
 	if deps.OutputFlag != nil {
 		root.PersistentFlags().StringVarP(deps.OutputFlag, "output", "o", *deps.OutputFlag, "Output format: json, table, plain")
 	}
-	RegisterDeploy(root, deps)
+	Register(root, deps)
 	return root
 }
 
@@ -112,39 +115,39 @@ const statusRemoteDoctype = `{
   ]
 }`
 
-func deployStatusDeps(t *testing.T, remoteDataType string, remoteDoctype string, automateAvailable bool) Dependencies {
+func deployStatusDeps(t *testing.T, remoteDataType string, remoteDoctype string, automateAvailable bool) cmdkit.Dependencies {
 	t.Helper()
-	return endpointDeps(func(req *http.Request) (*http.Response, error) {
+	return cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch {
 		case req.URL.Path == "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case req.URL.Path == "/umbraco/management/api/v1/server/status":
-			return endpointJSONResponse(http.StatusOK, `{"serverStatus":"Run"}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"serverStatus":"Run"}`), nil
 		case req.URL.Path == "/umbraco/management/api/v1/data-type/aaaaaaaa-1111-2222-3333-444444444444":
-			return endpointJSONResponse(http.StatusOK, remoteDataType), nil
+			return cmdtest.JSONResponse(http.StatusOK, remoteDataType), nil
 		case req.URL.Path == "/umbraco/management/api/v1/document-type/bbbbbbbb-1111-2222-3333-444444444444":
-			return endpointJSONResponse(http.StatusOK, remoteDoctype), nil
+			return cmdtest.JSONResponse(http.StatusOK, remoteDoctype), nil
 		case strings.HasPrefix(req.URL.Path, "/umbraco/automate/management/api/v1/"):
 			if !automateAvailable {
-				return endpointJSONResponse(http.StatusNotFound, `null`), nil
+				return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 			}
 			if strings.HasSuffix(req.URL.Path, "/automations") {
-				return endpointJSONResponse(http.StatusOK, `{"items":[],"total":0}`), nil
+				return cmdtest.JSONResponse(http.StatusOK, `{"items":[],"total":0}`), nil
 			}
 			if strings.HasSuffix(req.URL.Path, "/export") {
-				return endpointJSONResponse(http.StatusOK, `{"automation":{"name":"Example Automation","alias":"exampleAutomation","trigger":{"triggerAlias":"example.trigger","settings":{}},"steps":[{"id":"s1","actionAlias":"umbracoAutomate.forEach","name":"Loop","alias":"loop","settings":{},"inputMappings":{}},{"id":"s2","actionAlias":"example.sendMail","name":"Send","alias":"send","settings":{},"inputMappings":{}}],"connections":[{"sourceStepId":"s1","targetStepId":"s2"}]}}`), nil
+				return cmdtest.JSONResponse(http.StatusOK, `{"automation":{"name":"Example Automation","alias":"exampleAutomation","trigger":{"triggerAlias":"example.trigger","settings":{}},"steps":[{"id":"s1","actionAlias":"umbracoAutomate.forEach","name":"Loop","alias":"loop","settings":{},"inputMappings":{}},{"id":"s2","actionAlias":"example.sendMail","name":"Send","alias":"send","settings":{},"inputMappings":{}}],"connections":[{"sourceStepId":"s1","targetStepId":"s2"}]}}`), nil
 			}
-			return endpointJSONResponse(http.StatusOK, `{"name":"Example Automation","alias":"exampleAutomation"}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"name":"Example Automation","alias":"exampleAutomation"}`), nil
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 }
 
-func runDeployStatus(t *testing.T, deps Dependencies, dir string, extra ...string) map[string]any {
+func runDeployStatus(t *testing.T, deps cmdkit.Dependencies, dir string, extra ...string) map[string]any {
 	t.Helper()
 	args := append([]string{"deploy", "status", "--uda-dir", dir, "--exit-zero"}, extra...)
-	output, err := execute(buildDeployRoot(deps), args...)
+	output, err := cmdtest.Execute(buildDeployRoot(deps), args...)
 	if err != nil {
 		t.Fatalf("deploy status failed: %v", err)
 	}
@@ -218,7 +221,7 @@ func TestDeployStatusMissingRemoteAndExitCode(t *testing.T) {
 		t.Fatalf("expected missing-remote, got %+v", byFile["data-type__missing.uda"])
 	}
 
-	_, err := execute(buildDeployRoot(deps), "deploy", "status", "--uda-dir", dir)
+	_, err := cmdtest.Execute(buildDeployRoot(deps), "deploy", "status", "--uda-dir", dir)
 	var drift deployDriftFoundError
 	if err == nil || !strings.Contains(err.Error(), "missing") || drift.ExitCode() != 7 {
 		t.Fatalf("expected exit-7 drift error without --exit-zero, got %v", err)
@@ -287,16 +290,16 @@ func TestDeployStatusWorkspaceIdentityMatchIsUnknownNotInSync(t *testing.T) {
 	workspace := `{"Name":"Example Workspace","Alias":"exampleWorkspace","Udi":"umb://umbraco-automate-workspace/cccccccc111122223333444444444444","Dependencies":[],"__type":"Umbraco.Deploy.Automate,X","__version":"18.0.1"}`
 	writeUda(t, dir, "umbraco-automate-workspace__c.uda", workspace)
 
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch {
 		case req.URL.Path == "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case req.URL.Path == "/umbraco/management/api/v1/server/status":
-			return endpointJSONResponse(http.StatusOK, `{"serverStatus":"Run"}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"serverStatus":"Run"}`), nil
 		case strings.HasSuffix(req.URL.Path, "/automations"):
-			return endpointJSONResponse(http.StatusOK, `{"items":[],"total":0}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"items":[],"total":0}`), nil
 		default:
-			return endpointJSONResponse(http.StatusOK, `{"name":"Example Workspace","alias":"exampleWorkspace"}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"name":"Example Workspace","alias":"exampleWorkspace"}`), nil
 		}
 	})
 	payload := runDeployStatus(t, deps, dir)
@@ -310,13 +313,13 @@ func TestDeployStatusWorkspaceIdentityMatchIsUnknownNotInSync(t *testing.T) {
 func TestDeployStatusUnreachableEnvironmentPreservesExitCode(t *testing.T) {
 	dir := t.TempDir()
 	writeUda(t, dir, "data-type__a.uda", statusDataTypeUda)
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		if req.URL.Path == "/umbraco/management/api/v1/security/back-office/token" {
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		}
-		return endpointJSONResponse(http.StatusInternalServerError, `{"error":"down"}`), nil
+		return cmdtest.JSONResponse(http.StatusInternalServerError, `{"error":"down"}`), nil
 	})
-	_, err := execute(buildDeployRoot(deps), "deploy", "status", "--uda-dir", dir)
+	_, err := cmdtest.Execute(buildDeployRoot(deps), "deploy", "status", "--uda-dir", dir)
 	if err == nil || !strings.Contains(err.Error(), "cannot reach the target environment") {
 		t.Fatalf("expected pre-flight failure, got %v", err)
 	}
@@ -337,16 +340,16 @@ func TestDeployStatusTemplateWhitespaceIsSignificant(t *testing.T) {
 	dir := t.TempDir()
 	template := `{"Name":"Example Template","Alias":"exampleTemplate","Content":"@inherits X\r\n<p>hi</p>\r\n","Udi":"umb://template/eeeeeeee111122223333444444444444","Dependencies":[],"__type":"Umbraco.Deploy.Infrastructure,X","__version":"18.0.1"}`
 	writeUda(t, dir, "template__e.uda", template)
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/server/status":
-			return endpointJSONResponse(http.StatusOK, `{"serverStatus":"Run"}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"serverStatus":"Run"}`), nil
 		default:
 			// Same content, LF endings, but an extra trailing newline: line
 			// endings normalize away, trailing whitespace must not.
-			return endpointJSONResponse(http.StatusOK, `{"name":"Example Template","alias":"exampleTemplate","content":"@inherits X\n<p>hi</p>\n\n"}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"name":"Example Template","alias":"exampleTemplate","content":"@inherits X\n<p>hi</p>\n\n"}`), nil
 		}
 	})
 	payload := runDeployStatus(t, deps, dir)
@@ -360,14 +363,14 @@ func TestDeployStatusRelationTypeBehavioralDrift(t *testing.T) {
 	dir := t.TempDir()
 	relation := `{"Name":"Related Media","Alias":"relatedMedia","IsBidirectional":true,"IsDependency":false,"Udi":"umb://relation-type/ffffffff111122223333444444444444","Dependencies":[],"__type":"Umbraco.Deploy.Infrastructure,X","__version":"18.0.1"}`
 	writeUda(t, dir, "relation-type__f.uda", relation)
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/server/status":
-			return endpointJSONResponse(http.StatusOK, `{"serverStatus":"Run"}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"serverStatus":"Run"}`), nil
 		default:
-			return endpointJSONResponse(http.StatusOK, `{"name":"Related Media","alias":"relatedMedia","isBidirectional":false,"isDependency":false}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"name":"Related Media","alias":"relatedMedia","isBidirectional":false,"isDependency":false}`), nil
 		}
 	})
 	payload := runDeployStatus(t, deps, dir)
@@ -388,16 +391,16 @@ func TestDeployStatusLanguageComparesByIsoCode(t *testing.T) {
 	dir := t.TempDir()
 	lang := `{"Name":"English (United States)","IsoCode":"en-US","IsDefault":true,"IsMandatory":false,"Udi":"umb://language/en-US","Dependencies":[],"__type":"Umbraco.Deploy.Infrastructure,X","__version":"18.0.1"}`
 	writeUda(t, dir, "language__en-US.uda", lang)
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/server/status":
-			return endpointJSONResponse(http.StatusOK, `{"serverStatus":"Run"}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"serverStatus":"Run"}`), nil
 		case "/umbraco/management/api/v1/language/en-US":
-			return endpointJSONResponse(http.StatusOK, `{"name":"English (United States)","isoCode":"en-US","isDefault":false,"isMandatory":false,"fallbackIsoCode":null}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"name":"English (United States)","isoCode":"en-US","isDefault":false,"isMandatory":false,"fallbackIsoCode":null}`), nil
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 	payload := runDeployStatus(t, deps, dir)
@@ -448,13 +451,13 @@ func TestDeployStatusDriftErrorQuietOnlyUnderExplicitJSON(t *testing.T) {
 	writeUda(t, dir, "data-type__missing.uda", missing)
 	deps := deployStatusDeps(t, statusRemoteDataType, statusRemoteDoctype, false)
 
-	_, err := execute(buildDeployRoot(deps), "deploy", "status", "--uda-dir", dir, "-o", " JSON ")
+	_, err := cmdtest.Execute(buildDeployRoot(deps), "deploy", "status", "--uda-dir", dir, "-o", " JSON ")
 	var drift deployDriftFoundError
 	if err == nil || !errorsAsDrift(err, &drift) || !drift.QuietExit() || drift.ExitCode() != 7 {
 		t.Fatalf("expected quiet exit-7 drift error under explicit -o json, got %v", err)
 	}
 
-	_, err = execute(buildDeployRoot(deps), "deploy", "status", "--uda-dir", dir, "-o", "table")
+	_, err = cmdtest.Execute(buildDeployRoot(deps), "deploy", "status", "--uda-dir", dir, "-o", "table")
 	if err == nil || !errorsAsDrift(err, &drift) || drift.QuietExit() {
 		t.Fatalf("expected audible drift error under -o table, got %v", err)
 	}

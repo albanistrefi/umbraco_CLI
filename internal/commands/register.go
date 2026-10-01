@@ -4,6 +4,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/commands/automate"
+	"umbraco-cli/internal/commands/deploy"
 	"umbraco-cli/internal/commands/engage"
 	"umbraco-cli/internal/commands/forms"
 )
@@ -37,7 +38,7 @@ func RegisterAll(root *cobra.Command, deps Dependencies) {
 	RegisterLogs(root, deps)
 	RegisterServer(root, deps)
 	RegisterHealth(root, deps)
-	RegisterDeploy(root, deps)
+	deploy.Register(root, deps)
 	RegisterPublishedCache(root, deps)
 	RegisterRedirect(root, deps)
 	RegisterIndexer(root, deps)

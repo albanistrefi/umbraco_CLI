@@ -1,4 +1,4 @@
-package commands
+package deploy
 
 import (
 	"encoding/json"
@@ -10,6 +10,9 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"umbraco-cli/internal/commands/cmdkit"
+	"umbraco-cli/internal/commands/cmdtest"
 )
 
 const applyFolderUda = `{"Name":"Blocks","Udi":"umb://document-type-container/cccccccc111122223333444444444444","Dependencies":[],"__type":"X","__version":"18.0.1"}`
@@ -61,19 +64,19 @@ func (r *applyRecorder) body(key string) map[string]any {
 // applyDeps simulates an environment where the data type exists but drifts
 // (name differs), and nothing else exists; created entities then become
 // readable so verification can pass.
-func applyDeps(t *testing.T, rec *applyRecorder) Dependencies {
+func applyDeps(t *testing.T, rec *applyRecorder) cmdkit.Dependencies {
 	t.Helper()
 	rec.bodies = map[string]map[string]any{}
 	rec.created = map[string]bool{}
-	return datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	return cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		path := strings.TrimPrefix(req.URL.Path, "/umbraco/management/api/v1")
 		switch path {
 		case "/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"t","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"t","expires_in":3600}`), nil
 		case "/server/status":
-			return datatypeJSONResponse(http.StatusOK, `{"serverStatus":"Run"}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"serverStatus":"Run"}`), nil
 		case "/automations":
-			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 		// Comparison lookups run concurrently; serialize the recorder.
 		rec.mu.Lock()
@@ -88,7 +91,7 @@ func applyDeps(t *testing.T, rec *applyRecorder) Dependencies {
 				id, _ := body["id"].(string)
 				rec.created[path+"/"+id] = true
 			}
-			return datatypeJSONResponse(http.StatusOK, ``), nil
+			return cmdtest.JSONResponse(http.StatusOK, ``), nil
 		}
 		rec.requests = append(rec.requests, "GET "+path)
 		switch path {
@@ -97,10 +100,10 @@ func applyDeps(t *testing.T, rec *applyRecorder) Dependencies {
 			if b, ok := rec.bodies["PUT "+path]; ok {
 				name, _ = b["name"].(string)
 			}
-			return datatypeJSONResponse(http.StatusOK, `{"id":"aaaaaaaa-1111-2222-3333-444444444444","name":"`+name+`","editorAlias":"Umbraco.TextArea","editorUiAlias":"Umb.PropertyEditorUi.TextArea","values":[{"alias":"maxChars","value":500}]}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"id":"aaaaaaaa-1111-2222-3333-444444444444","name":"`+name+`","editorAlias":"Umbraco.TextArea","editorUiAlias":"Umb.PropertyEditorUi.TextArea","values":[{"alias":"maxChars","value":500}]}`), nil
 		case "/document-type/folder/cccccccc-1111-2222-3333-444444444444":
 			if rec.created["/document-type/folder/cccccccc-1111-2222-3333-444444444444"] {
-				return datatypeJSONResponse(http.StatusOK, `{"id":"cccccccc-1111-2222-3333-444444444444","name":"Blocks"}`), nil
+				return cmdtest.JSONResponse(http.StatusOK, `{"id":"cccccccc-1111-2222-3333-444444444444","name":"Blocks"}`), nil
 			}
 		case "/document-type/bbbbbbbb-1111-2222-3333-444444444444":
 			if rec.created["/document-type/bbbbbbbb-1111-2222-3333-444444444444"] {
@@ -118,21 +121,21 @@ func applyDeps(t *testing.T, rec *applyRecorder) Dependencies {
 						map[string]any{"alias": "ungrouped", "name": "Ungrouped", "dataType": map[string]any{"id": "aaaaaaaa-1111-2222-3333-444444444444"}, "sortOrder": 5, "validation": map[string]any{"mandatory": false}},
 					},
 				})
-				return datatypeJSONResponse(http.StatusOK, string(encoded)), nil
+				return cmdtest.JSONResponse(http.StatusOK, string(encoded)), nil
 			}
 		case "/document-type/dddddddd-1111-2222-3333-444444444444":
 			if rec.created[path] {
-				return datatypeJSONResponse(http.StatusOK, `{"id":"dddddddd-1111-2222-3333-444444444444","name":"Child","alias":"child","icon":"icon-item","isElement":false,"allowedAsRoot":false,"allowedDocumentTypes":[],"compositions":[],"properties":[]}`), nil
+				return cmdtest.JSONResponse(http.StatusOK, `{"id":"dddddddd-1111-2222-3333-444444444444","name":"Child","alias":"child","icon":"icon-item","isElement":false,"allowedAsRoot":false,"allowedDocumentTypes":[],"compositions":[],"properties":[]}`), nil
 			}
 		}
-		return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 	})
 }
 
 func TestDeployApplyRequiresDryRunOrForce(t *testing.T) {
 	dir := writeApplyCorpus(t, map[string]string{"dt.uda": statusDataTypeUda})
 	rec := &applyRecorder{}
-	if _, err := execute(buildDeployRoot(applyDeps(t, rec)), "deploy", "apply", "--uda-dir", dir); err == nil || !strings.Contains(err.Error(), "--force") {
+	if _, err := cmdtest.Execute(buildDeployRoot(applyDeps(t, rec)), "deploy", "apply", "--uda-dir", dir); err == nil || !strings.Contains(err.Error(), "--force") {
 		t.Fatalf("expected force gate, got %v", err)
 	}
 	if len(rec.writes()) != 0 || len(rec.requests) != 0 {
@@ -149,7 +152,7 @@ func TestDeployApplyDryRunPlansInDependencyOrderWithoutWriting(t *testing.T) {
 		"auto.uda":     statusAutomationUda,
 	})
 	rec := &applyRecorder{}
-	output, err := execute(buildDeployRoot(applyDeps(t, rec)), "deploy", "apply", "--uda-dir", dir, "--dry-run", "--bodies")
+	output, err := cmdtest.Execute(buildDeployRoot(applyDeps(t, rec)), "deploy", "apply", "--uda-dir", dir, "--dry-run", "--bodies")
 	if err != nil {
 		t.Fatalf("dry-run failed: %v", err)
 	}
@@ -205,7 +208,7 @@ func TestDeployApplyForceWritesBacksUpVerifiesAndFixesUpDeferred(t *testing.T) {
 	})
 	backupDir := filepath.Join(t.TempDir(), "bk")
 	rec := &applyRecorder{}
-	output, err := execute(buildDeployRoot(applyDeps(t, rec)), "deploy", "apply", "--uda-dir", dir, "--force", "--backup-dir", backupDir)
+	output, err := cmdtest.Execute(buildDeployRoot(applyDeps(t, rec)), "deploy", "apply", "--uda-dir", dir, "--force", "--backup-dir", backupDir)
 	if err != nil {
 		t.Fatalf("apply failed: %v\n%s", err, output)
 	}
@@ -238,21 +241,21 @@ func TestDeployApplyForceWritesBacksUpVerifiesAndFixesUpDeferred(t *testing.T) {
 
 func TestDeployApplyStopsOnFirstFailureAndExits4(t *testing.T) {
 	dir := writeApplyCorpus(t, map[string]string{"dt.uda": statusDataTypeUda, "folder.uda": applyFolderUda})
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		path := strings.TrimPrefix(req.URL.Path, "/umbraco/management/api/v1")
 		switch {
 		case path == "/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"t","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"t","expires_in":3600}`), nil
 		case path == "/server/status":
-			return datatypeJSONResponse(http.StatusOK, `{}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{}`), nil
 		case req.Method == http.MethodPost:
-			return datatypeJSONResponse(http.StatusBadRequest, `{"title":"nope"}`), nil
+			return cmdtest.JSONResponse(http.StatusBadRequest, `{"title":"nope"}`), nil
 		case path == "/data-type/aaaaaaaa-1111-2222-3333-444444444444":
-			return datatypeJSONResponse(http.StatusOK, `{"name":"Old","editorAlias":"Umbraco.TextArea","editorUiAlias":"Umb.PropertyEditorUi.TextArea","values":[]}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"name":"Old","editorAlias":"Umbraco.TextArea","editorUiAlias":"Umb.PropertyEditorUi.TextArea","values":[]}`), nil
 		}
-		return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 	})
-	output, err := execute(buildDeployRoot(deps), "deploy", "apply", "--uda-dir", dir, "--force", "--no-backup")
+	output, err := cmdtest.Execute(buildDeployRoot(deps), "deploy", "apply", "--uda-dir", dir, "--force", "--no-backup")
 	if err == nil {
 		t.Fatalf("expected failure exit")
 	}
@@ -272,7 +275,7 @@ func errorsAs(err error, target any) bool {
 func TestDeployApplyPlanErrorsBlockExecutionAndExit4(t *testing.T) {
 	dir := writeApplyCorpus(t, map[string]string{"folder.uda": applyFolderUda, "broken.uda": `{"Name":"x","Udi":"umb://document-type/nothex","Dependencies":[]}`})
 	rec := &applyRecorder{}
-	output, err := execute(buildDeployRoot(applyDeps(t, rec)), "deploy", "apply", "--uda-dir", dir, "--force", "--no-backup")
+	output, err := cmdtest.Execute(buildDeployRoot(applyDeps(t, rec)), "deploy", "apply", "--uda-dir", dir, "--force", "--no-backup")
 	if err == nil || !strings.Contains(err.Error(), "could not be planned") {
 		t.Fatalf("expected plan-error failure, got %v", err)
 	}
@@ -283,12 +286,12 @@ func TestDeployApplyPlanErrorsBlockExecutionAndExit4(t *testing.T) {
 		t.Fatalf("expected the valid write reported as not-run: %s", output)
 	}
 	// Dry-run reports the same problem with exit 4 as well.
-	if _, err := execute(buildDeployRoot(applyDeps(t, rec)), "deploy", "apply", "--uda-dir", dir, "--dry-run"); err == nil {
+	if _, err := cmdtest.Execute(buildDeployRoot(applyDeps(t, rec)), "deploy", "apply", "--uda-dir", dir, "--dry-run"); err == nil {
 		t.Fatalf("expected dry-run to exit non-zero on plan errors")
 	}
 	// --continue-on-error applies the valid entries anyway (still exit 4).
 	rec2 := &applyRecorder{}
-	if _, err := execute(buildDeployRoot(applyDeps(t, rec2)), "deploy", "apply", "--uda-dir", dir, "--force", "--no-backup", "--continue-on-error"); err == nil {
+	if _, err := cmdtest.Execute(buildDeployRoot(applyDeps(t, rec2)), "deploy", "apply", "--uda-dir", dir, "--force", "--no-backup", "--continue-on-error"); err == nil {
 		t.Fatalf("expected exit 4 with plan errors even under --continue-on-error")
 	}
 	if len(rec2.writes()) != 1 {
@@ -298,19 +301,19 @@ func TestDeployApplyPlanErrorsBlockExecutionAndExit4(t *testing.T) {
 
 func TestDeployApplyComparisonFailureIsAnErrorNotASkip(t *testing.T) {
 	dir := writeApplyCorpus(t, map[string]string{"dt.uda": statusDataTypeUda})
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		path := strings.TrimPrefix(req.URL.Path, "/umbraco/management/api/v1")
 		switch path {
 		case "/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"t","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"t","expires_in":3600}`), nil
 		case "/server/status":
-			return datatypeJSONResponse(http.StatusOK, `{}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{}`), nil
 		case "/data-type/aaaaaaaa-1111-2222-3333-444444444444":
-			return datatypeJSONResponse(http.StatusInternalServerError, `{"title":"boom"}`), nil
+			return cmdtest.JSONResponse(http.StatusInternalServerError, `{"title":"boom"}`), nil
 		}
-		return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 	})
-	output, err := execute(buildDeployRoot(deps), "deploy", "apply", "--uda-dir", dir, "--dry-run")
+	output, err := cmdtest.Execute(buildDeployRoot(deps), "deploy", "apply", "--uda-dir", dir, "--dry-run")
 	if err == nil || !strings.Contains(output, `"action": "error"`) || !strings.Contains(output, "comparison failed") {
 		t.Fatalf("expected comparison failure surfaced as a plan error, got err=%v output=%s", err, output)
 	}

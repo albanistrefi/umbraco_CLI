@@ -1,4 +1,4 @@
-package commands
+package deploy
 
 import (
 	"bytes"
@@ -18,6 +18,7 @@ import (
 
 	"umbraco-cli/internal/api"
 	"umbraco-cli/internal/commands/automate"
+	"umbraco-cli/internal/commands/cmdkit"
 	"umbraco-cli/internal/config"
 )
 
@@ -39,7 +40,7 @@ func (e deployDriftFoundError) Error() string {
 func (deployDriftFoundError) ExitCode() int     { return 7 }
 func (e deployDriftFoundError) QuietExit() bool { return e.quiet }
 
-func deployStatus(deps Dependencies) *cobra.Command {
+func deployStatus(deps cmdkit.Dependencies) *cobra.Command {
 	var udaDir string
 	var kinds []string
 	var flagStepAliases []string
@@ -97,7 +98,7 @@ Exit 7 when drift or missing entities are found (suppress with --exit-zero); par
 					"flagged":       flagged,
 				},
 			}
-			if err := printResult(cmd, deps, payload); err != nil {
+			if err := cmdkit.PrintResult(cmd, deps, payload); err != nil {
 				return err
 			}
 			if !exitZero && (summary["drifted"] > 0 || summary["missing-remote"] > 0) {
@@ -143,7 +144,7 @@ type udaStatusResult struct {
 // output, accepting the same spellings ParseOutputFormat does (-o JSON,
 // padded values). The env-default output deliberately does not count:
 // quiet exits are for machine consumers who asked for machine output.
-func explicitJSONOutput(deps Dependencies) bool {
+func explicitJSONOutput(deps cmdkit.Dependencies) bool {
 	requested := deps.RequestedOutput()
 	if strings.TrimSpace(requested) == "" {
 		return false
@@ -237,7 +238,7 @@ func udaKindAcceptsRawID(kind string) bool {
 	return kind == "language"
 }
 
-func compareArtifacts(ctx context.Context, deps Dependencies, artifacts []udaArtifact, flagStepAliases []string, concurrency int) []udaStatusResult {
+func compareArtifacts(ctx context.Context, deps cmdkit.Dependencies, artifacts []udaArtifact, flagStepAliases []string, concurrency int) []udaStatusResult {
 	// Probe Automate availability once up front: on an environment without
 	// the package (or with the API blocked by Cloud basic auth) every
 	// per-entity lookup 404s, which must read as "unknown — API
@@ -277,7 +278,7 @@ func compareArtifacts(ctx context.Context, deps Dependencies, artifacts []udaArt
 	return results
 }
 
-func compareArtifact(ctx context.Context, deps Dependencies, artifact udaArtifact, flagStepAliases []string, automateErr error) udaStatusResult {
+func compareArtifact(ctx context.Context, deps cmdkit.Dependencies, artifact udaArtifact, flagStepAliases []string, automateErr error) udaStatusResult {
 	result := udaStatusResult{File: artifact.File, Kind: artifact.Kind}
 	if artifact.Err != nil {
 		result.Status = "error"
@@ -310,9 +311,9 @@ func compareArtifact(ctx context.Context, deps Dependencies, artifact udaArtifac
 		return result
 	}
 
-	remote, err := fetchObject(ctx, deps.Client, api.JoinPath(fetchPath, artifact.GUID), api.RequestOptions{})
+	remote, err := cmdkit.FetchObject(ctx, deps.Client, api.JoinPath(fetchPath, artifact.GUID), api.RequestOptions{})
 	if err != nil {
-		if isAPIStatus(err, http.StatusNotFound) {
+		if cmdkit.IsAPIStatus(err, http.StatusNotFound) {
 			result.Status = "missing-remote"
 			result.Reason = "entity does not exist on the target environment"
 			return result
@@ -339,7 +340,7 @@ func compareArtifact(ctx context.Context, deps Dependencies, artifact udaArtifac
 // is absent entirely without the package, so unreachable comparisons
 // degrade to "unknown" — but step aliases are always read locally, and
 // --flag-step-alias marks automations regardless of API reachability.
-func compareAutomateArtifact(ctx context.Context, deps Dependencies, artifact udaArtifact, result udaStatusResult, flagStepAliases []string, automateErr error) udaStatusResult {
+func compareAutomateArtifact(ctx context.Context, deps cmdkit.Dependencies, artifact udaArtifact, result udaStatusResult, flagStepAliases []string, automateErr error) udaStatusResult {
 	if artifact.Kind == "umbraco-automate-automation" {
 		result.StepAliases = automationStepAliases(artifact.Body)
 		for _, needle := range flagStepAliases {
@@ -372,7 +373,7 @@ func compareAutomateArtifact(ctx context.Context, deps Dependencies, artifact ud
 	}
 	remote, err := deps.Client.Get(ctx, api.JoinPath(fetchPath, artifact.GUID), api.RequestOptions{APIPrefix: automate.APIPrefix})
 	if err != nil {
-		if isAPIStatus(err, http.StatusNotFound) {
+		if cmdkit.IsAPIStatus(err, http.StatusNotFound) {
 			result.Status = "missing-remote"
 			result.Reason = "entity does not exist on the target environment"
 			return result
@@ -540,7 +541,7 @@ func automationStepAliases(body map[string]any) []string {
 			seen[alias] = struct{}{}
 		}
 	}
-	return sortedKeys(seen)
+	return cmdkit.SortedKeys(seen)
 }
 
 // udaComparer maps a Udi entity type to its Management API fetch path and a
