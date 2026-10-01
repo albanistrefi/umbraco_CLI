@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- fixed a command group run without a subcommand exiting 0 (agent-reported on 0.4.24: `umbraco health --profile live` printed the group's help and exited 0, which a script or agent reads as "health passed"). Cobra answers a group that has no action of its own by printing its help and returning success, and that applied to every group in the tree (72 groups, plus bare `umbraco` and cobra's own `completion`), and to an unknown subcommand too: `umbraco health bogus` also exited 0. A bare group is now a usage error, exit 1, with the subcommands listed on stderr and nothing on stdout (`umbraco health requires a subcommand (action, group, groups, run); run 'umbraco health --help' for usage`); an unknown subcommand is a usage error as well, with a suggestion when the name is close (`unknown command "rnu" for "umbraco health" (did you mean "run"?)`). `--help` and `umbraco help <group>` still exit 0 and print the same help as before, byte for byte; `schema`, the one group that runs something itself (`schema --list`, `schema <name>`), is unchanged. Verified with the built binary, old against new, over `health` (with and without `--profile live`), `document`, `deploy queue`, `completion`, bare `umbraco`, `health bogus`, and the `--help` forms
+
 ## v0.4.25 - 2026-10-01
 
 - restructured the command layer internally, with no user-visible change: each add-on (`forms`, `automate`, `deploy`, `engage`) now lives in its own package under `internal/commands/`, built on a shared `cmdkit` command kit and tested with a shared `cmdtest` harness, with small generic helpers in purpose-named packages (`internal/uuid`, `internal/jsonvalue`, `internal/safefile`); every command, flag, help text, exit code and JSON output is unchanged

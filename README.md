@@ -96,7 +96,7 @@ Scripts and CI gates can rely on the exit code to tell failure classes apart:
 | Code | Meaning |
 |------|---------|
 | 0 | Success |
-| 1 | Usage or local error (invalid flags, bad payloads, missing files) |
+| 1 | Usage or local error (invalid flags, bad payloads, missing files, a command group run without a subcommand) |
 | 2 | `schema diff` ran cleanly and found differences (suppress with `--exit-zero`) |
 | 3 | Authentication or credential failure (fix credentials/base URL, not the command) |
 | 4 | The Management API answered with an error status (4xx/5xx) |
