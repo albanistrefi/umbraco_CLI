@@ -7,6 +7,7 @@ import (
 	"sort"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/commands/cmdkit"
 )
 
 type datatypeMutationSummary struct {
@@ -69,7 +70,7 @@ func datatypeStringArrayFromValues(payload map[string]any, alias string) ([]stri
 	}
 
 	for _, item := range items {
-		itemAlias, itemMap, ok := aliasObject(item)
+		itemAlias, itemMap, ok := cmdkit.AliasObject(item)
 		if !ok || itemAlias != alias {
 			continue
 		}
@@ -118,7 +119,7 @@ func datatypeRemoveStringArrayValue(payload map[string]any, alias string, value 
 }
 
 func datatypeSetStringArrayValue(payload map[string]any, alias string, values []string) map[string]any {
-	merged := cloneObject(payload)
+	merged := cmdkit.CloneObject(payload)
 	encoded := make([]any, 0, len(values))
 	for _, value := range values {
 		encoded = append(encoded, value)
@@ -126,7 +127,7 @@ func datatypeSetStringArrayValue(payload map[string]any, alias string, values []
 
 	if configuration, ok := merged["configuration"].(map[string]any); ok {
 		if _, exists := configuration[alias]; exists {
-			nextConfiguration := cloneObject(configuration)
+			nextConfiguration := cmdkit.CloneObject(configuration)
 			nextConfiguration[alias] = encoded
 			merged["configuration"] = nextConfiguration
 			return merged
@@ -144,17 +145,17 @@ func datatypeSetStringArrayValue(payload map[string]any, alias string, values []
 		nextValues := make([]any, 0, len(rawValues)+1)
 		replaced := false
 		for _, item := range rawValues {
-			itemAlias, itemMap, ok := aliasObject(item)
+			itemAlias, itemMap, ok := cmdkit.AliasObject(item)
 			if !ok {
-				nextValues = append(nextValues, cloneAliasValue(item))
+				nextValues = append(nextValues, cmdkit.CloneAliasValue(item))
 				continue
 			}
 			if itemAlias != alias {
-				nextValues = append(nextValues, cloneObject(itemMap))
+				nextValues = append(nextValues, cmdkit.CloneObject(itemMap))
 				continue
 			}
 
-			nextItem := cloneObject(itemMap)
+			nextItem := cmdkit.CloneObject(itemMap)
 			nextItem["value"] = encoded
 			nextValues = append(nextValues, nextItem)
 			replaced = true
@@ -295,7 +296,7 @@ func foldMergedDatatypeConfiguration(body map[string]any) error {
 		// The values entry carries the user's patch; deep-merge the legacy
 		// setting underneath it so unmentioned nested fields survive, as
 		// --merge-json promises.
-		entry["value"] = mergeAliasValue(configuration[alias], entry["value"])
+		entry["value"] = cmdkit.MergeAliasValue(configuration[alias], entry["value"])
 	}
 
 	body["values"] = values

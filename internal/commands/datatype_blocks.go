@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/commands/cmdkit"
 )
 
 // guidPattern matches the standard 8-4-4-4-12 lowercase/uppercase hex form
@@ -56,7 +57,7 @@ type datatypeBlockMutationSummary struct {
 	Block                 map[string]any `json:"block,omitempty"`
 }
 
-func datatypeBlock(deps Dependencies) *cobra.Command {
+func datatypeBlock(deps cmdkit.Dependencies) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "block",
 		Short: "Manage allowed blocks on a Block List / Block Grid datatype",
@@ -71,7 +72,7 @@ func datatypeBlock(deps Dependencies) *cobra.Command {
 	return cmd
 }
 
-func datatypeBlockList(deps Dependencies) *cobra.Command {
+func datatypeBlockList(deps cmdkit.Dependencies) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list <datatypeId>",
 		Short: "List allowed blocks on a Block List / Block Grid datatype",
@@ -89,13 +90,13 @@ func datatypeBlockList(deps Dependencies) *cobra.Command {
 			for _, b := range blocks {
 				out = append(out, b)
 			}
-			return printResult(cmd, deps, out)
+			return cmdkit.PrintResult(cmd, deps, out)
 		},
 	}
 	return cmd
 }
 
-func datatypeBlockAdd(deps Dependencies) *cobra.Command {
+func datatypeBlockAdd(deps cmdkit.Dependencies) *cobra.Command {
 	var group string
 	var contentElementType string
 	var settingsElementType string
@@ -113,7 +114,7 @@ func datatypeBlockAdd(deps Dependencies) *cobra.Command {
 		Long:  "Appends a block to the datatype's blocks array. Idempotent: if a block with the same --content-element-type is already present, no PUT is sent.\n\nBlockGrid: --allow-at-root and --allow-in-areas default to true so the block is actually placeable after registration (server-side both default to false when omitted, which would register a block that's invisible to editors). Pass --allow-at-root=false or --allow-in-areas=false to override. --group <name> places the block in a BlockGrid block group, creating the group in blockGroups when it does not exist yet (groups are matched by name, case-insensitively).\n\nBlockList: --allow-at-root, --allow-in-areas and --group are Block Grid concepts; the first two are ignored, --group is rejected.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := requireValue("--content-element-type", contentElementType); err != nil {
+			if err := cmdkit.RequireValue("--content-element-type", contentElementType); err != nil {
 				return err
 			}
 			if err := validateBlockGUID("--content-element-type", contentElementType); err != nil {
@@ -149,7 +150,7 @@ func datatypeBlockAdd(deps Dependencies) *cobra.Command {
 
 			blocks := loadDatatypeBlocks(payload)
 			if findBlockIndex(blocks, contentElementType) >= 0 {
-				return printResult(cmd, deps, datatypeBlockMutationSummary{
+				return cmdkit.PrintResult(cmd, deps, datatypeBlockMutationSummary{
 					Action:                "add",
 					DatatypeID:            args[0],
 					EditorAlias:           editor,
@@ -204,9 +205,9 @@ func datatypeBlockAdd(deps Dependencies) *cobra.Command {
 				return err
 			}
 			if dryRun {
-				return printResult(cmd, deps, result)
+				return cmdkit.PrintResult(cmd, deps, result)
 			}
-			return printResult(cmd, deps, datatypeBlockMutationSummary{
+			return cmdkit.PrintResult(cmd, deps, datatypeBlockMutationSummary{
 				Action:                "add",
 				DatatypeID:            args[0],
 				EditorAlias:           editor,
@@ -230,7 +231,7 @@ func datatypeBlockAdd(deps Dependencies) *cobra.Command {
 	return cmd
 }
 
-func datatypeBlockUpdate(deps Dependencies) *cobra.Command {
+func datatypeBlockUpdate(deps cmdkit.Dependencies) *cobra.Command {
 	var group string
 	var contentElementType string
 	var settingsElementType string
@@ -256,7 +257,7 @@ Idempotent: if the resulting block is byte-identical to the current one, no PUT 
 BlockGrid: --allow-at-root and --allow-in-areas are honored when explicitly passed. Both are ignored for BlockList (mirror of 'block add').`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := requireValue("--content-element-type", contentElementType); err != nil {
+			if err := cmdkit.RequireValue("--content-element-type", contentElementType); err != nil {
 				return err
 			}
 			if err := validateBlockGUID("--content-element-type", contentElementType); err != nil {
@@ -292,7 +293,7 @@ BlockGrid: --allow-at-root and --allow-in-areas are honored when explicitly pass
 			// Deep-clone the target so unrelated keys on the original payload
 			// pass through untouched and we have a clean before/after pair
 			// for the idempotency check.
-			updated := cloneObject(blocks[idx])
+			updated := cmdkit.CloneObject(blocks[idx])
 			if cmd.Flags().Changed("label") {
 				if label == "" {
 					delete(updated, "label")
@@ -350,7 +351,7 @@ BlockGrid: --allow-at-root and --allow-in-areas are honored when explicitly pass
 			}
 
 			if reflect.DeepEqual(blocks[idx], updated) {
-				return printResult(cmd, deps, datatypeBlockMutationSummary{
+				return cmdkit.PrintResult(cmd, deps, datatypeBlockMutationSummary{
 					Action:                "update",
 					DatatypeID:            args[0],
 					EditorAlias:           editor,
@@ -376,9 +377,9 @@ BlockGrid: --allow-at-root and --allow-in-areas are honored when explicitly pass
 				return err
 			}
 			if dryRun {
-				return printResult(cmd, deps, result)
+				return cmdkit.PrintResult(cmd, deps, result)
 			}
-			return printResult(cmd, deps, datatypeBlockMutationSummary{
+			return cmdkit.PrintResult(cmd, deps, datatypeBlockMutationSummary{
 				Action:                "update",
 				DatatypeID:            args[0],
 				EditorAlias:           editor,
@@ -404,7 +405,7 @@ BlockGrid: --allow-at-root and --allow-in-areas are honored when explicitly pass
 
 // datatypeBlockGroups lists a Block Grid's block groups with how many blocks
 // each holds.
-func datatypeBlockGroups(deps Dependencies) *cobra.Command {
+func datatypeBlockGroups(deps cmdkit.Dependencies) *cobra.Command {
 	return &cobra.Command{
 		Use:   "groups <datatypeId>",
 		Short: "List a Block Grid's block groups (blockGroups) with block counts",
@@ -424,7 +425,7 @@ func datatypeBlockGroups(deps Dependencies) *cobra.Command {
 			counts := map[string]int{}
 			ungrouped := 0
 			for _, block := range loadDatatypeBlocks(payload) {
-				if key := asString(block["groupKey"]); key != "" {
+				if key := cmdkit.AsString(block["groupKey"]); key != "" {
 					counts[strings.ToLower(key)]++
 				} else {
 					ungrouped++
@@ -432,10 +433,10 @@ func datatypeBlockGroups(deps Dependencies) *cobra.Command {
 			}
 			groups := []map[string]any{}
 			for _, group := range loadBlockGroups(payload) {
-				key := asString(group["key"])
+				key := cmdkit.AsString(group["key"])
 				groups = append(groups, map[string]any{"key": key, "name": group["name"], "blocks": counts[strings.ToLower(key)]})
 			}
-			return printResult(cmd, deps, map[string]any{"datatypeId": args[0], "groups": groups, "ungroupedBlocks": ungrouped})
+			return cmdkit.PrintResult(cmd, deps, map[string]any{"datatypeId": args[0], "groups": groups, "ungroupedBlocks": ungrouped})
 		},
 	}
 }
@@ -443,7 +444,7 @@ func datatypeBlockGroups(deps Dependencies) *cobra.Command {
 // datatypeBlockReorder rewrites the blocks array in the given order: listed
 // keys first, in that order; unlisted blocks keep their relative order after
 // them. Array order is what the block picker shows.
-func datatypeBlockReorder(deps Dependencies) *cobra.Command {
+func datatypeBlockReorder(deps cmdkit.Dependencies) *cobra.Command {
 	var keys []string
 	var dryRun bool
 	cmd := &cobra.Command{
@@ -476,14 +477,14 @@ func datatypeBlockReorder(deps Dependencies) *cobra.Command {
 			}
 			order := blockKeyOrder(next)
 			if reflect.DeepEqual(blockKeyOrder(blocks), order) {
-				return printResult(cmd, deps, map[string]any{"action": "reorder", "datatypeId": args[0], "editorAlias": editor, "changed": false, "order": order})
+				return cmdkit.PrintResult(cmd, deps, map[string]any{"action": "reorder", "datatypeId": args[0], "editorAlias": editor, "changed": false, "order": order})
 			}
 			result, err := deps.Client.Put(ctx, api.JoinPath(dataTypeLegacyCollectionPath+"/%s", args[0]), writeDatatypeBlocks(payload, next), api.RequestOptions{DryRun: dryRun})
 			if err != nil {
 				return err
 			}
 			if dryRun {
-				return printResult(cmd, deps, result)
+				return cmdkit.PrintResult(cmd, deps, result)
 			}
 			after, err := fetchDatatypeObject(ctx, deps.Client, args[0])
 			if err != nil {
@@ -493,7 +494,7 @@ func datatypeBlockReorder(deps Dependencies) *cobra.Command {
 			if !reflect.DeepEqual(persisted, order) {
 				return fmt.Errorf("the server accepted the update but persisted a different block order: %v", persisted)
 			}
-			return printResult(cmd, deps, map[string]any{"action": "reorder", "datatypeId": args[0], "editorAlias": editor, "changed": true, "order": order, "verified": true})
+			return cmdkit.PrintResult(cmd, deps, map[string]any{"action": "reorder", "datatypeId": args[0], "editorAlias": editor, "changed": true, "order": order, "verified": true})
 		},
 	}
 	cmd.Flags().StringSliceVar(&keys, "keys", nil, "Content element type GUIDs in the desired order (comma-separated or repeated); unlisted blocks follow in their current order")
@@ -529,7 +530,7 @@ func reorderBlocks(blocks []map[string]any, keys []string) ([]map[string]any, er
 func blockKeyOrder(blocks []map[string]any) []string {
 	order := make([]string, 0, len(blocks))
 	for _, block := range blocks {
-		order = append(order, strings.ToLower(asString(block["contentElementTypeKey"])))
+		order = append(order, strings.ToLower(cmdkit.AsString(block["contentElementTypeKey"])))
 	}
 	return order
 }
@@ -560,11 +561,11 @@ func loadBlockGroups(payload map[string]any) []map[string]any {
 func ensureBlockGroup(payload map[string]any, name string) (string, map[string]any) {
 	name = strings.TrimSpace(name)
 	for _, group := range loadBlockGroups(payload) {
-		if strings.EqualFold(asString(group["name"]), name) {
-			return asString(group["key"]), payload
+		if strings.EqualFold(cmdkit.AsString(group["name"]), name) {
+			return cmdkit.AsString(group["key"]), payload
 		}
 	}
-	key, err := newUUIDv4()
+	key, err := cmdkit.NewUUIDv4()
 	if err != nil {
 		key = strings.ToLower(name)
 	}
@@ -576,10 +577,10 @@ func ensureBlockGroup(payload map[string]any, name string) (string, map[string]a
 // writeDatatypeValue returns a deep-cloned payload with the given value entry
 // replaced (or appended), preserving every other field.
 func writeDatatypeValue(payload map[string]any, alias string, next []map[string]any) map[string]any {
-	cloned := cloneObject(payload)
+	cloned := cmdkit.CloneObject(payload)
 	encoded := make([]any, 0, len(next))
 	for _, item := range next {
-		encoded = append(encoded, cloneObject(item))
+		encoded = append(encoded, cmdkit.CloneObject(item))
 	}
 	values, ok := cloned["values"].([]any)
 	if !ok {
@@ -591,7 +592,7 @@ func writeDatatypeValue(payload map[string]any, alias string, next []map[string]
 		if !entryOk || entry["alias"] != alias {
 			continue
 		}
-		nextEntry := cloneObject(entry)
+		nextEntry := cmdkit.CloneObject(entry)
 		nextEntry["value"] = encoded
 		values[i] = nextEntry
 		cloned["values"] = values
@@ -601,7 +602,7 @@ func writeDatatypeValue(payload map[string]any, alias string, next []map[string]
 	return cloned
 }
 
-func datatypeBlockRemove(deps Dependencies) *cobra.Command {
+func datatypeBlockRemove(deps cmdkit.Dependencies) *cobra.Command {
 	var contentElementType string
 	var dryRun bool
 
@@ -611,7 +612,7 @@ func datatypeBlockRemove(deps Dependencies) *cobra.Command {
 		Long:  "Idempotent: if no block with --content-element-type is registered, no PUT is sent.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := requireValue("--content-element-type", contentElementType); err != nil {
+			if err := cmdkit.RequireValue("--content-element-type", contentElementType); err != nil {
 				return err
 			}
 			if err := validateBlockGUID("--content-element-type", contentElementType); err != nil {
@@ -631,7 +632,7 @@ func datatypeBlockRemove(deps Dependencies) *cobra.Command {
 			blocks := loadDatatypeBlocks(payload)
 			idx := findBlockIndex(blocks, contentElementType)
 			if idx < 0 {
-				return printResult(cmd, deps, datatypeBlockMutationSummary{
+				return cmdkit.PrintResult(cmd, deps, datatypeBlockMutationSummary{
 					Action:                "remove",
 					DatatypeID:            args[0],
 					EditorAlias:           editor,
@@ -656,9 +657,9 @@ func datatypeBlockRemove(deps Dependencies) *cobra.Command {
 				return err
 			}
 			if dryRun {
-				return printResult(cmd, deps, result)
+				return cmdkit.PrintResult(cmd, deps, result)
 			}
-			return printResult(cmd, deps, datatypeBlockMutationSummary{
+			return cmdkit.PrintResult(cmd, deps, datatypeBlockMutationSummary{
 				Action:                "remove",
 				DatatypeID:            args[0],
 				EditorAlias:           editor,
@@ -700,10 +701,10 @@ func loadDatatypeBlocks(payload map[string]any) []map[string]any {
 // (label, sortOrder, other values entries) so unrelated settings survive
 // the round-trip.
 func writeDatatypeBlocks(payload map[string]any, next []map[string]any) map[string]any {
-	cloned := cloneObject(payload)
+	cloned := cmdkit.CloneObject(payload)
 	encoded := make([]any, 0, len(next))
 	for _, block := range next {
-		encoded = append(encoded, cloneObject(block))
+		encoded = append(encoded, cmdkit.CloneObject(block))
 	}
 
 	values, ok := cloned["values"].([]any)
@@ -719,7 +720,7 @@ func writeDatatypeBlocks(payload map[string]any, next []map[string]any) map[stri
 		if entry["alias"] != "blocks" {
 			continue
 		}
-		nextEntry := cloneObject(entry)
+		nextEntry := cmdkit.CloneObject(entry)
 		nextEntry["value"] = encoded
 		values[i] = nextEntry
 		cloned["values"] = values
@@ -742,7 +743,7 @@ func requireDatatypeBlockEditor(payload map[string]any, datatypeID string) (stri
 
 func findBlockIndex(blocks []map[string]any, contentElementTypeKey string) int {
 	for i, b := range blocks {
-		if asString(b["contentElementTypeKey"]) == contentElementTypeKey {
+		if cmdkit.AsString(b["contentElementTypeKey"]) == contentElementTypeKey {
 			return i
 		}
 	}

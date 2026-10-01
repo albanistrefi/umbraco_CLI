@@ -6,9 +6,10 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/commands/cmdkit"
 )
 
-func RegisterLanguage(root *cobra.Command, deps Dependencies) {
+func RegisterLanguage(root *cobra.Command, deps cmdkit.Dependencies) {
 	language := &cobra.Command{
 		Use:   "language",
 		Short: "Language and culture management for variant content",
@@ -24,27 +25,27 @@ func RegisterLanguage(root *cobra.Command, deps Dependencies) {
 	root.AddCommand(language)
 }
 
-func languageList(deps Dependencies) *cobra.Command {
-	return collectionCommand(deps, collectionSpec{
+func languageList(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.CollectionCommand(deps, cmdkit.CollectionSpec{
 		Use:   "list",
 		Short: "List configured languages (paginated; --skip/--take/--all)",
-		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
-			return []getRequestCandidate{
+		Endpoints: func(args []string, params map[string]any) []cmdkit.GetRequestCandidate {
+			return []cmdkit.GetRequestCandidate{
 				{Path: "/language", Opts: api.RequestOptions{Params: params}},
 			}
 		},
 	})
 }
 
-func languageGet(deps Dependencies) *cobra.Command {
-	return getCommand(deps, getSpec{
+func languageGet(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.GetCommand(deps, cmdkit.GetSpec{
 		Use:   "get <iso-code>",
 		Short: "Get a language by ISO code (e.g. en-US)",
 		Path:  func(args []string) string { return api.JoinPath("/language/%s", args[0]) },
 	})
 }
 
-func languageCreate(deps Dependencies) *cobra.Command {
+func languageCreate(deps cmdkit.Dependencies) *cobra.Command {
 	var jsonPayload string
 	var isoCode string
 	var name string
@@ -60,16 +61,16 @@ func languageCreate(deps Dependencies) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var body map[string]any
 			if strings.TrimSpace(jsonPayload) != "" {
-				parsed, err := parsePayload(jsonPayload)
+				parsed, err := cmdkit.ParsePayload(jsonPayload)
 				if err != nil {
 					return err
 				}
 				body = parsed
 			} else {
-				if err := requireValue("--iso-code", isoCode); err != nil {
+				if err := cmdkit.RequireValue("--iso-code", isoCode); err != nil {
 					return err
 				}
-				if err := requireValue("--name", name); err != nil {
+				if err := cmdkit.RequireValue("--name", name); err != nil {
 					return err
 				}
 				body = map[string]any{
@@ -86,7 +87,7 @@ func languageCreate(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printMutationResult(cmd, deps, "created", result, dryRun)
+			return cmdkit.PrintMutationResult(cmd, deps, "created", result, dryRun)
 		},
 	}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Create payload as JSON")
@@ -95,23 +96,23 @@ func languageCreate(deps Dependencies) *cobra.Command {
 	cmd.Flags().BoolVar(&isDefault, "default", false, "Make this the default language")
 	cmd.Flags().BoolVar(&isMandatory, "mandatory", false, "Require this language before content can publish")
 	cmd.Flags().StringVar(&fallback, "fallback", "", "Fallback language ISO code")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
-func languageUpdate(deps Dependencies) *cobra.Command {
-	return updateCommand(deps, updateSpec{
+func languageUpdate(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.UpdateCommand(deps, cmdkit.UpdateSpec{
 		Use:   "update <iso-code>",
 		Short: "Update a language",
 		Path:  func(args []string) string { return api.JoinPath("/language/%s", args[0]) },
 		// The update model has no isoCode field (it lives in the path);
 		// a merge against the GET response would otherwise echo it back.
-		NormalizeMerged: stripFields("isoCode"),
+		NormalizeMerged: cmdkit.StripFields("isoCode"),
 	})
 }
 
-func languageDelete(deps Dependencies) *cobra.Command {
-	return deleteCommand(deps, deleteSpec{
+func languageDelete(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.DeleteCommand(deps, cmdkit.DeleteSpec{
 		Use:   "delete <iso-code>",
 		Short: "Permanently delete a language (content variants for it become unreachable)",
 		Path: func(args []string) string {
@@ -120,7 +121,7 @@ func languageDelete(deps Dependencies) *cobra.Command {
 	})
 }
 
-func languageDefault(deps Dependencies) *cobra.Command {
+func languageDefault(deps cmdkit.Dependencies) *cobra.Command {
 	return &cobra.Command{
 		Use:   "default",
 		Short: "Get the default language",
@@ -130,17 +131,17 @@ func languageDefault(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, deps, result)
+			return cmdkit.PrintResult(cmd, deps, result)
 		},
 	}
 }
 
-func languageCultures(deps Dependencies) *cobra.Command {
-	return collectionCommand(deps, collectionSpec{
+func languageCultures(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.CollectionCommand(deps, cmdkit.CollectionSpec{
 		Use:   "cultures",
 		Short: "List the ISO cultures available for new languages (paginated; --skip/--take/--all)",
-		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
-			return []getRequestCandidate{
+		Endpoints: func(args []string, params map[string]any) []cmdkit.GetRequestCandidate {
+			return []cmdkit.GetRequestCandidate{
 				{Path: "/culture", Opts: api.RequestOptions{Params: params}},
 			}
 		},

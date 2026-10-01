@@ -7,11 +7,12 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/commands/cmdkit"
 )
 
 // RegisterRelation wires the relation group: relation types (the catalogue
 // of relation kinds) and the relations stored for one of them.
-func RegisterRelation(root *cobra.Command, deps Dependencies) {
+func RegisterRelation(root *cobra.Command, deps cmdkit.Dependencies) {
 	relation := &cobra.Command{
 		Use:   "relation",
 		Short: "Relations and relation types",
@@ -34,15 +35,15 @@ the rows of 'relation list --type <id>' client-side.`,
 	root.AddCommand(relation)
 }
 
-func relationList(deps Dependencies) *cobra.Command {
+func relationList(deps cmdkit.Dependencies) *cobra.Command {
 	var relationTypeID string
-	cmd := collectionCommand(deps, collectionSpec{
+	cmd := cmdkit.CollectionCommand(deps, cmdkit.CollectionSpec{
 		Use:   "list",
 		Short: "List the relations stored for one relation type (paginated; --skip/--take/--all)",
 		Long:  "GET /relation/type/{id}. The relation type GUID comes from 'relation type list'. Each row names the two ends of the relation (parent/child) — the API has no by-parent or by-child endpoint, so narrow the rows with --fields or --all plus client-side filtering. Bookkeeping types such as umbMedia can hold tens of thousands of rows, so keep --take small before reaching for --all.",
 		NArgs: 0,
-		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
-			return []getRequestCandidate{
+		Endpoints: func(args []string, params map[string]any) []cmdkit.GetRequestCandidate {
+			return []cmdkit.GetRequestCandidate{
 				{Path: api.JoinPath("/relation/type/%s", strings.TrimSpace(relationTypeID)), Opts: api.RequestOptions{Params: params}},
 			}
 		},
@@ -60,7 +61,7 @@ func relationList(deps Dependencies) *cobra.Command {
 // relationType groups the relation-type catalogue reads under
 // 'relation type'. Relation types are the vocabulary; 'relation list' reads
 // the rows recorded against one of them.
-func relationType(deps Dependencies) *cobra.Command {
+func relationType(deps cmdkit.Dependencies) *cobra.Command {
 	relationType := &cobra.Command{
 		Use:   "type",
 		Short: "Relation types: list, inspect, resolve by ID",
@@ -71,22 +72,22 @@ func relationType(deps Dependencies) *cobra.Command {
 	return relationType
 }
 
-func relationTypeList(deps Dependencies) *cobra.Command {
-	return collectionCommand(deps, collectionSpec{
+func relationTypeList(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.CollectionCommand(deps, cmdkit.CollectionSpec{
 		Use:   "list",
 		Short: "List relation types (paginated; --skip/--take/--all)",
 		Long:  "GET /relation-type. The catalogue of relation kinds the instance knows about (document/media pickers, tracked references, recycle-bin bookkeeping). The id of a row is the --type argument of 'relation list'.",
 		NArgs: 0,
-		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
-			return []getRequestCandidate{
+		Endpoints: func(args []string, params map[string]any) []cmdkit.GetRequestCandidate {
+			return []cmdkit.GetRequestCandidate{
 				{Path: "/relation-type", Opts: api.RequestOptions{Params: params}},
 			}
 		},
 	})
 }
 
-func relationTypeGet(deps Dependencies) *cobra.Command {
-	return getCommand(deps, getSpec{
+func relationTypeGet(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.GetCommand(deps, cmdkit.GetSpec{
 		Use:   "get <id>",
 		Short: "Get one relation type (alias, direction, tracked object types)",
 		Long:  "GET /relation-type/{id}. isBidirectional tells you whether the relation is walked from both ends; isDependency tells you whether deleting one end is blocked by the other.",
@@ -94,7 +95,7 @@ func relationTypeGet(deps Dependencies) *cobra.Command {
 	})
 }
 
-func relationTypeItems(deps Dependencies) *cobra.Command {
+func relationTypeItems(deps cmdkit.Dependencies) *cobra.Command {
 	var idsCSV string
 	var fields string
 	cmd := &cobra.Command{
@@ -103,18 +104,18 @@ func relationTypeItems(deps Dependencies) *cobra.Command {
 		Long:  "GET /item/relation-type?id=…. The item read for relation types: pass the GUIDs seen in other payloads and get their names back without one request per ID.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ids := uniqueCSV(idsCSV)
+			ids := cmdkit.UniqueCSV(idsCSV)
 			if len(ids) == 0 {
 				return fmt.Errorf("relation type items requires --ids <comma-separated guids>")
 			}
-			result, err := deps.Client.Get(cmd.Context(), "/item/relation-type", api.RequestOptions{Params: map[string]any{"id": stringsToAny(ids)}, Fields: fields})
+			result, err := deps.Client.Get(cmd.Context(), "/item/relation-type", api.RequestOptions{Params: map[string]any{"id": cmdkit.StringsToAny(ids)}, Fields: fields})
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, deps, applyFieldsProjection(result, fields))
+			return cmdkit.PrintResult(cmd, deps, cmdkit.ApplyFieldsProjection(result, fields))
 		},
 	}
 	cmd.Flags().StringVar(&idsCSV, "ids", "", "Comma-separated relation type GUIDs (required)")
-	addFieldsFlag(cmd, &fields)
+	cmdkit.AddFieldsFlag(cmd, &fields)
 	return cmd
 }

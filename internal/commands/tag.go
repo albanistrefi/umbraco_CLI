@@ -6,9 +6,10 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/commands/cmdkit"
 )
 
-func RegisterTag(root *cobra.Command, deps Dependencies) {
+func RegisterTag(root *cobra.Command, deps cmdkit.Dependencies) {
 	tag := &cobra.Command{
 		Use:   "tag",
 		Short: "Tag reads across tagged content",
@@ -24,15 +25,15 @@ Task → command:
 	root.AddCommand(tag)
 }
 
-func tagList(deps Dependencies) *cobra.Command {
+func tagList(deps cmdkit.Dependencies) *cobra.Command {
 	var query string
 	var group string
 	var culture string
-	cmd := collectionCommand(deps, collectionSpec{
+	cmd := cmdkit.CollectionCommand(deps, cmdkit.CollectionSpec{
 		Use:   "list",
 		Short: "List tags (paginated; --skip/--take/--all)",
 		Long:  "GET /tag. --query matches tag text server-side, --group narrows to one tag group (the tagGroup configured on the tag picker data type), --culture narrows to the tags stored for one language. --params wins on key collisions.",
-		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
+		Endpoints: func(args []string, params map[string]any) []cmdkit.GetRequestCandidate {
 			// The spec params map must not be mutated; withParam clones per
 			// key and --params keeps precedence on collisions.
 			for key, value := range map[string]string{"query": query, "tagGroup": group, "culture": culture} {
@@ -42,9 +43,9 @@ func tagList(deps Dependencies) *cobra.Command {
 				if _, exists := params[key]; exists {
 					continue
 				}
-				params = withParam(params, key, value)
+				params = cmdkit.WithParam(params, key, value)
 			}
-			return []getRequestCandidate{
+			return []cmdkit.GetRequestCandidate{
 				{Path: "/tag", Opts: api.RequestOptions{Params: params}},
 			}
 		},

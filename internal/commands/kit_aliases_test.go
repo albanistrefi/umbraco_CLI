@@ -26,6 +26,7 @@ var (
 	execute              = cmdtest.Execute
 	executeWithErr       = cmdtest.ExecuteWithErr
 	findChildCommand     = cmdtest.FindChildCommand
+	isUUIDLike           = cmdkit.IsUUIDLike
 	makeDeps             = cmdtest.MakeDeps
 	readBackup           = cmdkit.ReadBackup
 	tokenOr404           = cmdtest.TokenOr404

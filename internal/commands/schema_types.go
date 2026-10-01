@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/commands/cmdkit"
 )
 
 // schemaTypeSpec parameterizes the shared command surface of the
@@ -25,64 +26,64 @@ type schemaTypeSpec struct {
 	UpdateStripFields []string
 }
 
-func RegisterMediaType(root *cobra.Command, deps Dependencies) {
+func RegisterMediaType(root *cobra.Command, deps cmdkit.Dependencies) {
 	registerSchemaTypeGroup(root, deps, schemaTypeSpec{
 		Use: "mediatype", Resource: "media-type", Display: "media type",
 		UpdateStripFields: []string{"id", "isDeletable", "aliasCanBeChanged"},
 	})
 }
 
-func RegisterMemberType(root *cobra.Command, deps Dependencies) {
+func RegisterMemberType(root *cobra.Command, deps cmdkit.Dependencies) {
 	registerSchemaTypeGroup(root, deps, schemaTypeSpec{
 		Use: "membertype", Resource: "member-type", Display: "member type",
 		UpdateStripFields: []string{"id"},
 	})
 }
 
-func registerSchemaTypeGroup(root *cobra.Command, deps Dependencies, spec schemaTypeSpec) {
+func registerSchemaTypeGroup(root *cobra.Command, deps cmdkit.Dependencies, spec schemaTypeSpec) {
 	group := &cobra.Command{Use: spec.Use, Short: fmt.Sprintf("%s operations", strings.ToUpper(spec.Display[:1])+spec.Display[1:])}
 	group.AddCommand(schemaTypeList(deps, spec))
 	group.AddCommand(schemaTypeGet(deps, spec))
-	group.AddCommand(collectionCommand(deps, collectionSpec{
+	group.AddCommand(cmdkit.CollectionCommand(deps, cmdkit.CollectionSpec{
 		Use: "children <id>",
 		Enrich: func(ctx context.Context, result any) (any, error) {
 			return enrichSchemaTypeAliases(ctx, deps.Client, spec.Resource, result)
 		},
 		Short: fmt.Sprintf("Get child %ss of a folder (paginated; --skip/--take/--all)", spec.Display),
 		NArgs: 1,
-		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
-			return []getRequestCandidate{
-				{Path: "/tree/" + spec.Resource + "/children", Opts: api.RequestOptions{Params: withParam(params, "parentId", args[0])}},
+		Endpoints: func(args []string, params map[string]any) []cmdkit.GetRequestCandidate {
+			return []cmdkit.GetRequestCandidate{
+				{Path: "/tree/" + spec.Resource + "/children", Opts: api.RequestOptions{Params: cmdkit.WithParam(params, "parentId", args[0])}},
 				{Path: api.JoinPath("/"+spec.Resource+"/%s/children", args[0]), Opts: api.RequestOptions{Params: params}},
 			}
 		},
 	}))
-	group.AddCommand(searchCommand(deps, searchSpec{
+	group.AddCommand(cmdkit.SearchCommand(deps, cmdkit.SearchSpec{
 		Use: "search",
 		Enrich: func(ctx context.Context, result any) (any, error) {
 			return enrichSchemaTypeAliases(ctx, deps.Client, spec.Resource, result)
 		},
 		Short: fmt.Sprintf("Search %ss", spec.Display),
-		Endpoints: func(params map[string]any) []getRequestCandidate {
-			return []getRequestCandidate{
+		Endpoints: func(params map[string]any) []cmdkit.GetRequestCandidate {
+			return []cmdkit.GetRequestCandidate{
 				{Path: "/item/" + spec.Resource + "/search", Opts: api.RequestOptions{Params: params}},
 			}
 		},
 	}))
-	group.AddCommand(createCommand(deps, createSpec{
+	group.AddCommand(cmdkit.CreateCommand(deps, cmdkit.CreateSpec{
 		Use:   "create",
 		Short: fmt.Sprintf("Create a %s", spec.Display),
 		Path:  "/" + spec.Resource,
 	}))
-	group.AddCommand(updateCommand(deps, updateSpec{
+	group.AddCommand(cmdkit.UpdateCommand(deps, cmdkit.UpdateSpec{
 		Use:   "update <id>",
 		Short: fmt.Sprintf("Update a %s (--json replaces, --merge-json merges)", spec.Display),
 		Path: func(args []string) string {
 			return api.JoinPath("/"+spec.Resource+"/%s", args[0])
 		},
-		NormalizeMerged: stripFields(spec.UpdateStripFields...),
+		NormalizeMerged: cmdkit.StripFields(spec.UpdateStripFields...),
 	}))
-	group.AddCommand(deleteCommand(deps, deleteSpec{
+	group.AddCommand(cmdkit.DeleteCommand(deps, cmdkit.DeleteSpec{
 		Use:   "delete <id>",
 		Short: fmt.Sprintf("Delete a %s", spec.Display),
 		Path: func(args []string) string {
@@ -93,7 +94,7 @@ func registerSchemaTypeGroup(root *cobra.Command, deps Dependencies, spec schema
 	group.AddCommand(schemaTypeCreateFolder(deps, spec.Use, spec.Resource, spec.Display, false))
 	group.AddCommand(schemaTypeDeleteFolder(deps, spec.Use, spec.Resource, spec.Display))
 	group.AddCommand(restoreBackupCommand(deps, restoreSpec{Use: spec.Use, Display: spec.Display, PathFormat: "/" + spec.Resource + "/%s", StripFields: spec.UpdateStripFields}))
-	group.AddCommand(getCommand(deps, getSpec{
+	group.AddCommand(cmdkit.GetCommand(deps, cmdkit.GetSpec{
 		Use:   "export <id>",
 		Short: fmt.Sprintf("Export a %s as a .udt document", spec.Display),
 		Path: func(args []string) string {
@@ -103,7 +104,7 @@ func registerSchemaTypeGroup(root *cobra.Command, deps Dependencies, spec schema
 	root.AddCommand(group)
 }
 
-func schemaTypeList(deps Dependencies, spec schemaTypeSpec) *cobra.Command {
+func schemaTypeList(deps cmdkit.Dependencies, spec schemaTypeSpec) *cobra.Command {
 	var fields string
 	var paramsRaw string
 	var skip, take int
@@ -111,19 +112,19 @@ func schemaTypeList(deps Dependencies, spec schemaTypeSpec) *cobra.Command {
 	var recursive bool
 	var typesOnly bool
 	var excludeFolders bool
-	var triage readTriageOptions
+	var triage cmdkit.ReadTriageOptions
 
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: fmt.Sprintf("List %ss (paginated; --skip/--take/--all)", spec.Display),
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			params, err := parseParams(paramsRaw)
+			params, err := cmdkit.ParseParams(paramsRaw)
 			if err != nil {
 				return err
 			}
-			params = applyPaginationParams(params, skip, take)
-			candidates := []getRequestCandidate{
+			params = cmdkit.ApplyPaginationParams(params, skip, take)
+			candidates := []cmdkit.GetRequestCandidate{
 				{Path: "/tree/" + spec.Resource + "/root", Opts: api.RequestOptions{Params: params, Fields: fields}},
 			}
 
@@ -135,18 +136,18 @@ func schemaTypeList(deps Dependencies, spec schemaTypeSpec) *cobra.Command {
 				if filterFolders {
 					rootLimit = 0
 				}
-				result, err = getAllPagesWithFallback(ctx, deps.Client, take, skip, rootLimit, candidates...)
+				result, err = cmdkit.GetAllPagesWithFallback(ctx, deps.Client, take, skip, rootLimit, candidates...)
 			} else if all {
-				result, err = getAllPagesWithFallback(ctx, deps.Client, take, skip, triage.FirstN, candidates...)
+				result, err = cmdkit.GetAllPagesWithFallback(ctx, deps.Client, take, skip, triage.FirstN, candidates...)
 			} else {
-				result, err = getWithFallback(ctx, deps.Client, candidates...)
+				result, err = cmdkit.GetWithFallback(ctx, deps.Client, candidates...)
 			}
 			if err != nil {
 				return err
 			}
 
 			if recursive {
-				items, err := flattenSchemaTypeTree(ctx, deps.Client, spec.Resource, resultItems(result), take, filterFolders, triage.FirstN)
+				items, err := flattenSchemaTypeTree(ctx, deps.Client, spec.Resource, cmdkit.ResultItems(result), take, filterFolders, triage.FirstN)
 				if err != nil {
 					return err
 				}
@@ -163,21 +164,21 @@ func schemaTypeList(deps Dependencies, spec schemaTypeSpec) *cobra.Command {
 				return err
 			}
 
-			return printResult(cmd, deps, applyReadTriage(applyFieldsProjection(result, fields), triage))
+			return cmdkit.PrintResult(cmd, deps, cmdkit.ApplyReadTriage(cmdkit.ApplyFieldsProjection(result, fields), triage))
 		},
 	}
-	addFieldsFlag(cmd, &fields)
+	cmdkit.AddFieldsFlag(cmd, &fields)
 	cmd.Flags().StringVar(&paramsRaw, "params", "", "Query parameters as JSON")
-	addPaginationFlags(cmd, &skip, &take)
-	addAutoPaginationFlag(cmd, &all)
-	addReadTriageFlags(cmd, &triage)
+	cmdkit.AddPaginationFlags(cmd, &skip, &take)
+	cmdkit.AddAutoPaginationFlag(cmd, &all)
+	cmdkit.AddReadTriageFlags(cmd, &triage)
 	cmd.Flags().BoolVar(&recursive, "recursive", false, fmt.Sprintf("Walk %s folders recursively", spec.Display))
 	cmd.Flags().BoolVar(&typesOnly, "types-only", false, fmt.Sprintf("Return %ss only, excluding folders", spec.Display))
 	cmd.Flags().BoolVar(&excludeFolders, "exclude-folders", false, "Alias for --types-only")
 	return cmd
 }
 
-func schemaTypeGet(deps Dependencies, spec schemaTypeSpec) *cobra.Command {
+func schemaTypeGet(deps cmdkit.Dependencies, spec schemaTypeSpec) *cobra.Command {
 	var fields string
 	cmd := &cobra.Command{
 		Use:   "get <id-or-alias>",
@@ -196,10 +197,10 @@ func schemaTypeGet(deps Dependencies, spec schemaTypeSpec) *cobra.Command {
 				}
 				return err
 			}
-			return printResult(cmd, deps, applyFieldsProjection(result, fields))
+			return cmdkit.PrintResult(cmd, deps, cmdkit.ApplyFieldsProjection(result, fields))
 		},
 	}
-	addFieldsFlag(cmd, &fields)
+	cmdkit.AddFieldsFlag(cmd, &fields)
 	return cmd
 }
 
@@ -208,7 +209,7 @@ func schemaTypeGet(deps Dependencies, spec schemaTypeSpec) *cobra.Command {
 // meant get → hand-edit → 'update --json', which risks dropping fields such
 // as allowedAsRoot; here the server's own record is written back minus the
 // property, and the type is re-read to confirm the removal.
-func schemaTypeRemoveProperty(deps Dependencies, use string, resource string, display string, stripFields []string) *cobra.Command {
+func schemaTypeRemoveProperty(deps cmdkit.Dependencies, use string, resource string, display string, stripFields []string) *cobra.Command {
 	var alias string
 	var backup string
 	var force bool
@@ -221,10 +222,10 @@ func schemaTypeRemoveProperty(deps Dependencies, use string, resource string, di
 			"Pass --backup to save the pre-change type first; '%s restore-backup <file>' puts it back.", resource, resource, use),
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := requireValue("--alias", alias); err != nil {
+			if err := cmdkit.RequireValue("--alias", alias); err != nil {
 				return err
 			}
-			if err := requireForceOrDryRun(cmd, "removes the property and every content value stored in it", force, dryRun); err != nil {
+			if err := cmdkit.RequireForceOrDryRun(cmd, "removes the property and every content value stored in it", force, dryRun); err != nil {
 				return err
 			}
 			ctx := cmd.Context()
@@ -233,7 +234,7 @@ func schemaTypeRemoveProperty(deps Dependencies, use string, resource string, di
 				return err
 			}
 			path := api.JoinPath("/"+resource+"/%s", id)
-			current, err := fetchObject(ctx, deps.Client, path, api.RequestOptions{})
+			current, err := cmdkit.FetchObject(ctx, deps.Client, path, api.RequestOptions{})
 			if err != nil {
 				return err
 			}
@@ -244,13 +245,13 @@ func schemaTypeRemoveProperty(deps Dependencies, use string, resource string, di
 
 			var backupFile string
 			if cmd.Flags().Changed("backup") && !dryRun {
-				backupFile, err = writeBackup(resolveBackupPath(backup, use, id), use, id, path, current, nil)
+				backupFile, err = cmdkit.WriteBackup(cmdkit.ResolveBackupPath(backup, use, id), use, id, path, current, nil)
 				if err != nil {
 					return err
 				}
 			}
 
-			body := cloneAnyMap(current)
+			body := cmdkit.CloneAnyMap(current)
 			body["properties"] = remaining
 			for _, key := range stripFields {
 				delete(body, key)
@@ -272,9 +273,9 @@ func schemaTypeRemoveProperty(deps Dependencies, use string, resource string, di
 			}
 			if dryRun {
 				out["update"] = result
-				return printResult(cmd, deps, out)
+				return cmdkit.PrintResult(cmd, deps, out)
 			}
-			after, err := fetchObject(ctx, deps.Client, path, api.RequestOptions{})
+			after, err := cmdkit.FetchObject(ctx, deps.Client, path, api.RequestOptions{})
 			if err != nil {
 				return fmt.Errorf("the server accepted the update but reading the %s back failed: %w", display, err)
 			}
@@ -285,13 +286,13 @@ func schemaTypeRemoveProperty(deps Dependencies, use string, resource string, di
 			if backupFile != "" {
 				out["backup"] = backupFile
 			}
-			return printResult(cmd, deps, out)
+			return cmdkit.PrintResult(cmd, deps, out)
 		},
 	}
 	cmd.Flags().StringVar(&alias, "alias", "", "Alias of the property to remove (required; exact match)")
 	cmd.Flags().BoolVar(&force, "force", false, "Confirm the removal when not using --dry-run")
-	addBackupFlag(cmd, &backup)
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddBackupFlag(cmd, &backup)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
@@ -387,7 +388,7 @@ func emptySchemaTypeContainers(current map[string]any, remaining []any) []string
 // only way to create the parent a 'create --json {"parent":{"id":…}}' needs.
 // Like every create, a --json payload is accepted; --name/--parent/--id fill
 // fields the payload leaves out.
-func schemaTypeCreateFolder(deps Dependencies, use string, resource string, display string, hasMove bool) *cobra.Command {
+func schemaTypeCreateFolder(deps cmdkit.Dependencies, use string, resource string, display string, hasMove bool) *cobra.Command {
 	var jsonPayload string
 	var name string
 	var parent string
@@ -407,7 +408,7 @@ func schemaTypeCreateFolder(deps Dependencies, use string, resource string, disp
 		RunE: func(cmd *cobra.Command, args []string) error {
 			body := map[string]any{}
 			if strings.TrimSpace(jsonPayload) != "" {
-				parsed, err := parseJSONObject(jsonPayload, "--json")
+				parsed, err := cmdkit.ParseJSONObject(jsonPayload, "--json")
 				if err != nil {
 					return err
 				}
@@ -435,15 +436,15 @@ func schemaTypeCreateFolder(deps Dependencies, use string, resource string, disp
 			if parentRef, set := body["parent"]; set && parentRef != nil {
 				parentMap, ok := parentRef.(map[string]any)
 				parentID, _ := parentMap["id"].(string)
-				if !ok || !isUUIDLike(strings.TrimSpace(parentID)) {
+				if !ok || !cmdkit.IsUUIDLike(strings.TrimSpace(parentID)) {
 					return fmt.Errorf("parent must be {\"id\": \"<folder GUID>\"}, got %v", parentRef)
 				}
 			}
-			folderID, err := ensurePayloadID(body)
+			folderID, err := cmdkit.EnsurePayloadID(body)
 			if err != nil {
 				return err
 			}
-			if !isUUIDLike(folderID) {
+			if !cmdkit.IsUUIDLike(folderID) {
 				return fmt.Errorf("id must be a GUID, got %q", folderID)
 			}
 			ctx := cmd.Context()
@@ -452,9 +453,9 @@ func schemaTypeCreateFolder(deps Dependencies, use string, resource string, disp
 				return err
 			}
 			if dryRun {
-				return printResult(cmd, deps, result)
+				return cmdkit.PrintResult(cmd, deps, result)
 			}
-			created, err := fetchObject(ctx, deps.Client, api.JoinPath("/"+resource+"/folder/%s", folderID), api.RequestOptions{})
+			created, err := cmdkit.FetchObject(ctx, deps.Client, api.JoinPath("/"+resource+"/folder/%s", folderID), api.RequestOptions{})
 			if err != nil {
 				return fmt.Errorf("the server accepted the folder but reading it back failed: %w", err)
 			}
@@ -462,21 +463,21 @@ func schemaTypeCreateFolder(deps Dependencies, use string, resource string, disp
 			if parentRef, ok := body["parent"]; ok && parentRef != nil {
 				out["parent"] = parentRef
 			}
-			return printResult(cmd, deps, out)
+			return cmdkit.PrintResult(cmd, deps, out)
 		},
 	}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Folder payload as JSON: {\"id\"?, \"name\", \"parent\"?: {\"id\"}}")
 	cmd.Flags().StringVar(&name, "name", "", "Folder name (fills name when --json omits it)")
 	cmd.Flags().StringVar(&parent, "parent", "", "Parent folder GUID; omit for a root-level folder")
 	cmd.Flags().StringVar(&id, "id", "", "Folder GUID to use (generated when omitted)")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
 // schemaTypeDeleteFolder builds "<group> delete-folder": DELETE /<resource>/folder/{id}.
 // The server refuses to delete a folder that still has children.
-func schemaTypeDeleteFolder(deps Dependencies, use string, resource string, display string) *cobra.Command {
-	return deleteCommand(deps, deleteSpec{
+func schemaTypeDeleteFolder(deps cmdkit.Dependencies, use string, resource string, display string) *cobra.Command {
+	return cmdkit.DeleteCommand(deps, cmdkit.DeleteSpec{
 		Use:   "delete-folder <id>",
 		Short: fmt.Sprintf("Delete an empty %s folder", display),
 		Path: func(args []string) string {
@@ -492,7 +493,7 @@ func schemaTypeDeleteFolder(deps Dependencies, use string, resource string, disp
 // version rather than the argument.
 func resolveSchemaTypeID(ctx context.Context, client *api.Client, resource string, use string, display string, value string) (string, error) {
 	value = strings.TrimSpace(value)
-	if isUUIDLike(value) {
+	if cmdkit.IsUUIDLike(value) {
 		return value, nil
 	}
 	if value == "" || strings.ContainsAny(value, "/?#%") {
@@ -511,8 +512,8 @@ func resolveSchemaTypeID(ctx context.Context, client *api.Client, resource strin
 		if err != nil {
 			return "", fmt.Errorf("%q is not a GUID and the alias lookup failed: %w", value, err)
 		}
-		for _, item := range resultItems(result) {
-			id := itemID(item)
+		for _, item := range cmdkit.ResultItems(result) {
+			id := cmdkit.ItemID(item)
 			if id == "" {
 				continue
 			}
@@ -532,13 +533,13 @@ func resolveSchemaTypeID(ctx context.Context, client *api.Client, resource strin
 		if err != nil {
 			return "", fmt.Errorf("%q is not a GUID and the alias lookup failed: %w", value, err)
 		}
-		all, err := flattenSchemaTypeTree(ctx, client, resource, resultItems(rootResult), 500, true, 0)
+		all, err := flattenSchemaTypeTree(ctx, client, resource, cmdkit.ResultItems(rootResult), 500, true, 0)
 		if err != nil {
 			return "", fmt.Errorf("%q is not a GUID and the alias lookup failed: %w", value, err)
 		}
 		allIDs := []string{}
 		for _, item := range all {
-			if id := itemID(item); id != "" {
+			if id := cmdkit.ItemID(item); id != "" {
 				allIDs = append(allIDs, id)
 			}
 		}
@@ -660,7 +661,7 @@ func fetchSchemaTypeBatch(ctx context.Context, client *api.Client, resource stri
 	}
 	if result, err := client.Get(ctx, "/"+resource+"/batch", api.RequestOptions{Params: map[string]any{"id": idParams}}); err == nil {
 		out := []map[string]any{}
-		for _, item := range resultItems(result) {
+		for _, item := range cmdkit.ResultItems(result) {
 			if entry, ok := item.(map[string]any); ok {
 				out = append(out, entry)
 			}
@@ -668,14 +669,14 @@ func fetchSchemaTypeBatch(ctx context.Context, client *api.Client, resource stri
 		if len(out) > 0 {
 			return out, nil
 		}
-	} else if !isAPIStatus(err, http.StatusNotFound) {
+	} else if !cmdkit.IsAPIStatus(err, http.StatusNotFound) {
 		return nil, err
 	}
 	out := []map[string]any{}
 	for _, id := range ids {
-		detail, err := fetchObject(ctx, client, api.JoinPath("/"+resource+"/%s", id), api.RequestOptions{})
+		detail, err := cmdkit.FetchObject(ctx, client, api.JoinPath("/"+resource+"/%s", id), api.RequestOptions{})
 		if err != nil {
-			if isAPIStatus(err, http.StatusNotFound) {
+			if cmdkit.IsAPIStatus(err, http.StatusNotFound) {
 				continue
 			}
 			return nil, err
@@ -712,7 +713,7 @@ func appendSchemaTypeTreeItems(ctx context.Context, client *api.Client, resource
 		if !folder {
 			continue
 		}
-		id := itemID(item)
+		id := cmdkit.ItemID(item)
 		if id == "" {
 			continue
 		}
@@ -736,14 +737,14 @@ func appendSchemaTypeTreeItems(ctx context.Context, client *api.Client, resource
 }
 
 func fetchSchemaTypeFolderChildren(ctx context.Context, client *api.Client, resource string, folderID string, pageSize int, limit int) ([]any, error) {
-	result, err := getAllPagesWithFallback(ctx, client, pageSize, 0, limit,
-		getRequestCandidate{Path: "/tree/" + resource + "/children", Opts: api.RequestOptions{Params: map[string]any{"parentId": folderID}}},
-		getRequestCandidate{Path: api.JoinPath("/"+resource+"/%s/children", folderID)},
+	result, err := cmdkit.GetAllPagesWithFallback(ctx, client, pageSize, 0, limit,
+		cmdkit.GetRequestCandidate{Path: "/tree/" + resource + "/children", Opts: api.RequestOptions{Params: map[string]any{"parentId": folderID}}},
+		cmdkit.GetRequestCandidate{Path: api.JoinPath("/"+resource+"/%s/children", folderID)},
 	)
 	if err != nil {
 		return nil, err
 	}
-	return resultItems(result), nil
+	return cmdkit.ResultItems(result), nil
 }
 
 // isSchemaTypeFolderID asks the folder endpoint directly. The earlier
@@ -788,7 +789,7 @@ func isSchemaTypeFolderItem(item any) bool {
 // chunks; folders are left alone. Failures propagate: a silently
 // alias-less list would be indistinguishable from a real one.
 func enrichSchemaTypeAliases(ctx context.Context, client *api.Client, resource string, result any) (any, error) {
-	items := resultItems(result)
+	items := cmdkit.ResultItems(result)
 	missing := []string{}
 	for _, item := range items {
 		entry, ok := item.(map[string]any)
@@ -801,7 +802,7 @@ func enrichSchemaTypeAliases(ctx context.Context, client *api.Client, resource s
 			continue
 		}
 		if _, has := entry["alias"]; !has {
-			if id := itemID(entry); id != "" {
+			if id := cmdkit.ItemID(entry); id != "" {
 				missing = append(missing, id)
 			}
 		}
@@ -824,7 +825,7 @@ func enrichSchemaTypeAliases(ctx context.Context, client *api.Client, resource s
 		if !ok {
 			continue
 		}
-		detail, found := details[strings.ToLower(itemID(entry))]
+		detail, found := details[strings.ToLower(cmdkit.ItemID(entry))]
 		if !found {
 			continue
 		}
@@ -841,7 +842,7 @@ func enrichSchemaTypeAliases(ctx context.Context, client *api.Client, resource s
 }
 
 func filterSchemaTypeFolders(result any) any {
-	items := resultItems(result)
+	items := cmdkit.ResultItems(result)
 	filtered := make([]any, 0, len(items))
 	for _, item := range items {
 		if !isSchemaTypeFolderItem(item) {
@@ -849,7 +850,7 @@ func filterSchemaTypeFolders(result any) any {
 		}
 	}
 	if payload, ok := result.(map[string]any); ok {
-		next := cloneAnyMap(payload)
+		next := cmdkit.CloneAnyMap(payload)
 		next["items"] = filtered
 		next["total"] = len(filtered)
 		next["typesOnly"] = true

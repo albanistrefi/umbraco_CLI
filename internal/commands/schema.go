@@ -6,10 +6,11 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"umbraco-cli/internal/commands/cmdkit"
 	"umbraco-cli/internal/schema"
 )
 
-func RegisterSchema(root *cobra.Command, deps Dependencies) {
+func RegisterSchema(root *cobra.Command, deps cmdkit.Dependencies) {
 	var list bool
 	var printTemplate bool
 	schemaCommand := &cobra.Command{
@@ -18,7 +19,7 @@ func RegisterSchema(root *cobra.Command, deps Dependencies) {
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if list || len(args) == 0 {
-				return printResult(cmd, deps, map[string]any{"endpoints": schema.Endpoints})
+				return cmdkit.PrintResult(cmd, deps, map[string]any{"endpoints": schema.Endpoints})
 			}
 
 			key := args[0]
@@ -27,11 +28,11 @@ func RegisterSchema(root *cobra.Command, deps Dependencies) {
 				if !ok {
 					return fmt.Errorf("no JSON template for endpoint: %s", key)
 				}
-				return printResult(cmd, deps, template)
+				return cmdkit.PrintResult(cmd, deps, template)
 			}
 
 			if endpointSchema, ok := schema.Schemas[key]; ok {
-				return printResult(cmd, deps, endpointSchema)
+				return cmdkit.PrintResult(cmd, deps, endpointSchema)
 			}
 
 			prefix := key + "."
@@ -42,7 +43,7 @@ func RegisterSchema(root *cobra.Command, deps Dependencies) {
 				}
 			}
 			if len(matches) > 0 {
-				return printResult(cmd, deps, map[string]any{"collection": key, "endpoints": matches})
+				return cmdkit.PrintResult(cmd, deps, map[string]any{"collection": key, "endpoints": matches})
 			}
 
 			return fmt.Errorf("unknown endpoint or collection: %s. Run 'umbraco schema --list'", key)
@@ -56,7 +57,7 @@ func RegisterSchema(root *cobra.Command, deps Dependencies) {
 		Short: "List schema endpoints",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return printResult(cmd, deps, map[string]any{"endpoints": schema.Endpoints})
+			return cmdkit.PrintResult(cmd, deps, map[string]any{"endpoints": schema.Endpoints})
 		},
 	})
 	root.AddCommand(schemaCommand)
