@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/commands/cmdkit"
 	"umbraco-cli/internal/config"
 	"umbraco-cli/internal/validate"
 )
@@ -52,7 +53,7 @@ type dictionaryImportPrinter struct {
 	mu      sync.Mutex
 }
 
-func dictionaryImport(deps Dependencies) *cobra.Command {
+func dictionaryImport(deps cmdkit.Dependencies) *cobra.Command {
 	var file string
 	var skipExisting bool
 	var updateExisting bool
@@ -64,7 +65,7 @@ func dictionaryImport(deps Dependencies) *cobra.Command {
 		Short: "Import dictionary items from JSON",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := requireValue("--file", file); err != nil {
+			if err := cmdkit.RequireValue("--file", file); err != nil {
 				return err
 			}
 			if batchSize < 1 || batchSize > 10 {
@@ -103,7 +104,7 @@ func dictionaryImport(deps Dependencies) *cobra.Command {
 			}
 
 			if format == config.OutputJSON {
-				return printResult(cmd, deps, result)
+				return cmdkit.PrintResult(cmd, deps, result)
 			}
 			return nil
 		},
@@ -117,7 +118,7 @@ func dictionaryImport(deps Dependencies) *cobra.Command {
 	return cmd
 }
 
-func executeDictionaryImport(ctx context.Context, cmd *cobra.Command, deps Dependencies, opts dictionaryImportOptions, structuredOutput bool) (dictionaryImportResult, error) {
+func executeDictionaryImport(ctx context.Context, cmd *cobra.Command, deps cmdkit.Dependencies, opts dictionaryImportOptions, structuredOutput bool) (dictionaryImportResult, error) {
 	items, err := loadDictionaryImportItems(opts.File)
 	if err != nil {
 		return dictionaryImportResult{}, err

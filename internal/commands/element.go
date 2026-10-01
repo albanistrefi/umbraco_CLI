@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/commands/cmdkit"
 )
 
 // RegisterElement wires the element content family introduced by Umbraco
@@ -15,7 +16,7 @@ import (
 // bin. The commands mirror the document family and reuse its builders; the
 // whole group requires an 18.1+ server (older versions 404 with the usual
 // version hint).
-func RegisterElement(root *cobra.Command, deps Dependencies) {
+func RegisterElement(root *cobra.Command, deps cmdkit.Dependencies) {
 	element := &cobra.Command{
 		Use:   "element",
 		Short: "Element library content (Umbraco 18.1+): reusable content items with publish lifecycle",
@@ -38,41 +39,41 @@ func RegisterElement(root *cobra.Command, deps Dependencies) {
 	element.AddCommand(elementAuditLog(deps))
 	element.AddCommand(elementReferences(deps))
 	element.AddCommand(elementReferencedDescendants(deps))
-	element.AddCommand(areReferencedCommand(deps, "element"))
+	element.AddCommand(cmdkit.AreReferencedCommand(deps, "element"))
 	element.AddCommand(restoreFromBinCommand(deps, "element", "library root"))
 	element.AddCommand(recycleBinCommand(deps, "element"))
 	element.AddCommand(elementVersion(deps))
 	root.AddCommand(element)
 }
 
-func elementRoot(deps Dependencies) *cobra.Command {
-	return collectionCommand(deps, collectionSpec{
+func elementRoot(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.CollectionCommand(deps, cmdkit.CollectionSpec{
 		Use:   "list",
 		Short: "List elements and folders at the library root (paginated; --skip/--take/--all)",
 		Long:  "GET /tree/element/root. Use 'element children <id>' to descend into folders.",
 		NArgs: 0,
-		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
-			return []getRequestCandidate{
-				{path: "/tree/element/root", opts: api.RequestOptions{Params: params}},
+		Endpoints: func(args []string, params map[string]any) []cmdkit.GetRequestCandidate {
+			return []cmdkit.GetRequestCandidate{
+				{Path: "/tree/element/root", Opts: api.RequestOptions{Params: params}},
 			}
 		},
 	})
 }
 
-func elementChildren(deps Dependencies) *cobra.Command {
-	return collectionCommand(deps, collectionSpec{
+func elementChildren(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.CollectionCommand(deps, cmdkit.CollectionSpec{
 		Use:   "children <parent-id>",
 		Short: "List children of a library folder (paginated; --skip/--take/--all)",
 		NArgs: 1,
-		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
-			return []getRequestCandidate{
-				{path: "/tree/element/children", opts: api.RequestOptions{Params: withParam(params, "parentId", args[0])}},
+		Endpoints: func(args []string, params map[string]any) []cmdkit.GetRequestCandidate {
+			return []cmdkit.GetRequestCandidate{
+				{Path: "/tree/element/children", Opts: api.RequestOptions{Params: cmdkit.WithParam(params, "parentId", args[0])}},
 			}
 		},
 	})
 }
 
-func elementAncestors(deps Dependencies) *cobra.Command {
+func elementAncestors(deps cmdkit.Dependencies) *cobra.Command {
 	return &cobra.Command{
 		Use:   "ancestors <id>",
 		Short: "Get ancestor folders of an element",
@@ -82,43 +83,43 @@ func elementAncestors(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, deps, result)
+			return cmdkit.PrintResult(cmd, deps, result)
 		},
 	}
 }
 
-func elementSearch(deps Dependencies) *cobra.Command {
-	return searchCommand(deps, searchSpec{
+func elementSearch(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.SearchCommand(deps, cmdkit.SearchSpec{
 		Use:   "search",
 		Short: "Search elements",
-		Endpoints: func(params map[string]any) []getRequestCandidate {
-			return []getRequestCandidate{
-				{path: "/item/element/search", opts: api.RequestOptions{Params: params}},
+		Endpoints: func(params map[string]any) []cmdkit.GetRequestCandidate {
+			return []cmdkit.GetRequestCandidate{
+				{Path: "/item/element/search", Opts: api.RequestOptions{Params: params}},
 			}
 		},
 	})
 }
 
-func elementGet(deps Dependencies) *cobra.Command {
-	return getCommand(deps, getSpec{
+func elementGet(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.GetCommand(deps, cmdkit.GetSpec{
 		Use:   "get <id>",
 		Short: "Get an element by ID",
 		Path:  func(args []string) string { return api.JoinPath("/element/%s", args[0]) },
 	})
 }
 
-func elementPublished(deps Dependencies) *cobra.Command {
-	return getCommand(deps, getSpec{
+func elementPublished(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.GetCommand(deps, cmdkit.GetSpec{
 		Use:   "published <id>",
 		Short: "Get the published snapshot of an element",
 		Path:  func(args []string) string { return api.JoinPath("/element/%s/published", args[0]) },
 	})
 }
 
-func elementCreate(deps Dependencies) *cobra.Command {
+func elementCreate(deps cmdkit.Dependencies) *cobra.Command {
 	var publish bool
 	var cultures string
-	return createCommand(deps, createSpec{
+	return cmdkit.CreateCommand(deps, cmdkit.CreateSpec{
 		Use:          "create",
 		Short:        "Create an element",
 		Long:         "POST /element, or POST /element/create-and-publish with --publish: created and published in one atomic server-side operation. Required payload fields: documentType ({\"id\":...} of a type with allowedInLibrary), values, variants; parent ({\"id\":...} of a library folder) is optional.",
@@ -149,7 +150,7 @@ func elementCreate(deps Dependencies) *cobra.Command {
 	})
 }
 
-func elementUpdate(deps Dependencies) *cobra.Command {
+func elementUpdate(deps cmdkit.Dependencies) *cobra.Command {
 	var jsonPayload string
 	var mergeJSON string
 	var saveAndPublish bool
@@ -166,7 +167,7 @@ func elementUpdate(deps Dependencies) *cobra.Command {
 			if !saveAndPublish && strings.TrimSpace(culture) != "" {
 				return fmt.Errorf("--culture requires --save-and-publish")
 			}
-			body, err := resolveUpdateBody(ctx, deps.Client, path, "", jsonPayload, mergeJSON, nil, nil)
+			body, err := cmdkit.ResolveUpdateBody(ctx, deps.Client, path, "", jsonPayload, mergeJSON, nil, nil)
 			if err != nil {
 				return err
 			}
@@ -175,7 +176,7 @@ func elementUpdate(deps Dependencies) *cobra.Command {
 				if err != nil {
 					return err
 				}
-				return printMutationResult(cmd, deps, "updated", result, dryRun)
+				return cmdkit.PrintMutationResult(cmd, deps, "updated", result, dryRun)
 			}
 			if _, ok := body["culturesToPublish"]; !ok {
 				body["culturesToPublish"] = culturesToPublishList(culture)
@@ -184,7 +185,7 @@ func elementUpdate(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, deps, map[string]any{
+			return cmdkit.PrintResult(cmd, deps, map[string]any{
 				"saveAndPublish": true,
 				"updated":        coalescePutResult(result, dryRun),
 				"published":      coalescePutResult(result, dryRun),
@@ -195,11 +196,11 @@ func elementUpdate(deps Dependencies) *cobra.Command {
 	cmd.Flags().StringVar(&mergeJSON, "merge-json", "", "Partial JSON deep-merged into the current element before update (fields not mentioned are preserved)")
 	cmd.Flags().BoolVar(&saveAndPublish, "save-and-publish", false, "Publish atomically with the update via PUT /element/{id}/update-and-publish")
 	cmd.Flags().StringVar(&culture, "culture", "", "Comma-separated cultures to publish with --save-and-publish; omit for invariant content")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
-func elementPublish(deps Dependencies) *cobra.Command {
+func elementPublish(deps cmdkit.Dependencies) *cobra.Command {
 	var jsonPayload string
 	var culture string
 	var dryRun bool
@@ -217,16 +218,16 @@ func elementPublish(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printMutationResult(cmd, deps, "published", result, dryRun)
+			return cmdkit.PrintMutationResult(cmd, deps, "published", result, dryRun)
 		},
 	}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Publish payload as JSON")
 	cmd.Flags().StringVar(&culture, "culture", "", "Culture to publish on variant content")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
-func elementUnpublish(deps Dependencies) *cobra.Command {
+func elementUnpublish(deps cmdkit.Dependencies) *cobra.Command {
 	var jsonPayload string
 	var culture string
 	var dryRun bool
@@ -239,7 +240,7 @@ func elementUnpublish(deps Dependencies) *cobra.Command {
 			var body map[string]any
 			var err error
 			if jsonPayload != "" {
-				body, err = parsePayload(jsonPayload)
+				body, err = cmdkit.ParsePayload(jsonPayload)
 			} else if culture != "" {
 				body = map[string]any{"cultures": []any{culture}}
 			} else {
@@ -252,38 +253,38 @@ func elementUnpublish(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printMutationResult(cmd, deps, "unpublished", result, dryRun)
+			return cmdkit.PrintMutationResult(cmd, deps, "unpublished", result, dryRun)
 		},
 	}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Unpublish payload as JSON")
 	cmd.Flags().StringVar(&culture, "culture", "", "Culture to unpublish on variant content")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
-func elementCopy(deps Dependencies) *cobra.Command {
-	return targetActionCommand(deps, targetActionSpec{
+func elementCopy(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.TargetActionCommand(deps, cmdkit.TargetActionSpec{
 		Use:   "copy <id>",
 		Short: "Copy an element",
-		Candidates: func(args []string) []mutationCandidate {
-			return []mutationCandidate{{method: "POST", path: api.JoinPath("/element/%s/copy", args[0])}}
+		Candidates: func(args []string) []cmdkit.MutationCandidate {
+			return []cmdkit.MutationCandidate{{Method: "POST", Path: api.JoinPath("/element/%s/copy", args[0])}}
 		},
 		Verb: "copied",
 	})
 }
 
-func elementMove(deps Dependencies) *cobra.Command {
-	return targetActionCommand(deps, targetActionSpec{
+func elementMove(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.TargetActionCommand(deps, cmdkit.TargetActionSpec{
 		Use:   "move <id>",
 		Short: "Move an element",
-		Candidates: func(args []string) []mutationCandidate {
-			return []mutationCandidate{{method: "PUT", path: api.JoinPath("/element/%s/move", args[0])}}
+		Candidates: func(args []string) []cmdkit.MutationCandidate {
+			return []cmdkit.MutationCandidate{{Method: "PUT", Path: api.JoinPath("/element/%s/move", args[0])}}
 		},
 		Verb: "moved",
 	})
 }
 
-func elementTrash(deps Dependencies) *cobra.Command {
+func elementTrash(deps cmdkit.Dependencies) *cobra.Command {
 	var dryRun bool
 	cmd := &cobra.Command{
 		Use:   "trash <id>",
@@ -294,15 +295,15 @@ func elementTrash(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printMutationResult(cmd, deps, "trashed", result, dryRun)
+			return cmdkit.PrintMutationResult(cmd, deps, "trashed", result, dryRun)
 		},
 	}
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
-func elementDelete(deps Dependencies) *cobra.Command {
-	return deleteCommand(deps, deleteSpec{
+func elementDelete(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.DeleteCommand(deps, cmdkit.DeleteSpec{
 		Use:   "delete <id>",
 		Short: "Permanently delete an element (use 'trash' for the recycle bin)",
 		Path: func(args []string) string {
@@ -311,21 +312,21 @@ func elementDelete(deps Dependencies) *cobra.Command {
 	})
 }
 
-func elementAuditLog(deps Dependencies) *cobra.Command {
-	return collectionCommand(deps, collectionSpec{
+func elementAuditLog(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.CollectionCommand(deps, cmdkit.CollectionSpec{
 		Use:   "audit-log <id>",
 		Short: "List the audit trail for an element (who did what, when)",
 		NArgs: 1,
-		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
-			return []getRequestCandidate{
-				{path: api.JoinPath("/element/%s/audit-log", args[0]), opts: api.RequestOptions{Params: params}},
+		Endpoints: func(args []string, params map[string]any) []cmdkit.GetRequestCandidate {
+			return []cmdkit.GetRequestCandidate{
+				{Path: api.JoinPath("/element/%s/audit-log", args[0]), Opts: api.RequestOptions{Params: params}},
 			}
 		},
 	})
 }
 
-func elementReferences(deps Dependencies) *cobra.Command {
-	return referencesCommand(deps, referencesSpec{
+func elementReferences(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.ReferencesCommand(deps, cmdkit.ReferencesSpec{
 		Use:   "references <id>",
 		Short: "List items that reference this element (paginated; --skip/--take/--all)",
 		Long:  "Wraps GET /element/{id}/referenced-by. Answers 'what uses this element' before unpublishing or deleting it.",
@@ -333,8 +334,8 @@ func elementReferences(deps Dependencies) *cobra.Command {
 	})
 }
 
-func elementReferencedDescendants(deps Dependencies) *cobra.Command {
-	return referencesCommand(deps, referencesSpec{
+func elementReferencedDescendants(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.ReferencesCommand(deps, cmdkit.ReferencesSpec{
 		Use:   "referenced-descendants <id>",
 		Short: "List items that reference this element folder or anything inside it",
 		Path:  func(args []string) string { return api.JoinPath("/element/folder/%s/referenced-descendants", args[0]) },
@@ -343,7 +344,7 @@ func elementReferencedDescendants(deps Dependencies) *cobra.Command {
 
 // elementVersion groups version-history commands under 'element version',
 // mirroring 'document version': list, inspect, roll back, pin.
-func elementVersion(deps Dependencies) *cobra.Command {
+func elementVersion(deps cmdkit.Dependencies) *cobra.Command {
 	version := &cobra.Command{
 		Use:   "version",
 		Short: "Element version history: list, inspect, roll back",
@@ -355,19 +356,19 @@ func elementVersion(deps Dependencies) *cobra.Command {
 	return version
 }
 
-func elementVersionList(deps Dependencies) *cobra.Command {
+func elementVersionList(deps cmdkit.Dependencies) *cobra.Command {
 	var culture string
-	cmd := collectionCommand(deps, collectionSpec{
+	cmd := cmdkit.CollectionCommand(deps, cmdkit.CollectionSpec{
 		Use:   "list <element-id>",
 		Short: "List stored versions of an element (paginated; --skip/--take/--all)",
 		NArgs: 1,
-		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
-			versionParams := withParam(params, "elementId", args[0])
+		Endpoints: func(args []string, params map[string]any) []cmdkit.GetRequestCandidate {
+			versionParams := cmdkit.WithParam(params, "elementId", args[0])
 			if culture != "" {
 				versionParams["culture"] = culture
 			}
-			return []getRequestCandidate{
-				{path: "/element-version", opts: api.RequestOptions{Params: versionParams}},
+			return []cmdkit.GetRequestCandidate{
+				{Path: "/element-version", Opts: api.RequestOptions{Params: versionParams}},
 			}
 		},
 	})
@@ -375,15 +376,15 @@ func elementVersionList(deps Dependencies) *cobra.Command {
 	return cmd
 }
 
-func elementVersionGet(deps Dependencies) *cobra.Command {
-	return getCommand(deps, getSpec{
+func elementVersionGet(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.GetCommand(deps, cmdkit.GetSpec{
 		Use:   "get <version-id>",
 		Short: "Get a stored element version (the full payload as it was)",
 		Path:  func(args []string) string { return api.JoinPath("/element-version/%s", args[0]) },
 	})
 }
 
-func elementVersionRollback(deps Dependencies) *cobra.Command {
+func elementVersionRollback(deps cmdkit.Dependencies) *cobra.Command {
 	var culture string
 	var dryRun bool
 	cmd := &cobra.Command{
@@ -400,15 +401,15 @@ func elementVersionRollback(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printMutationResult(cmd, deps, "rolledBack", result, dryRun)
+			return cmdkit.PrintMutationResult(cmd, deps, "rolledBack", result, dryRun)
 		},
 	}
 	cmd.Flags().StringVar(&culture, "culture", "", "Culture to roll back on variant content")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
-func elementVersionPreventCleanup(deps Dependencies) *cobra.Command {
+func elementVersionPreventCleanup(deps cmdkit.Dependencies) *cobra.Command {
 	var disable bool
 	var dryRun bool
 	cmd := &cobra.Command{
@@ -426,10 +427,10 @@ func elementVersionPreventCleanup(deps Dependencies) *cobra.Command {
 			if disable {
 				verb = "unpinned"
 			}
-			return printMutationResult(cmd, deps, verb, result, dryRun)
+			return cmdkit.PrintMutationResult(cmd, deps, verb, result, dryRun)
 		},
 	}
 	cmd.Flags().BoolVar(&disable, "disable", false, "Allow cleanup to delete this version again")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }

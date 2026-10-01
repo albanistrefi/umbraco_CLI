@@ -8,12 +8,13 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/commands/cmdkit"
 )
 
-func RegisterIndexer(root *cobra.Command, deps Dependencies) {
+func RegisterIndexer(root *cobra.Command, deps cmdkit.Dependencies) {
 	indexer := &cobra.Command{Use: "indexer", Short: "Examine search index operations"}
 	indexer.AddCommand(indexerList(deps))
-	indexer.AddCommand(getCommand(deps, getSpec{
+	indexer.AddCommand(cmdkit.GetCommand(deps, cmdkit.GetSpec{
 		Use:   "get <index-name>",
 		Short: "Get one Examine index (health, document count, fields)",
 		Path: func(args []string) string {
@@ -24,21 +25,21 @@ func RegisterIndexer(root *cobra.Command, deps Dependencies) {
 	root.AddCommand(indexer)
 }
 
-func indexerList(deps Dependencies) *cobra.Command {
-	return collectionCommand(deps, collectionSpec{
+func indexerList(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.CollectionCommand(deps, cmdkit.CollectionSpec{
 		Use:   "list",
 		Short: "List Examine indexes with health and document counts",
 		Long:  "GET /indexer. The classic first stop when search results are missing or stale: healthStatus.status of Rebuilding, Unhealthy, or Corrupt explains it.",
 		NArgs: 0,
-		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
-			return []getRequestCandidate{
-				{path: "/indexer", opts: api.RequestOptions{Params: params}},
+		Endpoints: func(args []string, params map[string]any) []cmdkit.GetRequestCandidate {
+			return []cmdkit.GetRequestCandidate{
+				{Path: "/indexer", Opts: api.RequestOptions{Params: params}},
 			}
 		},
 	})
 }
 
-func indexerRebuild(deps Dependencies) *cobra.Command {
+func indexerRebuild(deps cmdkit.Dependencies) *cobra.Command {
 	var force bool
 	var dryRun bool
 	var wait bool
@@ -50,7 +51,7 @@ func indexerRebuild(deps Dependencies) *cobra.Command {
 		Long:  "POST /indexer/{indexName}/rebuild. Rebuilds the index from scratch — the standard fix for missing or stale search results. Expensive on large indexes; with --wait, polls the index until healthStatus leaves Rebuilding or --timeout elapses.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := requireForceOrDryRun(cmd, "rebuilds the index from scratch and is expensive on large indexes", force, dryRun); err != nil {
+			if err := cmdkit.RequireForceOrDryRun(cmd, "rebuilds the index from scratch and is expensive on large indexes", force, dryRun); err != nil {
 				return err
 			}
 			if dryRun && wait {
@@ -63,7 +64,7 @@ func indexerRebuild(deps Dependencies) *cobra.Command {
 				return err
 			}
 			if !wait {
-				return printMutationResult(cmd, deps, "rebuilding", result, dryRun)
+				return cmdkit.PrintMutationResult(cmd, deps, "rebuilding", result, dryRun)
 			}
 
 			deadline := time.Now().Add(timeout)
@@ -72,9 +73,9 @@ func indexerRebuild(deps Dependencies) *cobra.Command {
 				if err != nil {
 					return fmt.Errorf("polling index after rebuild failed: %w", err)
 				}
-				status := indexerHealthStatus(indexPayload)
+				status := cmdkit.IndexerHealthStatus(indexPayload)
 				if strings.EqualFold(status, "Healthy") {
-					return printResult(cmd, deps, map[string]any{
+					return cmdkit.PrintResult(cmd, deps, map[string]any{
 						"rebuilt": true,
 						"status":  status,
 						"waited":  time.Since(deadline.Add(-timeout)).String(),
@@ -98,26 +99,9 @@ func indexerRebuild(deps Dependencies) *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&force, "force", false, "Confirm the rebuild")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	cmd.Flags().BoolVar(&wait, "wait", false, "Poll the index after triggering the rebuild until healthStatus leaves Rebuilding or --timeout elapses")
 	cmd.Flags().DurationVar(&timeout, "timeout", 60*time.Second, "How long to wait when --wait is set (e.g. 30s, 2m)")
 	cmd.Flags().DurationVar(&pollInterval, "poll-interval", time.Second, "How often to poll when --wait is set")
 	return cmd
-}
-
-func indexerHealthStatus(payload any) string {
-	object, ok := payload.(map[string]any)
-	if !ok {
-		return ""
-	}
-	health, ok := object["healthStatus"].(map[string]any)
-	if !ok {
-		// Pre-16 servers returned healthStatus as a plain string.
-		if status, ok := object["healthStatus"].(string); ok {
-			return status
-		}
-		return ""
-	}
-	status, _ := health["status"].(string)
-	return status
 }

@@ -6,9 +6,10 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/commands/cmdkit"
 )
 
-func RegisterRedirect(root *cobra.Command, deps Dependencies) {
+func RegisterRedirect(root *cobra.Command, deps cmdkit.Dependencies) {
 	redirect := &cobra.Command{Use: "redirect", Short: "Redirect URL management (tracked 301s from renamed/moved documents)"}
 	redirect.AddCommand(redirectList(deps))
 	redirect.AddCommand(redirectGet(deps))
@@ -19,11 +20,11 @@ func RegisterRedirect(root *cobra.Command, deps Dependencies) {
 	root.AddCommand(redirect)
 }
 
-func redirectList(deps Dependencies) *cobra.Command {
+func redirectList(deps cmdkit.Dependencies) *cobra.Command {
 	var fields string
 	var filter string
 	var skip, take int
-	var triage readTriageOptions
+	var triage cmdkit.ReadTriageOptions
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List tracked redirects (paginated; use --filter for URL substring search)",
@@ -34,37 +35,37 @@ func redirectList(deps Dependencies) *cobra.Command {
 			if strings.TrimSpace(filter) != "" {
 				params["filter"] = filter
 			}
-			params = applyPaginationParams(params, skip, take)
+			params = cmdkit.ApplyPaginationParams(params, skip, take)
 			result, err := deps.Client.Get(cmd.Context(), "/redirect-management", api.RequestOptions{Fields: fields, Params: params})
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, deps, applyReadTriage(applyFieldsProjection(result, fields), triage))
+			return cmdkit.PrintResult(cmd, deps, cmdkit.ApplyReadTriage(cmdkit.ApplyFieldsProjection(result, fields), triage))
 		},
 	}
-	addFieldsFlag(cmd, &fields)
+	cmdkit.AddFieldsFlag(cmd, &fields)
 	cmd.Flags().StringVar(&filter, "filter", "", "Substring filter against the original redirect URL")
-	addPaginationFlags(cmd, &skip, &take)
-	addReadTriageFlags(cmd, &triage)
+	cmdkit.AddPaginationFlags(cmd, &skip, &take)
+	cmdkit.AddReadTriageFlags(cmd, &triage)
 	return cmd
 }
 
-func redirectGet(deps Dependencies) *cobra.Command {
-	return collectionCommand(deps, collectionSpec{
+func redirectGet(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.CollectionCommand(deps, cmdkit.CollectionSpec{
 		Use:   "get <document-id>",
 		Short: "List redirects recorded for one document",
 		Long:  "GET /redirect-management/{id}. Returns the redirects pointing at the given document key, paginated.",
 		NArgs: 1,
-		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
-			return []getRequestCandidate{
-				{path: api.JoinPath("/redirect-management/%s", args[0]), opts: api.RequestOptions{Params: params}},
+		Endpoints: func(args []string, params map[string]any) []cmdkit.GetRequestCandidate {
+			return []cmdkit.GetRequestCandidate{
+				{Path: api.JoinPath("/redirect-management/%s", args[0]), Opts: api.RequestOptions{Params: params}},
 			}
 		},
 	})
 }
 
-func redirectDelete(deps Dependencies) *cobra.Command {
-	return deleteCommand(deps, deleteSpec{
+func redirectDelete(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.DeleteCommand(deps, cmdkit.DeleteSpec{
 		Use:   "delete <id>",
 		Short: "Delete a tracked redirect",
 		Path: func(args []string) string {
@@ -73,7 +74,7 @@ func redirectDelete(deps Dependencies) *cobra.Command {
 	})
 }
 
-func redirectSetStatus(deps Dependencies, use string, status string, short string) *cobra.Command {
+func redirectSetStatus(deps cmdkit.Dependencies, use string, status string, short string) *cobra.Command {
 	var dryRun bool
 	cmd := &cobra.Command{
 		Use:   use,
@@ -88,9 +89,9 @@ func redirectSetStatus(deps Dependencies, use string, status string, short strin
 			if err != nil {
 				return err
 			}
-			return printMutationResult(cmd, deps, strings.ToLower(status), result, dryRun)
+			return cmdkit.PrintMutationResult(cmd, deps, strings.ToLower(status), result, dryRun)
 		},
 	}
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }

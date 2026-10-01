@@ -12,6 +12,7 @@ import (
 
 	"umbraco-cli/internal/api"
 	"umbraco-cli/internal/auth"
+	"umbraco-cli/internal/commands/cmdkit"
 	"umbraco-cli/internal/config"
 )
 
@@ -26,7 +27,7 @@ func (schemaDiffFoundError) Error() string {
 // "schemas diverged" apart from "the check itself failed".
 func (schemaDiffFoundError) ExitCode() int { return 2 }
 
-func schemaDiffCommand(deps Dependencies) *cobra.Command {
+func schemaDiffCommand(deps cmdkit.Dependencies) *cobra.Command {
 	var entityRaw string
 	var include []string
 	var exclude []string
@@ -74,7 +75,7 @@ func schemaDiffCommand(deps Dependencies) *cobra.Command {
 	return cmd
 }
 
-func fetchSchemaDiffEnvironment(ctx context.Context, side string, label string, entities []schemaDiffEntityKind, deps Dependencies) ([]schemaDiffEntity, error) {
+func fetchSchemaDiffEnvironment(ctx context.Context, side string, label string, entities []schemaDiffEntityKind, deps cmdkit.Dependencies) ([]schemaDiffEntity, error) {
 	cfg, err := config.LoadWithOptions(config.LoadOptions{Profile: label})
 	if err != nil {
 		return nil, fmt.Errorf("%s %q: %w", side, label, err)
@@ -157,14 +158,14 @@ func fetchSchemaDiffRawEntities(ctx context.Context, client *api.Client, kind sc
 }
 
 func fetchSchemaDiffSchemaTypes(ctx context.Context, client *api.Client, resource string) ([]map[string]any, error) {
-	root, err := getAllPagesWithFallback(ctx, client, autoPaginateDefaultPageSize, 0, 0,
-		getRequestCandidate{path: "/tree/" + resource + "/root", opts: api.RequestOptions{}},
-		getRequestCandidate{path: "/" + resource + "/root", opts: api.RequestOptions{}},
+	root, err := cmdkit.GetAllPagesWithFallback(ctx, client, cmdkit.AutoPaginateDefaultPageSize, 0, 0,
+		cmdkit.GetRequestCandidate{Path: "/tree/" + resource + "/root", Opts: api.RequestOptions{}},
+		cmdkit.GetRequestCandidate{Path: "/" + resource + "/root", Opts: api.RequestOptions{}},
 	)
 	if err != nil {
 		return nil, err
 	}
-	items, err := flattenSchemaTypeTree(ctx, client, resource, resultItems(root), autoPaginateDefaultPageSize, true, 0)
+	items, err := flattenSchemaTypeTree(ctx, client, resource, cmdkit.ResultItems(root), cmdkit.AutoPaginateDefaultPageSize, true, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -183,23 +184,23 @@ func fetchSchemaDiffTemplates(ctx context.Context, client *api.Client) ([]map[st
 }
 
 func collectTemplateTreeItems(ctx context.Context, client *api.Client, parentID string) ([]any, error) {
-	var candidates []getRequestCandidate
+	var candidates []cmdkit.GetRequestCandidate
 	if parentID == "" {
-		candidates = []getRequestCandidate{
-			{path: "/tree/template/root", opts: api.RequestOptions{}},
-			{path: "/template/root", opts: api.RequestOptions{}},
+		candidates = []cmdkit.GetRequestCandidate{
+			{Path: "/tree/template/root", Opts: api.RequestOptions{}},
+			{Path: "/template/root", Opts: api.RequestOptions{}},
 		}
 	} else {
-		candidates = []getRequestCandidate{
-			{path: "/tree/template/children", opts: api.RequestOptions{Params: map[string]any{"parentId": parentID}}},
+		candidates = []cmdkit.GetRequestCandidate{
+			{Path: "/tree/template/children", Opts: api.RequestOptions{Params: map[string]any{"parentId": parentID}}},
 		}
 	}
-	page, err := getAllPagesWithFallback(ctx, client, autoPaginateDefaultPageSize, 0, 0, candidates...)
+	page, err := cmdkit.GetAllPagesWithFallback(ctx, client, cmdkit.AutoPaginateDefaultPageSize, 0, 0, candidates...)
 	if err != nil {
 		return nil, err
 	}
 	out := make([]any, 0)
-	for _, item := range resultItems(page) {
+	for _, item := range cmdkit.ResultItems(page) {
 		out = append(out, item)
 		entry, ok := item.(map[string]any)
 		if !ok {
@@ -222,14 +223,14 @@ func collectTemplateTreeItems(ctx context.Context, client *api.Client, parentID 
 // fetchSchemaDiffLanguages returns the language list directly: the list
 // items are the full language models, so no per-item detail fetch is needed.
 func fetchSchemaDiffLanguages(ctx context.Context, client *api.Client) ([]map[string]any, error) {
-	page, err := getAllPagesWithFallback(ctx, client, autoPaginateDefaultPageSize, 0, 0,
-		getRequestCandidate{path: "/language", opts: api.RequestOptions{}},
+	page, err := cmdkit.GetAllPagesWithFallback(ctx, client, cmdkit.AutoPaginateDefaultPageSize, 0, 0,
+		cmdkit.GetRequestCandidate{Path: "/language", Opts: api.RequestOptions{}},
 	)
 	if err != nil {
 		return nil, err
 	}
 	out := make([]map[string]any, 0)
-	for _, item := range resultItems(page) {
+	for _, item := range cmdkit.ResultItems(page) {
 		if entry, ok := item.(map[string]any); ok {
 			out = append(out, entry)
 		}
@@ -238,13 +239,13 @@ func fetchSchemaDiffLanguages(ctx context.Context, client *api.Client) ([]map[st
 }
 
 func fetchSchemaDiffDictionary(ctx context.Context, client *api.Client) ([]map[string]any, error) {
-	page, err := getAllPagesWithFallback(ctx, client, autoPaginateDefaultPageSize, 0, 0,
-		getRequestCandidate{path: "/dictionary", opts: api.RequestOptions{}},
+	page, err := cmdkit.GetAllPagesWithFallback(ctx, client, cmdkit.AutoPaginateDefaultPageSize, 0, 0,
+		cmdkit.GetRequestCandidate{Path: "/dictionary", Opts: api.RequestOptions{}},
 	)
 	if err != nil {
 		return nil, err
 	}
-	overview := resultItems(page)
+	overview := cmdkit.ResultItems(page)
 
 	// Only the overview carries each item's parent; /dictionary/{id} returns
 	// just id/name/translations. Capture the tree relationship here so a key
@@ -292,15 +293,15 @@ func fetchSchemaDiffDictionary(ctx context.Context, client *api.Client) ([]map[s
 }
 
 func fetchSchemaDiffDatatypes(ctx context.Context, client *api.Client) ([]map[string]any, error) {
-	result, err := getAllPagesWithFallback(ctx, client, autoPaginateDefaultPageSize, 0, 0,
-		getRequestCandidate{path: dataTypeFilterPath, opts: api.RequestOptions{}},
-		getRequestCandidate{path: dataTypeTreeRootPath, opts: api.RequestOptions{}},
-		getRequestCandidate{path: dataTypeLegacyCollectionPath, opts: api.RequestOptions{}},
+	result, err := cmdkit.GetAllPagesWithFallback(ctx, client, cmdkit.AutoPaginateDefaultPageSize, 0, 0,
+		cmdkit.GetRequestCandidate{Path: dataTypeFilterPath, Opts: api.RequestOptions{}},
+		cmdkit.GetRequestCandidate{Path: dataTypeTreeRootPath, Opts: api.RequestOptions{}},
+		cmdkit.GetRequestCandidate{Path: dataTypeLegacyCollectionPath, Opts: api.RequestOptions{}},
 	)
 	if err != nil {
 		return nil, err
 	}
-	return fetchSchemaDiffDetails(ctx, client, dataTypeLegacyCollectionPath+"/%s", resultItems(result))
+	return fetchSchemaDiffDetails(ctx, client, dataTypeLegacyCollectionPath+"/%s", cmdkit.ResultItems(result))
 }
 
 func fetchSchemaDiffDetails(ctx context.Context, client *api.Client, pathFormat string, items []any) ([]map[string]any, error) {
@@ -360,13 +361,13 @@ func schemaDiffEntityRequested(entities []schemaDiffEntityKind, target schemaDif
 	return false
 }
 
-func printSchemaDiffReport(cmd *cobra.Command, deps Dependencies, report schemaDiffReport) error {
+func printSchemaDiffReport(cmd *cobra.Command, deps cmdkit.Dependencies, report schemaDiffReport) error {
 	format, err := resolveOutputFormat(deps)
 	if err != nil {
 		return err
 	}
 	if format == config.OutputJSON {
-		return printResult(cmd, deps, report)
+		return cmdkit.PrintResult(cmd, deps, report)
 	}
 	_, err = fmt.Fprint(cmd.OutOrStdout(), formatSchemaDiffHuman(report))
 	return err

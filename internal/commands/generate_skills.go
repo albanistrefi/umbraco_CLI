@@ -5,6 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"umbraco-cli/internal/commands/cmdkit"
 	"umbraco-cli/internal/skills"
 	"umbraco-cli/internal/validate"
 	"umbraco-cli/internal/version"
@@ -14,7 +15,7 @@ import (
 // internal/version/VERSION file so a single edit propagates everywhere.
 var CLIVersion = version.Current()
 
-func RegisterGenerateSkills(root *cobra.Command, deps Dependencies) {
+func RegisterGenerateSkills(root *cobra.Command, deps cmdkit.Dependencies) {
 	var outputDir string
 	var filter string
 	var includeHidden bool

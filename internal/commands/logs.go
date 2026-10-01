@@ -6,17 +6,17 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/commands/cmdkit"
 )
 
 const (
-	logViewerLogPath                    = "/log-viewer/log"
 	logViewerMessageTemplatePath        = "/log-viewer/message-template"
 	logViewerLegacyListPath             = "/log-viewer"
 	logViewerLegacySearchPath           = "/log-viewer/search"
 	logViewerLegacyMessageTemplatesPath = "/log-viewer/templates"
 )
 
-func RegisterLogs(root *cobra.Command, deps Dependencies) {
+func RegisterLogs(root *cobra.Command, deps cmdkit.Dependencies) {
 	logs := &cobra.Command{Use: "logs", Short: "Log and diagnostics operations"}
 	logs.AddCommand(logsList(deps))
 	logs.AddCommand(logsLevels(deps))
@@ -28,7 +28,7 @@ func RegisterLogs(root *cobra.Command, deps Dependencies) {
 	root.AddCommand(logs)
 }
 
-func logsList(deps Dependencies) *cobra.Command {
+func logsList(deps cmdkit.Dependencies) *cobra.Command {
 	var paramsRaw string
 	var flags logQueryFlags
 	flags.skip = -1
@@ -40,11 +40,11 @@ func logsList(deps Dependencies) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		result, err := getWithFallback(
+		result, err := cmdkit.GetWithFallback(
 			cmd.Context(),
 			deps.Client,
-			getRequestCandidate{path: logViewerLogPath, opts: api.RequestOptions{Params: params}},
-			getRequestCandidate{path: logViewerLegacyListPath, opts: api.RequestOptions{Params: params}},
+			cmdkit.GetRequestCandidate{Path: cmdkit.LogViewerLogPath, Opts: api.RequestOptions{Params: params}},
+			cmdkit.GetRequestCandidate{Path: logViewerLegacyListPath, Opts: api.RequestOptions{Params: params}},
 		)
 		if err != nil {
 			return friendlyLogViewerError(err)
@@ -53,7 +53,7 @@ func logsList(deps Dependencies) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		return printResult(cmd, deps, result)
+		return cmdkit.PrintResult(cmd, deps, result)
 	}}
 
 	cmd.Flags().StringVar(&paramsRaw, "params", "", "Filter params as JSON (accepted keys: startDate,endDate,skip,take,filterExpression,logLevel)")
@@ -61,18 +61,18 @@ func logsList(deps Dependencies) *cobra.Command {
 	return cmd
 }
 
-func logsLevels(deps Dependencies) *cobra.Command {
+func logsLevels(deps cmdkit.Dependencies) *cobra.Command {
 	return &cobra.Command{Use: "levels", Short: "List log levels", Hidden: true, Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("logs levels is not available in the Umbraco v17 Management API; use logs list --level <level> or logs list --filter-expression <expression>")
 	}}
 }
 
-func logsLevelCount(deps Dependencies) *cobra.Command {
+func logsLevelCount(deps cmdkit.Dependencies) *cobra.Command {
 	var paramsRaw string
 	var from string
 	var to string
 	cmd := &cobra.Command{Use: "level-count", Short: "Get count per level", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
-		params, err := parseParams(paramsRaw)
+		params, err := cmdkit.ParseParams(paramsRaw)
 		if err != nil {
 			return err
 		}
@@ -89,7 +89,7 @@ func logsLevelCount(deps Dependencies) *cobra.Command {
 		if err != nil {
 			return friendlyLogViewerError(err)
 		}
-		return printResult(cmd, deps, result)
+		return cmdkit.PrintResult(cmd, deps, result)
 	}}
 	cmd.Flags().StringVar(&paramsRaw, "params", "", "Filter params as JSON")
 	cmd.Flags().StringVar(&from, "from", "", "Start date (ISO)")
@@ -97,23 +97,23 @@ func logsLevelCount(deps Dependencies) *cobra.Command {
 	return cmd
 }
 
-func logsTemplates(deps Dependencies) *cobra.Command {
+func logsTemplates(deps cmdkit.Dependencies) *cobra.Command {
 	var from string
 	var to string
 	var skip int
 	var take int
 	cmd := &cobra.Command{Use: "templates", Short: "List paginated log message templates", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
 		params := logDateRangePagingParams(from, to, skip, take)
-		result, err := getWithFallback(
+		result, err := cmdkit.GetWithFallback(
 			cmd.Context(),
 			deps.Client,
-			getRequestCandidate{path: logViewerMessageTemplatePath, opts: api.RequestOptions{Params: params}},
-			getRequestCandidate{path: logViewerLegacyMessageTemplatesPath, opts: api.RequestOptions{Params: params}},
+			cmdkit.GetRequestCandidate{Path: logViewerMessageTemplatePath, Opts: api.RequestOptions{Params: params}},
+			cmdkit.GetRequestCandidate{Path: logViewerLegacyMessageTemplatesPath, Opts: api.RequestOptions{Params: params}},
 		)
 		if err != nil {
 			return friendlyLogViewerError(err)
 		}
-		return printResult(cmd, deps, result)
+		return cmdkit.PrintResult(cmd, deps, result)
 	}}
 	cmd.Flags().StringVar(&from, "from", "", "Start date (ISO)")
 	cmd.Flags().StringVar(&to, "to", "", "End date (ISO)")
@@ -122,7 +122,7 @@ func logsTemplates(deps Dependencies) *cobra.Command {
 	return cmd
 }
 
-func logsSearch(deps Dependencies) *cobra.Command {
+func logsSearch(deps cmdkit.Dependencies) *cobra.Command {
 	var paramsRaw string
 	var flags logQueryFlags
 	flags.skip = -1
@@ -133,11 +133,11 @@ func logsSearch(deps Dependencies) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		result, err := getWithFallback(
+		result, err := cmdkit.GetWithFallback(
 			cmd.Context(),
 			deps.Client,
-			getRequestCandidate{path: logViewerLogPath, opts: api.RequestOptions{Params: params}},
-			getRequestCandidate{path: logViewerLegacySearchPath, opts: api.RequestOptions{Params: params}},
+			cmdkit.GetRequestCandidate{Path: cmdkit.LogViewerLogPath, Opts: api.RequestOptions{Params: params}},
+			cmdkit.GetRequestCandidate{Path: logViewerLegacySearchPath, Opts: api.RequestOptions{Params: params}},
 		)
 		if err != nil {
 			return friendlyLogViewerError(err)
@@ -146,7 +146,7 @@ func logsSearch(deps Dependencies) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		return printResult(cmd, deps, result)
+		return cmdkit.PrintResult(cmd, deps, result)
 	}}
 	cmd.Flags().StringVar(&paramsRaw, "params", "", "Search params as JSON (accepted keys: startDate,endDate,skip,take,filterExpression,logLevel)")
 	addLogQueryFlags(cmd, &flags)

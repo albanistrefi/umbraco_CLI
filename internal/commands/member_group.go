@@ -4,11 +4,12 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/commands/cmdkit"
 )
 
 const memberGroupPath = "/member-group"
 
-func RegisterMemberGroup(root *cobra.Command, deps Dependencies) {
+func RegisterMemberGroup(root *cobra.Command, deps cmdkit.Dependencies) {
 	mg := &cobra.Command{
 		Use:     "member-group",
 		Aliases: []string{"member-groups", "membergroup"},
@@ -19,32 +20,32 @@ func RegisterMemberGroup(root *cobra.Command, deps Dependencies) {
 	root.AddCommand(mg)
 }
 
-func memberGroupList(deps Dependencies) *cobra.Command {
+func memberGroupList(deps cmdkit.Dependencies) *cobra.Command {
 	var fields string
-	var triage readTriageOptions
+	var triage cmdkit.ReadTriageOptions
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List all member groups",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			result, err := getWithFallback(
+			result, err := cmdkit.GetWithFallback(
 				cmd.Context(),
 				deps.Client,
-				getRequestCandidate{path: memberGroupPath, opts: api.RequestOptions{Fields: fields}},
-				getRequestCandidate{path: "/tree/member-group/root", opts: api.RequestOptions{Fields: fields}},
+				cmdkit.GetRequestCandidate{Path: memberGroupPath, Opts: api.RequestOptions{Fields: fields}},
+				cmdkit.GetRequestCandidate{Path: "/tree/member-group/root", Opts: api.RequestOptions{Fields: fields}},
 			)
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, deps, applyReadTriage(applyFieldsProjection(result, fields), triage))
+			return cmdkit.PrintResult(cmd, deps, cmdkit.ApplyReadTriage(cmdkit.ApplyFieldsProjection(result, fields), triage))
 		},
 	}
 	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
-	addReadTriageFlags(cmd, &triage)
+	cmdkit.AddReadTriageFlags(cmd, &triage)
 	return cmd
 }
 
-func memberGroupGet(deps Dependencies) *cobra.Command {
+func memberGroupGet(deps cmdkit.Dependencies) *cobra.Command {
 	var fields string
 	cmd := &cobra.Command{
 		Use:   "get <id>",
@@ -55,7 +56,7 @@ func memberGroupGet(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, deps, applyFieldsProjection(result, fields))
+			return cmdkit.PrintResult(cmd, deps, cmdkit.ApplyFieldsProjection(result, fields))
 		},
 	}
 	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")

@@ -9,39 +9,40 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/commands/cmdkit"
 )
 
 // recycleBinCommand builds the 'bin' subgroup shared by document and media —
 // the recycle-bin API is symmetric across the two resources. Trash and
 // restore live on the parent groups (document trash/restore, media trash);
 // the bin group covers looking inside the bin and permanently emptying it.
-func recycleBinCommand(deps Dependencies, resource string) *cobra.Command {
+func recycleBinCommand(deps cmdkit.Dependencies, resource string) *cobra.Command {
 	bin := &cobra.Command{Use: "bin", Short: fmt.Sprintf("%s recycle bin operations", resource)}
 
-	bin.AddCommand(collectionCommand(deps, collectionSpec{
+	bin.AddCommand(cmdkit.CollectionCommand(deps, cmdkit.CollectionSpec{
 		Use:   "list",
 		Short: fmt.Sprintf("List %s items at the recycle bin root", resource),
 		Long:  fmt.Sprintf("GET /recycle-bin/%s/root. Paginated; use 'bin children <id>' to descend into trashed subtrees.", resource),
 		NArgs: 0,
-		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
-			return []getRequestCandidate{
-				{path: "/recycle-bin/" + resource + "/root", opts: api.RequestOptions{Params: params}},
+		Endpoints: func(args []string, params map[string]any) []cmdkit.GetRequestCandidate {
+			return []cmdkit.GetRequestCandidate{
+				{Path: "/recycle-bin/" + resource + "/root", Opts: api.RequestOptions{Params: params}},
 			}
 		},
 	}))
 
-	bin.AddCommand(collectionCommand(deps, collectionSpec{
+	bin.AddCommand(cmdkit.CollectionCommand(deps, cmdkit.CollectionSpec{
 		Use:   "children <id>",
 		Short: fmt.Sprintf("List children of a trashed %s item", resource),
 		NArgs: 1,
-		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
-			return []getRequestCandidate{
-				{path: "/recycle-bin/" + resource + "/children", opts: api.RequestOptions{Params: withParam(params, "parentId", args[0])}},
+		Endpoints: func(args []string, params map[string]any) []cmdkit.GetRequestCandidate {
+			return []cmdkit.GetRequestCandidate{
+				{Path: "/recycle-bin/" + resource + "/children", Opts: api.RequestOptions{Params: cmdkit.WithParam(params, "parentId", args[0])}},
 			}
 		},
 	}))
 
-	bin.AddCommand(getCommand(deps, getSpec{
+	bin.AddCommand(cmdkit.GetCommand(deps, cmdkit.GetSpec{
 		Use:   "original-parent <id>",
 		Short: fmt.Sprintf("Get the original parent of a trashed %s item (the default restore target)", resource),
 		Path: func(args []string) string {
@@ -49,7 +50,7 @@ func recycleBinCommand(deps Dependencies, resource string) *cobra.Command {
 		},
 	}))
 
-	bin.AddCommand(deleteCommand(deps, deleteSpec{
+	bin.AddCommand(cmdkit.DeleteCommand(deps, cmdkit.DeleteSpec{
 		Use:   "delete <id>",
 		Short: fmt.Sprintf("Permanently delete one %s item from the recycle bin", resource),
 		Path: func(args []string) string {
@@ -62,7 +63,7 @@ func recycleBinCommand(deps Dependencies, resource string) *cobra.Command {
 	return bin
 }
 
-func recycleBinEmpty(deps Dependencies, resource string) *cobra.Command {
+func recycleBinEmpty(deps cmdkit.Dependencies, resource string) *cobra.Command {
 	var force bool
 	var dryRun bool
 	cmd := &cobra.Command{
@@ -71,18 +72,18 @@ func recycleBinEmpty(deps Dependencies, resource string) *cobra.Command {
 		Long:  fmt.Sprintf("DELETE /recycle-bin/%s. Destroys every trashed %s item; there is no undo.", resource, resource),
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := requireForceOrDryRun(cmd, "permanently destroys every item in the recycle bin", force, dryRun); err != nil {
+			if err := cmdkit.RequireForceOrDryRun(cmd, "permanently destroys every item in the recycle bin", force, dryRun); err != nil {
 				return err
 			}
 			result, err := deps.Client.Delete(cmd.Context(), "/recycle-bin/"+resource, api.RequestOptions{DryRun: dryRun})
 			if err != nil {
 				return err
 			}
-			return printMutationResult(cmd, deps, "emptied", result, dryRun)
+			return cmdkit.PrintMutationResult(cmd, deps, "emptied", result, dryRun)
 		},
 	}
 	cmd.Flags().BoolVar(&force, "force", false, "Confirm emptying the recycle bin")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
@@ -90,7 +91,7 @@ func recycleBinEmpty(deps Dependencies, resource string) *cobra.Command {
 // by document and media: the restore target defaults to the item's original
 // parent (looked up via the recycle-bin API), --to overrides it, and
 // --to root restores at the tree root.
-func restoreFromBinCommand(deps Dependencies, resource string, rootName string) *cobra.Command {
+func restoreFromBinCommand(deps cmdkit.Dependencies, resource string, rootName string) *cobra.Command {
 	var to string
 	var dryRun bool
 	cmd := &cobra.Command{
@@ -124,17 +125,17 @@ func restoreFromBinCommand(deps Dependencies, resource string, rootName string) 
 				}
 			}
 
-			result, err := mutateWithFallback(ctx, deps.Client, map[string]any{"target": target}, api.RequestOptions{DryRun: dryRun},
-				mutationCandidate{method: "PUT", path: api.JoinPath("/recycle-bin/"+resource+"/%s/restore", args[0])},
-				mutationCandidate{method: "POST", path: api.JoinPath("/"+resource+"/%s/restore", args[0])},
+			result, err := cmdkit.MutateWithFallback(ctx, deps.Client, map[string]any{"target": target}, api.RequestOptions{DryRun: dryRun},
+				cmdkit.MutationCandidate{Method: "PUT", Path: api.JoinPath("/recycle-bin/"+resource+"/%s/restore", args[0])},
+				cmdkit.MutationCandidate{Method: "POST", Path: api.JoinPath("/"+resource+"/%s/restore", args[0])},
 			)
 			if err != nil {
 				return err
 			}
-			return printMutationResult(cmd, deps, "restored", result, dryRun)
+			return cmdkit.PrintMutationResult(cmd, deps, "restored", result, dryRun)
 		},
 	}
 	cmd.Flags().StringVar(&to, "to", "", "Restore target parent ID, or 'root' (defaults to the original parent)")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }

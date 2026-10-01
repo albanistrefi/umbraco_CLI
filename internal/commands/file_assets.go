@@ -10,6 +10,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/commands/cmdkit"
+	"umbraco-cli/internal/jsonvalue"
 )
 
 // fileAssetSpec parameterizes the command surface of the file-based assets
@@ -36,7 +38,7 @@ type fileAssetSpec struct {
 	Long string
 }
 
-func RegisterPartialView(root *cobra.Command, deps Dependencies) {
+func RegisterPartialView(root *cobra.Command, deps cmdkit.Dependencies) {
 	registerFileAssetGroup(root, deps, fileAssetSpec{
 		Use: "partial-view", Resource: "partial-view", Display: "partial view",
 		Extension: ".cshtml", Snippets: true,
@@ -56,7 +58,7 @@ Task → command:
 	})
 }
 
-func RegisterScript(root *cobra.Command, deps Dependencies) {
+func RegisterScript(root *cobra.Command, deps cmdkit.Dependencies) {
 	registerFileAssetGroup(root, deps, fileAssetSpec{
 		Use: "script", Resource: "script", Display: "script",
 		Extension: ".js",
@@ -75,7 +77,7 @@ Task → command:
 	})
 }
 
-func RegisterStylesheet(root *cobra.Command, deps Dependencies) {
+func RegisterStylesheet(root *cobra.Command, deps cmdkit.Dependencies) {
 	registerFileAssetGroup(root, deps, fileAssetSpec{
 		Use: "stylesheet", Resource: "stylesheet", Display: "stylesheet",
 		Extension: ".css",
@@ -94,7 +96,7 @@ Task → command:
 	})
 }
 
-func RegisterStaticFile(root *cobra.Command, deps Dependencies) {
+func RegisterStaticFile(root *cobra.Command, deps cmdkit.Dependencies) {
 	registerFileAssetGroup(root, deps, fileAssetSpec{
 		Use: "static-file", Resource: "static-file", Display: "static file",
 		ReadOnly: true, ItemEndpoint: "/item/static-file",
@@ -107,7 +109,7 @@ Task → command:
 	})
 }
 
-func registerFileAssetGroup(root *cobra.Command, deps Dependencies, spec fileAssetSpec) {
+func registerFileAssetGroup(root *cobra.Command, deps cmdkit.Dependencies, spec fileAssetSpec) {
 	group := &cobra.Command{
 		Use:   spec.Use,
 		Short: fmt.Sprintf("%s operations", strings.ToUpper(spec.Display[:1])+spec.Display[1:]),
@@ -235,20 +237,20 @@ func createdFilePath(parentPath string, name string) string {
 
 // --- reads ---------------------------------------------------------------
 
-func fileAssetList(deps Dependencies, spec fileAssetSpec) *cobra.Command {
-	return collectionCommand(deps, collectionSpec{
+func fileAssetList(deps cmdkit.Dependencies, spec fileAssetSpec) *cobra.Command {
+	return cmdkit.CollectionCommand(deps, cmdkit.CollectionSpec{
 		Use:   "list",
 		Short: fmt.Sprintf("List %ss and folders at the root (paginated; --skip/--take/--all)", spec.Display),
-		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
-			return []getRequestCandidate{
-				{path: "/tree/" + spec.Resource + "/root", opts: api.RequestOptions{Params: params}},
+		Endpoints: func(args []string, params map[string]any) []cmdkit.GetRequestCandidate {
+			return []cmdkit.GetRequestCandidate{
+				{Path: "/tree/" + spec.Resource + "/root", Opts: api.RequestOptions{Params: params}},
 			}
 		},
 	})
 }
 
-func fileAssetChildren(deps Dependencies, spec fileAssetSpec) *cobra.Command {
-	cmd := collectionCommand(deps, collectionSpec{
+func fileAssetChildren(deps cmdkit.Dependencies, spec fileAssetSpec) *cobra.Command {
+	cmd := cmdkit.CollectionCommand(deps, cmdkit.CollectionSpec{
 		Use:   "children <path>",
 		Short: fmt.Sprintf("List %ss and folders inside a folder (paginated; --skip/--take/--all)", spec.Display),
 		NArgs: 1,
@@ -262,7 +264,7 @@ func fileAssetChildren(deps Dependencies, spec fileAssetSpec) *cobra.Command {
 			_, err := normalizeFilePath(args[0])
 			return err
 		},
-		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
+		Endpoints: func(args []string, params map[string]any) []cmdkit.GetRequestCandidate {
 			// "/" means the root, which the tree endpoint takes as
 			// parentPath=/ rather than as a folder path.
 			parent := "/"
@@ -272,15 +274,15 @@ func fileAssetChildren(deps Dependencies, spec fileAssetSpec) *cobra.Command {
 					parent = normalized
 				}
 			}
-			return []getRequestCandidate{
-				{path: "/tree/" + spec.Resource + "/children", opts: api.RequestOptions{Params: withParam(params, "parentPath", parent)}},
+			return []cmdkit.GetRequestCandidate{
+				{Path: "/tree/" + spec.Resource + "/children", Opts: api.RequestOptions{Params: cmdkit.WithParam(params, "parentPath", parent)}},
 			}
 		},
 	})
 	return cmd
 }
 
-func fileAssetGet(deps Dependencies, spec fileAssetSpec) *cobra.Command {
+func fileAssetGet(deps cmdkit.Dependencies, spec fileAssetSpec) *cobra.Command {
 	var fields string
 	var outFile string
 	short := fmt.Sprintf("Get a %s by path, including its content", spec.Display)
@@ -304,19 +306,19 @@ func fileAssetGet(deps Dependencies, spec fileAssetSpec) *cobra.Command {
 				if err != nil {
 					return err
 				}
-				return printResult(cmd, deps, map[string]any{"out": outFile, "bytes": written})
+				return cmdkit.PrintResult(cmd, deps, map[string]any{"out": outFile, "bytes": written})
 			}
-			return printResult(cmd, deps, applyFieldsProjection(result, fields))
+			return cmdkit.PrintResult(cmd, deps, cmdkit.ApplyFieldsProjection(result, fields))
 		},
 	}
-	addFieldsFlag(cmd, &fields)
+	cmdkit.AddFieldsFlag(cmd, &fields)
 	if !spec.ReadOnly {
 		cmd.Flags().StringVar(&outFile, "out", "", "Write the content to this file verbatim and print a summary instead of the body")
 	}
 	return cmd
 }
 
-func fileAssetFetch(cmd *cobra.Command, deps Dependencies, spec fileAssetSpec, path string, fields string) (any, error) {
+func fileAssetFetch(cmd *cobra.Command, deps cmdkit.Dependencies, spec fileAssetSpec, path string, fields string) (any, error) {
 	if spec.ItemEndpoint != "" {
 		normalized, err := apiFilePath(path)
 		if err != nil {
@@ -368,7 +370,7 @@ func unwrapFileAssetItem(spec fileAssetSpec, path string, result any) (any, erro
 func writeFileAssetContent(outFile string, result any) (int, error) {
 	object, ok := result.(map[string]any)
 	if !ok {
-		return 0, fmt.Errorf("--out needs a response with a content field, got %s", jsonShapeName(result))
+		return 0, fmt.Errorf("--out needs a response with a content field, got %s", jsonvalue.ShapeName(result))
 	}
 	content, ok := object["content"].(string)
 	if !ok {
@@ -385,20 +387,20 @@ func writeFileAssetContent(outFile string, result any) (int, error) {
 	return len(content), nil
 }
 
-func fileAssetSnippets(deps Dependencies, spec fileAssetSpec) *cobra.Command {
-	return collectionCommand(deps, collectionSpec{
+func fileAssetSnippets(deps cmdkit.Dependencies, spec fileAssetSpec) *cobra.Command {
+	return cmdkit.CollectionCommand(deps, cmdkit.CollectionSpec{
 		Use:   "snippets",
 		Short: "List the built-in partial view snippets (paginated; --skip/--take/--all)",
-		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
-			return []getRequestCandidate{
-				{path: "/" + spec.Resource + "/snippet", opts: api.RequestOptions{Params: params}},
+		Endpoints: func(args []string, params map[string]any) []cmdkit.GetRequestCandidate {
+			return []cmdkit.GetRequestCandidate{
+				{Path: "/" + spec.Resource + "/snippet", Opts: api.RequestOptions{Params: params}},
 			}
 		},
 	})
 }
 
-func fileAssetSnippet(deps Dependencies, spec fileAssetSpec) *cobra.Command {
-	return getCommand(deps, getSpec{
+func fileAssetSnippet(deps cmdkit.Dependencies, spec fileAssetSpec) *cobra.Command {
+	return cmdkit.GetCommand(deps, cmdkit.GetSpec{
 		Use:   "snippet <id>",
 		Short: "Get a built-in partial view snippet, including its content",
 		Long:  "Fetches one snippet by its id (as listed by `partial-view snippets`). Its content is the starting point Umbraco offers in the backoffice when creating a partial view.",
@@ -460,7 +462,7 @@ func addContentFlags(cmd *cobra.Command, content *string, contentFile *string) {
 
 // --- mutations -----------------------------------------------------------
 
-func fileAssetCreate(deps Dependencies, spec fileAssetSpec) *cobra.Command {
+func fileAssetCreate(deps cmdkit.Dependencies, spec fileAssetSpec) *cobra.Command {
 	var parentPath string
 	var name string
 	var content string
@@ -472,10 +474,10 @@ func fileAssetCreate(deps Dependencies, spec fileAssetSpec) *cobra.Command {
 		Long:  fmt.Sprintf("Creates a %s named --name inside the folder --path (use / for the root). The content comes from --content or, for anything with quotes or newlines, --content-file.", spec.Display),
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := requireValue("--name", name); err != nil {
+			if err := cmdkit.RequireValue("--name", name); err != nil {
 				return err
 			}
-			if err := requireValue("--path", parentPath); err != nil {
+			if err := cmdkit.RequireValue("--path", parentPath); err != nil {
 				return err
 			}
 			resolved, err := resolveFileAssetContent(cmd, content, contentFile, true)
@@ -494,17 +496,17 @@ func fileAssetCreate(deps Dependencies, spec fileAssetSpec) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, deps, fileAssetCreateResult(result, name, createdFilePath(parentPath, name), dryRun))
+			return cmdkit.PrintResult(cmd, deps, fileAssetCreateResult(result, name, createdFilePath(parentPath, name), dryRun))
 		},
 	}
 	cmd.Flags().StringVar(&parentPath, "path", "/", "Folder to create the file in (/ for the root)")
 	cmd.Flags().StringVar(&name, "name", "", fmt.Sprintf("File name, including the %s extension", spec.Extension))
 	addContentFlags(cmd, &content, &contentFile)
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
-func fileAssetUpdate(deps Dependencies, spec fileAssetSpec) *cobra.Command {
+func fileAssetUpdate(deps cmdkit.Dependencies, spec fileAssetSpec) *cobra.Command {
 	var content string
 	var contentFile string
 	var dryRun bool
@@ -526,15 +528,15 @@ func fileAssetUpdate(deps Dependencies, spec fileAssetSpec) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printMutationResult(cmd, deps, "updated", result, dryRun)
+			return cmdkit.PrintMutationResult(cmd, deps, "updated", result, dryRun)
 		},
 	}
 	addContentFlags(cmd, &content, &contentFile)
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
-func fileAssetRename(deps Dependencies, spec fileAssetSpec) *cobra.Command {
+func fileAssetRename(deps cmdkit.Dependencies, spec fileAssetSpec) *cobra.Command {
 	var name string
 	var dryRun bool
 	cmd := &cobra.Command{
@@ -542,7 +544,7 @@ func fileAssetRename(deps Dependencies, spec fileAssetSpec) *cobra.Command {
 		Short: fmt.Sprintf("Rename a %s, keeping it in its folder", spec.Display),
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := requireValue("--name", name); err != nil {
+			if err := cmdkit.RequireValue("--name", name); err != nil {
 				return err
 			}
 			segment, err := escapeFilePathSegment(args[0])
@@ -553,15 +555,15 @@ func fileAssetRename(deps Dependencies, spec fileAssetSpec) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printMutationResult(cmd, deps, "renamed", result, dryRun)
+			return cmdkit.PrintMutationResult(cmd, deps, "renamed", result, dryRun)
 		},
 	}
 	cmd.Flags().StringVar(&name, "name", "", "New file name, including the extension")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
-func fileAssetDelete(deps Dependencies, spec fileAssetSpec) *cobra.Command {
+func fileAssetDelete(deps cmdkit.Dependencies, spec fileAssetSpec) *cobra.Command {
 	var force bool
 	var dryRun bool
 	cmd := &cobra.Command{
@@ -569,7 +571,7 @@ func fileAssetDelete(deps Dependencies, spec fileAssetSpec) *cobra.Command {
 		Short: fmt.Sprintf("Permanently delete a %s", spec.Display),
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := requireForceOrDryRun(cmd, "permanently deletes", force, dryRun); err != nil {
+			if err := cmdkit.RequireForceOrDryRun(cmd, "permanently deletes", force, dryRun); err != nil {
 				return err
 			}
 			escaped, err := escapeFilePath(args[0])
@@ -580,15 +582,15 @@ func fileAssetDelete(deps Dependencies, spec fileAssetSpec) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printMutationResult(cmd, deps, "deleted", result, dryRun)
+			return cmdkit.PrintMutationResult(cmd, deps, "deleted", result, dryRun)
 		},
 	}
 	cmd.Flags().BoolVar(&force, "force", false, "Confirm permanent deletion")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
-func fileAssetCreateFolder(deps Dependencies, spec fileAssetSpec) *cobra.Command {
+func fileAssetCreateFolder(deps cmdkit.Dependencies, spec fileAssetSpec) *cobra.Command {
 	var parentPath string
 	var name string
 	var dryRun bool
@@ -597,10 +599,10 @@ func fileAssetCreateFolder(deps Dependencies, spec fileAssetSpec) *cobra.Command
 		Short: fmt.Sprintf("Create a %s folder", spec.Display),
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := requireValue("--name", name); err != nil {
+			if err := cmdkit.RequireValue("--name", name); err != nil {
 				return err
 			}
-			if err := requireValue("--path", parentPath); err != nil {
+			if err := cmdkit.RequireValue("--path", parentPath); err != nil {
 				return err
 			}
 			parent, err := filePathParent(parentPath)
@@ -615,16 +617,16 @@ func fileAssetCreateFolder(deps Dependencies, spec fileAssetSpec) *cobra.Command
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, deps, fileAssetCreateResult(result, name, createdFilePath(parentPath, name), dryRun))
+			return cmdkit.PrintResult(cmd, deps, fileAssetCreateResult(result, name, createdFilePath(parentPath, name), dryRun))
 		},
 	}
 	cmd.Flags().StringVar(&parentPath, "path", "/", "Parent folder (/ for the root)")
 	cmd.Flags().StringVar(&name, "name", "", "Folder name")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
-func fileAssetDeleteFolder(deps Dependencies, spec fileAssetSpec) *cobra.Command {
+func fileAssetDeleteFolder(deps cmdkit.Dependencies, spec fileAssetSpec) *cobra.Command {
 	var force bool
 	var dryRun bool
 	cmd := &cobra.Command{
@@ -632,7 +634,7 @@ func fileAssetDeleteFolder(deps Dependencies, spec fileAssetSpec) *cobra.Command
 		Short: fmt.Sprintf("Permanently delete an empty %s folder", spec.Display),
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := requireForceOrDryRun(cmd, "permanently deletes", force, dryRun); err != nil {
+			if err := cmdkit.RequireForceOrDryRun(cmd, "permanently deletes", force, dryRun); err != nil {
 				return err
 			}
 			escaped, err := escapeFilePath(args[0])
@@ -643,10 +645,10 @@ func fileAssetDeleteFolder(deps Dependencies, spec fileAssetSpec) *cobra.Command
 			if err != nil {
 				return err
 			}
-			return printMutationResult(cmd, deps, "deleted", result, dryRun)
+			return cmdkit.PrintMutationResult(cmd, deps, "deleted", result, dryRun)
 		},
 	}
 	cmd.Flags().BoolVar(&force, "force", false, "Confirm permanent deletion")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }

@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/commands/cmdkit"
 	"umbraco-cli/internal/validate"
 )
 
@@ -20,7 +21,7 @@ const (
 	dataTypeTreeRootPath         = "/tree/data-type/root"
 )
 
-func RegisterDatatype(root *cobra.Command, deps Dependencies) {
+func RegisterDatatype(root *cobra.Command, deps cmdkit.Dependencies) {
 	datatype := &cobra.Command{
 		Use:   "datatype",
 		Short: "Data type operations",
@@ -56,42 +57,42 @@ Task → command:
 	root.AddCommand(datatype)
 }
 
-func datatypeGet(deps Dependencies) *cobra.Command {
-	return getCommand(deps, getSpec{
+func datatypeGet(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.GetCommand(deps, cmdkit.GetSpec{
 		Use:   "get <id>",
 		Short: "Get data type by ID",
 		Path:  func(args []string) string { return api.JoinPath(dataTypeLegacyCollectionPath+"/%s", args[0]) },
 	})
 }
 
-func datatypeList(deps Dependencies) *cobra.Command {
-	return collectionCommand(deps, collectionSpec{
+func datatypeList(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.CollectionCommand(deps, cmdkit.CollectionSpec{
 		Use:   "list",
 		Short: "List data types (paginated; --skip/--take/--all)",
-		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
-			return []getRequestCandidate{
-				{path: dataTypeFilterPath, opts: api.RequestOptions{Params: params}},
-				{path: dataTypeTreeRootPath, opts: api.RequestOptions{Params: params}},
-				{path: dataTypeLegacyCollectionPath, opts: api.RequestOptions{}},
+		Endpoints: func(args []string, params map[string]any) []cmdkit.GetRequestCandidate {
+			return []cmdkit.GetRequestCandidate{
+				{Path: dataTypeFilterPath, Opts: api.RequestOptions{Params: params}},
+				{Path: dataTypeTreeRootPath, Opts: api.RequestOptions{Params: params}},
+				{Path: dataTypeLegacyCollectionPath, Opts: api.RequestOptions{}},
 			}
 		},
 	})
 }
 
-func datatypeRoot(deps Dependencies) *cobra.Command {
-	return collectionCommand(deps, collectionSpec{
+func datatypeRoot(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.CollectionCommand(deps, cmdkit.CollectionSpec{
 		Use:   "root",
 		Short: "Get root data types (paginated; --skip/--take/--all)",
-		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
-			return []getRequestCandidate{
-				{path: dataTypeTreeRootPath, opts: api.RequestOptions{Params: params}},
-				{path: dataTypeLegacyRootPath, opts: api.RequestOptions{}},
+		Endpoints: func(args []string, params map[string]any) []cmdkit.GetRequestCandidate {
+			return []cmdkit.GetRequestCandidate{
+				{Path: dataTypeTreeRootPath, Opts: api.RequestOptions{Params: params}},
+				{Path: dataTypeLegacyRootPath, Opts: api.RequestOptions{}},
 			}
 		},
 	})
 }
 
-func datatypeSearch(deps Dependencies) *cobra.Command {
+func datatypeSearch(deps cmdkit.Dependencies) *cobra.Command {
 	var paramsRaw string
 	var query string
 	var editorAlias string
@@ -100,7 +101,7 @@ func datatypeSearch(deps Dependencies) *cobra.Command {
 	cmd := &cobra.Command{Use: "search", Short: "Search data types", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 		userTakeSet := cmd.Flags().Changed("take")
-		params, err := parseParams(paramsRaw)
+		params, err := cmdkit.ParseParams(paramsRaw)
 		if err != nil {
 			return err
 		}
@@ -141,7 +142,7 @@ func datatypeSearch(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, deps, result)
+			return cmdkit.PrintResult(cmd, deps, result)
 		}
 
 		searchParams := cloneParams(params)
@@ -157,22 +158,22 @@ func datatypeSearch(deps Dependencies) *cobra.Command {
 			}
 		}
 
-		candidates := []getRequestCandidate{
-			{path: dataTypeFilterPath, opts: api.RequestOptions{Params: filterParams}},
+		candidates := []cmdkit.GetRequestCandidate{
+			{Path: dataTypeFilterPath, Opts: api.RequestOptions{Params: filterParams}},
 		}
 		if _, hasQuery := searchParams["query"]; hasQuery {
-			candidates = []getRequestCandidate{
-				{path: dataTypeItemSearchPath, opts: api.RequestOptions{Params: searchParams}},
-				{path: dataTypeFilterPath, opts: api.RequestOptions{Params: filterParams}},
-				{path: dataTypeLegacySearchPath, opts: api.RequestOptions{Params: searchParams}},
+			candidates = []cmdkit.GetRequestCandidate{
+				{Path: dataTypeItemSearchPath, Opts: api.RequestOptions{Params: searchParams}},
+				{Path: dataTypeFilterPath, Opts: api.RequestOptions{Params: filterParams}},
+				{Path: dataTypeLegacySearchPath, Opts: api.RequestOptions{Params: searchParams}},
 			}
 		}
 
-		result, err := getWithFallback(ctx, deps.Client, candidates...)
+		result, err := cmdkit.GetWithFallback(ctx, deps.Client, candidates...)
 		if err != nil {
 			return err
 		}
-		return printResult(cmd, deps, result)
+		return cmdkit.PrintResult(cmd, deps, result)
 	}}
 	cmd.Flags().StringVar(&paramsRaw, "params", "", "Query parameters as JSON")
 	cmd.Flags().StringVar(&query, "query", "", "Search query")
@@ -218,7 +219,7 @@ func searchDataTypesByEditorAlias(ctx context.Context, client *api.Client, param
 			}
 		}
 
-		items := resultItems(page)
+		items := cmdkit.ResultItems(page)
 		matches = append(matches, filterDataTypeItems(items, editorAlias, strings.EqualFold)...)
 
 		scanned += pageSize
@@ -267,14 +268,14 @@ func datatypeSearchPage(ctx context.Context, client *api.Client, params map[stri
 		}
 	}
 	if _, hasQuery := searchParams["query"]; hasQuery {
-		return getWithFallback(ctx, client,
-			getRequestCandidate{path: dataTypeItemSearchPath, opts: api.RequestOptions{Params: searchParams}},
-			getRequestCandidate{path: dataTypeFilterPath, opts: api.RequestOptions{Params: filterParams}},
-			getRequestCandidate{path: dataTypeLegacySearchPath, opts: api.RequestOptions{Params: searchParams}},
+		return cmdkit.GetWithFallback(ctx, client,
+			cmdkit.GetRequestCandidate{Path: dataTypeItemSearchPath, Opts: api.RequestOptions{Params: searchParams}},
+			cmdkit.GetRequestCandidate{Path: dataTypeFilterPath, Opts: api.RequestOptions{Params: filterParams}},
+			cmdkit.GetRequestCandidate{Path: dataTypeLegacySearchPath, Opts: api.RequestOptions{Params: searchParams}},
 		)
 	}
-	return getWithFallback(ctx, client,
-		getRequestCandidate{path: dataTypeFilterPath, opts: api.RequestOptions{Params: filterParams}},
+	return cmdkit.GetWithFallback(ctx, client,
+		cmdkit.GetRequestCandidate{Path: dataTypeFilterPath, Opts: api.RequestOptions{Params: filterParams}},
 	)
 }
 
@@ -337,18 +338,18 @@ func minInt(left int, right int) int {
 	return right
 }
 
-func datatypeIsUsed(deps Dependencies) *cobra.Command {
+func datatypeIsUsed(deps cmdkit.Dependencies) *cobra.Command {
 	return &cobra.Command{Use: "is-used <id>", Short: "Check whether a data type is in use", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		result, err := deps.Client.Get(cmd.Context(), api.JoinPath(dataTypeLegacyCollectionPath+"/%s/is-used", args[0]), api.RequestOptions{})
 		if err != nil {
 			return err
 		}
-		return printResult(cmd, deps, result)
+		return cmdkit.PrintResult(cmd, deps, result)
 	}}
 }
 
-func datatypeCreate(deps Dependencies) *cobra.Command {
-	return createCommand(deps, createSpec{
+func datatypeCreate(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.CreateCommand(deps, cmdkit.CreateSpec{
 		Use:         "create",
 		Short:       "Create data type",
 		Long:        "POST /data-type. Editor settings go in the values array ([{alias, value}, ...]); a configuration map ({alias: value}) is accepted as a convenience and converted to values automatically.",
@@ -359,8 +360,8 @@ func datatypeCreate(deps Dependencies) *cobra.Command {
 	})
 }
 
-func datatypeUpdate(deps Dependencies) *cobra.Command {
-	return updateCommand(deps, updateSpec{
+func datatypeUpdate(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.UpdateCommand(deps, cmdkit.UpdateSpec{
 		Use:   "update <id>",
 		Short: "Update data type",
 		Long: `Updates a data type with the uniform CLI update contract:
@@ -380,8 +381,8 @@ expects.`,
 	})
 }
 
-func datatypeDelete(deps Dependencies) *cobra.Command {
-	return deleteCommand(deps, deleteSpec{
+func datatypeDelete(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.DeleteCommand(deps, cmdkit.DeleteSpec{
 		Use:   "delete <id>",
 		Short: "Permanently delete a data type",
 		Path: func(args []string) string {
@@ -390,16 +391,16 @@ func datatypeDelete(deps Dependencies) *cobra.Command {
 	})
 }
 
-func datatypeAddValue(deps Dependencies) *cobra.Command {
+func datatypeAddValue(deps cmdkit.Dependencies) *cobra.Command {
 	var alias string
 	var value string
 	var dryRun bool
 
 	cmd := &cobra.Command{Use: "add-value <id>", Short: "Append a string value to a datatype array setting", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		if err := requireValue("--alias", alias); err != nil {
+		if err := cmdkit.RequireValue("--alias", alias); err != nil {
 			return err
 		}
-		if err := requireValue("--value", value); err != nil {
+		if err := cmdkit.RequireValue("--value", value); err != nil {
 			return err
 		}
 		if err := validate.String(alias); err != nil {
@@ -410,16 +411,16 @@ func datatypeAddValue(deps Dependencies) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		return printResult(cmd, deps, result)
+		return cmdkit.PrintResult(cmd, deps, result)
 	}}
 
 	cmd.Flags().StringVar(&alias, "alias", "", "Datatype array alias to update")
 	cmd.Flags().StringVar(&value, "value", "", "String value to append")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
-func datatypeExtensions(deps Dependencies) *cobra.Command {
+func datatypeExtensions(deps cmdkit.Dependencies) *cobra.Command {
 	return &cobra.Command{Use: "extensions <id>", Short: "List enabled data type extension aliases", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		payload, err := fetchDatatypeObject(cmd.Context(), deps.Client, args[0])
 		if err != nil {
@@ -431,20 +432,20 @@ func datatypeExtensions(deps Dependencies) *cobra.Command {
 			"name":       payload["name"],
 			"extensions": datatypeStringArrayValue(payload, "extensions"),
 		}
-		return printResult(cmd, deps, result)
+		return cmdkit.PrintResult(cmd, deps, result)
 	}}
 }
 
-func datatypeRemoveValue(deps Dependencies) *cobra.Command {
+func datatypeRemoveValue(deps cmdkit.Dependencies) *cobra.Command {
 	var alias string
 	var value string
 	var dryRun bool
 
 	cmd := &cobra.Command{Use: "remove-value <id>", Short: "Remove a string value from a datatype array setting", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		if err := requireValue("--alias", alias); err != nil {
+		if err := cmdkit.RequireValue("--alias", alias); err != nil {
 			return err
 		}
-		if err := requireValue("--value", value); err != nil {
+		if err := cmdkit.RequireValue("--value", value); err != nil {
 			return err
 		}
 		if err := validate.String(alias); err != nil {
@@ -455,16 +456,16 @@ func datatypeRemoveValue(deps Dependencies) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		return printResult(cmd, deps, result)
+		return cmdkit.PrintResult(cmd, deps, result)
 	}}
 
 	cmd.Flags().StringVar(&alias, "alias", "", "Datatype array alias to update")
 	cmd.Flags().StringVar(&value, "value", "", "String value to remove")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
-func datatypeAddExtension(deps Dependencies) *cobra.Command {
+func datatypeAddExtension(deps cmdkit.Dependencies) *cobra.Command {
 	var dryRun bool
 	cmd := &cobra.Command{Use: "add-extension <id> <extension-alias>", Short: "Add an extension alias to the datatype extensions array", Args: cobra.ExactArgs(2), RunE: func(cmd *cobra.Command, args []string) error {
 		if err := validate.String(args[1]); err != nil {
@@ -475,13 +476,13 @@ func datatypeAddExtension(deps Dependencies) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		return printResult(cmd, deps, result)
+		return cmdkit.PrintResult(cmd, deps, result)
 	}}
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
-func datatypeRemoveExtension(deps Dependencies) *cobra.Command {
+func datatypeRemoveExtension(deps cmdkit.Dependencies) *cobra.Command {
 	var dryRun bool
 	cmd := &cobra.Command{Use: "remove-extension <id> <extension-alias>", Short: "Remove an extension alias from the datatype extensions array", Args: cobra.ExactArgs(2), RunE: func(cmd *cobra.Command, args []string) error {
 		if err := validate.String(args[1]); err != nil {
@@ -492,9 +493,9 @@ func datatypeRemoveExtension(deps Dependencies) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		return printResult(cmd, deps, result)
+		return cmdkit.PrintResult(cmd, deps, result)
 	}}
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 

@@ -4,12 +4,13 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/commands/cmdkit"
 )
 
 // documentVersion groups the version-history commands under
 // 'document version'. Together with 'document audit-log' this is the undo
 // path for content edits: list versions, inspect one, roll back to it.
-func documentVersion(deps Dependencies) *cobra.Command {
+func documentVersion(deps cmdkit.Dependencies) *cobra.Command {
 	version := &cobra.Command{
 		Use:   "version",
 		Short: "Document version history: list, inspect, roll back",
@@ -21,19 +22,19 @@ func documentVersion(deps Dependencies) *cobra.Command {
 	return version
 }
 
-func documentVersionList(deps Dependencies) *cobra.Command {
+func documentVersionList(deps cmdkit.Dependencies) *cobra.Command {
 	var culture string
-	cmd := collectionCommand(deps, collectionSpec{
+	cmd := cmdkit.CollectionCommand(deps, cmdkit.CollectionSpec{
 		Use:   "list <document-id>",
 		Short: "List stored versions of a document (paginated; --skip/--take/--all)",
 		NArgs: 1,
-		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
-			versionParams := withParam(params, "documentId", args[0])
+		Endpoints: func(args []string, params map[string]any) []cmdkit.GetRequestCandidate {
+			versionParams := cmdkit.WithParam(params, "documentId", args[0])
 			if culture != "" {
 				versionParams["culture"] = culture
 			}
-			return []getRequestCandidate{
-				{path: "/document-version", opts: api.RequestOptions{Params: versionParams}},
+			return []cmdkit.GetRequestCandidate{
+				{Path: "/document-version", Opts: api.RequestOptions{Params: versionParams}},
 			}
 		},
 	})
@@ -41,15 +42,15 @@ func documentVersionList(deps Dependencies) *cobra.Command {
 	return cmd
 }
 
-func documentVersionGet(deps Dependencies) *cobra.Command {
-	return getCommand(deps, getSpec{
+func documentVersionGet(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.GetCommand(deps, cmdkit.GetSpec{
 		Use:   "get <version-id>",
 		Short: "Get a stored document version (the full payload as it was)",
 		Path:  func(args []string) string { return api.JoinPath("/document-version/%s", args[0]) },
 	})
 }
 
-func documentVersionRollback(deps Dependencies) *cobra.Command {
+func documentVersionRollback(deps cmdkit.Dependencies) *cobra.Command {
 	var culture string
 	var dryRun bool
 	cmd := &cobra.Command{
@@ -66,15 +67,15 @@ func documentVersionRollback(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printMutationResult(cmd, deps, "rolledBack", result, dryRun)
+			return cmdkit.PrintMutationResult(cmd, deps, "rolledBack", result, dryRun)
 		},
 	}
 	cmd.Flags().StringVar(&culture, "culture", "", "Culture to roll back on variant content")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
-func documentVersionPreventCleanup(deps Dependencies) *cobra.Command {
+func documentVersionPreventCleanup(deps cmdkit.Dependencies) *cobra.Command {
 	var disable bool
 	var dryRun bool
 	cmd := &cobra.Command{
@@ -92,23 +93,23 @@ func documentVersionPreventCleanup(deps Dependencies) *cobra.Command {
 			if disable {
 				verb = "unpinned"
 			}
-			return printMutationResult(cmd, deps, verb, result, dryRun)
+			return cmdkit.PrintMutationResult(cmd, deps, verb, result, dryRun)
 		},
 	}
 	cmd.Flags().BoolVar(&disable, "disable", false, "Allow cleanup to delete this version again")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
-func documentAuditLog(deps Dependencies) *cobra.Command {
-	return collectionCommand(deps, collectionSpec{
+func documentAuditLog(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.CollectionCommand(deps, cmdkit.CollectionSpec{
 		Use:   "audit-log <id>",
 		Short: "List the audit trail for a document (who did what, when)",
 		Long:  "GET /document/{id}/audit-log. Pass --params for orderDirection or sinceDate filters, e.g. --params '{\"sinceDate\":\"2026-01-01T00:00:00Z\"}'.",
 		NArgs: 1,
-		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
-			return []getRequestCandidate{
-				{path: api.JoinPath("/document/%s/audit-log", args[0]), opts: api.RequestOptions{Params: params}},
+		Endpoints: func(args []string, params map[string]any) []cmdkit.GetRequestCandidate {
+			return []cmdkit.GetRequestCandidate{
+				{Path: api.JoinPath("/document/%s/audit-log", args[0]), Opts: api.RequestOptions{Params: params}},
 			}
 		},
 	})

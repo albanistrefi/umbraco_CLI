@@ -8,10 +8,12 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/commands/cmdkit"
+	"umbraco-cli/internal/uuid"
 	"umbraco-cli/internal/validate"
 )
 
-func RegisterDoctype(root *cobra.Command, deps Dependencies) {
+func RegisterDoctype(root *cobra.Command, deps cmdkit.Dependencies) {
 	doctype := &cobra.Command{
 		Use:     "doctype",
 		Aliases: []string{"document-type"},
@@ -50,7 +52,7 @@ Task → command:
 	root.AddCommand(doctype)
 }
 
-func doctypeGet(deps Dependencies) *cobra.Command {
+func doctypeGet(deps cmdkit.Dependencies) *cobra.Command {
 	var fields string
 	cmd := &cobra.Command{
 		Use:   "get <id-or-alias>",
@@ -69,10 +71,10 @@ func doctypeGet(deps Dependencies) *cobra.Command {
 				}
 				return err
 			}
-			return printResult(cmd, deps, applyFieldsProjection(result, fields))
+			return cmdkit.PrintResult(cmd, deps, cmdkit.ApplyFieldsProjection(result, fields))
 		},
 	}
-	addFieldsFlag(cmd, &fields)
+	cmdkit.AddFieldsFlag(cmd, &fields)
 	return cmd
 }
 
@@ -80,7 +82,7 @@ func doctypeGet(deps Dependencies) *cobra.Command {
 // does any content, media or member actually store a value for it? The
 // endpoint takes the owning content type id, so a non-GUID argument is
 // resolved as an alias first, the same way doctype get does.
-func doctypePropertyIsUsed(deps Dependencies) *cobra.Command {
+func doctypePropertyIsUsed(deps cmdkit.Dependencies) *cobra.Command {
 	var alias string
 	cmd := &cobra.Command{
 		Use:   "property-is-used <id-or-alias>",
@@ -88,7 +90,7 @@ func doctypePropertyIsUsed(deps Dependencies) *cobra.Command {
 		Long:  "GET /property-type/is-used?contentTypeId=&propertyAlias=. The document type is addressed by GUID or by exact alias; --alias names the property on it. The response is a bare boolean: true means removing the property would discard stored values.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := requireValue("--alias", alias); err != nil {
+			if err := cmdkit.RequireValue("--alias", alias); err != nil {
 				return err
 			}
 			id, err := resolveSchemaTypeID(cmd.Context(), deps.Client, "document-type", "doctype", "document type", args[0])
@@ -99,14 +101,14 @@ func doctypePropertyIsUsed(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, deps, result)
+			return cmdkit.PrintResult(cmd, deps, result)
 		},
 	}
 	cmd.Flags().StringVar(&alias, "alias", "", "Property alias on the document type (required)")
 	return cmd
 }
 
-func doctypeList(deps Dependencies) *cobra.Command {
+func doctypeList(deps cmdkit.Dependencies) *cobra.Command {
 	var fields string
 	var paramsRaw string
 	var skip, take int
@@ -114,22 +116,22 @@ func doctypeList(deps Dependencies) *cobra.Command {
 	var recursive bool
 	var typesOnly bool
 	var excludeFolders bool
-	var triage readTriageOptions
+	var triage cmdkit.ReadTriageOptions
 
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List document types (paginated; --skip/--take/--all)",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			params, err := parseParams(paramsRaw)
+			params, err := cmdkit.ParseParams(paramsRaw)
 			if err != nil {
 				return err
 			}
-			params = applyPaginationParams(params, skip, take)
-			candidates := []getRequestCandidate{
-				{path: "/tree/document-type/root", opts: api.RequestOptions{Params: params, Fields: fields}},
-				{path: "/document-type/root", opts: api.RequestOptions{Params: params, Fields: fields}},
-				{path: "/document-type", opts: api.RequestOptions{Params: params, Fields: fields}},
+			params = cmdkit.ApplyPaginationParams(params, skip, take)
+			candidates := []cmdkit.GetRequestCandidate{
+				{Path: "/tree/document-type/root", Opts: api.RequestOptions{Params: params, Fields: fields}},
+				{Path: "/document-type/root", Opts: api.RequestOptions{Params: params, Fields: fields}},
+				{Path: "/document-type", Opts: api.RequestOptions{Params: params, Fields: fields}},
 			}
 
 			ctx := cmd.Context()
@@ -140,18 +142,18 @@ func doctypeList(deps Dependencies) *cobra.Command {
 				if filterFolders {
 					rootLimit = 0
 				}
-				result, err = getAllPagesWithFallback(ctx, deps.Client, take, skip, rootLimit, candidates...)
+				result, err = cmdkit.GetAllPagesWithFallback(ctx, deps.Client, take, skip, rootLimit, candidates...)
 			} else if all {
-				result, err = getAllPagesWithFallback(ctx, deps.Client, take, skip, triage.FirstN, candidates...)
+				result, err = cmdkit.GetAllPagesWithFallback(ctx, deps.Client, take, skip, triage.FirstN, candidates...)
 			} else {
-				result, err = getWithFallback(ctx, deps.Client, candidates...)
+				result, err = cmdkit.GetWithFallback(ctx, deps.Client, candidates...)
 			}
 			if err != nil {
 				return err
 			}
 
 			if recursive {
-				items, err := flattenSchemaTypeTree(ctx, deps.Client, "document-type", resultItems(result), take, filterFolders, triage.FirstN)
+				items, err := flattenSchemaTypeTree(ctx, deps.Client, "document-type", cmdkit.ResultItems(result), take, filterFolders, triage.FirstN)
 				if err != nil {
 					return err
 				}
@@ -168,91 +170,82 @@ func doctypeList(deps Dependencies) *cobra.Command {
 				return err
 			}
 
-			return printResult(cmd, deps, applyReadTriage(applyFieldsProjection(result, fields), triage))
+			return cmdkit.PrintResult(cmd, deps, cmdkit.ApplyReadTriage(cmdkit.ApplyFieldsProjection(result, fields), triage))
 		},
 	}
-	addFieldsFlag(cmd, &fields)
+	cmdkit.AddFieldsFlag(cmd, &fields)
 	cmd.Flags().StringVar(&paramsRaw, "params", "", "Query parameters as JSON")
-	addPaginationFlags(cmd, &skip, &take)
-	addAutoPaginationFlag(cmd, &all)
-	addReadTriageFlags(cmd, &triage)
+	cmdkit.AddPaginationFlags(cmd, &skip, &take)
+	cmdkit.AddAutoPaginationFlag(cmd, &all)
+	cmdkit.AddReadTriageFlags(cmd, &triage)
 	cmd.Flags().BoolVar(&recursive, "recursive", false, "Walk document type folders recursively")
 	cmd.Flags().BoolVar(&typesOnly, "types-only", false, "Return document types only, excluding folders")
 	cmd.Flags().BoolVar(&excludeFolders, "exclude-folders", false, "Alias for --types-only")
 	return cmd
 }
 
-func doctypeRoot(deps Dependencies) *cobra.Command {
-	return collectionCommand(deps, collectionSpec{
+func doctypeRoot(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.CollectionCommand(deps, cmdkit.CollectionSpec{
 		Use:   "root",
 		Short: "Get root document types (paginated; --skip/--take/--all)",
-		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
-			return []getRequestCandidate{
-				{path: "/tree/document-type/root", opts: api.RequestOptions{Params: params}},
-				{path: "/document-type/root", opts: api.RequestOptions{Params: params}},
+		Endpoints: func(args []string, params map[string]any) []cmdkit.GetRequestCandidate {
+			return []cmdkit.GetRequestCandidate{
+				{Path: "/tree/document-type/root", Opts: api.RequestOptions{Params: params}},
+				{Path: "/document-type/root", Opts: api.RequestOptions{Params: params}},
 			}
 		},
 	})
 }
 
-func doctypeChildren(deps Dependencies) *cobra.Command {
-	return collectionCommand(deps, collectionSpec{
+func doctypeChildren(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.CollectionCommand(deps, cmdkit.CollectionSpec{
 		Use: "children <id>",
 		Enrich: func(ctx context.Context, result any) (any, error) {
 			return enrichSchemaTypeAliases(ctx, deps.Client, "document-type", result)
 		},
 		Short: "Get child document types (paginated; --skip/--take/--all)",
 		NArgs: 1,
-		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
-			return []getRequestCandidate{
-				{path: "/tree/document-type/children", opts: api.RequestOptions{Params: withParam(params, "parentId", args[0])}},
-				{path: api.JoinPath("/document-type/%s/children", args[0]), opts: api.RequestOptions{Params: params}},
+		Endpoints: func(args []string, params map[string]any) []cmdkit.GetRequestCandidate {
+			return []cmdkit.GetRequestCandidate{
+				{Path: "/tree/document-type/children", Opts: api.RequestOptions{Params: cmdkit.WithParam(params, "parentId", args[0])}},
+				{Path: api.JoinPath("/document-type/%s/children", args[0]), Opts: api.RequestOptions{Params: params}},
 			}
 		},
 	})
 }
 
-func doctypeSearch(deps Dependencies) *cobra.Command {
-	return searchCommand(deps, searchSpec{
+func doctypeSearch(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.SearchCommand(deps, cmdkit.SearchSpec{
 		Use:   "search",
 		Short: "Search document types",
 		Enrich: func(ctx context.Context, result any) (any, error) {
 			return enrichSchemaTypeAliases(ctx, deps.Client, "document-type", result)
 		},
-		Endpoints: func(params map[string]any) []getRequestCandidate {
-			return []getRequestCandidate{
-				{path: "/item/document-type/search", opts: api.RequestOptions{Params: params}},
-				{path: "/document-type/search", opts: api.RequestOptions{Params: params}},
+		Endpoints: func(params map[string]any) []cmdkit.GetRequestCandidate {
+			return []cmdkit.GetRequestCandidate{
+				{Path: "/item/document-type/search", Opts: api.RequestOptions{Params: params}},
+				{Path: "/document-type/search", Opts: api.RequestOptions{Params: params}},
 			}
 		},
 	})
 }
 
-func itemID(item any) string {
-	entry, ok := item.(map[string]any)
-	if !ok {
-		return ""
-	}
-	id, _ := entry["id"].(string)
-	return strings.TrimSpace(id)
-}
-
-func doctypeAllowedInLibrary(deps Dependencies) *cobra.Command {
-	return collectionCommand(deps, collectionSpec{
+func doctypeAllowedInLibrary(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.CollectionCommand(deps, cmdkit.CollectionSpec{
 		Use:   "allowed-in-library",
 		Short: "List document types usable as library elements (Umbraco 18.1+)",
 		Long:  "GET /document-type/allowed-in-library. Lists the element types with allowedInLibrary set — the types 'element create' accepts.",
 		NArgs: 0,
-		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
-			return []getRequestCandidate{
-				{path: "/document-type/allowed-in-library", opts: api.RequestOptions{Params: params}},
+		Endpoints: func(args []string, params map[string]any) []cmdkit.GetRequestCandidate {
+			return []cmdkit.GetRequestCandidate{
+				{Path: "/document-type/allowed-in-library", Opts: api.RequestOptions{Params: params}},
 			}
 		},
 	})
 }
 
-func doctypeCreate(deps Dependencies) *cobra.Command {
-	return createCommand(deps, createSpec{
+func doctypeCreate(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.CreateCommand(deps, cmdkit.CreateSpec{
 		Use:         "create",
 		Short:       "Create document type (pass --element to create an element type)",
 		Path:        "/document-type",
@@ -275,8 +268,8 @@ func doctypeCreate(deps Dependencies) *cobra.Command {
 	})
 }
 
-func doctypeUpdate(deps Dependencies) *cobra.Command {
-	return updateCommand(deps, updateSpec{
+func doctypeUpdate(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.UpdateCommand(deps, cmdkit.UpdateSpec{
 		Use:       "update <id>",
 		Short:     "Update document type",
 		Path:      func(args []string) string { return api.JoinPath("/document-type/%s", args[0]) },
@@ -284,7 +277,7 @@ func doctypeUpdate(deps Dependencies) *cobra.Command {
 	})
 }
 
-func doctypeAddProperty(deps Dependencies) *cobra.Command {
+func doctypeAddProperty(deps cmdkit.Dependencies) *cobra.Command {
 	var alias string
 	var name string
 	var dataType string
@@ -307,7 +300,7 @@ func doctypeAddProperty(deps Dependencies) *cobra.Command {
 				"--data-type": dataType,
 				"--container": container,
 			} {
-				if err := requireValue(flag, value); err != nil {
+				if err := cmdkit.RequireValue(flag, value); err != nil {
 					return err
 				}
 			}
@@ -339,7 +332,7 @@ func doctypeAddProperty(deps Dependencies) *cobra.Command {
 				if normalizedType == "" {
 					return fmt.Errorf("--container-type must be Tab or Group, got %q", newContainerType)
 				}
-				newID, err := newUUIDv4()
+				newID, err := uuid.NewV4()
 				if err != nil {
 					return fmt.Errorf("failed to generate container id: %w", err)
 				}
@@ -352,7 +345,7 @@ func doctypeAddProperty(deps Dependencies) *cobra.Command {
 				return fmt.Errorf("doctype %s already has a property with alias %q", args[0], alias)
 			}
 
-			propertyID, err := newUUIDv4()
+			propertyID, err := uuid.NewV4()
 			if err != nil {
 				return fmt.Errorf("failed to generate property id: %w", err)
 			}
@@ -365,7 +358,7 @@ func doctypeAddProperty(deps Dependencies) *cobra.Command {
 				// replaces the whole array with this hand-built slice.
 				patch["containers"] = nextContainers
 			}
-			merged := mergeAliasPayload(current, patch)
+			merged := cmdkit.MergeAliasPayload(current, patch)
 			result, err := deps.Client.Put(
 				ctx,
 				api.JoinPath("/document-type/%s", args[0]),
@@ -375,7 +368,7 @@ func doctypeAddProperty(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printMutationResult(cmd, deps, "updated", result, dryRun)
+			return cmdkit.PrintMutationResult(cmd, deps, "updated", result, dryRun)
 		},
 	}
 
@@ -387,11 +380,11 @@ func doctypeAddProperty(deps Dependencies) *cobra.Command {
 	cmd.Flags().BoolVar(&mandatory, "mandatory", false, "Mark the property as mandatory")
 	cmd.Flags().BoolVar(&createContainer, "create-container", false, "Create the --container together with this property when it does not exist yet")
 	cmd.Flags().StringVar(&newContainerType, "container-type", "Group", "Container type for --create-container: Group or Tab")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
-func doctypeReorderProperties(deps Dependencies) *cobra.Command {
+func doctypeReorderProperties(deps cmdkit.Dependencies) *cobra.Command {
 	var aliasesCSV string
 	var alias string
 	var sortOrder int
@@ -414,7 +407,7 @@ func doctypeReorderProperties(deps Dependencies) *cobra.Command {
 				return fmt.Errorf("--sort-order only applies to --alias")
 			}
 
-			ordered := uniqueCSV(aliasesCSV)
+			ordered := cmdkit.UniqueCSV(aliasesCSV)
 			if hasList && len(ordered) == 0 {
 				return fmt.Errorf("--aliases parsed to no property aliases; pass a comma-separated list like --aliases title,subtitle")
 			}
@@ -438,7 +431,7 @@ func doctypeReorderProperties(deps Dependencies) *cobra.Command {
 				}
 			}
 
-			merged := mergeAliasPayload(current, map[string]any{"properties": patch})
+			merged := cmdkit.MergeAliasPayload(current, map[string]any{"properties": patch})
 			result, err := deps.Client.Put(
 				ctx,
 				api.JoinPath("/document-type/%s", args[0]),
@@ -448,18 +441,18 @@ func doctypeReorderProperties(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printMutationResult(cmd, deps, "updated", result, dryRun)
+			return cmdkit.PrintMutationResult(cmd, deps, "updated", result, dryRun)
 		},
 	}
 
 	cmd.Flags().StringVar(&aliasesCSV, "aliases", "", "Comma-separated property aliases in the desired order (positions become sortOrder; unlisted properties in the container follow in their current order)")
 	cmd.Flags().StringVar(&alias, "alias", "", "Single property alias to move (requires --sort-order)")
 	cmd.Flags().IntVar(&sortOrder, "sort-order", -1, "Target sortOrder for --alias (0-based)")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
-func doctypeAddContainer(deps Dependencies) *cobra.Command {
+func doctypeAddContainer(deps cmdkit.Dependencies) *cobra.Command {
 	var name string
 	var containerType string
 	var parent string
@@ -475,7 +468,7 @@ func doctypeAddContainer(deps Dependencies) *cobra.Command {
 				"--name": name,
 				"--type": containerType,
 			} {
-				if err := requireValue(flag, value); err != nil {
+				if err := cmdkit.RequireValue(flag, value); err != nil {
 					return err
 				}
 			}
@@ -515,7 +508,7 @@ func doctypeAddContainer(deps Dependencies) *cobra.Command {
 				parentID = resolved
 			}
 
-			containerID, err := newUUIDv4()
+			containerID, err := uuid.NewV4()
 			if err != nil {
 				return fmt.Errorf("failed to generate container id: %w", err)
 			}
@@ -528,7 +521,7 @@ func doctypeAddContainer(deps Dependencies) *cobra.Command {
 			nextContainers := make([]any, 0, len(existing)+1)
 			nextContainers = append(nextContainers, existing...)
 			nextContainers = append(nextContainers, container)
-			merged := mergeAliasPayload(current, map[string]any{"containers": nextContainers})
+			merged := cmdkit.MergeAliasPayload(current, map[string]any{"containers": nextContainers})
 			result, err := deps.Client.Put(
 				ctx,
 				api.JoinPath("/document-type/%s", args[0]),
@@ -551,42 +544,42 @@ func doctypeAddContainer(deps Dependencies) *cobra.Command {
 					}
 				}
 			}
-			return printMutationResult(cmd, deps, "updated", result, dryRun)
+			return cmdkit.PrintMutationResult(cmd, deps, "updated", result, dryRun)
 		},
 	}
 
 	cmd.Flags().StringVar(&name, "name", "", "Display name for the new container")
 	cmd.Flags().StringVar(&containerType, "type", "", "Container type: Tab or Group")
 	cmd.Flags().StringVar(&parent, "parent", "", "Optional name of an existing parent container (typically a Tab when adding a Group)")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
-func doctypeCopy(deps Dependencies) *cobra.Command {
-	return targetActionCommand(deps, targetActionSpec{
+func doctypeCopy(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.TargetActionCommand(deps, cmdkit.TargetActionSpec{
 		Use:   "copy <id>",
 		Short: "Copy document type",
-		Candidates: func(args []string) []mutationCandidate {
-			return []mutationCandidate{{method: "POST", path: api.JoinPath("/document-type/%s/copy", args[0])}}
+		Candidates: func(args []string) []cmdkit.MutationCandidate {
+			return []cmdkit.MutationCandidate{{Method: "POST", Path: api.JoinPath("/document-type/%s/copy", args[0])}}
 		},
 		Verb: "copied",
 	})
 }
 
-func doctypeMove(deps Dependencies) *cobra.Command {
-	return targetActionCommand(deps, targetActionSpec{
+func doctypeMove(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.TargetActionCommand(deps, cmdkit.TargetActionSpec{
 		Use:   "move <id>",
 		Short: "Move document type",
-		Candidates: func(args []string) []mutationCandidate {
+		Candidates: func(args []string) []cmdkit.MutationCandidate {
 			path := api.JoinPath("/document-type/%s/move", args[0])
-			return []mutationCandidate{{method: "PUT", path: path}, {method: "POST", path: path}}
+			return []cmdkit.MutationCandidate{{Method: "PUT", Path: path}, {Method: "POST", Path: path}}
 		},
 		Verb: "moved",
 	})
 }
 
-func doctypeDelete(deps Dependencies) *cobra.Command {
-	return deleteCommand(deps, deleteSpec{
+func doctypeDelete(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.DeleteCommand(deps, cmdkit.DeleteSpec{
 		Use:   "delete <id>",
 		Short: "Permanently delete a document type (content of this type loses its definition)",
 		Path: func(args []string) string {

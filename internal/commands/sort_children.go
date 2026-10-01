@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/commands/cmdkit"
 )
 
 // sortChildrenCommand builds "<resource> sort-children [parent-id]" for the
@@ -15,7 +16,7 @@ import (
 // sort", which PUTs an explicit id order, these sort every child of the
 // parent by a field. withCulture wires --culture for variant-aware
 // resources (documents); the media model has no culture.
-func sortChildrenCommand(deps Dependencies, resource string, withCulture bool) *cobra.Command {
+func sortChildrenCommand(deps cmdkit.Dependencies, resource string, withCulture bool) *cobra.Command {
 	var field string
 	var direction string
 	var culture string
@@ -52,7 +53,7 @@ func sortChildrenCommand(deps Dependencies, resource string, withCulture bool) *
 			if err != nil {
 				return err
 			}
-			return printMutationResult(cmd, deps, "sorted", result, dryRun)
+			return cmdkit.PrintMutationResult(cmd, deps, "sorted", result, dryRun)
 		},
 	}
 	cmd.Flags().StringVar(&field, "field", "", "Sort field: Name, CreateDate, or UpdateDate (required)")
@@ -60,7 +61,7 @@ func sortChildrenCommand(deps Dependencies, resource string, withCulture bool) *
 	if withCulture {
 		cmd.Flags().StringVar(&culture, "culture", "", "Sort by the variant name of this culture (variant content only)")
 	}
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 

@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/commands/cmdkit"
 )
 
 // modelsBuilderSourceModes covers the ModelsMode values for which a build
@@ -19,7 +20,7 @@ var modelsBuilderSourceModes = map[string]bool{
 	"SourceCodeAuto":   true,
 }
 
-func RegisterModelsBuilder(root *cobra.Command, deps Dependencies) {
+func RegisterModelsBuilder(root *cobra.Command, deps cmdkit.Dependencies) {
 	mb := &cobra.Command{
 		Use:     "models-builder",
 		Aliases: []string{"modelsbuilder", "models"},
@@ -32,7 +33,7 @@ func RegisterModelsBuilder(root *cobra.Command, deps Dependencies) {
 	root.AddCommand(mb)
 }
 
-func modelsBuilderDashboard(deps Dependencies) *cobra.Command {
+func modelsBuilderDashboard(deps cmdkit.Dependencies) *cobra.Command {
 	var fields string
 	cmd := &cobra.Command{
 		Use:   "dashboard",
@@ -43,14 +44,14 @@ func modelsBuilderDashboard(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, deps, applyFieldsProjection(result, fields))
+			return cmdkit.PrintResult(cmd, deps, cmdkit.ApplyFieldsProjection(result, fields))
 		},
 	}
 	cmd.Flags().StringVar(&fields, "fields", "", "Limit response fields")
 	return cmd
 }
 
-func modelsBuilderStatus(deps Dependencies) *cobra.Command {
+func modelsBuilderStatus(deps cmdkit.Dependencies) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "status",
 		Short: "Get out-of-date status: Current | OutOfDate | Unknown",
@@ -60,13 +61,13 @@ func modelsBuilderStatus(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, deps, result)
+			return cmdkit.PrintResult(cmd, deps, result)
 		},
 	}
 	return cmd
 }
 
-func modelsBuilderBuild(deps Dependencies) *cobra.Command {
+func modelsBuilderBuild(deps cmdkit.Dependencies) *cobra.Command {
 	var wait bool
 	var timeout time.Duration
 	var pollInterval time.Duration
@@ -108,7 +109,7 @@ func modelsBuilderBuild(deps Dependencies) *cobra.Command {
 			}
 
 			if !wait {
-				return printResult(cmd, deps, result)
+				return cmdkit.PrintResult(cmd, deps, result)
 			}
 
 			deadline := time.Now().Add(timeout)
@@ -119,7 +120,7 @@ func modelsBuilderBuild(deps Dependencies) *cobra.Command {
 				}
 				status := modelsBuilderStatusString(statusPayload)
 				if strings.EqualFold(status, "Current") {
-					return printResult(cmd, deps, map[string]any{
+					return cmdkit.PrintResult(cmd, deps, map[string]any{
 						"build":  result,
 						"status": status,
 						"waited": time.Since(deadline.Add(-timeout)).String(),

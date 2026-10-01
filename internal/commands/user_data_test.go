@@ -6,23 +6,25 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"umbraco-cli/internal/commands/cmdtest"
 )
 
 func TestUserDataListSendsRepeatedFilterValues(t *testing.T) {
 	var observed string
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/user-data":
 			observed = req.URL.String()
-			return endpointJSONResponse(http.StatusOK, `{"total":0,"items":[]}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"total":0,"items":[]}`), nil
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	if _, err := execute(buildRootWithCollections(t, deps), "user-data", "list", "--groups", "a,b,a", "--identifiers", "one", "--take", "50"); err != nil {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), "user-data", "list", "--groups", "a,b,a", "--identifiers", "one", "--take", "50"); err != nil {
 		t.Fatalf("user-data list failed: %v", err)
 	}
 	if strings.Count(observed, "groups=") != 2 {
@@ -37,22 +39,22 @@ func TestUserDataListSendsRepeatedFilterValues(t *testing.T) {
 
 func TestUserDataCreateBuildsKeyValueBody(t *testing.T) {
 	var body map[string]any
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch {
 		case req.URL.Path == "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case req.URL.Path == "/umbraco/management/api/v1/user-data" && req.Method == http.MethodPost:
 			raw, _ := io.ReadAll(req.Body)
 			if err := json.Unmarshal(raw, &body); err != nil {
 				t.Fatalf("failed to decode create body: %v", err)
 			}
-			return endpointJSONResponse(http.StatusOK, `{"id":"key-1"}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"id":"key-1"}`), nil
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	if _, err := execute(buildRootWithCollections(t, deps), "user-data", "create", "--group", "g1", "--identifier", "i1", "--value", "v1"); err != nil {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), "user-data", "create", "--group", "g1", "--identifier", "i1", "--value", "v1"); err != nil {
 		t.Fatalf("user-data create failed: %v", err)
 	}
 	if body["group"] != "g1" || body["identifier"] != "i1" || body["value"] != "v1" {
@@ -69,11 +71,11 @@ func TestUserDataCreateBuildsKeyValueBody(t *testing.T) {
 }
 
 func TestUserDataCreateRequiresTheValueTriple(t *testing.T) {
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
-		return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
+		return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 	})
 
-	if _, err := execute(buildRootWithCollections(t, deps), "user-data", "create", "--group", "g1"); err == nil {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), "user-data", "create", "--group", "g1"); err == nil {
 		t.Fatalf("expected user-data create to require --identifier and --value")
 	}
 }
@@ -81,23 +83,23 @@ func TestUserDataCreateRequiresTheValueTriple(t *testing.T) {
 func TestUserDataUpdatePutsKeyInTheBody(t *testing.T) {
 	var body map[string]any
 	var observedPath string
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch {
 		case req.URL.Path == "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case req.Method == http.MethodPut:
 			observedPath = req.URL.Path
 			raw, _ := io.ReadAll(req.Body)
 			if err := json.Unmarshal(raw, &body); err != nil {
 				t.Fatalf("failed to decode update body: %v", err)
 			}
-			return endpointJSONResponse(http.StatusOK, `null`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `null`), nil
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	if _, err := execute(buildRootWithCollections(t, deps), "user-data", "update", "key-1", "--group", "g1", "--identifier", "i1", "--value", "v2"); err != nil {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), "user-data", "update", "key-1", "--group", "g1", "--identifier", "i1", "--value", "v2"); err != nil {
 		t.Fatalf("user-data update failed: %v", err)
 	}
 	// The PUT goes to the collection endpoint; the key travels in the body.
@@ -111,23 +113,23 @@ func TestUserDataUpdatePutsKeyInTheBody(t *testing.T) {
 
 func TestUserDataUpdateJSONTakesTheKeyFromThePositionalArgument(t *testing.T) {
 	var body map[string]any
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch {
 		case req.URL.Path == "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case req.Method == http.MethodPut:
 			raw, _ := io.ReadAll(req.Body)
 			if err := json.Unmarshal(raw, &body); err != nil {
 				t.Fatalf("failed to decode update body: %v", err)
 			}
-			return endpointJSONResponse(http.StatusOK, `null`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `null`), nil
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
 	// A --json body without a key inherits the positional one.
-	if _, err := execute(buildRootWithCollections(t, deps), "user-data", "update", "key-1", "--json", `{"group":"g1","identifier":"i1","value":"v2"}`); err != nil {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), "user-data", "update", "key-1", "--json", `{"group":"g1","identifier":"i1","value":"v2"}`); err != nil {
 		t.Fatalf("user-data update --json failed: %v", err)
 	}
 	if body["key"] != "key-1" {
@@ -136,9 +138,9 @@ func TestUserDataUpdateJSONTakesTheKeyFromThePositionalArgument(t *testing.T) {
 }
 
 func TestUserDataUpdateRefusesAJSONKeyNamingAnotherEntry(t *testing.T) {
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		if req.URL.Path == "/umbraco/management/api/v1/security/back-office/token" {
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		}
 		// Updating the entry the argument does not name would be a silent
 		// write to the wrong row.
@@ -146,7 +148,7 @@ func TestUserDataUpdateRefusesAJSONKeyNamingAnotherEntry(t *testing.T) {
 		return nil, nil
 	})
 
-	_, err := execute(buildRootWithCollections(t, deps), "user-data", "update", "key-a", "--json", `{"key":"key-b","group":"g1","identifier":"i1","value":"v2"}`)
+	_, err := cmdtest.Execute(buildRootWithCollections(t, deps), "user-data", "update", "key-a", "--json", `{"key":"key-b","group":"g1","identifier":"i1","value":"v2"}`)
 	if err == nil {
 		t.Fatalf("expected a mismatched --json key to be rejected")
 	}
@@ -156,15 +158,15 @@ func TestUserDataUpdateRefusesAJSONKeyNamingAnotherEntry(t *testing.T) {
 }
 
 func TestUserDataUpdateDryRunPrintsThePlannedRequest(t *testing.T) {
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		if req.URL.Path == "/umbraco/management/api/v1/security/back-office/token" {
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		}
 		t.Fatalf("dry run must not issue %s %s", req.Method, req.URL.Path)
 		return nil, nil
 	})
 
-	output, err := execute(buildRootWithCollections(t, deps), "user-data", "update", "key-1", "--group", "g1", "--identifier", "i1", "--value", "v2", "--dry-run")
+	output, err := cmdtest.Execute(buildRootWithCollections(t, deps), "user-data", "update", "key-1", "--group", "g1", "--identifier", "i1", "--value", "v2", "--dry-run")
 	if err != nil {
 		t.Fatalf("user-data update --dry-run failed: %v", err)
 	}
@@ -179,22 +181,22 @@ func TestUserDataUpdateDryRunPrintsThePlannedRequest(t *testing.T) {
 
 func TestUserDataDeleteRequiresForceAndHitsTheKeyRoute(t *testing.T) {
 	var observed string
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		if req.URL.Path == "/umbraco/management/api/v1/security/back-office/token" {
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		}
 		observed = req.Method + " " + req.URL.Path
-		return endpointJSONResponse(http.StatusOK, `null`), nil
+		return cmdtest.JSONResponse(http.StatusOK, `null`), nil
 	})
 
-	if _, err := execute(buildRootWithCollections(t, deps), "user-data", "delete", "key-1"); err == nil {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), "user-data", "delete", "key-1"); err == nil {
 		t.Fatal("expected user-data delete without --force to fail")
 	}
 	if observed != "" {
 		t.Fatalf("expected no request before the force gate, got %q", observed)
 	}
 
-	if _, err := execute(buildRootWithCollections(t, deps), "user-data", "delete", "key-1", "--force"); err != nil {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), "user-data", "delete", "key-1", "--force"); err != nil {
 		t.Fatalf("user-data delete --force failed: %v", err)
 	}
 	// The delete is keyed on the entry key in the path, unlike the update,

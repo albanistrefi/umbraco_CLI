@@ -12,7 +12,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/commands/cmdkit"
 	"umbraco-cli/internal/config"
+	"umbraco-cli/internal/jsonvalue"
 )
 
 // tailPageSize bounds each request; tailMaxPagesPerPoll bounds how far one
@@ -33,7 +35,7 @@ const (
 	tailMaxPagesPerPoll = 20
 )
 
-func logsTail(deps Dependencies) *cobra.Command {
+func logsTail(deps cmdkit.Dependencies) *cobra.Command {
 	var flags logQueryFlags
 	flags.skip = -1
 	flags.take = -1
@@ -99,7 +101,7 @@ interrupted or --for elapses; exits 0 on both.`,
 				if runtime.redaction.enabled() {
 					message = redactLogString(message, runtime.redaction)
 				}
-				_, err := fmt.Fprintf(out, "%s [%s] %s\n", stringValue(entry["timestamp"]), stringValue(entry["level"]), message)
+				_, err := fmt.Fprintf(out, "%s [%s] %s\n", jsonvalue.String(entry["timestamp"]), jsonvalue.String(entry["level"]), message)
 				return err
 			}
 
@@ -239,14 +241,14 @@ func tailPoll(ctx context.Context, client *api.Client, baseParams map[string]any
 		params["skip"] = page * tailPageSize
 		params["take"] = tailPageSize
 		params["orderDirection"] = "Descending"
-		result, err := getWithFallback(ctx, client,
-			getRequestCandidate{path: logViewerLogPath, opts: api.RequestOptions{Params: params}},
-			getRequestCandidate{path: logViewerLegacyListPath, opts: api.RequestOptions{Params: params}},
+		result, err := cmdkit.GetWithFallback(ctx, client,
+			cmdkit.GetRequestCandidate{Path: cmdkit.LogViewerLogPath, Opts: api.RequestOptions{Params: params}},
+			cmdkit.GetRequestCandidate{Path: logViewerLegacyListPath, Opts: api.RequestOptions{Params: params}},
 		)
 		if err != nil {
 			return nil, newest, err
 		}
-		items := resultItems(result)
+		items := cmdkit.ResultItems(result)
 		reachedCursor := false
 		for _, item := range items {
 			entry, ok := item.(map[string]any)

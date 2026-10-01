@@ -6,10 +6,11 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/commands/cmdkit"
 	"umbraco-cli/internal/schema"
 )
 
-func RegisterWebhook(root *cobra.Command, deps Dependencies) {
+func RegisterWebhook(root *cobra.Command, deps cmdkit.Dependencies) {
 	webhook := &cobra.Command{
 		Use:   "webhook",
 		Short: "Webhook management (the Management API's outbound event notifications)",
@@ -25,27 +26,27 @@ func RegisterWebhook(root *cobra.Command, deps Dependencies) {
 	root.AddCommand(webhook)
 }
 
-func webhookList(deps Dependencies) *cobra.Command {
-	return collectionCommand(deps, collectionSpec{
+func webhookList(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.CollectionCommand(deps, cmdkit.CollectionSpec{
 		Use:   "list",
 		Short: "List webhooks (paginated; --skip/--take/--all)",
-		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
-			return []getRequestCandidate{
-				{path: "/webhook", opts: api.RequestOptions{Params: params}},
+		Endpoints: func(args []string, params map[string]any) []cmdkit.GetRequestCandidate {
+			return []cmdkit.GetRequestCandidate{
+				{Path: "/webhook", Opts: api.RequestOptions{Params: params}},
 			}
 		},
 	})
 }
 
-func webhookGet(deps Dependencies) *cobra.Command {
-	return getCommand(deps, getSpec{
+func webhookGet(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.GetCommand(deps, cmdkit.GetSpec{
 		Use:   "get <id>",
 		Short: "Get a webhook by ID",
 		Path:  func(args []string) string { return api.JoinPath("/webhook/%s", args[0]) },
 	})
 }
 
-func webhookCreate(deps Dependencies) *cobra.Command {
+func webhookCreate(deps cmdkit.Dependencies) *cobra.Command {
 	var jsonPayload string
 	var dryRun bool
 	var printTemplate bool
@@ -56,36 +57,36 @@ func webhookCreate(deps Dependencies) *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if printTemplate {
-				return printResult(cmd, deps, schema.Templates["webhook.create"])
+				return cmdkit.PrintResult(cmd, deps, schema.Templates["webhook.create"])
 			}
-			if err := requireValue("--json", jsonPayload); err != nil {
+			if err := cmdkit.RequireValue("--json", jsonPayload); err != nil {
 				return err
 			}
-			body, err := parsePayload(jsonPayload)
+			body, err := cmdkit.ParsePayload(jsonPayload)
 			if err != nil {
 				return err
 			}
 			if err := normalizeWebhookEvents(body); err != nil {
 				return err
 			}
-			if _, err := ensurePayloadID(body); err != nil {
+			if _, err := cmdkit.EnsurePayloadID(body); err != nil {
 				return err
 			}
 			result, err := deps.Client.Post(cmd.Context(), "/webhook", body, api.RequestOptions{DryRun: dryRun})
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, deps, createResult(result, body, "url"))
+			return cmdkit.PrintResult(cmd, deps, cmdkit.CreateResult(result, body, "url"))
 		},
 	}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Create payload as JSON")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	cmd.Flags().BoolVar(&printTemplate, "print-template", false, "Print an annotated JSON skeleton; substitute placeholders before passing to --json")
 	return cmd
 }
 
-func webhookUpdate(deps Dependencies) *cobra.Command {
-	return updateCommand(deps, updateSpec{
+func webhookUpdate(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.UpdateCommand(deps, cmdkit.UpdateSpec{
 		Use:   "update <id>",
 		Short: "Update a webhook",
 		Long:  "PUT /webhook/{id}. An events array in the patch REPLACES the whole subscription set (identical for alias strings and object-form entries) — events are pure identifiers, so an entry-wise merge could only ever add subscriptions and never remove one. Omit events from --merge-json to keep the current set.",
@@ -124,8 +125,8 @@ func normalizeWebhookEvents(body map[string]any) error {
 	return nil
 }
 
-func webhookDelete(deps Dependencies) *cobra.Command {
-	return deleteCommand(deps, deleteSpec{
+func webhookDelete(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.DeleteCommand(deps, cmdkit.DeleteSpec{
 		Use:   "delete <id>",
 		Short: "Permanently delete a webhook",
 		Path: func(args []string) string {
@@ -134,32 +135,32 @@ func webhookDelete(deps Dependencies) *cobra.Command {
 	})
 }
 
-func webhookEvents(deps Dependencies) *cobra.Command {
-	return collectionCommand(deps, collectionSpec{
+func webhookEvents(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.CollectionCommand(deps, cmdkit.CollectionSpec{
 		Use:   "events",
 		Short: "List the event aliases webhooks can subscribe to",
-		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
-			return []getRequestCandidate{
-				{path: "/webhook/events", opts: api.RequestOptions{Params: params}},
+		Endpoints: func(args []string, params map[string]any) []cmdkit.GetRequestCandidate {
+			return []cmdkit.GetRequestCandidate{
+				{Path: "/webhook/events", Opts: api.RequestOptions{Params: params}},
 			}
 		},
 	})
 }
 
-func webhookLogs(deps Dependencies) *cobra.Command {
-	return collectionCommand(deps, collectionSpec{
+func webhookLogs(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.CollectionCommand(deps, cmdkit.CollectionSpec{
 		Use:   "logs [webhook-id]",
 		Short: "List webhook delivery logs, optionally scoped to one webhook",
 		Long:  "GET /webhook/logs, or /webhook/{id}/logs when a webhook ID is given. Each entry carries the event alias, target URL, response status, and retry count — the audit trail for 'did my integration fire'.",
 		Args:  cobra.MaximumNArgs(1),
-		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
+		Endpoints: func(args []string, params map[string]any) []cmdkit.GetRequestCandidate {
 			if len(args) == 1 {
-				return []getRequestCandidate{
-					{path: api.JoinPath("/webhook/%s/logs", args[0]), opts: api.RequestOptions{Params: params}},
+				return []cmdkit.GetRequestCandidate{
+					{Path: api.JoinPath("/webhook/%s/logs", args[0]), Opts: api.RequestOptions{Params: params}},
 				}
 			}
-			return []getRequestCandidate{
-				{path: "/webhook/logs", opts: api.RequestOptions{Params: params}},
+			return []cmdkit.GetRequestCandidate{
+				{Path: "/webhook/logs", Opts: api.RequestOptions{Params: params}},
 			}
 		},
 	})

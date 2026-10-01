@@ -7,9 +7,12 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
+
+	"umbraco-cli/internal/commands/cmdkit"
+	"umbraco-cli/internal/commands/cmdtest"
 )
 
-func buildRelationRoot(deps Dependencies) *cobra.Command {
+func buildRelationRoot(deps cmdkit.Dependencies) *cobra.Command {
 	root := &cobra.Command{Use: "umbraco", SilenceErrors: true, SilenceUsage: true}
 	root.SetErr(io.Discard)
 	if deps.OutputFlag != nil {
@@ -19,10 +22,10 @@ func buildRelationRoot(deps Dependencies) *cobra.Command {
 	return root
 }
 
-func relationDeps(handler func(req *http.Request) (*http.Response, error)) Dependencies {
-	return endpointDeps(func(req *http.Request) (*http.Response, error) {
+func relationDeps(handler func(req *http.Request) (*http.Response, error)) cmdkit.Dependencies {
+	return cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		if req.URL.Path == "/umbraco/management/api/v1/security/back-office/token" {
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		}
 		return handler(req)
 	})
@@ -32,10 +35,10 @@ func TestRelationTypeListPaginates(t *testing.T) {
 	var requestedURI string
 	deps := relationDeps(func(req *http.Request) (*http.Response, error) {
 		requestedURI = req.URL.RequestURI()
-		return endpointJSONResponse(http.StatusOK, `{"items":[{"id":"type-1","alias":"relateDocumentOnCopy"}],"total":1}`), nil
+		return cmdtest.JSONResponse(http.StatusOK, `{"items":[{"id":"type-1","alias":"relateDocumentOnCopy"}],"total":1}`), nil
 	})
 
-	out, err := execute(buildRelationRoot(deps), "relation", "type", "list", "--take", "10")
+	out, err := cmdtest.Execute(buildRelationRoot(deps), "relation", "type", "list", "--take", "10")
 	if err != nil {
 		t.Fatalf("relation type list failed: %v", err)
 	}
@@ -51,10 +54,10 @@ func TestRelationTypeGetProjectsFields(t *testing.T) {
 	var requestedURI string
 	deps := relationDeps(func(req *http.Request) (*http.Response, error) {
 		requestedURI = req.URL.RequestURI()
-		return endpointJSONResponse(http.StatusOK, `{"id":"type-1","alias":"relateDocumentOnCopy","isBidirectional":true}`), nil
+		return cmdtest.JSONResponse(http.StatusOK, `{"id":"type-1","alias":"relateDocumentOnCopy","isBidirectional":true}`), nil
 	})
 
-	out, err := execute(buildRelationRoot(deps), "relation", "type", "get", "type-1", "--fields", "alias")
+	out, err := cmdtest.Execute(buildRelationRoot(deps), "relation", "type", "get", "type-1", "--fields", "alias")
 	if err != nil {
 		t.Fatalf("relation type get failed: %v", err)
 	}
@@ -70,10 +73,10 @@ func TestRelationTypeItemsSendsRepeatedIDs(t *testing.T) {
 	var requestedURI string
 	deps := relationDeps(func(req *http.Request) (*http.Response, error) {
 		requestedURI = req.URL.RequestURI()
-		return endpointJSONResponse(http.StatusOK, `[{"id":"type-1","name":"Relate Document On Copy"}]`), nil
+		return cmdtest.JSONResponse(http.StatusOK, `[{"id":"type-1","name":"Relate Document On Copy"}]`), nil
 	})
 
-	if _, err := execute(buildRelationRoot(deps), "relation", "type", "items", "--ids", "type-1,type-2"); err != nil {
+	if _, err := cmdtest.Execute(buildRelationRoot(deps), "relation", "type", "items", "--ids", "type-1,type-2"); err != nil {
 		t.Fatalf("relation type items failed: %v", err)
 	}
 	if !strings.HasPrefix(requestedURI, "/umbraco/management/api/v1/item/relation-type?") {
@@ -90,7 +93,7 @@ func TestRelationTypeItemsRequiresIDs(t *testing.T) {
 		return nil, nil
 	})
 
-	_, err := execute(buildRelationRoot(deps), "relation", "type", "items")
+	_, err := cmdtest.Execute(buildRelationRoot(deps), "relation", "type", "items")
 	if err == nil || !strings.Contains(err.Error(), "--ids") {
 		t.Fatalf("expected missing ids error, got %v", err)
 	}
@@ -102,7 +105,7 @@ func TestRelationListRequiresType(t *testing.T) {
 		return nil, nil
 	})
 
-	_, err := execute(buildRelationRoot(deps), "relation", "list")
+	_, err := cmdtest.Execute(buildRelationRoot(deps), "relation", "list")
 	if err == nil || !strings.Contains(err.Error(), "--type") {
 		t.Fatalf("expected missing type error, got %v", err)
 	}
@@ -112,10 +115,10 @@ func TestRelationListUsesRelationTypeRoute(t *testing.T) {
 	var requestedURI string
 	deps := relationDeps(func(req *http.Request) (*http.Response, error) {
 		requestedURI = req.URL.RequestURI()
-		return endpointJSONResponse(http.StatusOK, `{"items":[{"id":"rel-1","parent":{"id":"p"},"child":{"id":"c"}}],"total":1}`), nil
+		return cmdtest.JSONResponse(http.StatusOK, `{"items":[{"id":"rel-1","parent":{"id":"p"},"child":{"id":"c"}}],"total":1}`), nil
 	})
 
-	out, err := execute(buildRelationRoot(deps), "relation", "list", "--type", "type 1", "--skip", "1", "--take", "2")
+	out, err := cmdtest.Execute(buildRelationRoot(deps), "relation", "list", "--type", "type 1", "--skip", "1", "--take", "2")
 	if err != nil {
 		t.Fatalf("relation list failed: %v", err)
 	}
@@ -136,15 +139,15 @@ func TestRelationListAllFollowsPages(t *testing.T) {
 		requests++
 		switch req.URL.Query().Get("skip") {
 		case "", "0":
-			return endpointJSONResponse(http.StatusOK, `{"items":[{"id":"rel-1"},{"id":"rel-2"}],"total":4}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"items":[{"id":"rel-1"},{"id":"rel-2"}],"total":4}`), nil
 		case "2":
-			return endpointJSONResponse(http.StatusOK, `{"items":[{"id":"rel-3"},{"id":"rel-4"}],"total":4}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"items":[{"id":"rel-3"},{"id":"rel-4"}],"total":4}`), nil
 		default:
-			return endpointJSONResponse(http.StatusOK, `{"items":[],"total":4}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"items":[],"total":4}`), nil
 		}
 	})
 
-	out, err := execute(buildRelationRoot(deps), "relation", "list", "--type", "type-1", "--take", "2", "--all")
+	out, err := cmdtest.Execute(buildRelationRoot(deps), "relation", "list", "--type", "type-1", "--take", "2", "--all")
 	if err != nil {
 		t.Fatalf("relation list --all failed: %v", err)
 	}

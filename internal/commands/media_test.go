@@ -8,27 +8,29 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"umbraco-cli/internal/commands/cmdtest"
 )
 
 func TestMediaSearchUsesItemSearchEndpointAndFallsBack(t *testing.T) {
 	var requests []string
 
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/item/media/search":
 			requests = append(requests, req.URL.String())
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		case "/umbraco/management/api/v1/media/search":
 			requests = append(requests, req.URL.String())
-			return endpointJSONResponse(http.StatusOK, `{"items":[{"id":"media-1","name":"Hero Image"}]}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"items":[{"id":"media-1","name":"Hero Image"}]}`), nil
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	output, err := execute(buildRootWithCollections(t, deps), "media", "search", "--query", "Hero", "--skip", "0", "--take", "25")
+	output, err := cmdtest.Execute(buildRootWithCollections(t, deps), "media", "search", "--query", "Hero", "--skip", "0", "--take", "25")
 	if err != nil {
 		t.Fatalf("media search failed: %v", err)
 	}
@@ -54,26 +56,26 @@ func TestMediaSearchUsesItemSearchEndpointAndFallsBack(t *testing.T) {
 
 func TestMediaRootSupportsTriageFlags(t *testing.T) {
 	var hits []string
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/tree/media/root":
 			hits = append(hits, req.URL.Path)
-			return endpointJSONResponse(http.StatusOK, `{"total":3,"items":[
+			return cmdtest.JSONResponse(http.StatusOK, `{"total":3,"items":[
 				{"id":"m-1","name":"Hero","alias":"hero","extra":"a"},
 				{"id":"m-2","name":"Banner","alias":"banner","extra":"b"},
 				{"id":"m-3","name":"Footer","alias":"footer","extra":"c"}
 			]}`), nil
 		case "/umbraco/management/api/v1/media/root":
 			t.Fatalf("expected /tree/media/root to handle the request; legacy /media/root should not be hit")
-			return endpointJSONResponse(http.StatusInternalServerError, `null`), nil
+			return cmdtest.JSONResponse(http.StatusInternalServerError, `null`), nil
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	output, err := execute(buildRootWithCollections(t, deps), "media", "root", "--first-n", "2", "--summarize")
+	output, err := cmdtest.Execute(buildRootWithCollections(t, deps), "media", "root", "--first-n", "2", "--summarize")
 	if err != nil {
 		t.Fatalf("media root with triage flags failed: %v", err)
 	}
@@ -104,21 +106,21 @@ func TestMediaRootSupportsTriageFlags(t *testing.T) {
 }
 
 func TestMediaRootFieldsProjectsToRequestedKeysOnly(t *testing.T) {
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/tree/media/root":
-			return endpointJSONResponse(http.StatusOK, `{"total":2,"items":[
+			return cmdtest.JSONResponse(http.StatusOK, `{"total":2,"items":[
 				{"id":"m-1","name":"Hero","alias":"hero","icon":"icon-image","hasChildren":false,"isFolder":false},
 				{"id":"m-2","name":"Banner","alias":"banner","icon":"icon-image","hasChildren":false,"isFolder":false}
 			]}`), nil
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	output, err := execute(buildRootWithCollections(t, deps), "media", "root", "--fields", "id,name")
+	output, err := cmdtest.Execute(buildRootWithCollections(t, deps), "media", "root", "--fields", "id,name")
 	if err != nil {
 		t.Fatalf("media root --fields failed: %v", err)
 	}
@@ -151,22 +153,22 @@ func TestMediaRootFieldsProjectsToRequestedKeysOnly(t *testing.T) {
 
 func TestMediaChildrenUsesTreeEndpointWithParentId(t *testing.T) {
 	var observed string
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/tree/media/children":
 			observed = req.URL.String()
-			return endpointJSONResponse(http.StatusOK, `{"total":1,"items":[{"id":"m-c","name":"Child"}]}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"total":1,"items":[{"id":"m-c","name":"Child"}]}`), nil
 		case "/umbraco/management/api/v1/media/parent-1/children":
 			t.Fatalf("expected /tree/media/children to handle the request; legacy path should not be hit")
-			return endpointJSONResponse(http.StatusInternalServerError, `null`), nil
+			return cmdtest.JSONResponse(http.StatusInternalServerError, `null`), nil
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	if _, err := execute(buildRootWithCollections(t, deps), "media", "children", "parent-1"); err != nil {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), "media", "children", "parent-1"); err != nil {
 		t.Fatalf("media children failed: %v", err)
 	}
 	if !strings.Contains(observed, "parentId=parent-1") {
@@ -178,20 +180,20 @@ func TestMediaUploadCreatesTemporaryFileThenMedia(t *testing.T) {
 	var sawUpload bool
 	var createPayload map[string]any
 
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/tree/media-type/root":
-			return endpointJSONResponse(http.StatusOK, `{"total":2,"items":[
+			return cmdtest.JSONResponse(http.StatusOK, `{"total":2,"items":[
 				{"id":"mt-image","alias":"umbracoMediaImage","name":"Image"},
 				{"id":"mt-svg","alias":"umbracoMediaVectorGraphics","name":"SVG"}
 			]}`), nil
 		case "/umbraco/management/api/v1/media-type/mt-svg":
-			return endpointJSONResponse(http.StatusOK, `{"id":"mt-svg","alias":"umbracoMediaVectorGraphics","name":"SVG","variesByCulture":false}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"id":"mt-svg","alias":"umbracoMediaVectorGraphics","name":"SVG","variesByCulture":false}`), nil
 		case "/umbraco/management/api/v1/temporary-file":
 			if req.Method != http.MethodPost {
-				return endpointJSONResponse(http.StatusMethodNotAllowed, `{"error":"method not allowed"}`), nil
+				return cmdtest.JSONResponse(http.StatusMethodNotAllowed, `{"error":"method not allowed"}`), nil
 			}
 			if err := req.ParseMultipartForm(1 << 20); err != nil {
 				t.Fatalf("failed to parse multipart upload: %v", err)
@@ -212,17 +214,17 @@ func TestMediaUploadCreatesTemporaryFileThenMedia(t *testing.T) {
 				t.Fatalf("unexpected uploaded file body: %q", body)
 			}
 			sawUpload = true
-			return endpointJSONResponse(http.StatusCreated, `{"success":true}`), nil
+			return cmdtest.JSONResponse(http.StatusCreated, `{"success":true}`), nil
 		case "/umbraco/management/api/v1/media":
 			if req.Method != http.MethodPost {
-				return endpointJSONResponse(http.StatusMethodNotAllowed, `{"error":"method not allowed"}`), nil
+				return cmdtest.JSONResponse(http.StatusMethodNotAllowed, `{"error":"method not allowed"}`), nil
 			}
 			if err := json.NewDecoder(req.Body).Decode(&createPayload); err != nil {
 				t.Fatalf("failed to decode media create payload: %v", err)
 			}
-			return endpointJSONResponse(http.StatusOK, `{"success":true}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"success":true}`), nil
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
@@ -231,7 +233,7 @@ func TestMediaUploadCreatesTemporaryFileThenMedia(t *testing.T) {
 		t.Fatalf("failed to write upload fixture: %v", err)
 	}
 
-	output, err := execute(buildRootWithCollections(t, deps), "media", "upload", filePath, "--type", "svg", "--name", "Hero")
+	output, err := cmdtest.Execute(buildRootWithCollections(t, deps), "media", "upload", filePath, "--type", "svg", "--name", "Hero")
 	if err != nil {
 		t.Fatalf("media upload failed: %v", err)
 	}
@@ -269,23 +271,23 @@ func TestMediaUploadCreatesTemporaryFileThenMedia(t *testing.T) {
 func TestMediaUploadCultureVaryingMediaTypeUsesVariantPayload(t *testing.T) {
 	var createPayload map[string]any
 
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/tree/media-type/root":
-			return endpointJSONResponse(http.StatusOK, `{"total":1,"items":[{"id":"mt-image","alias":"umbracoMediaImage","name":"Image"}]}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"total":1,"items":[{"id":"mt-image","alias":"umbracoMediaImage","name":"Image"}]}`), nil
 		case "/umbraco/management/api/v1/media-type/mt-image":
-			return endpointJSONResponse(http.StatusOK, `{"id":"mt-image","alias":"umbracoMediaImage","name":"Image","variesByCulture":true}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"id":"mt-image","alias":"umbracoMediaImage","name":"Image","variesByCulture":true}`), nil
 		case "/umbraco/management/api/v1/temporary-file":
-			return endpointJSONResponse(http.StatusCreated, `{"success":true}`), nil
+			return cmdtest.JSONResponse(http.StatusCreated, `{"success":true}`), nil
 		case "/umbraco/management/api/v1/media":
 			if err := json.NewDecoder(req.Body).Decode(&createPayload); err != nil {
 				t.Fatalf("failed to decode media create payload: %v", err)
 			}
-			return endpointJSONResponse(http.StatusOK, `{"success":true}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"success":true}`), nil
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
@@ -294,7 +296,7 @@ func TestMediaUploadCultureVaryingMediaTypeUsesVariantPayload(t *testing.T) {
 		t.Fatalf("failed to write upload fixture: %v", err)
 	}
 
-	if _, err := execute(buildRootWithCollections(t, deps), "media", "upload", filePath, "--type", "Image", "--name", "Hero", "--culture", "en-US"); err != nil {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), "media", "upload", filePath, "--type", "Image", "--name", "Hero", "--culture", "en-US"); err != nil {
 		t.Fatalf("media upload failed: %v", err)
 	}
 
@@ -316,25 +318,25 @@ func TestMediaUploadCultureVaryingMediaTypeUsesVariantPayload(t *testing.T) {
 func TestMediaUploadResolvesFriendlySVGToCanonicalAlias(t *testing.T) {
 	var detailFetched string
 
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/tree/media-type/root":
 			// Real Umbraco names the SVG type "Vector Graphics (SVG)"; alias is umbracoMediaVectorGraphics.
-			return endpointJSONResponse(http.StatusOK, `{"total":2,"items":[
+			return cmdtest.JSONResponse(http.StatusOK, `{"total":2,"items":[
 				{"id":"mt-image","alias":"Image","name":"Image"},
 				{"id":"mt-svg","alias":"umbracoMediaVectorGraphics","name":"Vector Graphics (SVG)"}
 			]}`), nil
 		case "/umbraco/management/api/v1/media-type/mt-svg":
 			detailFetched = "mt-svg"
-			return endpointJSONResponse(http.StatusOK, `{"id":"mt-svg","alias":"umbracoMediaVectorGraphics","name":"Vector Graphics (SVG)","variesByCulture":false}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"id":"mt-svg","alias":"umbracoMediaVectorGraphics","name":"Vector Graphics (SVG)","variesByCulture":false}`), nil
 		case "/umbraco/management/api/v1/temporary-file":
-			return endpointJSONResponse(http.StatusCreated, `{"success":true}`), nil
+			return cmdtest.JSONResponse(http.StatusCreated, `{"success":true}`), nil
 		case "/umbraco/management/api/v1/media":
-			return endpointJSONResponse(http.StatusOK, `{"success":true}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"success":true}`), nil
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
@@ -343,7 +345,7 @@ func TestMediaUploadResolvesFriendlySVGToCanonicalAlias(t *testing.T) {
 		t.Fatalf("failed to write upload fixture: %v", err)
 	}
 
-	if _, err := execute(buildRootWithCollections(t, deps), "media", "upload", filePath, "--type", "SVG", "--name", "Hero"); err != nil {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), "media", "upload", filePath, "--type", "SVG", "--name", "Hero"); err != nil {
 		t.Fatalf("media upload --type SVG failed: %v", err)
 	}
 	if detailFetched != "mt-svg" {
@@ -354,23 +356,23 @@ func TestMediaUploadResolvesFriendlySVGToCanonicalAlias(t *testing.T) {
 func TestMediaUploadResolvesCanonicalAliasDirectly(t *testing.T) {
 	var detailFetched string
 
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/tree/media-type/root":
-			return endpointJSONResponse(http.StatusOK, `{"total":1,"items":[
+			return cmdtest.JSONResponse(http.StatusOK, `{"total":1,"items":[
 				{"id":"mt-svg","alias":"umbracoMediaVectorGraphics","name":"Vector Graphics (SVG)"}
 			]}`), nil
 		case "/umbraco/management/api/v1/media-type/mt-svg":
 			detailFetched = "mt-svg"
-			return endpointJSONResponse(http.StatusOK, `{"id":"mt-svg","alias":"umbracoMediaVectorGraphics","name":"Vector Graphics (SVG)","variesByCulture":false}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"id":"mt-svg","alias":"umbracoMediaVectorGraphics","name":"Vector Graphics (SVG)","variesByCulture":false}`), nil
 		case "/umbraco/management/api/v1/temporary-file":
-			return endpointJSONResponse(http.StatusCreated, `{"success":true}`), nil
+			return cmdtest.JSONResponse(http.StatusCreated, `{"success":true}`), nil
 		case "/umbraco/management/api/v1/media":
-			return endpointJSONResponse(http.StatusOK, `{"success":true}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"success":true}`), nil
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
@@ -379,7 +381,7 @@ func TestMediaUploadResolvesCanonicalAliasDirectly(t *testing.T) {
 		t.Fatalf("failed to write upload fixture: %v", err)
 	}
 
-	if _, err := execute(buildRootWithCollections(t, deps), "media", "upload", filePath, "--type", "umbracoMediaVectorGraphics", "--name", "Logo"); err != nil {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), "media", "upload", filePath, "--type", "umbracoMediaVectorGraphics", "--name", "Logo"); err != nil {
 		t.Fatalf("media upload --type <canonical alias> failed: %v", err)
 	}
 	if detailFetched != "mt-svg" {
@@ -394,33 +396,33 @@ func TestMediaUploadResolvesAliasWhenLightweightEndpointsOmitIt(t *testing.T) {
 	var detailHits []string
 	var sawSearch, sawTree bool
 
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/item/media-type/search":
 			sawSearch = true
 			// Search returns just id+name+icon (no alias) per MediaTypeItemResponseModel.
-			return endpointJSONResponse(http.StatusOK, `{"items":[]}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"items":[]}`), nil
 		case "/umbraco/management/api/v1/tree/media-type/root":
 			sawTree = true
 			// Tree-root returns id+name only (no alias) per MediaTypeTreeItemResponseModel.
-			return endpointJSONResponse(http.StatusOK, `{"items":[
+			return cmdtest.JSONResponse(http.StatusOK, `{"items":[
 				{"id":"mt-image","name":"Image"},
 				{"id":"mt-svg","name":"Vector Graphics (SVG)"}
 			]}`), nil
 		case "/umbraco/management/api/v1/media-type/mt-image":
 			detailHits = append(detailHits, "mt-image")
-			return endpointJSONResponse(http.StatusOK, `{"id":"mt-image","alias":"Image","name":"Image","variesByCulture":false}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"id":"mt-image","alias":"Image","name":"Image","variesByCulture":false}`), nil
 		case "/umbraco/management/api/v1/media-type/mt-svg":
 			detailHits = append(detailHits, "mt-svg")
-			return endpointJSONResponse(http.StatusOK, `{"id":"mt-svg","alias":"umbracoMediaVectorGraphics","name":"Vector Graphics (SVG)","variesByCulture":false}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"id":"mt-svg","alias":"umbracoMediaVectorGraphics","name":"Vector Graphics (SVG)","variesByCulture":false}`), nil
 		case "/umbraco/management/api/v1/temporary-file":
-			return endpointJSONResponse(http.StatusCreated, `{"success":true}`), nil
+			return cmdtest.JSONResponse(http.StatusCreated, `{"success":true}`), nil
 		case "/umbraco/management/api/v1/media":
-			return endpointJSONResponse(http.StatusOK, `{"success":true}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"success":true}`), nil
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
@@ -429,7 +431,7 @@ func TestMediaUploadResolvesAliasWhenLightweightEndpointsOmitIt(t *testing.T) {
 		t.Fatalf("failed to write upload fixture: %v", err)
 	}
 
-	if _, err := execute(buildRootWithCollections(t, deps), "media", "upload", filePath, "--type", "umbracoMediaVectorGraphics", "--name", "Logo"); err != nil {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), "media", "upload", filePath, "--type", "umbracoMediaVectorGraphics", "--name", "Logo"); err != nil {
 		t.Fatalf("alias-only resolution failed: %v", err)
 	}
 	if !sawSearch {
@@ -454,23 +456,23 @@ func TestMediaUploadResolvesAliasWhenLightweightEndpointsOmitIt(t *testing.T) {
 func TestMediaUploadExplicitCultureForcesVariantPayloadOnNonVaryingType(t *testing.T) {
 	var createPayload map[string]any
 
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/tree/media-type/root":
-			return endpointJSONResponse(http.StatusOK, `{"total":1,"items":[{"id":"mt-image","alias":"Image","name":"Image"}]}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"total":1,"items":[{"id":"mt-image","alias":"Image","name":"Image"}]}`), nil
 		case "/umbraco/management/api/v1/media-type/mt-image":
-			return endpointJSONResponse(http.StatusOK, `{"id":"mt-image","alias":"Image","name":"Image","variesByCulture":false}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"id":"mt-image","alias":"Image","name":"Image","variesByCulture":false}`), nil
 		case "/umbraco/management/api/v1/temporary-file":
-			return endpointJSONResponse(http.StatusCreated, `{"success":true}`), nil
+			return cmdtest.JSONResponse(http.StatusCreated, `{"success":true}`), nil
 		case "/umbraco/management/api/v1/media":
 			if err := json.NewDecoder(req.Body).Decode(&createPayload); err != nil {
 				t.Fatalf("failed to decode media create payload: %v", err)
 			}
-			return endpointJSONResponse(http.StatusOK, `{"success":true}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"success":true}`), nil
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
@@ -479,7 +481,7 @@ func TestMediaUploadExplicitCultureForcesVariantPayloadOnNonVaryingType(t *testi
 		t.Fatalf("failed to write upload fixture: %v", err)
 	}
 
-	if _, err := execute(buildRootWithCollections(t, deps), "media", "upload", filePath, "--type", "Image", "--name", "Hero", "--culture", "en-US"); err != nil {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), "media", "upload", filePath, "--type", "Image", "--name", "Hero", "--culture", "en-US"); err != nil {
 		t.Fatalf("media upload with explicit culture failed: %v", err)
 	}
 
@@ -507,18 +509,18 @@ func TestMediaUploadExplicitCultureForcesVariantPayloadOnNonVaryingType(t *testi
 }
 
 func TestMediaUploadCultureVaryingMediaTypeRequiresCultureWhenDefaultCannotResolve(t *testing.T) {
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/tree/media-type/root":
-			return endpointJSONResponse(http.StatusOK, `{"total":1,"items":[{"id":"mt-image","alias":"umbracoMediaImage","name":"Image"}]}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"total":1,"items":[{"id":"mt-image","alias":"umbracoMediaImage","name":"Image"}]}`), nil
 		case "/umbraco/management/api/v1/media-type/mt-image":
-			return endpointJSONResponse(http.StatusOK, `{"id":"mt-image","alias":"umbracoMediaImage","name":"Image","variesByCulture":true}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"id":"mt-image","alias":"umbracoMediaImage","name":"Image","variesByCulture":true}`), nil
 		case "/umbraco/management/api/v1/server/configuration":
-			return endpointJSONResponse(http.StatusOK, `{}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{}`), nil
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
@@ -527,7 +529,7 @@ func TestMediaUploadCultureVaryingMediaTypeRequiresCultureWhenDefaultCannotResol
 		t.Fatalf("failed to write upload fixture: %v", err)
 	}
 
-	_, err := execute(buildRootWithCollections(t, deps), "media", "upload", filePath, "--type", "Image", "--name", "Hero")
+	_, err := cmdtest.Execute(buildRootWithCollections(t, deps), "media", "upload", filePath, "--type", "Image", "--name", "Hero")
 	if err == nil || !strings.Contains(err.Error(), "varies by culture") {
 		t.Fatalf("expected culture requirement error, got %v", err)
 	}

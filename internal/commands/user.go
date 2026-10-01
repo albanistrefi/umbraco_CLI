@@ -7,9 +7,10 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/commands/cmdkit"
 )
 
-func RegisterUser(root *cobra.Command, deps Dependencies) {
+func RegisterUser(root *cobra.Command, deps cmdkit.Dependencies) {
 	user := &cobra.Command{
 		Use:   "user",
 		Short: "Backoffice user management (accounts, state, groups, API credentials)",
@@ -32,18 +33,18 @@ func RegisterUser(root *cobra.Command, deps Dependencies) {
 	root.AddCommand(user)
 }
 
-func userList(deps Dependencies) *cobra.Command {
+func userList(deps cmdkit.Dependencies) *cobra.Command {
 	var filter string
-	cmd := collectionCommand(deps, collectionSpec{
+	cmd := cmdkit.CollectionCommand(deps, cmdkit.CollectionSpec{
 		Use:   "list",
 		Short: "List backoffice users (paginated; --skip/--take/--all, --filter for substring search)",
-		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
+		Endpoints: func(args []string, params map[string]any) []cmdkit.GetRequestCandidate {
 			if strings.TrimSpace(filter) != "" {
-				params = withParam(params, "filter", filter)
+				params = cmdkit.WithParam(params, "filter", filter)
 			}
-			return []getRequestCandidate{
-				{path: "/filter/user", opts: api.RequestOptions{Params: params}},
-				{path: "/user", opts: api.RequestOptions{Params: params}},
+			return []cmdkit.GetRequestCandidate{
+				{Path: "/filter/user", Opts: api.RequestOptions{Params: params}},
+				{Path: "/user", Opts: api.RequestOptions{Params: params}},
 			}
 		},
 	})
@@ -51,7 +52,7 @@ func userList(deps Dependencies) *cobra.Command {
 	return cmd
 }
 
-func userGet(deps Dependencies) *cobra.Command {
+func userGet(deps cmdkit.Dependencies) *cobra.Command {
 	var fields string
 	cmd := &cobra.Command{
 		Use:   "get <id> [<id>...]",
@@ -73,14 +74,14 @@ func userGet(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, deps, applyFieldsProjection(result, fields))
+			return cmdkit.PrintResult(cmd, deps, cmdkit.ApplyFieldsProjection(result, fields))
 		},
 	}
-	addFieldsFlag(cmd, &fields)
+	cmdkit.AddFieldsFlag(cmd, &fields)
 	return cmd
 }
 
-func userSetLanguage(deps Dependencies) *cobra.Command {
+func userSetLanguage(deps cmdkit.Dependencies) *cobra.Command {
 	var dryRun bool
 	cmd := &cobra.Command{
 		Use:   "set-language <iso-code>",
@@ -92,15 +93,15 @@ func userSetLanguage(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printMutationResult(cmd, deps, "updated", result, dryRun)
+			return cmdkit.PrintMutationResult(cmd, deps, "updated", result, dryRun)
 		},
 	}
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
-func userCreate(deps Dependencies) *cobra.Command {
-	return createCommand(deps, createSpec{
+func userCreate(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.CreateCommand(deps, cmdkit.CreateSpec{
 		Use:         "create",
 		Short:       "Create a backoffice user",
 		Long:        "POST /user. Required: email, userName, name, userGroupIds ([{\"id\":\"<guid>\"}] from 'user-group list'), kind (\"Default\" for humans, \"Api\" for credential-only API users). API-kind users get credentials via 'user client-credentials create'.",
@@ -110,8 +111,8 @@ func userCreate(deps Dependencies) *cobra.Command {
 	})
 }
 
-func userInvite(deps Dependencies) *cobra.Command {
-	return createCommand(deps, createSpec{
+func userInvite(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.CreateCommand(deps, cmdkit.CreateSpec{
 		Use:          "invite",
 		Short:        "Invite a user by email (they choose their own password)",
 		Long:         "POST /user/invite. Same required fields as 'user create' minus kind, plus an optional message included in the invitation email. Requires the server to have SMTP configured.",
@@ -120,16 +121,16 @@ func userInvite(deps Dependencies) *cobra.Command {
 	})
 }
 
-func userUpdate(deps Dependencies) *cobra.Command {
-	return updateCommand(deps, updateSpec{
+func userUpdate(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.UpdateCommand(deps, cmdkit.UpdateSpec{
 		Use:   "update <id>",
 		Short: "Update a backoffice user",
 		Path:  func(args []string) string { return api.JoinPath("/user/%s", args[0]) },
 	})
 }
 
-func userDelete(deps Dependencies) *cobra.Command {
-	return deleteCommand(deps, deleteSpec{
+func userDelete(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.DeleteCommand(deps, cmdkit.DeleteSpec{
 		Use:   "delete <id>",
 		Short: "Permanently delete a backoffice user",
 		Path: func(args []string) string {
@@ -140,7 +141,7 @@ func userDelete(deps Dependencies) *cobra.Command {
 
 // userStateCommand builds the enable/disable/unlock trio: each POSTs a
 // {userIds:[{id},...]} body to /user/<action>.
-func userStateCommand(deps Dependencies, action string, short string, verb string) *cobra.Command {
+func userStateCommand(deps cmdkit.Dependencies, action string, short string, verb string) *cobra.Command {
 	var idsCSV string
 	var dryRun bool
 	cmd := &cobra.Command{
@@ -148,7 +149,7 @@ func userStateCommand(deps Dependencies, action string, short string, verb strin
 		Short: short,
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ids := uniqueCSV(idsCSV)
+			ids := cmdkit.UniqueCSV(idsCSV)
 			if len(ids) == 0 {
 				return fmt.Errorf("user %s requires --ids <comma-separated user guids>", action)
 			}
@@ -157,15 +158,15 @@ func userStateCommand(deps Dependencies, action string, short string, verb strin
 			if err != nil {
 				return err
 			}
-			return printMutationResult(cmd, deps, verb, result, dryRun)
+			return cmdkit.PrintMutationResult(cmd, deps, verb, result, dryRun)
 		},
 	}
 	cmd.Flags().StringVar(&idsCSV, "ids", "", "Comma-separated user GUIDs (required)")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
-func userSetGroups(deps Dependencies) *cobra.Command {
+func userSetGroups(deps cmdkit.Dependencies) *cobra.Command {
 	var userIDsCSV string
 	var groupIDsCSV string
 	var dryRun bool
@@ -175,8 +176,8 @@ func userSetGroups(deps Dependencies) *cobra.Command {
 		Long:  "POST /user/set-user-groups. Replaces each listed user's groups with exactly the listed group set. Group GUIDs come from 'user-group list'.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			userIDs := uniqueCSV(userIDsCSV)
-			groupIDs := uniqueCSV(groupIDsCSV)
+			userIDs := cmdkit.UniqueCSV(userIDsCSV)
+			groupIDs := cmdkit.UniqueCSV(groupIDsCSV)
 			if len(userIDs) == 0 {
 				return fmt.Errorf("user set-groups requires --user-ids <comma-separated user guids>")
 			}
@@ -188,16 +189,16 @@ func userSetGroups(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printMutationResult(cmd, deps, "updated", result, dryRun)
+			return cmdkit.PrintMutationResult(cmd, deps, "updated", result, dryRun)
 		},
 	}
 	cmd.Flags().StringVar(&userIDsCSV, "user-ids", "", "Comma-separated user GUIDs (required)")
 	cmd.Flags().StringVar(&groupIDsCSV, "group-ids", "", "Comma-separated user-group GUIDs; the users' groups become exactly this set")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
-func userCurrent(deps Dependencies) *cobra.Command {
+func userCurrent(deps cmdkit.Dependencies) *cobra.Command {
 	var fields string
 	cmd := &cobra.Command{
 		Use:   "current",
@@ -208,14 +209,14 @@ func userCurrent(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, deps, applyFieldsProjection(result, fields))
+			return cmdkit.PrintResult(cmd, deps, cmdkit.ApplyFieldsProjection(result, fields))
 		},
 	}
-	addFieldsFlag(cmd, &fields)
+	cmdkit.AddFieldsFlag(cmd, &fields)
 	return cmd
 }
 
-func userPermissions(deps Dependencies) *cobra.Command {
+func userPermissions(deps cmdkit.Dependencies) *cobra.Command {
 	var idsCSV string
 	var resource string
 	cmd := &cobra.Command{
@@ -224,7 +225,7 @@ func userPermissions(deps Dependencies) *cobra.Command {
 		Long:  "GET /user/current/permissions[/document|/media]. Lets an agent verify it may write or publish a node before issuing the mutation. --type selects the permission surface: entity (default), document, or media.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ids := uniqueCSV(idsCSV)
+			ids := cmdkit.UniqueCSV(idsCSV)
 			if len(ids) == 0 {
 				return fmt.Errorf("user permissions requires --ids <comma-separated guids>")
 			}
@@ -237,11 +238,11 @@ func userPermissions(deps Dependencies) *cobra.Command {
 			default:
 				return fmt.Errorf("--type must be entity, document, or media (got %q)", resource)
 			}
-			result, err := deps.Client.Get(cmd.Context(), path, api.RequestOptions{Params: map[string]any{"id": stringsToAny(ids)}})
+			result, err := deps.Client.Get(cmd.Context(), path, api.RequestOptions{Params: map[string]any{"id": cmdkit.StringsToAny(ids)}})
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, deps, result)
+			return cmdkit.PrintResult(cmd, deps, result)
 		},
 	}
 	cmd.Flags().StringVar(&idsCSV, "ids", "", "Comma-separated entity GUIDs to check (required)")
@@ -249,7 +250,7 @@ func userPermissions(deps Dependencies) *cobra.Command {
 	return cmd
 }
 
-func userClientCredentials(deps Dependencies) *cobra.Command {
+func userClientCredentials(deps cmdkit.Dependencies) *cobra.Command {
 	credentials := &cobra.Command{
 		Use:   "client-credentials",
 		Short: "OAuth client credentials for API users (what this CLI logs in with)",
@@ -260,7 +261,7 @@ func userClientCredentials(deps Dependencies) *cobra.Command {
 	return credentials
 }
 
-func userClientCredentialsList(deps Dependencies) *cobra.Command {
+func userClientCredentialsList(deps cmdkit.Dependencies) *cobra.Command {
 	return &cobra.Command{
 		Use:   "list <user-id>",
 		Short: "List the client IDs registered for an API user",
@@ -270,12 +271,12 @@ func userClientCredentialsList(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, deps, result)
+			return cmdkit.PrintResult(cmd, deps, result)
 		},
 	}
 }
 
-func userClientCredentialsCreate(deps Dependencies) *cobra.Command {
+func userClientCredentialsCreate(deps cmdkit.Dependencies) *cobra.Command {
 	var clientID string
 	var clientSecret string
 	var dryRun bool
@@ -285,10 +286,10 @@ func userClientCredentialsCreate(deps Dependencies) *cobra.Command {
 		Long:  "POST /user/{id}/client-credentials. The user must be of kind Api ('user create' with \"kind\":\"Api\"). Client IDs are conventionally prefixed umbraco-back-office-.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := requireValue("--client-id", clientID); err != nil {
+			if err := cmdkit.RequireValue("--client-id", clientID); err != nil {
 				return err
 			}
-			if err := requireValue("--client-secret", clientSecret); err != nil {
+			if err := cmdkit.RequireValue("--client-secret", clientSecret); err != nil {
 				return err
 			}
 			body := map[string]any{"clientId": clientID, "clientSecret": clientSecret}
@@ -296,16 +297,16 @@ func userClientCredentialsCreate(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printMutationResult(cmd, deps, "created", result, dryRun)
+			return cmdkit.PrintMutationResult(cmd, deps, "created", result, dryRun)
 		},
 	}
 	cmd.Flags().StringVar(&clientID, "client-id", "", "OAuth client ID (required)")
 	cmd.Flags().StringVar(&clientSecret, "client-secret", "", "OAuth client secret (required)")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
-func userClientCredentialsDelete(deps Dependencies) *cobra.Command {
+func userClientCredentialsDelete(deps cmdkit.Dependencies) *cobra.Command {
 	var force bool
 	var dryRun bool
 	cmd := &cobra.Command{
@@ -313,18 +314,18 @@ func userClientCredentialsDelete(deps Dependencies) *cobra.Command {
 		Short: "Remove a client ID from an API user (revokes its access)",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := requireForceOrDryRun(cmd, "revokes API access", force, dryRun); err != nil {
+			if err := cmdkit.RequireForceOrDryRun(cmd, "revokes API access", force, dryRun); err != nil {
 				return err
 			}
 			result, err := deps.Client.Delete(cmd.Context(), api.JoinPath("/user/%s/client-credentials/%s", args[0], args[1]), api.RequestOptions{DryRun: dryRun})
 			if err != nil {
 				return err
 			}
-			return printMutationResult(cmd, deps, "deleted", result, dryRun)
+			return cmdkit.PrintMutationResult(cmd, deps, "deleted", result, dryRun)
 		},
 	}
 	cmd.Flags().BoolVar(&force, "force", false, "Confirm revoking the credential")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 

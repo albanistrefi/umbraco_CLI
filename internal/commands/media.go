@@ -11,9 +11,11 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/commands/cmdkit"
+	"umbraco-cli/internal/uuid"
 )
 
-func RegisterMedia(root *cobra.Command, deps Dependencies) {
+func RegisterMedia(root *cobra.Command, deps cmdkit.Dependencies) {
 	media := &cobra.Command{
 		Use:   "media",
 		Short: "Media asset operations",
@@ -60,73 +62,73 @@ Task → command:
 	root.AddCommand(media)
 }
 
-func mediaGet(deps Dependencies) *cobra.Command {
-	return getCommand(deps, getSpec{
+func mediaGet(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.GetCommand(deps, cmdkit.GetSpec{
 		Use:   "get <id>",
 		Short: "Get media by ID",
 		Path:  func(args []string) string { return api.JoinPath("/media/%s", args[0]) },
 	})
 }
 
-func mediaRoot(deps Dependencies) *cobra.Command {
-	return collectionCommand(deps, collectionSpec{
+func mediaRoot(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.CollectionCommand(deps, cmdkit.CollectionSpec{
 		Use:   "root",
 		Short: "Get root media items (paginated; --skip/--take/--all)",
-		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
-			return []getRequestCandidate{
-				{path: "/tree/media/root", opts: api.RequestOptions{Params: params}},
-				{path: "/media/root", opts: api.RequestOptions{Params: params}},
+		Endpoints: func(args []string, params map[string]any) []cmdkit.GetRequestCandidate {
+			return []cmdkit.GetRequestCandidate{
+				{Path: "/tree/media/root", Opts: api.RequestOptions{Params: params}},
+				{Path: "/media/root", Opts: api.RequestOptions{Params: params}},
 			}
 		},
 	})
 }
 
-func mediaChildren(deps Dependencies) *cobra.Command {
-	return collectionCommand(deps, collectionSpec{
+func mediaChildren(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.CollectionCommand(deps, cmdkit.CollectionSpec{
 		Use:   "children <id>",
 		Short: "Get child media items (paginated; --skip/--take/--all)",
 		NArgs: 1,
-		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
-			return []getRequestCandidate{
-				{path: "/tree/media/children", opts: api.RequestOptions{Params: withParam(params, "parentId", args[0])}},
-				{path: api.JoinPath("/media/%s/children", args[0]), opts: api.RequestOptions{Params: params}},
+		Endpoints: func(args []string, params map[string]any) []cmdkit.GetRequestCandidate {
+			return []cmdkit.GetRequestCandidate{
+				{Path: "/tree/media/children", Opts: api.RequestOptions{Params: cmdkit.WithParam(params, "parentId", args[0])}},
+				{Path: api.JoinPath("/media/%s/children", args[0]), Opts: api.RequestOptions{Params: params}},
 			}
 		},
 	})
 }
 
-func mediaSearch(deps Dependencies) *cobra.Command {
-	return searchCommand(deps, searchSpec{
+func mediaSearch(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.SearchCommand(deps, cmdkit.SearchSpec{
 		Use:   "search",
 		Short: "Search media items",
-		Endpoints: func(params map[string]any) []getRequestCandidate {
-			return []getRequestCandidate{
-				{path: "/item/media/search", opts: api.RequestOptions{Params: params}},
-				{path: "/media/search", opts: api.RequestOptions{Params: params}},
+		Endpoints: func(params map[string]any) []cmdkit.GetRequestCandidate {
+			return []cmdkit.GetRequestCandidate{
+				{Path: "/item/media/search", Opts: api.RequestOptions{Params: params}},
+				{Path: "/media/search", Opts: api.RequestOptions{Params: params}},
 			}
 		},
 	})
 }
 
-func mediaURLs(deps Dependencies) *cobra.Command {
+func mediaURLs(deps cmdkit.Dependencies) *cobra.Command {
 	return &cobra.Command{Use: "urls <id>", Aliases: []string{"url"}, Short: "Get media URLs", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		result, err := getWithFallback(
+		result, err := cmdkit.GetWithFallback(
 			cmd.Context(),
 			deps.Client,
-			getRequestCandidate{path: "/media/urls", opts: api.RequestOptions{Params: map[string]any{"id": args[0]}}},
-			getRequestCandidate{path: api.JoinPath("/media/%s/urls", args[0]), opts: api.RequestOptions{}},
+			cmdkit.GetRequestCandidate{Path: "/media/urls", Opts: api.RequestOptions{Params: map[string]any{"id": args[0]}}},
+			cmdkit.GetRequestCandidate{Path: api.JoinPath("/media/%s/urls", args[0]), Opts: api.RequestOptions{}},
 		)
 		if err != nil {
 			return err
 		}
-		return printResult(cmd, deps, result)
+		return cmdkit.PrintResult(cmd, deps, result)
 	}}
 }
 
 // mediaResizeURLs asks the server for the imaging pipeline URLs that serve
 // the given media items at a size — the crop/resize URLs the backoffice
 // renders thumbnails from — for several items in one round trip.
-func mediaResizeURLs(deps Dependencies) *cobra.Command {
+func mediaResizeURLs(deps cmdkit.Dependencies) *cobra.Command {
 	var idsCSV string
 	var width int
 	var height int
@@ -137,11 +139,11 @@ func mediaResizeURLs(deps Dependencies) *cobra.Command {
 		Long:  "GET /imaging/resize/urls. Each ID is sent as a repeated ?id= value, so one call covers many media items. --width/--height default to the server's 200x200; --mode is one of Crop, Max, Stretch, Pad, BoxPad, Min.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ids := uniqueCSV(idsCSV)
+			ids := cmdkit.UniqueCSV(idsCSV)
 			if len(ids) == 0 {
 				return fmt.Errorf("media resize-urls requires --ids <comma-separated guids>")
 			}
-			params := map[string]any{"id": stringsToAny(ids)}
+			params := map[string]any{"id": cmdkit.StringsToAny(ids)}
 			// An unset dimension is left to the server default; an
 			// explicitly passed one must be usable, so --width=0 is an
 			// error rather than a silently ignored value.
@@ -164,7 +166,7 @@ func mediaResizeURLs(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, deps, result)
+			return cmdkit.PrintResult(cmd, deps, result)
 		},
 	}
 	cmd.Flags().StringVar(&idsCSV, "ids", "", "Comma-separated media GUIDs to resize (required)")
@@ -174,8 +176,8 @@ func mediaResizeURLs(deps Dependencies) *cobra.Command {
 	return cmd
 }
 
-func mediaCreate(deps Dependencies) *cobra.Command {
-	return createCommand(deps, createSpec{
+func mediaCreate(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.CreateCommand(deps, cmdkit.CreateSpec{
 		Use:         "create",
 		Short:       "Create media from JSON payload",
 		Path:        "/media",
@@ -183,7 +185,7 @@ func mediaCreate(deps Dependencies) *cobra.Command {
 	})
 }
 
-func mediaUpload(deps Dependencies) *cobra.Command {
+func mediaUpload(deps cmdkit.Dependencies) *cobra.Command {
 	var name string
 	var mediaType string
 	var culture string
@@ -194,21 +196,21 @@ func mediaUpload(deps Dependencies) *cobra.Command {
 	cmd := &cobra.Command{Use: "upload <file>", Short: "Upload a file and create a media item", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 		filePath := args[0]
-		if err := requireValue("--type", mediaType); err != nil {
+		if err := cmdkit.RequireValue("--type", mediaType); err != nil {
 			return err
 		}
 		if name == "" {
 			name = mediaNameFromPath(filePath)
 		}
-		if err := requireValue("--name", name); err != nil {
+		if err := cmdkit.RequireValue("--name", name); err != nil {
 			return err
 		}
 
-		tempID, err := newUUIDv4()
+		tempID, err := uuid.NewV4()
 		if err != nil {
 			return fmt.Errorf("failed to generate temporary file id: %w", err)
 		}
-		mediaID, err := newUUIDv4()
+		mediaID, err := uuid.NewV4()
 		if err != nil {
 			return fmt.Errorf("failed to generate media id: %w", err)
 		}
@@ -274,12 +276,12 @@ func mediaUpload(deps Dependencies) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		return printResult(cmd, deps, map[string]any{
+		return cmdkit.PrintResult(cmd, deps, map[string]any{
 			"id":            mediaID,
 			"name":          name,
 			"mediaType":     body["mediaType"],
 			"temporaryFile": map[string]any{"id": tempID, "upload": uploadResult},
-			"created":       createResult(createResultRaw, body),
+			"created":       cmdkit.CreateResult(createResultRaw, body),
 		})
 	}}
 
@@ -288,7 +290,7 @@ func mediaUpload(deps Dependencies) *cobra.Command {
 	cmd.Flags().StringVar(&culture, "culture", "", "Culture code for culture-varying media types")
 	cmd.Flags().StringVar(&parent, "parent", "", "Target parent media ID")
 	cmd.Flags().StringVar(&propertyAlias, "property", "umbracoFile", "File property alias")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
@@ -325,7 +327,7 @@ func resolveMediaTypeInfo(ctx context.Context, client *api.Client, value string)
 		normalized = canonical
 	}
 
-	if isUUIDLike(normalized) {
+	if uuid.Valid(normalized) {
 		return fetchMediaTypeDetail(ctx, client, normalized, value)
 	}
 
@@ -386,11 +388,11 @@ func collectMediaTypeCandidateIDs(ctx context.Context, client *api.Client, query
 		}
 	}
 
-	searchResult, err := getWithFallback(
+	searchResult, err := cmdkit.GetWithFallback(
 		ctx,
 		client,
-		getRequestCandidate{path: "/item/media-type/search", opts: api.RequestOptions{Params: map[string]any{"query": query, "skip": 0, "take": 50}}},
-		getRequestCandidate{path: "/media-type/search", opts: api.RequestOptions{Params: map[string]any{"query": query, "skip": 0, "take": 50}}},
+		cmdkit.GetRequestCandidate{Path: "/item/media-type/search", Opts: api.RequestOptions{Params: map[string]any{"query": query, "skip": 0, "take": 50}}},
+		cmdkit.GetRequestCandidate{Path: "/media-type/search", Opts: api.RequestOptions{Params: map[string]any{"query": query, "skip": 0, "take": 50}}},
 	)
 	if err == nil {
 		ids = append(ids, mediaTypeIDsFromResult(searchResult)...)
@@ -410,7 +412,7 @@ func collectMediaTypeCandidateIDs(ctx context.Context, client *api.Client, query
 
 func mediaTypeIDsFromResult(result any) []string {
 	var ids []string
-	for _, item := range resultItems(result) {
+	for _, item := range cmdkit.ResultItems(result) {
 		entry, ok := item.(map[string]any)
 		if !ok {
 			continue
@@ -458,36 +460,12 @@ func mediaTypeInfoFromMap(entry map[string]any) mediaTypeInfo {
 	return info
 }
 
-func isUUIDLike(value string) bool {
-	value = strings.TrimSpace(value)
-	if len(value) != 36 {
-		return false
-	}
-	for i, r := range value {
-		switch i {
-		case 8, 13, 18, 23:
-			if r != '-' {
-				return false
-			}
-		default:
-			if !isHexDigit(r) {
-				return false
-			}
-		}
-	}
-	return true
-}
-
-func isHexDigit(r rune) bool {
-	return (r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')
-}
-
 func resolveDefaultCulture(ctx context.Context, client *api.Client) (string, error) {
-	result, err := getWithFallback(
+	result, err := cmdkit.GetWithFallback(
 		ctx,
 		client,
-		getRequestCandidate{path: "/server/configuration", opts: api.RequestOptions{}},
-		getRequestCandidate{path: "/server/config", opts: api.RequestOptions{}},
+		cmdkit.GetRequestCandidate{Path: "/server/configuration", Opts: api.RequestOptions{}},
+		cmdkit.GetRequestCandidate{Path: "/server/config", Opts: api.RequestOptions{}},
 	)
 	if err != nil {
 		return "", err
@@ -526,7 +504,7 @@ func findStringByKeys(value any, keys ...string) string {
 	return ""
 }
 
-func mediaCreateFolder(deps Dependencies) *cobra.Command {
+func mediaCreateFolder(deps cmdkit.Dependencies) *cobra.Command {
 	var jsonPayload string
 	var parent string
 	var dryRun bool
@@ -539,7 +517,7 @@ func mediaCreateFolder(deps Dependencies) *cobra.Command {
 			ctx := cmd.Context()
 			var body map[string]any
 			if jsonPayload != "" {
-				parsed, err := parsePayload(jsonPayload)
+				parsed, err := cmdkit.ParsePayload(jsonPayload)
 				if err != nil {
 					return err
 				}
@@ -552,7 +530,7 @@ func mediaCreateFolder(deps Dependencies) *cobra.Command {
 				if err != nil {
 					return fmt.Errorf("could not resolve the Folder media type: %w", err)
 				}
-				folderID, err := newUUIDv4()
+				folderID, err := uuid.NewV4()
 				if err != nil {
 					return fmt.Errorf("failed to generate media id: %w", err)
 				}
@@ -570,37 +548,37 @@ func mediaCreateFolder(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, deps, createResult(result, body))
+			return cmdkit.PrintResult(cmd, deps, cmdkit.CreateResult(result, body))
 		},
 	}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Full media create payload as JSON (bypasses Folder-type resolution)")
 	cmd.Flags().StringVar(&parent, "parent", "", "Target parent media ID (omit for a root-level folder)")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
-func mediaUpdate(deps Dependencies) *cobra.Command {
-	return updateCommand(deps, updateSpec{
+func mediaUpdate(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.UpdateCommand(deps, cmdkit.UpdateSpec{
 		Use:   "update <id>",
 		Short: "Update media item",
 		Path:  func(args []string) string { return api.JoinPath("/media/%s", args[0]) },
 	})
 }
 
-func mediaMove(deps Dependencies) *cobra.Command {
-	return targetActionCommand(deps, targetActionSpec{
+func mediaMove(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.TargetActionCommand(deps, cmdkit.TargetActionSpec{
 		Use:   "move <id>",
 		Short: "Move media item",
-		Candidates: func(args []string) []mutationCandidate {
+		Candidates: func(args []string) []cmdkit.MutationCandidate {
 			path := api.JoinPath("/media/%s/move", args[0])
-			return []mutationCandidate{{method: "PUT", path: path}, {method: "POST", path: path}}
+			return []cmdkit.MutationCandidate{{Method: "PUT", Path: path}, {Method: "POST", Path: path}}
 		},
 		Verb: "moved",
 	})
 }
 
-func mediaDelete(deps Dependencies) *cobra.Command {
-	return deleteCommand(deps, deleteSpec{
+func mediaDelete(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.DeleteCommand(deps, cmdkit.DeleteSpec{
 		Use:   "delete <id>",
 		Short: "Permanently delete a media item (use 'trash' for the recycle bin)",
 		Path: func(args []string) string {
@@ -609,25 +587,25 @@ func mediaDelete(deps Dependencies) *cobra.Command {
 	})
 }
 
-func mediaTrash(deps Dependencies) *cobra.Command {
+func mediaTrash(deps cmdkit.Dependencies) *cobra.Command {
 	var dryRun bool
 	cmd := &cobra.Command{Use: "trash <id>", Short: "Move media item to recycle bin", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		path := api.JoinPath("/media/%s/move-to-recycle-bin", args[0])
-		result, err := mutateWithFallback(cmd.Context(), deps.Client, map[string]any{}, api.RequestOptions{DryRun: dryRun},
-			mutationCandidate{method: "PUT", path: path},
-			mutationCandidate{method: "POST", path: path},
+		result, err := cmdkit.MutateWithFallback(cmd.Context(), deps.Client, map[string]any{}, api.RequestOptions{DryRun: dryRun},
+			cmdkit.MutationCandidate{Method: "PUT", Path: path},
+			cmdkit.MutationCandidate{Method: "POST", Path: path},
 		)
 		if err != nil {
 			return err
 		}
-		return printMutationResult(cmd, deps, "trashed", result, dryRun)
+		return cmdkit.PrintMutationResult(cmd, deps, "trashed", result, dryRun)
 	}}
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
-func mediaReferences(deps Dependencies) *cobra.Command {
-	cmd := referencesCommand(deps, referencesSpec{
+func mediaReferences(deps cmdkit.Dependencies) *cobra.Command {
+	cmd := cmdkit.ReferencesCommand(deps, cmdkit.ReferencesSpec{
 		Use:   "references <id>",
 		Short: "List items that reference this media item (paginated; --skip/--take/--all)",
 		Long:  "Wraps GET /media/{id}/referenced-by. Same content-audit role as 'document references' for media assets — answers \"which content uses this media item?\".",
@@ -637,14 +615,14 @@ func mediaReferences(deps Dependencies) *cobra.Command {
 	return cmd
 }
 
-func mediaReferencedDescendants(deps Dependencies) *cobra.Command {
-	return referencesCommand(deps, referencesSpec{
+func mediaReferencedDescendants(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.ReferencesCommand(deps, cmdkit.ReferencesSpec{
 		Use:   "referenced-descendants <id>",
 		Short: "List items that reference this media item or any of its descendants",
 		Path:  func(args []string) string { return api.JoinPath("/media/%s/referenced-descendants", args[0]) },
 	})
 }
 
-func mediaAreReferenced(deps Dependencies) *cobra.Command {
-	return areReferencedCommand(deps, "media")
+func mediaAreReferenced(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.AreReferencedCommand(deps, "media")
 }

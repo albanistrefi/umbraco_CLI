@@ -6,23 +6,25 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+
+	"umbraco-cli/internal/commands/cmdtest"
 )
 
 const mbTokenPath = "/umbraco/management/api/v1/security/back-office/token"
 
 func TestModelsBuilderDashboardHitsCoreAPI(t *testing.T) {
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case mbTokenPath:
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/models-builder/dashboard":
-			return datatypeJSONResponse(http.StatusOK, `{"mode":"SourceCodeManual","outOfDateModels":true,"canGenerate":true}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"mode":"SourceCodeManual","outOfDateModels":true,"canGenerate":true}`), nil
 		default:
-			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	output, err := execute(buildRootWithCollections(t, deps), "models-builder", "dashboard")
+	output, err := cmdtest.Execute(buildRootWithCollections(t, deps), "models-builder", "dashboard")
 	if err != nil {
 		t.Fatalf("dashboard failed: %v", err)
 	}
@@ -36,21 +38,21 @@ func TestModelsBuilderDashboardHitsCoreAPI(t *testing.T) {
 }
 
 func TestModelsBuilderBuildRejectsNonSourceMode(t *testing.T) {
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case mbTokenPath:
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/models-builder/dashboard":
-			return datatypeJSONResponse(http.StatusOK, `{"mode":"InMemoryAuto","canGenerate":true}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"mode":"InMemoryAuto","canGenerate":true}`), nil
 		case "/umbraco/management/api/v1/models-builder/build":
 			t.Fatalf("build POST must NOT fire when mode is not SourceCode*")
-			return datatypeJSONResponse(http.StatusOK, `null`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `null`), nil
 		default:
-			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	_, err := execute(buildRootWithCollections(t, deps), "models-builder", "build")
+	_, err := cmdtest.Execute(buildRootWithCollections(t, deps), "models-builder", "build")
 	if err == nil {
 		t.Fatalf("expected build to refuse non-source mode")
 	}
@@ -60,21 +62,21 @@ func TestModelsBuilderBuildRejectsNonSourceMode(t *testing.T) {
 }
 
 func TestModelsBuilderBuildSurfacesCanGenerateFalseWithLastError(t *testing.T) {
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case mbTokenPath:
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/models-builder/dashboard":
-			return datatypeJSONResponse(http.StatusOK, `{"mode":"SourceCodeManual","canGenerate":false,"lastError":"compilation failed: x"}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"mode":"SourceCodeManual","canGenerate":false,"lastError":"compilation failed: x"}`), nil
 		case "/umbraco/management/api/v1/models-builder/build":
 			t.Fatalf("build POST must NOT fire when canGenerate=false")
-			return datatypeJSONResponse(http.StatusOK, `null`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `null`), nil
 		default:
-			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	_, err := execute(buildRootWithCollections(t, deps), "models-builder", "build")
+	_, err := cmdtest.Execute(buildRootWithCollections(t, deps), "models-builder", "build")
 	if err == nil {
 		t.Fatalf("expected canGenerate=false to abort the build")
 	}
@@ -85,24 +87,24 @@ func TestModelsBuilderBuildSurfacesCanGenerateFalseWithLastError(t *testing.T) {
 
 func TestModelsBuilderBuildPostsWhenSourceModeAndCanGenerate(t *testing.T) {
 	var postCount int32
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case mbTokenPath:
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/models-builder/dashboard":
-			return datatypeJSONResponse(http.StatusOK, `{"mode":"SourceCodeManual","canGenerate":true}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"mode":"SourceCodeManual","canGenerate":true}`), nil
 		case "/umbraco/management/api/v1/models-builder/build":
 			if req.Method != http.MethodPost {
 				t.Fatalf("expected POST, got %s", req.Method)
 			}
 			atomic.AddInt32(&postCount, 1)
-			return datatypeJSONResponse(http.StatusOK, `{"triggered":true}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"triggered":true}`), nil
 		default:
-			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	output, err := execute(buildRootWithCollections(t, deps), "models-builder", "build")
+	output, err := cmdtest.Execute(buildRootWithCollections(t, deps), "models-builder", "build")
 	if err != nil {
 		t.Fatalf("build failed: %v", err)
 	}
@@ -116,27 +118,27 @@ func TestModelsBuilderBuildPostsWhenSourceModeAndCanGenerate(t *testing.T) {
 
 func TestModelsBuilderBuildWaitPollsStatusUntilCurrent(t *testing.T) {
 	var pollCount int32
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case mbTokenPath:
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/models-builder/dashboard":
-			return datatypeJSONResponse(http.StatusOK, `{"mode":"SourceCodeManual","canGenerate":true}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"mode":"SourceCodeManual","canGenerate":true}`), nil
 		case "/umbraco/management/api/v1/models-builder/build":
-			return datatypeJSONResponse(http.StatusOK, `{"triggered":true}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"triggered":true}`), nil
 		case "/umbraco/management/api/v1/models-builder/status":
 			// First two polls return OutOfDate, third returns Current.
 			n := atomic.AddInt32(&pollCount, 1)
 			if n < 3 {
-				return datatypeJSONResponse(http.StatusOK, `{"status":"OutOfDate"}`), nil
+				return cmdtest.JSONResponse(http.StatusOK, `{"status":"OutOfDate"}`), nil
 			}
-			return datatypeJSONResponse(http.StatusOK, `{"status":"Current"}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"status":"Current"}`), nil
 		default:
-			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	output, err := execute(
+	output, err := cmdtest.Execute(
 		buildRootWithCollections(t, deps),
 		"models-builder", "build",
 		"--wait",
@@ -160,19 +162,19 @@ func TestModelsBuilderBuildWaitPollsStatusUntilCurrent(t *testing.T) {
 
 func TestModelsBuilderBuildDryRunSkipsPostButStillPreChecks(t *testing.T) {
 	// Pre-checks must still fail when mode is wrong, even with --dry-run.
-	wrongModeDeps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	wrongModeDeps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case mbTokenPath:
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/models-builder/dashboard":
-			return datatypeJSONResponse(http.StatusOK, `{"mode":"InMemoryAuto","canGenerate":true}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"mode":"InMemoryAuto","canGenerate":true}`), nil
 		case "/umbraco/management/api/v1/models-builder/build":
 			t.Fatalf("dry-run must not POST when mode pre-check would have failed")
-			return datatypeJSONResponse(http.StatusOK, `null`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `null`), nil
 		}
-		return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 	})
-	if _, err := execute(buildRootWithCollections(t, wrongModeDeps), "models-builder", "build", "--dry-run"); err == nil {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, wrongModeDeps), "models-builder", "build", "--dry-run"); err == nil {
 		t.Fatalf("expected dry-run on InMemoryAuto to fail the mode pre-check")
 	}
 
@@ -180,20 +182,20 @@ func TestModelsBuilderBuildDryRunSkipsPostButStillPreChecks(t *testing.T) {
 	// but with DryRun=true it short-circuits and returns a DryRunResult envelope
 	// instead of firing the HTTP call. Our handler should never see the POST.
 	var sawPost bool
-	dryDeps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	dryDeps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case mbTokenPath:
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/models-builder/dashboard":
-			return datatypeJSONResponse(http.StatusOK, `{"mode":"SourceCodeManual","canGenerate":true}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"mode":"SourceCodeManual","canGenerate":true}`), nil
 		case "/umbraco/management/api/v1/models-builder/build":
 			sawPost = true
-			return datatypeJSONResponse(http.StatusOK, `{"triggered":true}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"triggered":true}`), nil
 		}
-		return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+		return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 	})
 
-	output, err := execute(buildRootWithCollections(t, dryDeps), "models-builder", "build", "--dry-run")
+	output, err := cmdtest.Execute(buildRootWithCollections(t, dryDeps), "models-builder", "build", "--dry-run")
 	if err != nil {
 		t.Fatalf("dry-run happy path failed: %v", err)
 	}
@@ -210,10 +212,10 @@ func TestModelsBuilderBuildDryRunSkipsPostButStillPreChecks(t *testing.T) {
 }
 
 func TestModelsBuilderBuildRejectsDryRunWithWait(t *testing.T) {
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
-		return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
+		return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 	})
-	_, err := execute(buildRootWithCollections(t, deps), "models-builder", "build", "--dry-run", "--wait")
+	_, err := cmdtest.Execute(buildRootWithCollections(t, deps), "models-builder", "build", "--dry-run", "--wait")
 	if err == nil {
 		t.Fatalf("expected --dry-run + --wait to be rejected")
 	}
@@ -223,22 +225,22 @@ func TestModelsBuilderBuildRejectsDryRunWithWait(t *testing.T) {
 }
 
 func TestModelsBuilderBuildWaitTimesOutWithLastStatus(t *testing.T) {
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case mbTokenPath:
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/models-builder/dashboard":
-			return datatypeJSONResponse(http.StatusOK, `{"mode":"SourceCodeAuto","canGenerate":true}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"mode":"SourceCodeAuto","canGenerate":true}`), nil
 		case "/umbraco/management/api/v1/models-builder/build":
-			return datatypeJSONResponse(http.StatusOK, `{"triggered":true}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"triggered":true}`), nil
 		case "/umbraco/management/api/v1/models-builder/status":
-			return datatypeJSONResponse(http.StatusOK, `{"status":"OutOfDate"}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"status":"OutOfDate"}`), nil
 		default:
-			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	_, err := execute(
+	_, err := cmdtest.Execute(
 		buildRootWithCollections(t, deps),
 		"models-builder", "build",
 		"--wait",

@@ -7,9 +7,12 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
+
+	"umbraco-cli/internal/commands/cmdkit"
+	"umbraco-cli/internal/commands/cmdtest"
 )
 
-func buildUserRoot(deps Dependencies) *cobra.Command {
+func buildUserRoot(deps cmdkit.Dependencies) *cobra.Command {
 	root := &cobra.Command{Use: "umbraco", SilenceErrors: true, SilenceUsage: true}
 	root.SetErr(io.Discard)
 	if deps.OutputFlag != nil {
@@ -21,17 +24,17 @@ func buildUserRoot(deps Dependencies) *cobra.Command {
 
 func TestUserGetSingleIDUsesUserPath(t *testing.T) {
 	var requestedURI string
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		default:
 			requestedURI = req.URL.RequestURI()
-			return endpointJSONResponse(http.StatusOK, `{"id":"user-1"}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"id":"user-1"}`), nil
 		}
 	})
 
-	if _, err := execute(buildUserRoot(deps), "user", "get", "user-1"); err != nil {
+	if _, err := cmdtest.Execute(buildUserRoot(deps), "user", "get", "user-1"); err != nil {
 		t.Fatalf("user get failed: %v", err)
 	}
 	if requestedURI != "/umbraco/management/api/v1/user/user-1" {
@@ -41,17 +44,17 @@ func TestUserGetSingleIDUsesUserPath(t *testing.T) {
 
 func TestUserGetMultipleIDsUseBatchEndpoint(t *testing.T) {
 	var requestedURI string
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		default:
 			requestedURI = req.URL.RequestURI()
-			return endpointJSONResponse(http.StatusOK, `[{"id":"user-1"},{"id":"user-2"}]`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `[{"id":"user-1"},{"id":"user-2"}]`), nil
 		}
 	})
 
-	if _, err := execute(buildUserRoot(deps), "user", "get", "user-1", "user-2"); err != nil {
+	if _, err := cmdtest.Execute(buildUserRoot(deps), "user", "get", "user-1", "user-2"); err != nil {
 		t.Fatalf("user get batch failed: %v", err)
 	}
 	if !strings.HasPrefix(requestedURI, "/umbraco/management/api/v1/user/batch?") {
@@ -64,20 +67,20 @@ func TestUserGetMultipleIDsUseBatchEndpoint(t *testing.T) {
 
 func TestUserSetLanguagePutsProfile(t *testing.T) {
 	var requestedPath, requestedMethod, requestedBody string
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		default:
 			requestedPath = req.URL.Path
 			requestedMethod = req.Method
 			body, _ := io.ReadAll(req.Body)
 			requestedBody = string(body)
-			return endpointJSONResponse(http.StatusOK, `null`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `null`), nil
 		}
 	})
 
-	out, err := execute(buildUserRoot(deps), "user", "set-language", "da-DK")
+	out, err := cmdtest.Execute(buildUserRoot(deps), "user", "set-language", "da-DK")
 	if err != nil {
 		t.Fatalf("user set-language failed: %v", err)
 	}

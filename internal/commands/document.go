@@ -10,9 +10,10 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/commands/cmdkit"
 )
 
-func RegisterDocument(root *cobra.Command, deps Dependencies) {
+func RegisterDocument(root *cobra.Command, deps cmdkit.Dependencies) {
 	document := &cobra.Command{
 		Use:     "document",
 		Aliases: []string{"doc"},
@@ -66,15 +67,15 @@ Task → command:
 	root.AddCommand(document)
 }
 
-func documentGet(deps Dependencies) *cobra.Command {
-	var trim outputTrimOptions
+func documentGet(deps cmdkit.Dependencies) *cobra.Command {
+	var trim cmdkit.OutputTrimOptions
 	var withURLs bool
 	cmd := &cobra.Command{
 		Use:   "get <id>",
 		Short: "Get a document by ID",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := validateDocumentOutputTrim(trim); err != nil {
+			if err := cmdkit.ValidateDocumentOutputTrim(trim); err != nil {
 				return err
 			}
 			result, err := deps.Client.Get(cmd.Context(), api.JoinPath("/document/%s", args[0]), api.RequestOptions{Fields: trim.Fields})
@@ -87,28 +88,28 @@ func documentGet(deps Dependencies) *cobra.Command {
 					return err
 				}
 			}
-			result, err = applyDocumentOutputTrim(result, trim, cmd.ErrOrStderr())
+			result, err = cmdkit.ApplyDocumentOutputTrim(result, trim, cmd.ErrOrStderr())
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, deps, result)
+			return cmdkit.PrintResult(cmd, deps, result)
 		},
 	}
-	addDocumentOutputTrimFlags(cmd, &trim)
+	cmdkit.AddDocumentOutputTrimFlags(cmd, &trim)
 	cmd.Flags().BoolVar(&withURLs, "with-urls", false, "Fetch published document URL info and include it as urls in the response")
 	return cmd
 }
 
-func documentRoot(deps Dependencies) *cobra.Command {
+func documentRoot(deps cmdkit.Dependencies) *cobra.Command {
 	var resolveDoctype bool
-	cmd := collectionCommand(deps, collectionSpec{
+	cmd := cmdkit.CollectionCommand(deps, cmdkit.CollectionSpec{
 		Use:                "root",
 		Short:              "Get root documents (paginated; --skip/--take/--all)",
 		DocumentOutputTrim: true,
-		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
-			return []getRequestCandidate{
-				{path: "/tree/document/root", opts: api.RequestOptions{Params: params}},
-				{path: "/document/root", opts: api.RequestOptions{Params: params}},
+		Endpoints: func(args []string, params map[string]any) []cmdkit.GetRequestCandidate {
+			return []cmdkit.GetRequestCandidate{
+				{Path: "/tree/document/root", Opts: api.RequestOptions{Params: params}},
+				{Path: "/document/root", Opts: api.RequestOptions{Params: params}},
 			}
 		},
 		Enrich: func(ctx context.Context, result any) (any, error) {
@@ -122,17 +123,17 @@ func documentRoot(deps Dependencies) *cobra.Command {
 	return cmd
 }
 
-func documentChildren(deps Dependencies) *cobra.Command {
+func documentChildren(deps cmdkit.Dependencies) *cobra.Command {
 	var resolveDoctype bool
-	cmd := collectionCommand(deps, collectionSpec{
+	cmd := cmdkit.CollectionCommand(deps, cmdkit.CollectionSpec{
 		Use:                "children <id>",
 		Short:              "Get child documents (paginated; --skip/--take/--all)",
 		NArgs:              1,
 		DocumentOutputTrim: true,
-		Endpoints: func(args []string, params map[string]any) []getRequestCandidate {
-			return []getRequestCandidate{
-				{path: "/tree/document/children", opts: api.RequestOptions{Params: withParam(params, "parentId", args[0])}},
-				{path: api.JoinPath("/document/%s/children", args[0]), opts: api.RequestOptions{Params: params}},
+		Endpoints: func(args []string, params map[string]any) []cmdkit.GetRequestCandidate {
+			return []cmdkit.GetRequestCandidate{
+				{Path: "/tree/document/children", Opts: api.RequestOptions{Params: cmdkit.WithParam(params, "parentId", args[0])}},
+				{Path: api.JoinPath("/document/%s/children", args[0]), Opts: api.RequestOptions{Params: params}},
 			}
 		},
 		Enrich: func(ctx context.Context, result any) (any, error) {
@@ -154,9 +155,9 @@ func addResolveDoctypeFlag(cmd *cobra.Command, value *bool) {
 // item with the type's alias. Tree responses carry only {id, icon} for the
 // document type, which leaves agents unable to reason about content types
 // without per-item lookups; this resolves each distinct type exactly once.
-func resolveDocumentTypeAliases(ctx context.Context, deps Dependencies, result any) (any, error) {
+func resolveDocumentTypeAliases(ctx context.Context, deps cmdkit.Dependencies, result any) (any, error) {
 	aliases := map[string]string{}
-	for _, item := range resultItems(result) {
+	for _, item := range cmdkit.ResultItems(result) {
 		entry, ok := item.(map[string]any)
 		if !ok {
 			continue
@@ -171,7 +172,7 @@ func resolveDocumentTypeAliases(ctx context.Context, deps Dependencies, result a
 		}
 		alias, known := aliases[id]
 		if !known {
-			detail, err := fetchObject(ctx, deps.Client, api.JoinPath("/document-type/%s", id), api.RequestOptions{})
+			detail, err := cmdkit.FetchObject(ctx, deps.Client, api.JoinPath("/document-type/%s", id), api.RequestOptions{})
 			if err != nil {
 				return nil, fmt.Errorf("could not resolve document type %s: %w", id, err)
 			}
@@ -185,55 +186,55 @@ func resolveDocumentTypeAliases(ctx context.Context, deps Dependencies, result a
 	return result, nil
 }
 
-func documentAncestors(deps Dependencies) *cobra.Command {
+func documentAncestors(deps cmdkit.Dependencies) *cobra.Command {
 	return &cobra.Command{
 		Use:   "ancestors <id>",
 		Short: "Get ancestor documents",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			result, err := getWithFallback(
+			result, err := cmdkit.GetWithFallback(
 				cmd.Context(),
 				deps.Client,
-				getRequestCandidate{
-					path: "/tree/document/ancestors",
-					opts: api.RequestOptions{Params: map[string]any{"descendantId": args[0]}},
+				cmdkit.GetRequestCandidate{
+					Path: "/tree/document/ancestors",
+					Opts: api.RequestOptions{Params: map[string]any{"descendantId": args[0]}},
 				},
-				getRequestCandidate{
-					path: api.JoinPath("/document/%s/ancestors", args[0]),
-					opts: api.RequestOptions{},
+				cmdkit.GetRequestCandidate{
+					Path: api.JoinPath("/document/%s/ancestors", args[0]),
+					Opts: api.RequestOptions{},
 				},
 			)
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, deps, result)
+			return cmdkit.PrintResult(cmd, deps, result)
 		},
 	}
 }
 
-func documentSearch(deps Dependencies) *cobra.Command {
-	return searchCommand(deps, searchSpec{
+func documentSearch(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.SearchCommand(deps, cmdkit.SearchSpec{
 		Use:                "search",
 		Short:              "Search documents",
 		DocumentOutputTrim: true,
-		Extra: []paramFlag{
+		Extra: []cmdkit.ParamFlag{
 			{Flag: "under", Param: "parentId", Usage: "Limit search to documents under the given parent ID"},
 		},
-		Endpoints: func(params map[string]any) []getRequestCandidate {
-			return []getRequestCandidate{
-				{path: "/item/document/search", opts: api.RequestOptions{Params: params}},
-				{path: "/document/search", opts: api.RequestOptions{Params: params}},
+		Endpoints: func(params map[string]any) []cmdkit.GetRequestCandidate {
+			return []cmdkit.GetRequestCandidate{
+				{Path: "/item/document/search", Opts: api.RequestOptions{Params: params}},
+				{Path: "/document/search", Opts: api.RequestOptions{Params: params}},
 			}
 		},
 	})
 }
 
-func documentCreate(deps Dependencies) *cobra.Command {
+func documentCreate(deps cmdkit.Dependencies) *cobra.Command {
 	var publish bool
 	var cultures string
 	var fromBlueprint string
 	var parent string
-	return createCommand(deps, createSpec{
+	return cmdkit.CreateCommand(deps, cmdkit.CreateSpec{
 		Use:   "create",
 		Short: "Create a document",
 		Long: "POST /document, or POST /document/create-and-publish with --publish (requires Umbraco 18.1+): the document is created and published in one atomic server-side operation, with --culture naming the cultures to publish (omit for invariant content).\n\n" +
@@ -290,7 +291,7 @@ func documentCreate(deps Dependencies) *cobra.Command {
 // content publishes with an empty list — the backoffice filters invariant
 // variants out rather than sending a null culture.
 func culturesToPublishList(cultures string) []any {
-	names := uniqueCSV(cultures)
+	names := cmdkit.UniqueCSV(cultures)
 	list := make([]any, len(names))
 	for i, name := range names {
 		list[i] = name
@@ -298,7 +299,7 @@ func culturesToPublishList(cultures string) []any {
 	return list
 }
 
-func documentUpdate(deps Dependencies) *cobra.Command {
+func documentUpdate(deps cmdkit.Dependencies) *cobra.Command {
 	var jsonPayload string
 	var mergeJSON string
 	var property string
@@ -342,14 +343,14 @@ func documentUpdate(deps Dependencies) *cobra.Command {
 				if cmd.Flags().Changed("backup") {
 					opts.Backup = backup
 					if strings.TrimSpace(opts.Backup) == "" {
-						opts.Backup = backupAutoValue
+						opts.Backup = cmdkit.BackupAutoValue
 					}
 				}
 				switch {
 				case hasJSON:
-					opts.FullBody, err = parsePayload(jsonPayload)
+					opts.FullBody, err = cmdkit.ParsePayload(jsonPayload)
 				case hasMergeJSON:
-					opts.MergePatch, err = parseJSONObject(mergeJSON, "--merge-json")
+					opts.MergePatch, err = cmdkit.ParseJSONObject(mergeJSON, "--merge-json")
 				default:
 					opts.MergePatch, err = documentPropertyPatch(property, value, cmd.Flags().Changed("value"), valueJSON, cmd.Flags().Changed("value-json"))
 				}
@@ -366,13 +367,13 @@ func documentUpdate(deps Dependencies) *cobra.Command {
 				if err != nil {
 					return err
 				}
-				current, err := fetchObject(ctx, deps.Client, path, api.RequestOptions{})
+				current, err := cmdkit.FetchObject(ctx, deps.Client, path, api.RequestOptions{})
 				if err != nil {
 					return err
 				}
-				body = mergeAliasPayload(current, patch)
+				body = cmdkit.MergeAliasPayload(current, patch)
 			} else {
-				body, err = resolveUpdateBody(ctx, deps.Client, path, "", jsonPayload, mergeJSON, nil, nil)
+				body, err = cmdkit.ResolveUpdateBody(ctx, deps.Client, path, "", jsonPayload, mergeJSON, nil, nil)
 				if err != nil {
 					return err
 				}
@@ -382,7 +383,7 @@ func documentUpdate(deps Dependencies) *cobra.Command {
 			// the server right before the PUT (never from the merged body).
 			var backupFile string
 			if cmd.Flags().Changed("backup") && !dryRun {
-				current, err := fetchObject(ctx, deps.Client, path, api.RequestOptions{})
+				current, err := cmdkit.FetchObject(ctx, deps.Client, path, api.RequestOptions{})
 				if err != nil {
 					return fmt.Errorf("--backup could not read the current document: %w", err)
 				}
@@ -398,9 +399,9 @@ func documentUpdate(deps Dependencies) *cobra.Command {
 					return err
 				}
 				if backupFile != "" {
-					return printResult(cmd, deps, withBackupPath(result, backupFile, "updated"))
+					return cmdkit.PrintResult(cmd, deps, withBackupPath(result, backupFile, "updated"))
 				}
-				return printMutationResult(cmd, deps, "updated", result, dryRun)
+				return cmdkit.PrintMutationResult(cmd, deps, "updated", result, dryRun)
 			}
 
 			// Modern servers (18.1+) update and publish in one atomic
@@ -415,14 +416,14 @@ func documentUpdate(deps Dependencies) *cobra.Command {
 			}
 			atomicResult, err := deps.Client.Put(ctx, api.JoinPath("/document/%s/update-and-publish", args[0]), atomicBody, api.RequestOptions{DryRun: dryRun})
 			if err == nil {
-				return printResult(cmd, deps, withBackupPath(map[string]any{
+				return cmdkit.PrintResult(cmd, deps, withBackupPath(map[string]any{
 					"saveAndPublish": true,
 					"atomic":         true,
 					"updated":        coalescePutResult(atomicResult, dryRun),
 					"published":      coalescePutResult(atomicResult, dryRun),
 				}, backupFile, "updated"))
 			}
-			if !isAPIStatus(err, http.StatusNotFound) {
+			if !api.IsStatus(err, http.StatusNotFound) {
 				return err
 			}
 
@@ -442,7 +443,7 @@ func documentUpdate(deps Dependencies) *cobra.Command {
 				return withBackupHint(err, "document", backupFile)
 			}
 
-			return printResult(cmd, deps, withBackupPath(map[string]any{
+			return cmdkit.PrintResult(cmd, deps, withBackupPath(map[string]any{
 				"saveAndPublish": true,
 				"updated":        coalescePutResult(result, dryRun),
 				"published":      coalescePutResult(publishResult, dryRun),
@@ -456,13 +457,13 @@ func documentUpdate(deps Dependencies) *cobra.Command {
 	cmd.Flags().StringVar(&valueJSON, "value-json", "", "JSON value used with --property")
 	cmd.Flags().BoolVar(&saveAndPublish, "save-and-publish", false, "Publish the document after a successful update")
 	cmd.Flags().StringVar(&culture, "culture", "", "Culture shortcut for --save-and-publish")
-	addBackupFlag(cmd, &backup)
+	cmdkit.AddBackupFlag(cmd, &backup)
 	addDocumentBatchFlags(cmd, &idsCSV, &fromFile, &force, "update")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
-func documentUpdateProperties(deps Dependencies) *cobra.Command {
+func documentUpdateProperties(deps cmdkit.Dependencies) *cobra.Command {
 	var jsonPayload string
 	var backup string
 	var dryRun bool
@@ -487,7 +488,7 @@ Three input shapes are accepted:
 In all shapes the resulting values[] is merged by alias into the current document, so untouched properties survive.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := requireValue("--json", jsonPayload); err != nil {
+			if err := cmdkit.RequireValue("--json", jsonPayload); err != nil {
 				return err
 			}
 			patch, err := buildUpdatePropertiesPatch(jsonPayload)
@@ -497,11 +498,11 @@ In all shapes the resulting values[] is merged by alias into the current documen
 
 			ctx := cmd.Context()
 			path := api.JoinPath("/document/%s", args[0])
-			current, err := fetchObject(ctx, deps.Client, path, api.RequestOptions{})
+			current, err := cmdkit.FetchObject(ctx, deps.Client, path, api.RequestOptions{})
 			if err != nil {
 				return err
 			}
-			merged := mergeAliasPayload(current, patch)
+			merged := cmdkit.MergeAliasPayload(current, patch)
 			var backupFile string
 			if cmd.Flags().Changed("backup") && !dryRun {
 				backupFile, err = writeEntityBackup(cmd, backup, "document", args[0], path, current)
@@ -514,20 +515,20 @@ In all shapes the resulting values[] is merged by alias into the current documen
 				return err
 			}
 			if backupFile != "" {
-				return printResult(cmd, deps, withBackupPath(result, backupFile, "updated"))
+				return cmdkit.PrintResult(cmd, deps, withBackupPath(result, backupFile, "updated"))
 			}
-			return printMutationResult(cmd, deps, "updated", result, dryRun)
+			return cmdkit.PrintMutationResult(cmd, deps, "updated", result, dryRun)
 		},
 	}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Properties payload as JSON; accepts object {alias: value}, array [{alias, value, culture?, segment?}], or envelope {\"values\":[...]}")
-	addBackupFlag(cmd, &backup)
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddBackupFlag(cmd, &backup)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
 var invariantRaceBackoffs = []time.Duration{200 * time.Millisecond, 500 * time.Millisecond, 1 * time.Second}
 
-func documentCopy(deps Dependencies) *cobra.Command {
+func documentCopy(deps cmdkit.Dependencies) *cobra.Command {
 	var jsonPayload string
 	var to string
 	var publish bool
@@ -539,7 +540,7 @@ func documentCopy(deps Dependencies) *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			body, err := targetActionBody(jsonPayload, to)
+			body, err := cmdkit.TargetActionBody(jsonPayload, to)
 			if err != nil {
 				return err
 			}
@@ -548,7 +549,7 @@ func documentCopy(deps Dependencies) *cobra.Command {
 				return err
 			}
 			if !publish {
-				return printMutationResult(cmd, deps, "copied", result, dryRun)
+				return cmdkit.PrintMutationResult(cmd, deps, "copied", result, dryRun)
 			}
 
 			// On dry-run no copy happens, so there is no real ID to chain;
@@ -568,7 +569,7 @@ func documentCopy(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, deps, map[string]any{
+			return cmdkit.PrintResult(cmd, deps, map[string]any{
 				"copied":    result,
 				"published": coalescePutResult(publishResult, dryRun),
 			})
@@ -578,7 +579,7 @@ func documentCopy(deps Dependencies) *cobra.Command {
 	cmd.Flags().StringVar(&to, "to", "", "Target parent ID shortcut")
 	cmd.Flags().BoolVar(&publish, "publish", false, "Publish the copied document after a successful copy")
 	cmd.Flags().StringVar(&culture, "culture", "", "Culture shortcut for --publish")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
@@ -593,20 +594,20 @@ func extractResultID(result any) string {
 	return ""
 }
 
-func documentMove(deps Dependencies) *cobra.Command {
-	return targetActionCommand(deps, targetActionSpec{
+func documentMove(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.TargetActionCommand(deps, cmdkit.TargetActionSpec{
 		Use:   "move <id>",
 		Short: "Move a document",
-		Candidates: func(args []string) []mutationCandidate {
+		Candidates: func(args []string) []cmdkit.MutationCandidate {
 			path := api.JoinPath("/document/%s/move", args[0])
-			return []mutationCandidate{{method: "PUT", path: path}, {method: "POST", path: path}}
+			return []cmdkit.MutationCandidate{{Method: "PUT", Path: path}, {Method: "POST", Path: path}}
 		},
 		Verb: "moved",
 	})
 }
 
-func documentDelete(deps Dependencies) *cobra.Command {
-	return deleteCommand(deps, deleteSpec{
+func documentDelete(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.DeleteCommand(deps, cmdkit.DeleteSpec{
 		Use:   "delete <id>",
 		Short: "Permanently delete a document (use 'trash' for the recycle bin)",
 		Path: func(args []string) string {
@@ -615,7 +616,7 @@ func documentDelete(deps Dependencies) *cobra.Command {
 	})
 }
 
-func documentTrash(deps Dependencies) *cobra.Command {
+func documentTrash(deps cmdkit.Dependencies) *cobra.Command {
 	var dryRun bool
 	cmd := &cobra.Command{
 		Use:   "trash <id>",
@@ -623,26 +624,26 @@ func documentTrash(deps Dependencies) *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			path := api.JoinPath("/document/%s/move-to-recycle-bin", args[0])
-			result, err := mutateWithFallback(cmd.Context(), deps.Client, map[string]any{}, api.RequestOptions{DryRun: dryRun},
-				mutationCandidate{method: "PUT", path: path},
-				mutationCandidate{method: "POST", path: path},
+			result, err := cmdkit.MutateWithFallback(cmd.Context(), deps.Client, map[string]any{}, api.RequestOptions{DryRun: dryRun},
+				cmdkit.MutationCandidate{Method: "PUT", Path: path},
+				cmdkit.MutationCandidate{Method: "POST", Path: path},
 			)
 			if err != nil {
 				return err
 			}
-			return printMutationResult(cmd, deps, "trashed", result, dryRun)
+			return cmdkit.PrintMutationResult(cmd, deps, "trashed", result, dryRun)
 		},
 	}
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
-func documentRestore(deps Dependencies) *cobra.Command {
+func documentRestore(deps cmdkit.Dependencies) *cobra.Command {
 	return restoreFromBinCommand(deps, "document", "content root")
 }
 
-func documentReferences(deps Dependencies) *cobra.Command {
-	return referencesCommand(deps, referencesSpec{
+func documentReferences(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.ReferencesCommand(deps, cmdkit.ReferencesSpec{
 		Use:   "references <id>",
 		Short: "List items that reference this document (paginated; --skip/--take/--all)",
 		Long:  "Wraps GET /document/{id}/referenced-by. Used to answer 'what uses this node' for orphan checks, safe-delete verification, and taxonomy usage audits.",
@@ -650,14 +651,14 @@ func documentReferences(deps Dependencies) *cobra.Command {
 	})
 }
 
-func documentReferencedDescendants(deps Dependencies) *cobra.Command {
-	return referencesCommand(deps, referencesSpec{
+func documentReferencedDescendants(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.ReferencesCommand(deps, cmdkit.ReferencesSpec{
 		Use:   "referenced-descendants <id>",
 		Short: "List items that reference this document or any of its descendants",
 		Path:  func(args []string) string { return api.JoinPath("/document/%s/referenced-descendants", args[0]) },
 	})
 }
 
-func documentAreReferenced(deps Dependencies) *cobra.Command {
-	return areReferencedCommand(deps, "document")
+func documentAreReferenced(deps cmdkit.Dependencies) *cobra.Command {
+	return cmdkit.AreReferencedCommand(deps, "document")
 }

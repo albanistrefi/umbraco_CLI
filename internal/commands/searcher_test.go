@@ -7,9 +7,12 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
+
+	"umbraco-cli/internal/commands/cmdkit"
+	"umbraco-cli/internal/commands/cmdtest"
 )
 
-func buildSearcherRoot(deps Dependencies) *cobra.Command {
+func buildSearcherRoot(deps cmdkit.Dependencies) *cobra.Command {
 	root := &cobra.Command{Use: "umbraco", SilenceErrors: true, SilenceUsage: true}
 	root.SetErr(io.Discard)
 	if deps.OutputFlag != nil {
@@ -19,10 +22,10 @@ func buildSearcherRoot(deps Dependencies) *cobra.Command {
 	return root
 }
 
-func searcherDeps(handler func(req *http.Request) (*http.Response, error)) Dependencies {
-	return endpointDeps(func(req *http.Request) (*http.Response, error) {
+func searcherDeps(handler func(req *http.Request) (*http.Response, error)) cmdkit.Dependencies {
+	return cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		if req.URL.Path == "/umbraco/management/api/v1/security/back-office/token" {
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		}
 		return handler(req)
 	})
@@ -32,10 +35,10 @@ func TestSearcherListPaginates(t *testing.T) {
 	var requestedURI string
 	deps := searcherDeps(func(req *http.Request) (*http.Response, error) {
 		requestedURI = req.URL.RequestURI()
-		return endpointJSONResponse(http.StatusOK, `{"items":[{"name":"ExternalSearcher"}],"total":1}`), nil
+		return cmdtest.JSONResponse(http.StatusOK, `{"items":[{"name":"ExternalSearcher"}],"total":1}`), nil
 	})
 
-	out, err := execute(buildSearcherRoot(deps), "searcher", "list", "--skip", "5", "--take", "10")
+	out, err := cmdtest.Execute(buildSearcherRoot(deps), "searcher", "list", "--skip", "5", "--take", "10")
 	if err != nil {
 		t.Fatalf("searcher list failed: %v", err)
 	}
@@ -54,10 +57,10 @@ func TestSearcherQuerySendsTermAndEscapesName(t *testing.T) {
 	var requestedURI string
 	deps := searcherDeps(func(req *http.Request) (*http.Response, error) {
 		requestedURI = req.URL.RequestURI()
-		return endpointJSONResponse(http.StatusOK, `{"items":[{"id":"1","score":0.5,"fields":{"nodeName":"a"}}],"total":1}`), nil
+		return cmdtest.JSONResponse(http.StatusOK, `{"items":[{"id":"1","score":0.5,"fields":{"nodeName":"a"}}],"total":1}`), nil
 	})
 
-	if _, err := execute(buildSearcherRoot(deps), "searcher", "query", "My Searcher", "--term", "home page", "--skip", "2", "--take", "3"); err != nil {
+	if _, err := cmdtest.Execute(buildSearcherRoot(deps), "searcher", "query", "My Searcher", "--term", "home page", "--skip", "2", "--take", "3"); err != nil {
 		t.Fatalf("searcher query failed: %v", err)
 	}
 	if !strings.HasPrefix(requestedURI, "/umbraco/management/api/v1/searcher/My%20Searcher/query?") {
@@ -74,10 +77,10 @@ func TestSearcherQueryAcceptsQueryAsAliasOfTerm(t *testing.T) {
 	var requestedURI string
 	deps := searcherDeps(func(req *http.Request) (*http.Response, error) {
 		requestedURI = req.URL.RequestURI()
-		return endpointJSONResponse(http.StatusOK, `{"items":[],"total":0}`), nil
+		return cmdtest.JSONResponse(http.StatusOK, `{"items":[],"total":0}`), nil
 	})
 
-	if _, err := execute(buildSearcherRoot(deps), "searcher", "query", "ExternalSearcher", "--query", "home"); err != nil {
+	if _, err := cmdtest.Execute(buildSearcherRoot(deps), "searcher", "query", "ExternalSearcher", "--query", "home"); err != nil {
 		t.Fatalf("searcher query --query failed: %v", err)
 	}
 	if !strings.Contains(requestedURI, "term=home") {
@@ -87,10 +90,10 @@ func TestSearcherQueryAcceptsQueryAsAliasOfTerm(t *testing.T) {
 
 func TestSearcherQueryProjectsFields(t *testing.T) {
 	deps := searcherDeps(func(req *http.Request) (*http.Response, error) {
-		return endpointJSONResponse(http.StatusOK, `{"items":[{"id":"1","score":0.5,"fields":{"nodeName":"a"}}],"total":1}`), nil
+		return cmdtest.JSONResponse(http.StatusOK, `{"items":[{"id":"1","score":0.5,"fields":{"nodeName":"a"}}],"total":1}`), nil
 	})
 
-	out, err := execute(buildSearcherRoot(deps), "searcher", "query", "ExternalSearcher", "--term", "home", "--fields", "id,score")
+	out, err := cmdtest.Execute(buildSearcherRoot(deps), "searcher", "query", "ExternalSearcher", "--term", "home", "--fields", "id,score")
 	if err != nil {
 		t.Fatalf("searcher query --fields failed: %v", err)
 	}
@@ -106,10 +109,10 @@ func TestSearcherQueryParamsTermWinsOverFlag(t *testing.T) {
 	var requestedURI string
 	deps := searcherDeps(func(req *http.Request) (*http.Response, error) {
 		requestedURI = req.URL.RequestURI()
-		return endpointJSONResponse(http.StatusOK, `{"items":[],"total":0}`), nil
+		return cmdtest.JSONResponse(http.StatusOK, `{"items":[],"total":0}`), nil
 	})
 
-	if _, err := execute(buildSearcherRoot(deps), "searcher", "query", "ExternalSearcher", "--params", `{"term":"raw"}`, "--term", "x"); err != nil {
+	if _, err := cmdtest.Execute(buildSearcherRoot(deps), "searcher", "query", "ExternalSearcher", "--params", `{"term":"raw"}`, "--term", "x"); err != nil {
 		t.Fatalf("searcher query with --params failed: %v", err)
 	}
 	if !strings.Contains(requestedURI, "term=raw") || strings.Contains(requestedURI, "term=x") {
@@ -121,10 +124,10 @@ func TestSearcherQueryAcceptsTermFromParamsAlone(t *testing.T) {
 	var requestedURI string
 	deps := searcherDeps(func(req *http.Request) (*http.Response, error) {
 		requestedURI = req.URL.RequestURI()
-		return endpointJSONResponse(http.StatusOK, `{"items":[],"total":0}`), nil
+		return cmdtest.JSONResponse(http.StatusOK, `{"items":[],"total":0}`), nil
 	})
 
-	if _, err := execute(buildSearcherRoot(deps), "searcher", "query", "ExternalSearcher", "--params", `{"term":"raw"}`); err != nil {
+	if _, err := cmdtest.Execute(buildSearcherRoot(deps), "searcher", "query", "ExternalSearcher", "--params", `{"term":"raw"}`); err != nil {
 		t.Fatalf("searcher query with only a params term failed: %v", err)
 	}
 	if !strings.Contains(requestedURI, "term=raw") {
@@ -138,7 +141,7 @@ func TestSearcherQueryRequiresTerm(t *testing.T) {
 		return nil, nil
 	})
 
-	_, err := execute(buildSearcherRoot(deps), "searcher", "query", "ExternalSearcher")
+	_, err := cmdtest.Execute(buildSearcherRoot(deps), "searcher", "query", "ExternalSearcher")
 	if err == nil || !strings.Contains(err.Error(), "--term") {
 		t.Fatalf("expected missing term error, got %v", err)
 	}
@@ -150,7 +153,7 @@ func TestSearcherQueryRejectsConflictingTermAndQuery(t *testing.T) {
 		return nil, nil
 	})
 
-	_, err := execute(buildSearcherRoot(deps), "searcher", "query", "ExternalSearcher", "--term", "a", "--query", "b")
+	_, err := cmdtest.Execute(buildSearcherRoot(deps), "searcher", "query", "ExternalSearcher", "--term", "a", "--query", "b")
 	if err == nil || !strings.Contains(err.Error(), "aliases") {
 		t.Fatalf("expected alias conflict error, got %v", err)
 	}

@@ -8,35 +8,38 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"umbraco-cli/internal/commands/cmdkit"
+	"umbraco-cli/internal/commands/cmdtest"
 )
 
 const mediaInspectTestImage = `{"id":"m-2","isTrashed":false,"mediaType":{"id":"mt-img"},"variants":[{"culture":null,"segment":null,"name":"Hero","createDate":"2026-01-01T00:00:00Z","updateDate":"2026-01-02T00:00:00Z"}],"values":[` +
 	`{"alias":"umbracoFile","culture":null,"segment":null,"editorAlias":"Umbraco.ImageCropper","value":{"src":"/media/xyz/hero.png","crops":[],"focalPoint":{"left":0.5,"top":0.5}}},` +
 	`{"alias":"umbracoWidth","value":"207"},{"alias":"umbracoHeight","value":"45"},{"alias":"umbracoBytes","value":"1234"},{"alias":"umbracoExtension","value":"png"},{"alias":"altText","value":"Hero image"}]}`
 
-func mediaInspectDeps(t *testing.T, svgBody string) Dependencies {
+func mediaInspectDeps(t *testing.T, svgBody string) cmdkit.Dependencies {
 	t.Helper()
-	return datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	return cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/media/m-2":
-			return datatypeJSONResponse(http.StatusOK, mediaInspectTestImage), nil
+			return cmdtest.JSONResponse(http.StatusOK, mediaInspectTestImage), nil
 		case "/umbraco/management/api/v1/media/m-1":
-			return datatypeJSONResponse(http.StatusOK, mediaFileTestItem), nil
+			return cmdtest.JSONResponse(http.StatusOK, mediaFileTestItem), nil
 		case "/umbraco/management/api/v1/media/urls":
 			id := req.URL.Query().Get("id")
-			return datatypeJSONResponse(http.StatusOK, `[{"id":"`+id+`","urlInfos":[{"culture":null,"url":"https://example.test/media/xyz/file"}]}]`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `[{"id":"`+id+`","urlInfos":[{"culture":null,"url":"https://example.test/media/xyz/file"}]}]`), nil
 		case "/media/abc/old.svg":
 			return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"image/svg+xml"}}, Body: io.NopCloser(strings.NewReader(svgBody))}, nil
 		default:
-			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 }
 
 func TestMediaInspectFlattensRasterDimensionsAndURLs(t *testing.T) {
-	output, err := execute(buildRootWithCollections(t, mediaInspectDeps(t, "")), "media", "inspect", "m-2")
+	output, err := cmdtest.Execute(buildRootWithCollections(t, mediaInspectDeps(t, "")), "media", "inspect", "m-2")
 	if err != nil {
 		t.Fatalf("inspect failed: %v", err)
 	}
@@ -61,7 +64,7 @@ func TestMediaInspectFlattensRasterDimensionsAndURLs(t *testing.T) {
 
 func TestMediaInspectReadsSVGViewBoxAndAliasesWork(t *testing.T) {
 	deps := mediaInspectDeps(t, `<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg" width="20px" viewBox="0 0 207 45"><rect/></svg>`)
-	output, err := execute(buildRootWithCollections(t, deps), "media", "info", "m-1")
+	output, err := cmdtest.Execute(buildRootWithCollections(t, deps), "media", "info", "m-1")
 	if err != nil {
 		t.Fatalf("inspect via alias failed: %v", err)
 	}
@@ -73,7 +76,7 @@ func TestMediaInspectReadsSVGViewBoxAndAliasesWork(t *testing.T) {
 	if file["viewBox"] != "0 0 207 45" || file["svgWidth"] != "20px" || file["extension"] != "svg" {
 		t.Fatalf("unexpected svg summary: %#v", file)
 	}
-	if _, err := execute(buildRootWithCollections(t, deps), "media", "find-references", "m-1"); err == nil {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), "media", "find-references", "m-1"); err == nil {
 		// referenced-by is not mocked here; the alias must still resolve to the command (404 → API error, not "unknown command").
 		t.Fatalf("expected API error from unmocked referenced-by, got success")
 	} else if strings.Contains(err.Error(), "unknown command") {
@@ -84,7 +87,7 @@ func TestMediaInspectReadsSVGViewBoxAndAliasesWork(t *testing.T) {
 func TestMediaDownloadWritesAssetIntoDirectory(t *testing.T) {
 	dir := t.TempDir()
 	deps := mediaInspectDeps(t, "<svg>old</svg>")
-	output, err := execute(buildRootWithCollections(t, deps), "media", "download", "m-1", dir)
+	output, err := cmdtest.Execute(buildRootWithCollections(t, deps), "media", "download", "m-1", dir)
 	if err != nil {
 		t.Fatalf("download failed: %v", err)
 	}
@@ -95,28 +98,28 @@ func TestMediaDownloadWritesAssetIntoDirectory(t *testing.T) {
 	if !strings.Contains(output, `"bytes": 14`) || !strings.Contains(output, `"contentType": "image/svg+xml"`) {
 		t.Fatalf("unexpected output: %s", output)
 	}
-	if _, err := execute(buildRootWithCollections(t, deps), "media", "download", "m-1", filepath.Join(dir, "x.svg"), "--property", "nope"); err == nil {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), "media", "download", "m-1", filepath.Join(dir, "x.svg"), "--property", "nope"); err == nil {
 		t.Fatalf("expected missing property to fail")
 	}
 }
 
 func TestMediaInspectFailsWhenURLLookupFailsAndDownloadDryRun(t *testing.T) {
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/media/m-1":
-			return datatypeJSONResponse(http.StatusOK, mediaFileTestItem), nil
+			return cmdtest.JSONResponse(http.StatusOK, mediaFileTestItem), nil
 		default:
-			return datatypeJSONResponse(http.StatusForbidden, `{"title":"Forbidden"}`), nil
+			return cmdtest.JSONResponse(http.StatusForbidden, `{"title":"Forbidden"}`), nil
 		}
 	})
-	if _, err := execute(buildRootWithCollections(t, deps), "media", "inspect", "m-1"); err == nil || !strings.Contains(err.Error(), "403") {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), "media", "inspect", "m-1"); err == nil || !strings.Contains(err.Error(), "403") {
 		t.Fatalf("expected the URL lookup failure to propagate, got %v", err)
 	}
 
 	dir := t.TempDir()
-	output, err := execute(buildRootWithCollections(t, deps), "media", "download", "m-1", dir, "--dry-run")
+	output, err := cmdtest.Execute(buildRootWithCollections(t, deps), "media", "download", "m-1", dir, "--dry-run")
 	if err != nil {
 		t.Fatalf("download --dry-run failed: %v", err)
 	}
@@ -129,22 +132,22 @@ func TestMediaInspectFailsWhenURLLookupFailsAndDownloadDryRun(t *testing.T) {
 }
 
 func TestMediaInspectRequiresCultureForVariants(t *testing.T) {
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/media/m-3":
-			return datatypeJSONResponse(http.StatusOK, mediaFileTestVariantItem), nil
+			return cmdtest.JSONResponse(http.StatusOK, mediaFileTestVariantItem), nil
 		case "/umbraco/management/api/v1/media/urls":
-			return datatypeJSONResponse(http.StatusOK, `[{"id":"m-3","urlInfos":[{"culture":"en-US","url":"https://example.test/en.svg"},{"culture":"da-DK","url":"https://example.test/da.svg"}]}]`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `[{"id":"m-3","urlInfos":[{"culture":"en-US","url":"https://example.test/en.svg"},{"culture":"da-DK","url":"https://example.test/da.svg"}]}]`), nil
 		default:
-			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
-	if _, err := execute(buildRootWithCollections(t, deps), "media", "inspect", "m-3"); err == nil || !strings.Contains(err.Error(), "--culture") {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), "media", "inspect", "m-3"); err == nil || !strings.Contains(err.Error(), "--culture") {
 		t.Fatalf("expected culture requirement, got %v", err)
 	}
-	output, err := execute(buildRootWithCollections(t, deps), "media", "inspect", "m-3", "--culture", "da-DK", "--no-fetch")
+	output, err := cmdtest.Execute(buildRootWithCollections(t, deps), "media", "inspect", "m-3", "--culture", "da-DK", "--no-fetch")
 	if err != nil {
 		t.Fatalf("inspect --culture failed: %v", err)
 	}
@@ -167,19 +170,19 @@ func TestMediaInspectRequiresCultureForVariants(t *testing.T) {
 func TestMediaDownloadSanitizesServerFileName(t *testing.T) {
 	dir := t.TempDir()
 	item := strings.Replace(mediaFileTestItem, "/media/abc/old.svg", `/media/abc/..\\evil.svg`, 1)
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch {
 		case req.URL.Path == "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case req.URL.Path == "/umbraco/management/api/v1/media/m-1":
-			return datatypeJSONResponse(http.StatusOK, item), nil
+			return cmdtest.JSONResponse(http.StatusOK, item), nil
 		case strings.HasPrefix(req.URL.Path, "/media/abc/"):
 			return &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader("<svg/>"))}, nil
 		default:
-			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
-	if _, err := execute(buildRootWithCollections(t, deps), "media", "download", "m-1", dir); err != nil {
+	if _, err := cmdtest.Execute(buildRootWithCollections(t, deps), "media", "download", "m-1", dir); err != nil {
 		t.Fatal(err)
 	}
 	entries, _ := os.ReadDir(dir)
@@ -191,34 +194,23 @@ func TestMediaDownloadSanitizesServerFileName(t *testing.T) {
 	}
 }
 
-func TestSanitizeFileNameRejectsWindowsDeviceNames(t *testing.T) {
-	for _, name := range []string{"CON", "nul", "COM1", "LPT1.txt", "aux.svg"} {
-		if got := sanitizeFileName(name, "file"); !strings.HasPrefix(got, "_") {
-			t.Fatalf("expected %q to be rewritten, got %q", name, got)
-		}
-	}
-	if got := sanitizeFileName("console.svg", "file"); got != "console.svg" {
-		t.Fatalf("expected ordinary names untouched, got %q", got)
-	}
-}
-
 func TestMediaInspectOmitsURLForCustomFileProperty(t *testing.T) {
 	item := `{"id":"m-4","variants":[{"culture":null,"segment":null,"name":"Doc"}],"values":[` +
 		`{"alias":"umbracoFile","culture":null,"segment":null,"value":{"src":"/media/a/main.pdf"}},` +
 		`{"alias":"secondaryFile","culture":null,"segment":null,"value":{"src":"/media/a/extra.pdf"}}]}`
-	deps := datatypeDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.ClientDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return datatypeJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/media/m-4":
-			return datatypeJSONResponse(http.StatusOK, item), nil
+			return cmdtest.JSONResponse(http.StatusOK, item), nil
 		case "/umbraco/management/api/v1/media/urls":
-			return datatypeJSONResponse(http.StatusOK, `[{"id":"m-4","urlInfos":[{"culture":null,"url":"https://example.test/media/a/main.pdf"}]}]`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `[{"id":"m-4","urlInfos":[{"culture":null,"url":"https://example.test/media/a/main.pdf"}]}]`), nil
 		default:
-			return datatypeJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
-	output, err := execute(buildRootWithCollections(t, deps), "media", "inspect", "m-4", "--property", "secondaryFile")
+	output, err := cmdtest.Execute(buildRootWithCollections(t, deps), "media", "inspect", "m-4", "--property", "secondaryFile")
 	if err != nil {
 		t.Fatal(err)
 	}

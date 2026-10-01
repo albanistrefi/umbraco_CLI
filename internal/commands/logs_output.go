@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/jsonvalue"
 )
 
 // Output-side helpers for the logs command group: client-side entry
@@ -86,15 +87,15 @@ func logEntryMatches(entry map[string]any, opts logRuntimeOptions) bool {
 		}
 	}
 
-	if len(opts.levels) > 0 && !matchesAnyFold(stringValue(entry["level"]), opts.levels) {
+	if len(opts.levels) > 0 && !matchesAnyFold(jsonvalue.String(entry["level"]), opts.levels) {
 		return false
 	}
 
 	properties := logPropertiesMap(entry)
-	if opts.sourceContext != "" && !containsFold(stringValue(properties["SourceContext"]), opts.sourceContext) {
+	if opts.sourceContext != "" && !containsFold(jsonvalue.String(properties["SourceContext"]), opts.sourceContext) {
 		return false
 	}
-	if opts.path != "" && !containsFold(stringValue(properties["RequestPath"]), opts.path) {
+	if opts.path != "" && !containsFold(jsonvalue.String(properties["RequestPath"]), opts.path) {
 		return false
 	}
 	if opts.correlationID != "" && !logCorrelationMatches(properties, opts.correlationID) {
@@ -107,7 +108,7 @@ func logEntryMatches(entry map[string]any, opts logRuntimeOptions) bool {
 }
 
 func logEntryTimestamp(entry map[string]any) (time.Time, bool) {
-	raw := stringValue(entry["timestamp"])
+	raw := jsonvalue.String(entry["timestamp"])
 	if raw == "" {
 		return time.Time{}, false
 	}
@@ -129,7 +130,7 @@ func logPropertiesMap(entry map[string]any) map[string]any {
 		if !ok {
 			continue
 		}
-		name := stringValue(propertyMap["name"])
+		name := jsonvalue.String(propertyMap["name"])
 		if name == "" {
 			continue
 		}
@@ -157,7 +158,7 @@ func flattenLogEntry(entry map[string]any) map[string]any {
 
 func firstLogString(values ...any) string {
 	for _, value := range values {
-		text := stringValue(value)
+		text := jsonvalue.String(value)
 		if text != "" {
 			return text
 		}
@@ -167,7 +168,7 @@ func firstLogString(values ...any) string {
 
 func logCorrelationMatches(properties map[string]any, needle string) bool {
 	for _, key := range []string{"CorrelationId", "CorrelationID", "RequestId", "HttpRequestId", "TraceId", "SpanId"} {
-		if containsFold(stringValue(properties[key]), needle) {
+		if containsFold(jsonvalue.String(properties[key]), needle) {
 			return true
 		}
 	}
@@ -176,12 +177,12 @@ func logCorrelationMatches(properties map[string]any, needle string) bool {
 
 func logEntryContains(entry map[string]any, properties map[string]any, needle string) bool {
 	for _, key := range []string{"timestamp", "level", "message", "renderedMessage", "messageTemplate", "exception"} {
-		if containsFold(stringValue(entry[key]), needle) {
+		if containsFold(jsonvalue.String(entry[key]), needle) {
 			return true
 		}
 	}
 	for key, value := range properties {
-		if containsFold(key, needle) || containsFold(stringValue(value), needle) {
+		if containsFold(key, needle) || containsFold(jsonvalue.String(value), needle) {
 			return true
 		}
 	}
@@ -225,11 +226,11 @@ func logCountResult(filtered []any, envelope map[string]any, opts logRuntimeOpti
 func logCountKey(entry map[string]any, countBy string) string {
 	switch countBy {
 	case "level":
-		return stringValue(entry["level"])
+		return jsonvalue.String(entry["level"])
 	case "source":
-		return stringValue(logPropertiesMap(entry)["SourceContext"])
+		return jsonvalue.String(logPropertiesMap(entry)["SourceContext"])
 	case "path":
-		return stringValue(logPropertiesMap(entry)["RequestPath"])
+		return jsonvalue.String(logPropertiesMap(entry)["RequestPath"])
 	default:
 		return ""
 	}
@@ -299,17 +300,6 @@ func copyAnyMap(source map[string]any) map[string]any {
 	return result
 }
 
-func stringValue(raw any) string {
-	if raw == nil {
-		return ""
-	}
-	text, ok := raw.(string)
-	if ok {
-		return text
-	}
-	return fmt.Sprint(raw)
-}
-
 func matchesAnyFold(value string, needles []string) bool {
 	for _, needle := range needles {
 		if strings.EqualFold(value, needle) {
@@ -336,7 +326,7 @@ func redactLogValue(value any, opts logRedactionOptions) any {
 	switch typed := value.(type) {
 	case map[string]any:
 		result := make(map[string]any, len(typed))
-		propertyName := stringValue(typed["name"])
+		propertyName := jsonvalue.String(typed["name"])
 		for key, item := range typed {
 			if (logSensitiveKey(key) || (key == "value" && logSensitiveKey(propertyName))) && (opts.secrets || opts.tokens) {
 				result[key] = "[redacted]"

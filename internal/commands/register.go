@@ -1,11 +1,21 @@
 package commands
 
-import "github.com/spf13/cobra"
+import (
+	"github.com/spf13/cobra"
 
-// RegisterAll attaches every command group to root. It is the single
-// registration list: the production root in internal/cli and the roots built by
-// the tests both call it, so a group added here cannot be missing from either.
-func RegisterAll(root *cobra.Command, deps Dependencies) {
+	"umbraco-cli/internal/commands/automate"
+	"umbraco-cli/internal/commands/cmdkit"
+	"umbraco-cli/internal/commands/deploy"
+	"umbraco-cli/internal/commands/engage"
+	"umbraco-cli/internal/commands/forms"
+)
+
+// RegisterAll attaches every command group to root, core and add-on alike. It
+// is the single registration list: the production root in internal/cli and the
+// full-tree roots built by the tests both call it, so a group added here cannot
+// be missing from either. Add-ons live in their own packages and are wired in
+// through their Register functions.
+func RegisterAll(root *cobra.Command, deps cmdkit.Dependencies) {
 	RegisterDocument(root, deps)
 	RegisterElement(root, deps)
 	RegisterBlueprint(root, deps)
@@ -18,7 +28,7 @@ func RegisterAll(root *cobra.Command, deps Dependencies) {
 	RegisterScript(root, deps)
 	RegisterStylesheet(root, deps)
 	RegisterStaticFile(root, deps)
-	RegisterForms(root, deps)
+	forms.Register(root, deps)
 	RegisterModelsBuilder(root, deps)
 	RegisterMember(root, deps)
 	RegisterMemberGroup(root, deps)
@@ -31,7 +41,7 @@ func RegisterAll(root *cobra.Command, deps Dependencies) {
 	RegisterLogs(root, deps)
 	RegisterServer(root, deps)
 	RegisterHealth(root, deps)
-	RegisterDeploy(root, deps)
+	deploy.Register(root, deps)
 	RegisterPublishedCache(root, deps)
 	RegisterRedirect(root, deps)
 	RegisterIndexer(root, deps)
@@ -42,8 +52,8 @@ func RegisterAll(root *cobra.Command, deps Dependencies) {
 	RegisterTree(root, deps)
 	RegisterAPI(root, deps)
 	RegisterAuth(root, deps)
-	RegisterAutomate(root, deps)
-	RegisterEngage(root, deps)
+	automate.Register(root, deps)
+	engage.Register(root, deps)
 	RegisterSchema(root, deps)
 	RegisterGenerateSkills(root, deps)
 }

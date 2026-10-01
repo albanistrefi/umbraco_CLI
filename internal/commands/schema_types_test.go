@@ -9,9 +9,12 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
+
+	"umbraco-cli/internal/commands/cmdkit"
+	"umbraco-cli/internal/commands/cmdtest"
 )
 
-func buildSchemaTypeRoot(deps Dependencies) *cobra.Command {
+func buildSchemaTypeRoot(deps cmdkit.Dependencies) *cobra.Command {
 	root := &cobra.Command{Use: "umbraco", SilenceErrors: true, SilenceUsage: true}
 	root.SetErr(io.Discard)
 	if deps.OutputFlag != nil {
@@ -22,10 +25,10 @@ func buildSchemaTypeRoot(deps Dependencies) *cobra.Command {
 	return root
 }
 
-func schemaTypeDeps(handler func(req *http.Request) (*http.Response, error)) Dependencies {
-	return endpointDeps(func(req *http.Request) (*http.Response, error) {
+func schemaTypeDeps(handler func(req *http.Request) (*http.Response, error)) cmdkit.Dependencies {
+	return cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		if req.URL.Path == "/umbraco/management/api/v1/security/back-office/token" {
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		}
 		return handler(req)
 	})
@@ -42,20 +45,20 @@ func TestSchemaTypeListRecursiveFlattensFoldersForBothGroups(t *testing.T) {
 		deps := schemaTypeDeps(func(req *http.Request) (*http.Response, error) {
 			switch {
 			case req.URL.Path == "/umbraco/management/api/v1/tree/"+tc.resource+"/root":
-				return endpointJSONResponse(http.StatusOK, `{"items":[
+				return cmdtest.JSONResponse(http.StatusOK, `{"items":[
 					{"id":"folder-1","name":"Compositions","isFolder":true},
 					{"id":"type-1","name":"Image","alias":"image","isFolder":false}
 				],"total":2}`), nil
 			case req.URL.Path == "/umbraco/management/api/v1/tree/"+tc.resource+"/children" && req.URL.Query().Get("parentId") == "folder-1":
-				return endpointJSONResponse(http.StatusOK, `{"items":[
+				return cmdtest.JSONResponse(http.StatusOK, `{"items":[
 					{"id":"type-2","name":"Nested Type","alias":"nestedType","isFolder":false}
 				],"total":1}`), nil
 			default:
-				return endpointJSONResponse(http.StatusNotFound, `{"error":"not found"}`), nil
+				return cmdtest.JSONResponse(http.StatusNotFound, `{"error":"not found"}`), nil
 			}
 		})
 
-		out, err := execute(buildSchemaTypeRoot(deps), tc.group, "list", "--recursive", "--types-only")
+		out, err := cmdtest.Execute(buildSchemaTypeRoot(deps), tc.group, "list", "--recursive", "--types-only")
 		if err != nil {
 			t.Fatalf("%s list --recursive failed: %v", tc.group, err)
 		}
@@ -72,22 +75,22 @@ func TestSchemaTypeGetExplainsFolderIDs(t *testing.T) {
 	deps := schemaTypeDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/media-type/f0f0f0f0-0000-4000-8000-000000000001", "/umbraco/management/api/v1/media-type/f0f0f0f0-0000-4000-8000-000000000002":
-			return endpointJSONResponse(http.StatusNotFound, `{"error":"not found"}`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `{"error":"not found"}`), nil
 		case "/umbraco/management/api/v1/media-type/folder/f0f0f0f0-0000-4000-8000-000000000001":
-			return endpointJSONResponse(http.StatusOK, `{"id":"f0f0f0f0-0000-4000-8000-000000000001","name":"Icons"}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"id":"f0f0f0f0-0000-4000-8000-000000000001","name":"Icons"}`), nil
 		case "/umbraco/management/api/v1/tree/media-type/children":
-			return endpointJSONResponse(http.StatusOK, `{"items":[],"total":0}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"items":[],"total":0}`), nil
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `{"error":"not found"}`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `{"error":"not found"}`), nil
 		}
 	})
 
-	_, err := execute(buildSchemaTypeRoot(deps), "mediatype", "get", "f0f0f0f0-0000-4000-8000-000000000001")
+	_, err := cmdtest.Execute(buildSchemaTypeRoot(deps), "mediatype", "get", "f0f0f0f0-0000-4000-8000-000000000001")
 	if err == nil || !strings.Contains(err.Error(), "is a folder, not a media type") {
 		t.Fatalf("expected folder explanation, got %v", err)
 	}
 
-	_, err = execute(buildSchemaTypeRoot(deps), "mediatype", "get", "f0f0f0f0-0000-4000-8000-000000000002")
+	_, err = cmdtest.Execute(buildSchemaTypeRoot(deps), "mediatype", "get", "f0f0f0f0-0000-4000-8000-000000000002")
 	if err == nil || strings.Contains(err.Error(), "is a folder") {
 		t.Fatalf("expected the real API error for a missing media type, got %v", err)
 	}
@@ -97,14 +100,14 @@ func TestSchemaTypeCreateAndUpdateHitResourceEndpoints(t *testing.T) {
 	var requests []string
 	deps := schemaTypeDeps(func(req *http.Request) (*http.Response, error) {
 		requests = append(requests, req.Method+" "+req.URL.Path)
-		return endpointJSONResponse(http.StatusOK, `{"id":"mt-1","name":"Docs"}`), nil
+		return cmdtest.JSONResponse(http.StatusOK, `{"id":"mt-1","name":"Docs"}`), nil
 	})
 
 	root := buildSchemaTypeRoot(deps)
-	if _, err := execute(root, "membertype", "create", "--json", `{"name":"Docs","alias":"docs"}`); err != nil {
+	if _, err := cmdtest.Execute(root, "membertype", "create", "--json", `{"name":"Docs","alias":"docs"}`); err != nil {
 		t.Fatalf("membertype create failed: %v", err)
 	}
-	if _, err := execute(root, "membertype", "update", "mt-1", "--json", `{"name":"Docs2","alias":"docs"}`); err != nil {
+	if _, err := cmdtest.Execute(root, "membertype", "update", "mt-1", "--json", `{"name":"Docs2","alias":"docs"}`); err != nil {
 		t.Fatalf("membertype update failed: %v", err)
 	}
 	expected := []string{
@@ -130,7 +133,7 @@ func TestSchemaTypeDeleteIsGated(t *testing.T) {
 		return nil, nil
 	})
 
-	_, err := execute(buildSchemaTypeRoot(deps), "mediatype", "delete", "mt-1")
+	_, err := cmdtest.Execute(buildSchemaTypeRoot(deps), "mediatype", "delete", "mt-1")
 	if err == nil || !strings.Contains(err.Error(), "--force") {
 		t.Fatalf("expected force/dry-run gate, got %v", err)
 	}
@@ -147,7 +150,7 @@ func TestSchemaTypeExportReadsUDT(t *testing.T) {
 		}, nil
 	})
 
-	out, err := execute(buildSchemaTypeRoot(deps), "mediatype", "export", "mt-1")
+	out, err := cmdtest.Execute(buildSchemaTypeRoot(deps), "mediatype", "export", "mt-1")
 	if err != nil {
 		t.Fatalf("mediatype export failed: %v", err)
 	}
@@ -163,10 +166,10 @@ func TestSchemaTypeSearchUsesItemEndpoint(t *testing.T) {
 	var requestedURI string
 	deps := schemaTypeDeps(func(req *http.Request) (*http.Response, error) {
 		requestedURI = req.URL.RequestURI()
-		return endpointJSONResponse(http.StatusOK, `{"items":[],"total":0}`), nil
+		return cmdtest.JSONResponse(http.StatusOK, `{"items":[],"total":0}`), nil
 	})
 
-	if _, err := execute(buildSchemaTypeRoot(deps), "mediatype", "search", "--query", "image"); err != nil {
+	if _, err := cmdtest.Execute(buildSchemaTypeRoot(deps), "mediatype", "search", "--query", "image"); err != nil {
 		t.Fatalf("mediatype search failed: %v", err)
 	}
 	if !strings.Contains(requestedURI, "/item/media-type/search") || !strings.Contains(requestedURI, "query=image") {
@@ -179,17 +182,17 @@ func TestSchemaTypeMergeUpdateStripsReadOnlyFields(t *testing.T) {
 	deps := schemaTypeDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.Method {
 		case http.MethodGet:
-			return endpointJSONResponse(http.StatusOK, `{"id":"mt-1","name":"Image","alias":"image","isDeletable":false,"aliasCanBeChanged":true,"allowedAsRoot":true}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"id":"mt-1","name":"Image","alias":"image","isDeletable":false,"aliasCanBeChanged":true,"allowedAsRoot":true}`), nil
 		case http.MethodPut:
 			body, _ := io.ReadAll(req.Body)
 			putBody = string(body)
-			return endpointJSONResponse(http.StatusOK, `{}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{}`), nil
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `{"error":"not found"}`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `{"error":"not found"}`), nil
 		}
 	})
 
-	if _, err := execute(buildSchemaTypeRoot(deps), "mediatype", "update", "mt-1", "--merge-json", `{"name":"Image v2"}`); err != nil {
+	if _, err := cmdtest.Execute(buildSchemaTypeRoot(deps), "mediatype", "update", "mt-1", "--merge-json", `{"name":"Image v2"}`); err != nil {
 		t.Fatalf("mediatype merge update failed: %v", err)
 	}
 	// The update request model rejects response-only fields
@@ -209,24 +212,24 @@ func TestSchemaTypeGetResolvesAliasOrExplains(t *testing.T) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/item/media-type/search":
 			if strings.EqualFold(req.URL.Query().Get("query"), "hero") {
-				return endpointJSONResponse(http.StatusOK, `{"total":2,"items":[{"id":"aaaaaaaa-0000-4000-8000-000000000001","name":"Hero Image"},{"id":"aaaaaaaa-0000-4000-8000-000000000002","name":"Hero Image Legacy"}]}`), nil
+				return cmdtest.JSONResponse(http.StatusOK, `{"total":2,"items":[{"id":"aaaaaaaa-0000-4000-8000-000000000001","name":"Hero Image"},{"id":"aaaaaaaa-0000-4000-8000-000000000002","name":"Hero Image Legacy"}]}`), nil
 			}
-			return endpointJSONResponse(http.StatusOK, `{"total":0,"items":[]}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"total":0,"items":[]}`), nil
 		case "/umbraco/management/api/v1/tree/media-type/root":
-			return endpointJSONResponse(http.StatusOK, `{"total":0,"items":[]}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"total":0,"items":[]}`), nil
 		case "/umbraco/management/api/v1/media-type/aaaaaaaa-0000-4000-8000-000000000001":
-			return endpointJSONResponse(http.StatusOK, `{"id":"aaaaaaaa-0000-4000-8000-000000000001","alias":"heroImage","name":"Hero Image"}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"id":"aaaaaaaa-0000-4000-8000-000000000001","alias":"heroImage","name":"Hero Image"}`), nil
 		case "/umbraco/management/api/v1/media-type/aaaaaaaa-0000-4000-8000-000000000002":
-			return endpointJSONResponse(http.StatusOK, `{"id":"aaaaaaaa-0000-4000-8000-000000000002","alias":"heroImageLegacy","name":"Hero Image Legacy"}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"id":"aaaaaaaa-0000-4000-8000-000000000002","alias":"heroImageLegacy","name":"Hero Image Legacy"}`), nil
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `{"error":"not found"}`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `{"error":"not found"}`), nil
 		}
 	})
-	out, err := execute(buildSchemaTypeRoot(deps), "mediatype", "get", "HeroImage")
+	out, err := cmdtest.Execute(buildSchemaTypeRoot(deps), "mediatype", "get", "HeroImage")
 	if err != nil || !strings.Contains(out, `"alias": "heroImage"`) {
 		t.Fatalf("expected alias resolution (case-insensitive, exact), got err=%v out=%s", err, out)
 	}
-	_, err = execute(buildSchemaTypeRoot(deps), "mediatype", "get", "someAliasThatDoesNotExist123")
+	_, err = cmdtest.Execute(buildSchemaTypeRoot(deps), "mediatype", "get", "someAliasThatDoesNotExist123")
 	if err == nil || !strings.Contains(err.Error(), "not a GUID and no media type has that alias") || strings.Contains(err.Error(), "Umbraco version") {
 		t.Fatalf("expected a clear alias-not-found error, got %v", err)
 	}
@@ -237,19 +240,19 @@ func TestSchemaTypeAliasFallsBackToTreeAndUsesBatchAndPropagatesErrors(t *testin
 	deps := schemaTypeDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/item/media-type/search":
-			return endpointJSONResponse(http.StatusOK, `{"total":0,"items":[]}`), nil // renamed type: name no longer matches the alias
+			return cmdtest.JSONResponse(http.StatusOK, `{"total":0,"items":[]}`), nil // renamed type: name no longer matches the alias
 		case "/umbraco/management/api/v1/tree/media-type/root":
-			return endpointJSONResponse(http.StatusOK, `{"total":1,"items":[{"id":"aaaaaaaa-0000-4000-8000-000000000009","name":"News Article","alias":"x","isFolder":false}]}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"total":1,"items":[{"id":"aaaaaaaa-0000-4000-8000-000000000009","name":"News Article","alias":"x","isFolder":false}]}`), nil
 		case "/umbraco/management/api/v1/media-type/batch":
 			batchIDs = req.URL.Query()["id"]
-			return endpointJSONResponse(http.StatusOK, `[{"id":"aaaaaaaa-0000-4000-8000-000000000009","alias":"blogPost","name":"News Article"}]`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `[{"id":"aaaaaaaa-0000-4000-8000-000000000009","alias":"blogPost","name":"News Article"}]`), nil
 		case "/umbraco/management/api/v1/media-type/aaaaaaaa-0000-4000-8000-000000000009":
-			return endpointJSONResponse(http.StatusOK, `{"id":"aaaaaaaa-0000-4000-8000-000000000009","alias":"blogPost","name":"News Article"}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"id":"aaaaaaaa-0000-4000-8000-000000000009","alias":"blogPost","name":"News Article"}`), nil
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `{"error":"not found"}`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `{"error":"not found"}`), nil
 		}
 	})
-	out, err := execute(buildSchemaTypeRoot(deps), "mediatype", "get", "blogPost")
+	out, err := cmdtest.Execute(buildSchemaTypeRoot(deps), "mediatype", "get", "blogPost")
 	if err != nil || !strings.Contains(out, `"alias": "blogPost"`) {
 		t.Fatalf("expected tree fallback to resolve a renamed type, got err=%v out=%s", err, out)
 	}
@@ -260,16 +263,16 @@ func TestSchemaTypeAliasFallsBackToTreeAndUsesBatchAndPropagatesErrors(t *testin
 	failing := schemaTypeDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/item/media-type/search":
-			return endpointJSONResponse(http.StatusOK, `{"total":1,"items":[{"id":"aaaaaaaa-0000-4000-8000-000000000009"}]}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"total":1,"items":[{"id":"aaaaaaaa-0000-4000-8000-000000000009"}]}`), nil
 		case "/umbraco/management/api/v1/media-type/batch":
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		case "/umbraco/management/api/v1/media-type/aaaaaaaa-0000-4000-8000-000000000009":
-			return endpointJSONResponse(http.StatusForbidden, `{"title":"Forbidden"}`), nil
+			return cmdtest.JSONResponse(http.StatusForbidden, `{"title":"Forbidden"}`), nil
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `{"error":"not found"}`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `{"error":"not found"}`), nil
 		}
 	})
-	_, err = execute(buildSchemaTypeRoot(failing), "mediatype", "get", "blogPost")
+	_, err = cmdtest.Execute(buildSchemaTypeRoot(failing), "mediatype", "get", "blogPost")
 	if err == nil || !strings.Contains(err.Error(), "403") || strings.Contains(err.Error(), "no media type has that alias") {
 		t.Fatalf("expected the API failure to propagate rather than a not-found, got %v", err)
 	}
@@ -280,20 +283,20 @@ func TestSchemaTypeTypesOnlyKeepsTreeItemsWithoutAliasAndEnrichesAliases(t *test
 	deps := schemaTypeDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/tree/media-type/root":
-			return endpointJSONResponse(http.StatusOK, `{"total":3,"items":[
+			return cmdtest.JSONResponse(http.StatusOK, `{"total":3,"items":[
 				{"id":"f0f0f0f0-0000-4000-8000-000000000001","name":"Icons","isFolder":true,"hasChildren":false},
 				{"id":"aaaaaaaa-0000-4000-8000-000000000001","name":"Image","isFolder":false,"hasChildren":false},
 				{"id":"aaaaaaaa-0000-4000-8000-000000000002","name":"File","isFolder":false,"hasChildren":false}]}`), nil
 		case "/umbraco/management/api/v1/media-type/batch":
 			batchIDs = req.URL.Query()["id"]
-			return endpointJSONResponse(http.StatusOK, `[{"id":"aaaaaaaa-0000-4000-8000-000000000001","alias":"Image","isElement":false},{"id":"aaaaaaaa-0000-4000-8000-000000000002","alias":"File","isElement":false}]`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `[{"id":"aaaaaaaa-0000-4000-8000-000000000001","alias":"Image","isElement":false},{"id":"aaaaaaaa-0000-4000-8000-000000000002","alias":"File","isElement":false}]`), nil
 		case "/umbraco/management/api/v1/item/media-type/search":
-			return endpointJSONResponse(http.StatusOK, `{"total":1,"items":[{"id":"aaaaaaaa-0000-4000-8000-000000000001","name":"Image","isElement":false}]}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"total":1,"items":[{"id":"aaaaaaaa-0000-4000-8000-000000000001","name":"Image","isElement":false}]}`), nil
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `{"error":"not found"}`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `{"error":"not found"}`), nil
 		}
 	})
-	out, err := execute(buildSchemaTypeRoot(deps), "mediatype", "list", "--types-only")
+	out, err := cmdtest.Execute(buildSchemaTypeRoot(deps), "mediatype", "list", "--types-only")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -306,11 +309,11 @@ func TestSchemaTypeTypesOnlyKeepsTreeItemsWithoutAliasAndEnrichesAliases(t *test
 	if len(batchIDs) != 2 {
 		t.Fatalf("expected one batch call for both ids, got %v", batchIDs)
 	}
-	summary, err := execute(buildSchemaTypeRoot(deps), "mediatype", "list", "--types-only", "--summarize")
+	summary, err := cmdtest.Execute(buildSchemaTypeRoot(deps), "mediatype", "list", "--types-only", "--summarize")
 	if err != nil || !strings.Contains(summary, `"alias": "Image"`) {
 		t.Fatalf("expected --summarize to carry alias, got err=%v out=%s", err, summary)
 	}
-	search, err := execute(buildSchemaTypeRoot(deps), "mediatype", "search", "--query", "image")
+	search, err := cmdtest.Execute(buildSchemaTypeRoot(deps), "mediatype", "search", "--query", "image")
 	if err != nil || !strings.Contains(search, `"alias": "Image"`) {
 		t.Fatalf("expected search items enriched with alias, got err=%v out=%s", err, search)
 	}
@@ -326,21 +329,21 @@ func TestSchemaTypeAliasSearchesTrailingWordWhenLeadingWordMissesName(t *testing
 			// Field report: "sharedSector" lives in a Shared folder whose
 			// name the type does not carry — the name is just "Sector".
 			if strings.EqualFold(query, "sector") {
-				return endpointJSONResponse(http.StatusOK, `{"total":1,"items":[{"id":"aaaaaaaa-0000-4000-8000-000000000021","name":"Sector"}]}`), nil
+				return cmdtest.JSONResponse(http.StatusOK, `{"total":1,"items":[{"id":"aaaaaaaa-0000-4000-8000-000000000021","name":"Sector"}]}`), nil
 			}
-			return endpointJSONResponse(http.StatusOK, `{"total":0,"items":[]}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"total":0,"items":[]}`), nil
 		case "/umbraco/management/api/v1/media-type/batch":
-			return endpointJSONResponse(http.StatusOK, `[{"id":"aaaaaaaa-0000-4000-8000-000000000021","alias":"sharedSector","name":"Sector"}]`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `[{"id":"aaaaaaaa-0000-4000-8000-000000000021","alias":"sharedSector","name":"Sector"}]`), nil
 		case "/umbraco/management/api/v1/media-type/aaaaaaaa-0000-4000-8000-000000000021":
-			return endpointJSONResponse(http.StatusOK, `{"id":"aaaaaaaa-0000-4000-8000-000000000021","alias":"sharedSector","name":"Sector"}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"id":"aaaaaaaa-0000-4000-8000-000000000021","alias":"sharedSector","name":"Sector"}`), nil
 		case "/umbraco/management/api/v1/tree/media-type/root":
 			t.Fatalf("the trailing-word search should resolve the alias before the tree walk")
 			return nil, nil
 		default:
-			return endpointJSONResponse(http.StatusNotFound, `{"error":"not found"}`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `{"error":"not found"}`), nil
 		}
 	})
-	out, err := execute(buildSchemaTypeRoot(deps), "mediatype", "get", "sharedSector")
+	out, err := cmdtest.Execute(buildSchemaTypeRoot(deps), "mediatype", "get", "sharedSector")
 	if err != nil || !strings.Contains(out, `"alias": "sharedSector"`) {
 		t.Fatalf("expected alias resolution via the trailing word, got err=%v out=%s", err, out)
 	}
@@ -360,9 +363,9 @@ func TestSchemaTypeAliasTreeFallbackChunksBatchRequests(t *testing.T) {
 	deps := schemaTypeDeps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/item/media-type/search":
-			return endpointJSONResponse(http.StatusOK, `{"total":0,"items":[]}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"total":0,"items":[]}`), nil
 		case "/umbraco/management/api/v1/tree/media-type/root":
-			return endpointJSONResponse(http.StatusOK, fmt.Sprintf(`{"total":%d,"items":[%s]}`, total, strings.Join(items, ","))), nil
+			return cmdtest.JSONResponse(http.StatusOK, fmt.Sprintf(`{"total":%d,"items":[%s]}`, total, strings.Join(items, ","))), nil
 		case "/umbraco/management/api/v1/media-type/batch":
 			ids := req.URL.Query()["id"]
 			batchSizes = append(batchSizes, len(ids))
@@ -375,15 +378,15 @@ func TestSchemaTypeAliasTreeFallbackChunksBatchRequests(t *testing.T) {
 				}
 				rows = append(rows, fmt.Sprintf(`{"id":"%s","alias":"%s","name":"x"}`, id, alias))
 			}
-			return endpointJSONResponse(http.StatusOK, "["+strings.Join(rows, ",")+"]"), nil
+			return cmdtest.JSONResponse(http.StatusOK, "["+strings.Join(rows, ",")+"]"), nil
 		default:
 			if strings.HasPrefix(req.URL.Path, "/umbraco/management/api/v1/media-type/aaaaaaaa-0000-4000-8000-") && strings.HasSuffix(req.URL.Path, fmt.Sprintf("%012d", total-1)) {
-				return endpointJSONResponse(http.StatusOK, `{"id":"resolved","alias":"deepRenamedType"}`), nil
+				return cmdtest.JSONResponse(http.StatusOK, `{"id":"resolved","alias":"deepRenamedType"}`), nil
 			}
-			return endpointJSONResponse(http.StatusNotFound, `{"error":"not found"}`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `{"error":"not found"}`), nil
 		}
 	})
-	out, err := execute(buildSchemaTypeRoot(deps), "mediatype", "get", "deepRenamedType")
+	out, err := cmdtest.Execute(buildSchemaTypeRoot(deps), "mediatype", "get", "deepRenamedType")
 	if err != nil || !strings.Contains(out, `"alias": "deepRenamedType"`) {
 		t.Fatalf("expected the tree fallback to resolve the last type, got err=%v out=%s", err, out)
 	}

@@ -5,12 +5,14 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"umbraco-cli/internal/commands/cmdkit"
 )
 
 // Bulk update operations for the document command group: explicit ID
 // lists and CSV-driven updates.
 
-func documentBulkUpdate(deps Dependencies) *cobra.Command {
+func documentBulkUpdate(deps cmdkit.Dependencies) *cobra.Command {
 	var ids []string
 	var idsCSV string
 	var idFile string
@@ -24,7 +26,7 @@ func documentBulkUpdate(deps Dependencies) *cobra.Command {
 		Short: "Update multiple documents from an explicit ID list (see also 'document update --ids')",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := requireForceOrDryRun(cmd, "mutates every listed document", force, dryRun); err != nil {
+			if err := cmdkit.RequireForceOrDryRun(cmd, "mutates every listed document", force, dryRun); err != nil {
 				return err
 			}
 
@@ -34,7 +36,7 @@ func documentBulkUpdate(deps Dependencies) *cobra.Command {
 				return fmt.Errorf("document bulk-update requires exactly one of --json or --merge-json")
 			}
 
-			resolvedIDs, err := loadDocumentIDs(append(append([]string{}, ids...), uniqueCSV(idsCSV)...), idFile)
+			resolvedIDs, err := loadDocumentIDs(append(append([]string{}, ids...), cmdkit.UniqueCSV(idsCSV)...), idFile)
 			if err != nil {
 				return err
 			}
@@ -45,19 +47,19 @@ func documentBulkUpdate(deps Dependencies) *cobra.Command {
 			var fullBody map[string]any
 			var mergePatch map[string]any
 			if hasMergeJSON {
-				mergePatch, err = parsePayload(mergeJSON)
+				mergePatch, err = cmdkit.ParsePayload(mergeJSON)
 				if err != nil {
 					return err
 				}
 			} else {
-				fullBody, err = parsePayload(jsonPayload)
+				fullBody, err = cmdkit.ParsePayload(jsonPayload)
 				if err != nil {
 					return err
 				}
 			}
 
 			result := executeDocumentBulkUpdate(cmd.Context(), deps.Client, resolvedIDs, fullBody, mergePatch, dryRun)
-			return printResult(cmd, deps, result)
+			return cmdkit.PrintResult(cmd, deps, result)
 		},
 	}
 
@@ -71,7 +73,7 @@ func documentBulkUpdate(deps Dependencies) *cobra.Command {
 	return cmd
 }
 
-func documentCSVUpdate(deps Dependencies) *cobra.Command {
+func documentCSVUpdate(deps cmdkit.Dependencies) *cobra.Command {
 	var file string
 	var idColumn string
 	var properties []string
@@ -84,10 +86,10 @@ func documentCSVUpdate(deps Dependencies) *cobra.Command {
 		Short: "Update multiple documents from a CSV file",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := requireForceOrDryRun(cmd, "mutates every document in the CSV", force, dryRun); err != nil {
+			if err := cmdkit.RequireForceOrDryRun(cmd, "mutates every document in the CSV", force, dryRun); err != nil {
 				return err
 			}
-			if err := requireValue("--file", file); err != nil {
+			if err := cmdkit.RequireValue("--file", file); err != nil {
 				return err
 			}
 
@@ -108,7 +110,7 @@ func documentCSVUpdate(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, deps, result)
+			return cmdkit.PrintResult(cmd, deps, result)
 		},
 	}
 

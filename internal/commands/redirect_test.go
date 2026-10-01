@@ -7,9 +7,12 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
+
+	"umbraco-cli/internal/commands/cmdkit"
+	"umbraco-cli/internal/commands/cmdtest"
 )
 
-func buildRedirectRoot(deps Dependencies) *cobra.Command {
+func buildRedirectRoot(deps cmdkit.Dependencies) *cobra.Command {
 	root := &cobra.Command{Use: "umbraco", SilenceErrors: true, SilenceUsage: true}
 	root.SetErr(io.Discard)
 	if deps.OutputFlag != nil {
@@ -19,10 +22,10 @@ func buildRedirectRoot(deps Dependencies) *cobra.Command {
 	return root
 }
 
-func redirectDeps(handler func(req *http.Request) (*http.Response, error)) Dependencies {
-	return endpointDeps(func(req *http.Request) (*http.Response, error) {
+func redirectDeps(handler func(req *http.Request) (*http.Response, error)) cmdkit.Dependencies {
+	return cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		if req.URL.Path == "/umbraco/management/api/v1/security/back-office/token" {
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		}
 		return handler(req)
 	})
@@ -32,10 +35,10 @@ func TestRedirectListForwardsFilterAndPagination(t *testing.T) {
 	var requestedURI string
 	deps := redirectDeps(func(req *http.Request) (*http.Response, error) {
 		requestedURI = req.URL.RequestURI()
-		return endpointJSONResponse(http.StatusOK, `{"items":[{"originalUrl":"/old-page/","destinationUrl":"/new-page/"}],"total":1}`), nil
+		return cmdtest.JSONResponse(http.StatusOK, `{"items":[{"originalUrl":"/old-page/","destinationUrl":"/new-page/"}],"total":1}`), nil
 	})
 
-	out, err := execute(buildRedirectRoot(deps), "redirect", "list", "--filter", "old-page", "--skip", "0", "--take", "20")
+	out, err := cmdtest.Execute(buildRedirectRoot(deps), "redirect", "list", "--filter", "old-page", "--skip", "0", "--take", "20")
 	if err != nil {
 		t.Fatalf("redirect list failed: %v", err)
 	}
@@ -53,10 +56,10 @@ func TestRedirectGetPaginatesPerDocument(t *testing.T) {
 	var requestedURI string
 	deps := redirectDeps(func(req *http.Request) (*http.Response, error) {
 		requestedURI = req.URL.RequestURI()
-		return endpointJSONResponse(http.StatusOK, `{"items":[],"total":0}`), nil
+		return cmdtest.JSONResponse(http.StatusOK, `{"items":[],"total":0}`), nil
 	})
 
-	if _, err := execute(buildRedirectRoot(deps), "redirect", "get", "doc-1", "--take", "5"); err != nil {
+	if _, err := cmdtest.Execute(buildRedirectRoot(deps), "redirect", "get", "doc-1", "--take", "5"); err != nil {
 		t.Fatalf("redirect get failed: %v", err)
 	}
 	if !strings.Contains(requestedURI, "/umbraco/management/api/v1/redirect-management/doc-1") || !strings.Contains(requestedURI, "take=5") {
@@ -70,7 +73,7 @@ func TestRedirectDeleteIsGated(t *testing.T) {
 		return nil, nil
 	})
 
-	_, err := execute(buildRedirectRoot(deps), "redirect", "delete", "r-1")
+	_, err := cmdtest.Execute(buildRedirectRoot(deps), "redirect", "delete", "r-1")
 	if err == nil || !strings.Contains(err.Error(), "--force") {
 		t.Fatalf("expected force/dry-run gate, got %v", err)
 	}
@@ -84,7 +87,7 @@ func TestRedirectDeleteWithForce(t *testing.T) {
 		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(""))}, nil
 	})
 
-	out, err := execute(buildRedirectRoot(deps), "redirect", "delete", "r-1", "--force")
+	out, err := cmdtest.Execute(buildRedirectRoot(deps), "redirect", "delete", "r-1", "--force")
 	if err != nil {
 		t.Fatalf("redirect delete failed: %v", err)
 	}
@@ -112,7 +115,7 @@ func TestRedirectEnableDisablePostStatus(t *testing.T) {
 			return &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(""))}, nil
 		})
 
-		out, err := execute(buildRedirectRoot(deps), "redirect", tc.command)
+		out, err := cmdtest.Execute(buildRedirectRoot(deps), "redirect", tc.command)
 		if err != nil {
 			t.Fatalf("redirect %s failed: %v", tc.command, err)
 		}
@@ -130,10 +133,10 @@ func TestRedirectStatusReads(t *testing.T) {
 		if req.URL.Path != "/umbraco/management/api/v1/redirect-management/status" {
 			t.Fatalf("unexpected path %s", req.URL.Path)
 		}
-		return endpointJSONResponse(http.StatusOK, `{"status":"Enabled","userIsAdmin":true}`), nil
+		return cmdtest.JSONResponse(http.StatusOK, `{"status":"Enabled","userIsAdmin":true}`), nil
 	})
 
-	out, err := execute(buildRedirectRoot(deps), "redirect", "status")
+	out, err := cmdtest.Execute(buildRedirectRoot(deps), "redirect", "status")
 	if err != nil {
 		t.Fatalf("redirect status failed: %v", err)
 	}

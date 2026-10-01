@@ -3,7 +3,6 @@ package commands
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"regexp"
@@ -15,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/commands/cmdkit"
 )
 
 const defaultDocumentGrepConcurrency = 6
@@ -66,7 +66,7 @@ type documentGrepMatcher struct {
 	regex  *regexp.Regexp
 }
 
-func documentGrep(deps Dependencies) *cobra.Command {
+func documentGrep(deps cmdkit.Dependencies) *cobra.Command {
 	opts := documentGrepOptions{Concurrency: defaultDocumentGrepConcurrency}
 	cmd := &cobra.Command{
 		Use:   "grep <substring>",
@@ -85,7 +85,7 @@ snapshot when one exists. Use --draft or --published to narrow the scan.`,
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, deps, result)
+			return cmdkit.PrintResult(cmd, deps, result)
 		},
 	}
 	cmd.Flags().BoolVar(&opts.Regex, "regex", false, "Treat the substring argument as a regular expression")
@@ -99,7 +99,7 @@ snapshot when one exists. Use --draft or --published to narrow the scan.`,
 	return cmd
 }
 
-func executeDocumentGrep(ctx context.Context, cmd *cobra.Command, deps Dependencies, opts documentGrepOptions) (documentGrepResult, error) {
+func executeDocumentGrep(ctx context.Context, cmd *cobra.Command, deps cmdkit.Dependencies, opts documentGrepOptions) (documentGrepResult, error) {
 	if opts.Needle == "" {
 		return documentGrepResult{}, fmt.Errorf("document grep requires a non-empty substring")
 	}
@@ -187,7 +187,7 @@ func grepOneDocument(ctx context.Context, client *api.Client, id string, opts do
 	for _, state := range documentGrepStates(opts) {
 		doc, err := fetchDocumentForGrep(ctx, client, id, state)
 		if err != nil {
-			if state == "published" && !opts.Published && isAPIStatus(err, http.StatusNotFound) {
+			if state == "published" && !opts.Published && api.IsStatus(err, http.StatusNotFound) {
 				continue
 			}
 			skipped = append(skipped, documentGrepSkipped{ID: id, Stage: state, Error: err.Error()})
@@ -210,7 +210,7 @@ func fetchDocumentForGrep(ctx context.Context, client *api.Client, id string, st
 	if state == "published" {
 		path = api.JoinPath("/document/%s/published", id)
 	}
-	return fetchObject(ctx, client, path, api.RequestOptions{})
+	return cmdkit.FetchObject(ctx, client, path, api.RequestOptions{})
 }
 
 func scanDocumentPropertiesForGrep(doc map[string]any, state string, doctypeAlias string, matcher documentGrepMatcher, propertyFilter map[string]struct{}) []documentGrepHit {
@@ -263,7 +263,7 @@ func walkDocumentTree(ctx context.Context, client *api.Client, startID string, v
 	visit(startID)
 	children, err := fetchDocumentTreeItems(ctx, client, startID, false)
 	if err != nil {
-		if isAPIStatus(err, http.StatusNotFound) {
+		if api.IsStatus(err, http.StatusNotFound) {
 			return nil
 		}
 		skip(documentGrepSkipped{ID: startID, Stage: "children", Error: err.Error()})
@@ -287,7 +287,7 @@ func walkDocumentTreeItem(ctx context.Context, client *api.Client, item any, vis
 	visit(id)
 	children, err := fetchDocumentTreeItems(ctx, client, id, false)
 	if err != nil {
-		if isAPIStatus(err, http.StatusNotFound) {
+		if api.IsStatus(err, http.StatusNotFound) {
 			return
 		}
 		skip(documentGrepSkipped{ID: id, Stage: "children", Error: err.Error()})
@@ -299,19 +299,19 @@ func walkDocumentTreeItem(ctx context.Context, client *api.Client, item any, vis
 }
 
 func fetchDocumentTreeItems(ctx context.Context, client *api.Client, parentID string, root bool) ([]any, error) {
-	var candidates []getRequestCandidate
+	var candidates []cmdkit.GetRequestCandidate
 	if root {
-		candidates = []getRequestCandidate{
-			{path: "/tree/document/root"},
-			{path: "/document/root"},
+		candidates = []cmdkit.GetRequestCandidate{
+			{Path: "/tree/document/root"},
+			{Path: "/document/root"},
 		}
 	} else {
-		candidates = []getRequestCandidate{
-			{path: "/tree/document/children", opts: api.RequestOptions{Params: map[string]any{"parentId": parentID}}},
-			{path: api.JoinPath("/document/%s/children", parentID)},
+		candidates = []cmdkit.GetRequestCandidate{
+			{Path: "/tree/document/children", Opts: api.RequestOptions{Params: map[string]any{"parentId": parentID}}},
+			{Path: api.JoinPath("/document/%s/children", parentID)},
 		}
 	}
-	result, err := getAllPagesWithFallback(ctx, client, autoPaginateDefaultPageSize, 0, 0, candidates...)
+	result, err := cmdkit.GetAllPagesWithFallback(ctx, client, cmdkit.AutoPaginateDefaultPageSize, 0, 0, candidates...)
 	if err != nil {
 		return nil, err
 	}
@@ -341,7 +341,7 @@ func documentGrepDocumentTypeAlias(ctx context.Context, client *api.Client, doc 
 	if known {
 		return alias
 	}
-	detail, err := fetchObject(ctx, client, api.JoinPath("/document-type/%s", id), api.RequestOptions{})
+	detail, err := cmdkit.FetchObject(ctx, client, api.JoinPath("/document-type/%s", id), api.RequestOptions{})
 	if err == nil {
 		alias, _ = detail["alias"].(string)
 	}
@@ -355,7 +355,7 @@ func documentGrepDocumentName(doc map[string]any) string {
 	if name, _ := doc["name"].(string); name != "" {
 		return name
 	}
-	for _, name := range treeItemNames(doc) {
+	for _, name := range cmdkit.TreeItemNames(doc) {
 		if name != "" {
 			return name
 		}
@@ -535,9 +535,4 @@ func stringSet(values []string) map[string]struct{} {
 		result[value] = struct{}{}
 	}
 	return result
-}
-
-func isAPIStatus(err error, status int) bool {
-	var apiErr *api.APIError
-	return errors.As(err, &apiErr) && apiErr.StatusCode == status
 }

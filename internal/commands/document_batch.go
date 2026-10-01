@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/commands/cmdkit"
 )
 
 // Multi-document publish/update behind 'document publish' and 'document
@@ -124,14 +125,14 @@ func resolveDocumentBatchTargets(cmd *cobra.Command, args []string, idsCSV strin
 	if len(args) != 0 {
 		return nil, fmt.Errorf("%s takes either a positional id or --ids/--from-file, not both", cmd.CommandPath())
 	}
-	ids, err := loadDocumentIDs(uniqueCSV(idsCSV), fromFile)
+	ids, err := loadDocumentIDs(cmdkit.UniqueCSV(idsCSV), fromFile)
 	if err != nil {
 		return nil, err
 	}
 	if len(ids) == 0 {
 		return nil, fmt.Errorf("--ids/--from-file resolved to no document ids")
 	}
-	if err := requireForceOrDryRun(cmd, consequence, force, dryRun); err != nil {
+	if err := cmdkit.RequireForceOrDryRun(cmd, consequence, force, dryRun); err != nil {
 		return nil, err
 	}
 	return ids, nil
@@ -197,7 +198,7 @@ func documentBatchOne(ctx context.Context, client *api.Client, opts documentBatc
 	// One read per document: the name for the row, and the base for a
 	// merge. --json full bodies still read, so a typo'd id fails here with
 	// a 404 instead of creating confusion later.
-	current, err := fetchObject(ctx, client, path, api.RequestOptions{})
+	current, err := cmdkit.FetchObject(ctx, client, path, api.RequestOptions{})
 	if err != nil {
 		if opts.Update {
 			fail("update", err)
@@ -213,7 +214,7 @@ func documentBatchOne(ctx context.Context, client *api.Client, opts documentBatc
 		if opts.FullBody != nil {
 			body = opts.FullBody
 		} else {
-			body = mergeAliasPayload(current, opts.MergePatch)
+			body = cmdkit.MergeAliasPayload(current, opts.MergePatch)
 			if reflect.DeepEqual(current, body) {
 				row.Update = "skipped"
 				body = nil
@@ -221,10 +222,10 @@ func documentBatchOne(ctx context.Context, client *api.Client, opts documentBatc
 		}
 		if body != nil && opts.Backup != "" && !opts.DryRun {
 			target := ""
-			if opts.Backup != backupAutoValue {
-				target = strings.TrimRight(opts.Backup, "/") + "/" + resolveBackupPath(backupAutoValue, "document", row.ID)
+			if opts.Backup != cmdkit.BackupAutoValue {
+				target = strings.TrimRight(opts.Backup, "/") + "/" + cmdkit.ResolveBackupPath(cmdkit.BackupAutoValue, "document", row.ID)
 			}
-			backupFile, err := writeBackup(resolveBackupPath(target, "document", row.ID), "document", row.ID, path, current, nil)
+			backupFile, err := cmdkit.WriteBackup(cmdkit.ResolveBackupPath(target, "document", row.ID), "document", row.ID, path, current, nil)
 			if err != nil {
 				fail("update", err)
 				return
@@ -250,7 +251,7 @@ func documentBatchOne(ctx context.Context, client *api.Client, opts documentBatc
 			}
 			return
 		}
-		if !isAPIStatus(err, http.StatusNotFound) {
+		if !api.IsStatus(err, http.StatusNotFound) {
 			fail("update", err)
 			return
 		}
@@ -300,8 +301,8 @@ func stateWord(dryRun bool, done string) string {
 }
 
 // printDocumentBatch prints the rows and turns failures into exit 4.
-func printDocumentBatch(cmd *cobra.Command, deps Dependencies, result documentBatchResult) error {
-	if err := printResult(cmd, deps, result); err != nil {
+func printDocumentBatch(cmd *cobra.Command, deps cmdkit.Dependencies, result documentBatchResult) error {
+	if err := cmdkit.PrintResult(cmd, deps, result); err != nil {
 		return err
 	}
 	if result.Failed > 0 {

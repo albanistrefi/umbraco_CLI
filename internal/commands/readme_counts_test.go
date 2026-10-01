@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
+
+	"umbraco-cli/internal/commands/cmdtest"
 )
 
 // The README advertises a command count per collection plus two totals. Both
@@ -94,7 +96,7 @@ func readmeCollectionsSection(t *testing.T, readme string) string {
 }
 
 func TestREADMECommandCountsMatchRegisteredCommands(t *testing.T) {
-	root := buildRootWithCollections(t, makeDeps())
+	root := buildRootWithCollections(t, cmdtest.MakeDeps())
 
 	raw, err := os.ReadFile("../../README.md")
 	if err != nil {

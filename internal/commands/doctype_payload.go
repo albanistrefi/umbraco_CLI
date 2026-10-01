@@ -2,7 +2,6 @@ package commands
 
 import (
 	"context"
-	"crypto/rand"
 	"fmt"
 	"sort"
 	"strings"
@@ -196,17 +195,6 @@ func buildDoctypeContainer(id, parentID, name, containerType string, sortOrder i
 	return container
 }
 
-// newUUIDv4 returns a freshly generated random UUID (RFC 4122 v4).
-func newUUIDv4() (string, error) {
-	var b [16]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return "", err
-	}
-	b[6] = (b[6] & 0x0f) | 0x40
-	b[8] = (b[8] & 0x3f) | 0x80
-	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16]), nil
-}
-
 // doctypeReorderPatch builds the properties sortOrder patch for a full
 // reorder: the listed aliases get sortOrder from their position, and the
 // remaining properties in the same container follow after them in their
@@ -276,4 +264,42 @@ func doctypeReorderPatch(doctype map[string]any, ordered []string) ([]any, error
 	}
 
 	return patch, nil
+}
+
+func normalizeDoctypePayload(body map[string]any) {
+	normalizeDoctypeProperties(body["properties"])
+	// Earlier --print-template skeletons called the version-cleanup block
+	// historyCleanup (Deploy's name); the Management API field is cleanup.
+	if legacy, ok := body["historyCleanup"]; ok {
+		if _, exists := body["cleanup"]; !exists {
+			body["cleanup"] = legacy
+		}
+		delete(body, "historyCleanup")
+	}
+}
+
+// normalizeDoctypePayloadHook adapts normalizeDoctypePayload to the
+// error-returning Normalize contract used by update specs.
+func normalizeDoctypePayloadHook(body map[string]any) error {
+	normalizeDoctypePayload(body)
+	return nil
+}
+
+func normalizeDoctypeProperties(raw any) {
+	properties, ok := raw.([]any)
+	if !ok {
+		return
+	}
+	for _, item := range properties {
+		property, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		if _, exists := property["dataType"]; !exists {
+			if dataTypeID, ok := property["dataTypeId"].(string); ok && strings.TrimSpace(dataTypeID) != "" {
+				property["dataType"] = map[string]any{"id": dataTypeID}
+				delete(property, "dataTypeId")
+			}
+		}
+	}
 }

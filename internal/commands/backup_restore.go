@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/commands/cmdkit"
 )
 
 // restoreSpec parameterizes "<group> restore-backup <file>" for the
@@ -32,7 +33,7 @@ type restoreSpec struct {
 // restoreBackupCommand builds the generic restore: read the envelope, PUT
 // the captured entity back onto the id it was taken from, re-read, and
 // confirm the captured properties are present again.
-func restoreBackupCommand(deps Dependencies, spec restoreSpec) *cobra.Command {
+func restoreBackupCommand(deps cmdkit.Dependencies, spec restoreSpec) *cobra.Command {
 	var expectID string
 	var dryRun bool
 	notes := ""
@@ -48,7 +49,7 @@ func restoreBackupCommand(deps Dependencies, spec restoreSpec) *cobra.Command {
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			envelope, err := readBackup(args[0], spec.Use)
+			envelope, err := cmdkit.ReadBackup(args[0], spec.Use)
 			if err != nil {
 				return err
 			}
@@ -59,7 +60,7 @@ func restoreBackupCommand(deps Dependencies, spec restoreSpec) *cobra.Command {
 			if envelope.Path != "" && envelope.Path != path {
 				return fmt.Errorf("backup file %s names path %q, which does not match %s %s", args[0], envelope.Path, spec.Display, envelope.ID)
 			}
-			body := cloneAnyMap(envelope.Entity)
+			body := cmdkit.CloneAnyMap(envelope.Entity)
 			for _, key := range spec.StripFields {
 				delete(body, key)
 			}
@@ -70,9 +71,9 @@ func restoreBackupCommand(deps Dependencies, spec restoreSpec) *cobra.Command {
 			result := map[string]any{"id": envelope.ID, "savedAt": envelope.SavedAt}
 			if dryRun {
 				result["update"] = putResult
-				return printResult(cmd, deps, result)
+				return cmdkit.PrintResult(cmd, deps, result)
 			}
-			after, err := fetchObject(ctx, deps.Client, path, api.RequestOptions{})
+			after, err := cmdkit.FetchObject(ctx, deps.Client, path, api.RequestOptions{})
 			if err != nil {
 				return fmt.Errorf("the restore was accepted but re-reading the %s failed: %w", spec.Display, err)
 			}
@@ -84,11 +85,11 @@ func restoreBackupCommand(deps Dependencies, spec restoreSpec) *cobra.Command {
 			if name := entityDisplayName(after); name != "" {
 				result["name"] = name
 			}
-			return printResult(cmd, deps, result)
+			return cmdkit.PrintResult(cmd, deps, result)
 		},
 	}
 	cmd.Flags().StringVar(&expectID, "id", "", "Assert the envelope belongs to this id before writing (refuses otherwise)")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
@@ -225,7 +226,7 @@ func entityDisplayName(entity map[string]any) string {
 // writeEntityBackup is the --backup step shared by the bespoke document
 // update commands: it saves the pre-change entity and returns the file.
 func writeEntityBackup(cmd *cobra.Command, target string, resource string, id string, path string, current map[string]any) (string, error) {
-	return writeBackup(resolveBackupPath(target, resource, id), resource, id, path, current, nil)
+	return cmdkit.WriteBackup(cmdkit.ResolveBackupPath(target, resource, id), resource, id, path, current, nil)
 }
 
 // withBackupHint appends the backup file to an error raised after the

@@ -7,9 +7,12 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
+
+	"umbraco-cli/internal/commands/cmdkit"
+	"umbraco-cli/internal/commands/cmdtest"
 )
 
-func buildHealthRoot(deps Dependencies) *cobra.Command {
+func buildHealthRoot(deps cmdkit.Dependencies) *cobra.Command {
 	root := &cobra.Command{Use: "umbraco", SilenceErrors: true, SilenceUsage: true}
 	root.SetErr(io.Discard)
 	if deps.OutputFlag != nil {
@@ -21,17 +24,17 @@ func buildHealthRoot(deps Dependencies) *cobra.Command {
 
 func TestHealthGroupsListsGroups(t *testing.T) {
 	var requestedPath string
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		default:
 			requestedPath = req.URL.Path
-			return endpointJSONResponse(http.StatusOK, `{"items":[{"name":"Configuration"}],"total":1}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"items":[{"name":"Configuration"}],"total":1}`), nil
 		}
 	})
 
-	out, err := execute(buildHealthRoot(deps), "health", "groups")
+	out, err := cmdtest.Execute(buildHealthRoot(deps), "health", "groups")
 	if err != nil {
 		t.Fatalf("health groups failed: %v", err)
 	}
@@ -45,17 +48,17 @@ func TestHealthGroupsListsGroups(t *testing.T) {
 
 func TestHealthGroupEscapesNameSegment(t *testing.T) {
 	var requestedURI string
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		default:
 			requestedURI = req.URL.RequestURI()
-			return endpointJSONResponse(http.StatusOK, `{"name":"Data Integrity","checks":[]}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"name":"Data Integrity","checks":[]}`), nil
 		}
 	})
 
-	if _, err := execute(buildHealthRoot(deps), "health", "group", "Data Integrity"); err != nil {
+	if _, err := cmdtest.Execute(buildHealthRoot(deps), "health", "group", "Data Integrity"); err != nil {
 		t.Fatalf("health group failed: %v", err)
 	}
 	if requestedURI != "/umbraco/management/api/v1/health-check-group/Data%20Integrity" {
@@ -65,18 +68,18 @@ func TestHealthGroupEscapesNameSegment(t *testing.T) {
 
 func TestHealthRunPostsCheckEndpoint(t *testing.T) {
 	var requestedPath, requestedMethod string
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		default:
 			requestedPath = req.URL.Path
 			requestedMethod = req.Method
-			return endpointJSONResponse(http.StatusOK, `{"checks":[{"name":"Macro errors","results":[]}]}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"checks":[{"name":"Macro errors","results":[]}]}`), nil
 		}
 	})
 
-	if _, err := execute(buildHealthRoot(deps), "health", "run", "Configuration"); err != nil {
+	if _, err := cmdtest.Execute(buildHealthRoot(deps), "health", "run", "Configuration"); err != nil {
 		t.Fatalf("health run failed: %v", err)
 	}
 	if requestedMethod != http.MethodPost || requestedPath != "/umbraco/management/api/v1/health-check-group/Configuration/check" {
@@ -86,20 +89,20 @@ func TestHealthRunPostsCheckEndpoint(t *testing.T) {
 
 func TestHealthRunFallsBackToLegacyRunEndpoint(t *testing.T) {
 	var legacyPath, legacyMethod string
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/health-check-group/Configuration/check":
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		default:
 			legacyPath = req.URL.Path
 			legacyMethod = req.Method
-			return endpointJSONResponse(http.StatusOK, `{"checks":[{"name":"Macro errors","results":[]}]}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"checks":[{"name":"Macro errors","results":[]}]}`), nil
 		}
 	})
 
-	if _, err := execute(buildHealthRoot(deps), "health", "run", "Configuration"); err != nil {
+	if _, err := cmdtest.Execute(buildHealthRoot(deps), "health", "run", "Configuration"); err != nil {
 		t.Fatalf("health run failed: %v", err)
 	}
 	if legacyMethod != http.MethodGet || legacyPath != "/umbraco/management/api/v1/health-check-group/Configuration/run" {
@@ -109,20 +112,20 @@ func TestHealthRunFallsBackToLegacyRunEndpoint(t *testing.T) {
 
 func TestHealthActionPostsPayload(t *testing.T) {
 	var requestedPath, requestedMethod, requestedBody string
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		default:
 			requestedPath = req.URL.Path
 			requestedMethod = req.Method
 			body, _ := io.ReadAll(req.Body)
 			requestedBody = string(body)
-			return endpointJSONResponse(http.StatusOK, `{"success":true}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"success":true}`), nil
 		}
 	})
 
-	if _, err := execute(buildHealthRoot(deps), "health", "action", "check-1", "--json", `{"alias":"fixConfig"}`); err != nil {
+	if _, err := cmdtest.Execute(buildHealthRoot(deps), "health", "action", "check-1", "--json", `{"alias":"fixConfig"}`); err != nil {
 		t.Fatalf("health action failed: %v", err)
 	}
 	if requestedMethod != http.MethodPost || requestedPath != "/umbraco/management/api/v1/health-check/execute-action" {
@@ -141,18 +144,18 @@ func TestHealthActionPostsPayload(t *testing.T) {
 
 func TestHealthActionKeepsExplicitHealthCheckReference(t *testing.T) {
 	var requestedBody string
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		default:
 			body, _ := io.ReadAll(req.Body)
 			requestedBody = string(body)
-			return endpointJSONResponse(http.StatusOK, `{"success":true}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"success":true}`), nil
 		}
 	})
 
-	if _, err := execute(buildHealthRoot(deps), "health", "action", "check-1", "--json", `{"healthCheck":{"id":"explicit"},"valueRequired":true}`); err != nil {
+	if _, err := cmdtest.Execute(buildHealthRoot(deps), "health", "action", "check-1", "--json", `{"healthCheck":{"id":"explicit"},"valueRequired":true}`); err != nil {
 		t.Fatalf("health action failed: %v", err)
 	}
 	if !strings.Contains(requestedBody, `"healthCheck":{"id":"explicit"}`) {
@@ -165,22 +168,22 @@ func TestHealthActionKeepsExplicitHealthCheckReference(t *testing.T) {
 
 func TestHealthActionFallsBackToLegacyActionEndpoint(t *testing.T) {
 	var legacyPath, legacyMethod, legacyBody string
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/umbraco/management/api/v1/security/back-office/token":
-			return endpointJSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/health-check/execute-action":
-			return endpointJSONResponse(http.StatusNotFound, `null`), nil
+			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		default:
 			legacyPath = req.URL.Path
 			legacyMethod = req.Method
 			body, _ := io.ReadAll(req.Body)
 			legacyBody = string(body)
-			return endpointJSONResponse(http.StatusOK, `{"success":true}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"success":true}`), nil
 		}
 	})
 
-	if _, err := execute(buildHealthRoot(deps), "health", "action", "action-1", "--json", `{"alias":"fixConfig"}`); err != nil {
+	if _, err := cmdtest.Execute(buildHealthRoot(deps), "health", "action", "action-1", "--json", `{"alias":"fixConfig"}`); err != nil {
 		t.Fatalf("health action failed: %v", err)
 	}
 	if legacyMethod != http.MethodPost || legacyPath != "/umbraco/management/api/v1/health-check/action-1" {
@@ -193,12 +196,12 @@ func TestHealthActionFallsBackToLegacyActionEndpoint(t *testing.T) {
 
 func TestHealthActionDryRunSkipsRequest(t *testing.T) {
 	requests := 0
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		requests++
-		return endpointJSONResponse(http.StatusOK, `{}`), nil
+		return cmdtest.JSONResponse(http.StatusOK, `{}`), nil
 	})
 
-	out, err := execute(buildHealthRoot(deps), "health", "action", "action-1", "--dry-run")
+	out, err := cmdtest.Execute(buildHealthRoot(deps), "health", "action", "action-1", "--dry-run")
 	if err != nil {
 		t.Fatalf("health action dry-run failed: %v", err)
 	}
@@ -211,12 +214,12 @@ func TestHealthActionDryRunSkipsRequest(t *testing.T) {
 }
 
 func TestHealthActionRejectsInvalidJSON(t *testing.T) {
-	deps := endpointDeps(func(req *http.Request) (*http.Response, error) {
+	deps := cmdtest.Deps(func(req *http.Request) (*http.Response, error) {
 		t.Fatalf("no HTTP request expected for invalid payload")
 		return nil, nil
 	})
 
-	if _, err := execute(buildHealthRoot(deps), "health", "action", "action-1", "--json", "{not-json"); err == nil {
+	if _, err := cmdtest.Execute(buildHealthRoot(deps), "health", "action", "action-1", "--json", "{not-json"); err == nil {
 		t.Fatalf("expected error for invalid JSON payload")
 	}
 }

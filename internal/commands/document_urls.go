@@ -11,7 +11,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/commands/cmdkit"
 	"umbraco-cli/internal/config"
+	"umbraco-cli/internal/jsonvalue"
 )
 
 type documentURLResult struct {
@@ -45,7 +47,7 @@ func (e documentURLsMissingError) Error() string {
 	return fmt.Sprintf("documents have no published URL: %s", strings.Join(e.IDs, ", "))
 }
 
-func documentURLs(deps Dependencies) *cobra.Command {
+func documentURLs(deps cmdkit.Dependencies) *cobra.Command {
 	var culture string
 	var absolute bool
 	cmd := &cobra.Command{
@@ -73,7 +75,7 @@ func documentURLs(deps Dependencies) *cobra.Command {
 			case config.OutputTable:
 				err = printDocumentURLTable(cmd, flattenDocumentURLRows(results))
 			case config.OutputJSON:
-				err = printResult(cmd, deps, results)
+				err = cmdkit.PrintResult(cmd, deps, results)
 			default:
 				err = fmt.Errorf("unsupported output format: %s", format)
 			}
@@ -96,7 +98,7 @@ type documentURLOptions struct {
 	Absolute bool
 }
 
-func fetchDocumentURLs(ctx context.Context, deps Dependencies, ids []string, opts documentURLOptions) ([]documentURLResult, error) {
+func fetchDocumentURLs(ctx context.Context, deps cmdkit.Dependencies, ids []string, opts documentURLOptions) ([]documentURLResult, error) {
 	params := map[string]any{"id": stringSliceAsAny(ids)}
 	raw, err := deps.Client.Get(ctx, "/document/urls", api.RequestOptions{Params: params})
 	if err != nil {
@@ -117,7 +119,7 @@ func fetchDocumentURLs(ctx context.Context, deps Dependencies, ids []string, opt
 	return results, nil
 }
 
-func attachDocumentURLs(ctx context.Context, deps Dependencies, id string, result any) (any, error) {
+func attachDocumentURLs(ctx context.Context, deps cmdkit.Dependencies, id string, result any) (any, error) {
 	results, err := fetchDocumentURLs(ctx, deps, []string{id}, documentURLOptions{})
 	if err != nil {
 		return nil, err
@@ -126,7 +128,7 @@ func attachDocumentURLs(ctx context.Context, deps Dependencies, id string, resul
 	if !ok {
 		return result, nil
 	}
-	next := cloneAnyMap(entry)
+	next := cmdkit.CloneAnyMap(entry)
 	if len(results) == 0 {
 		next["urls"] = []any{}
 		return next, nil
@@ -162,7 +164,7 @@ func filterDocumentURLsByCulture(results []documentURLResult, culture string) []
 		next := result
 		next.URLInfos = make([]documentURLInfo, 0, len(result.URLInfos))
 		for _, info := range result.URLInfos {
-			if cultureValue(info.Culture) == culture {
+			if jsonvalue.String(info.Culture) == culture {
 				next.URLInfos = append(next.URLInfos, info)
 			}
 		}
@@ -187,9 +189,9 @@ func absolutizeDocumentURLs(results []documentURLResult, baseURL string) []docum
 	return out
 }
 
-func configuredBaseURL(deps Dependencies) (string, error) {
+func configuredBaseURL(deps cmdkit.Dependencies) (string, error) {
 	if deps.ConfigOptionsProvider != nil {
-		cfg, err := config.LoadWithOptions(deps.configOptions())
+		cfg, err := config.LoadWithOptions(deps.ConfigOptions())
 		if err != nil {
 			return "", err
 		}
@@ -197,8 +199,8 @@ func configuredBaseURL(deps Dependencies) (string, error) {
 			return cfg.BaseURL, nil
 		}
 	}
-	if strings.TrimSpace(deps.currentConfig().BaseURL) != "" {
-		return deps.currentConfig().BaseURL, nil
+	if strings.TrimSpace(deps.CurrentConfig().BaseURL) != "" {
+		return deps.CurrentConfig().BaseURL, nil
 	}
 	cfg, err := config.Load()
 	if err != nil {
@@ -235,7 +237,7 @@ func flattenDocumentURLRows(results []documentURLResult) []documentURLRow {
 		for _, info := range result.URLInfos {
 			rows = append(rows, documentURLRow{
 				ID:       result.ID,
-				Culture:  cultureValue(info.Culture),
+				Culture:  jsonvalue.String(info.Culture),
 				URL:      urlValue(info.URL),
 				Provider: info.Provider,
 				Message:  messageValue(info.Message),
@@ -291,17 +293,6 @@ func printDocumentURLTable(cmd *cobra.Command, rows []documentURLRow) error {
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", row.ID, row.Culture, row.URL, row.Provider, row.Message)
 	}
 	return tw.Flush()
-}
-
-func cultureValue(value any) string {
-	switch typed := value.(type) {
-	case nil:
-		return ""
-	case string:
-		return typed
-	default:
-		return fmt.Sprint(typed)
-	}
 }
 
 func messageValue(value any) string {
