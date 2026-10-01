@@ -201,7 +201,7 @@ type engageDeleteSpec struct {
 	Consequence string
 }
 
-// engageDelete is deleteCommand for Engage's query-parameter ids, with the
+// engageDelete is cmdkit.DeleteCommand for Engage's query-parameter ids, with the
 // id kind validated before the force gate so a wrong id never needs --force
 // to be noticed.
 func engageDelete(deps cmdkit.Dependencies, spec engageDeleteSpec) *cobra.Command {

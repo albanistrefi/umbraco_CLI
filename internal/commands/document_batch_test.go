@@ -118,7 +118,7 @@ func TestDocumentUpdateIDsMergesPerDocumentAndPublishes(t *testing.T) {
 }
 
 // The per-document merge in the batch path runs through the same
-// mergeAliasPayload as the single-document one, so the variant regression
+// cmdkit.MergeAliasPayload as the single-document one, so the variant regression
 // has to be pinned here too: renaming one culture across several documents
 // must not drop the others from any of them.
 func TestDocumentUpdateIDsMergesVariantsPerCulture(t *testing.T) {

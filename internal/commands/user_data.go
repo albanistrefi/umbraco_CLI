@@ -81,8 +81,8 @@ func userDataDelete(deps cmdkit.Dependencies) *cobra.Command {
 	})
 }
 
-// userDataCreate is written out rather than built with createCommand: the
-// create model keys the entry on "key", not the "id" that createCommand
+// userDataCreate is written out rather than built with cmdkit.CreateCommand: the
+// create model keys the entry on "key", not the "id" that cmdkit.CreateCommand
 // generates, and the group/identifier/value triple is small enough to pass
 // as flags.
 func userDataCreate(deps cmdkit.Dependencies) *cobra.Command {
@@ -118,7 +118,7 @@ func userDataCreate(deps cmdkit.Dependencies) *cobra.Command {
 	return cmd
 }
 
-// userDataUpdate is written out rather than built with updateCommand: the
+// userDataUpdate is written out rather than built with cmdkit.UpdateCommand: the
 // PUT goes to the collection endpoint with the key inside the body, and the
 // update model requires every field, so there is nothing to merge against
 // (GET /user-data/{id} does not echo the key back).

@@ -65,7 +65,7 @@ const autoPaginateMaxPages = 200
 // winning candidate is queried — re-running the full fallback chain would
 // re-issue the 404ing candidates once per page.
 //
-// pageSize ≤ 0 falls back to autoPaginateDefaultPageSize. baseSkip < 0
+// pageSize ≤ 0 falls back to AutoPaginateDefaultPageSize. baseSkip < 0
 // is treated as 0. limit > 0 stops the loop once `limit` items have been
 // accumulated (used to honour --first-n without pulling pages we'd discard).
 func GetAllPagesWithFallback(

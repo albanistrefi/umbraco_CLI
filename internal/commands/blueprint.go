@@ -86,7 +86,7 @@ func blueprintChildren(deps cmdkit.Dependencies) *cobra.Command {
 	})
 }
 
-// blueprintAncestors is a plain read rather than a collectionCommand: the
+// blueprintAncestors is a plain read rather than a cmdkit.CollectionCommand: the
 // ancestors route answers with a bare array, not the {items, total}
 // envelope pagination and triage are built on.
 func blueprintAncestors(deps cmdkit.Dependencies) *cobra.Command {
@@ -108,7 +108,7 @@ func blueprintAncestors(deps cmdkit.Dependencies) *cobra.Command {
 	return cmd
 }
 
-// blueprintSiblings is a plain read rather than a collectionCommand: the
+// blueprintSiblings is a plain read rather than a cmdkit.CollectionCommand: the
 // route is windowed with --before/--after around the target instead of
 // skip/take, and answers with {totalBefore, totalAfter, items}.
 func blueprintSiblings(deps cmdkit.Dependencies) *cobra.Command {

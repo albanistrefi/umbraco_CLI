@@ -47,7 +47,7 @@ func searcherList(deps cmdkit.Dependencies) *cobra.Command {
 	})
 }
 
-// searcherQuery is a collection read rather than a searchCommand: the
+// searcherQuery is a collection read rather than a cmdkit.SearchCommand: the
 // endpoint takes its search text as `term` (not the `query` parameter the
 // search archetype sends) and the searcher itself is a path segment, so the
 // search builder's NoArgs/`query` contract does not fit. --query is kept as
