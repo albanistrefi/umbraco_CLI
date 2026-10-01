@@ -13,7 +13,7 @@ var ExpectedCollectionCommandCounts = map[string]int{
 	"script":          9,
 	"stylesheet":      9,
 	"static-file":     3,
-	"forms":           6,
+	"forms":           21,
 	"models-builder":  3,
 	"member":          8,
 	"member-group":    2,
