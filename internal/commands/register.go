@@ -43,6 +43,7 @@ func RegisterAll(root *cobra.Command, deps Dependencies) {
 	RegisterAPI(root, deps)
 	RegisterAuth(root, deps)
 	RegisterAutomate(root, deps)
+	RegisterEngage(root, deps)
 	RegisterSchema(root, deps)
 	RegisterGenerateSkills(root, deps)
 }
