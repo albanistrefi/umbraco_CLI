@@ -259,12 +259,21 @@ func isZeroEngageID(value any) bool {
 	return false
 }
 
+// ensureEngageGUID keeps a supplied GUID, generates one for an absent, null
+// or empty field, and rejects anything else: a number or object in the GUID
+// field is malformed input, not a request for a fresh identity.
 func ensureEngageGUID(body map[string]any, field string) error {
-	if value, ok := body[field].(string); ok && strings.TrimSpace(value) != "" {
-		if !isUUIDLike(value) {
-			return fmt.Errorf("`%s` must be a GUID, got %q", field, value)
+	if value, present := body[field]; present && value != nil {
+		text, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("`%s` must be a GUID string, got %s", field, jsonShapeName(value))
 		}
-		return nil
+		if strings.TrimSpace(text) != "" {
+			if !isUUIDLike(text) {
+				return fmt.Errorf("`%s` must be a GUID, got %q", field, text)
+			}
+			return nil
+		}
 	}
 	guid, err := newUUIDv4()
 	if err != nil {
@@ -285,8 +294,14 @@ func pinEngageIdentity(command string, body map[string]any, current map[string]a
 	if given, ok := body["id"]; ok && !isZeroEngageID(given) && fmt.Sprint(given) != fmt.Sprint(serverID) {
 		return fmt.Errorf("%s: --json carries `id` %v but %s has `id` %v; drop `id` or pass the matching entity", command, given, guid, serverID)
 	}
-	if given, ok := body[field].(string); ok && strings.TrimSpace(given) != "" && !strings.EqualFold(strings.TrimSpace(given), guid) {
-		return fmt.Errorf("%s: --json carries `%s` %q, which is not the entity being updated (%s)", command, field, given, guid)
+	if value, present := body[field]; present && value != nil {
+		given, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("%s: `%s` must be a GUID string, got %s", command, field, jsonShapeName(value))
+		}
+		if strings.TrimSpace(given) != "" && !strings.EqualFold(strings.TrimSpace(given), guid) {
+			return fmt.Errorf("%s: --json carries `%s` %q, which is not the entity being updated (%s)", command, field, given, guid)
+		}
 	}
 	body["id"] = serverID
 	body[field] = guid

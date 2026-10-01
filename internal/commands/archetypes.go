@@ -82,6 +82,8 @@ func jsonShapeName(value any) string {
 	switch value.(type) {
 	case []any:
 		return "an array"
+	case map[string]any:
+		return "an object"
 	case float64:
 		return "a number"
 	case bool:
