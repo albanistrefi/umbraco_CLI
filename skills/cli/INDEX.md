@@ -27,7 +27,7 @@ Per-resource CLI command skills.
 | [umbraco-document](umbraco-document/SKILL.md) | Document and content management operations |
 | [umbraco-element](umbraco-element/SKILL.md) | Element library content (Umbraco 18.1+): reusable content items with publish lifecycle |
 | [umbraco-engage](umbraco-engage/SKILL.md) | Umbraco Engage operations (analytics, segments, personas, journeys, goals, A/B tests, personalization) |
-| [umbraco-forms](umbraco-forms/SKILL.md) | Umbraco Forms operations (read-only) |
+| [umbraco-forms](umbraco-forms/SKILL.md) | Umbraco Forms operations: forms, folders, records, prevalue sources |
 | [umbraco-health](umbraco-health/SKILL.md) | Health check operations |
 | [umbraco-indexer](umbraco-indexer/SKILL.md) | Examine search index operations |
 | [umbraco-language](umbraco-language/SKILL.md) | Language and culture management for variant content |
