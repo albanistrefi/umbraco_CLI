@@ -1,6 +1,6 @@
 ---
 name: umbraco-engage
-description: "Umbraco Engage operations (read-only: analytics, segments, personas, journeys, goals, A/B tests)"
+description: "Umbraco Engage operations (analytics, segments, personas, journeys, goals, A/B tests, personalization)"
 metadata:
   version: 0.4.24
   requires:
@@ -21,13 +21,15 @@ umbraco engage <command> [flags]
 ## Overview
 
 ```text
-Read-only commands for the Umbraco Engage Management API (/umbraco/engage/management/api/v1). Requires Umbraco Engage on the target instance.
+Commands for the Umbraco Engage Management API (/umbraco/engage/management/api/v1). Requires Umbraco Engage on the target instance. What a command may read or change is governed by the permissions of the API user the CLI authenticates as.
 
-Engage entities carry two ids: a numeric `id` and a GUID `unique` (`key` on goals and traffic filters). Most get commands take the GUID; the A/B test reads take the numeric id. Each get command says which, and rejects the other kind before calling the API.
+Engage entities carry two ids: a numeric `id` and a GUID `unique` (`key` on goals and traffic filters). Most get, update and delete commands take the GUID; the A/B test reads, annotations and segment priorities take the numeric id. Each command says which, and rejects the other kind before calling the API.
 
-Start with 'umbraco engage status': it reports the license, the main switch, and whether Engage's data is reachable. When Engage's database migration is incomplete every data read answers HTTP 409 "Umbraco Engage is unavailable" (exit code 4).
+Engage saves an entity by POSTing the whole entity to one route for both create and update; 'create' always sends `id` 0, and 'update' fetches the entity first so it can never create one by accident. Every write takes --dry-run; deletes, the main switch and reporting regeneration also require --force.
 
-Visitor profiles (/profile/*) are deliberately not exposed: they return personal data about individual visitors.
+Start with 'umbraco engage status': it reports the license, the main switch, and whether Engage's data is reachable. When Engage's database migration is incomplete every data route answers HTTP 409 "Umbraco Engage is unavailable" (exit code 4).
+
+Visitor profiles (/profile/*, per-visitor scoring locks, suspicious-visitor routes) are deliberately not exposed: they hold personal data about individual visitors.
 ```
 
 ## Read Commands
@@ -52,6 +54,7 @@ Visitor profiles (/profile/*) are deliberately not exposed: they return personal
 | `engage goal types` | List the goal types goals can be configured with (GET /goal/all/types) |
 | `engage journey get <unique>` | Get one customer journey by its GUID `unique` |
 | `engage journey list` | List every customer journey (GET /customer-journey/all) |
+| `engage main-switch get` | Show whether the main switch is on (GET /main-switch) |
 | `engage persona get <unique>` | Get one persona by its GUID `unique` |
 | `engage persona list` | List every persona (GET /persona/all) |
 | `engage personalization get <unique>` | Get one applied personalization by its GUID `unique` |
@@ -276,6 +279,16 @@ GET /customer-journey/all. Returns a bare array, not paged. Each entry carries a
 |------|------|---------|-------------|
 | `--fields` | string | — | Limit response fields (comma-separated top-level keys) |
 
+### main-switch get
+
+```bash
+umbraco engage main-switch get
+```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--fields` | string | — | Limit response fields (comma-separated top-level keys) |
+
 ### persona get
 
 ```bash
@@ -467,6 +480,35 @@ GET /traffic-filter/all. Returns a bare array, not paged. Each entry carries a n
 | Command | Description |
 |---------|-------------|
 | `engage analytics query` | Run an analytics query (POST /analytics/query; read-only) |
+| `engage annotation create` | Create an analytics annotation (POST /annotations) |
+| `engage annotation delete <id>` | Permanently delete an annotation by its numeric `id` |
+| `engage campaign-group create` | Create a campaign group (POST /campaign-group) |
+| `engage campaign-group delete <unique>` | Permanently delete a campaign group by its GUID `unique` |
+| `engage campaign-group update <unique>` | Update a campaign group by its GUID `unique` (POST /campaign-group) |
+| `engage goal create` | Create a goal (POST /goal) |
+| `engage goal update <key>` | Update a goal by its GUID `key` (POST /goal) |
+| `engage journey create` | Create a customer journey (POST /customer-journey) |
+| `engage journey delete <unique>` | Permanently delete a customer journey by its GUID `unique` |
+| `engage journey update <unique>` | Update a customer journey by its GUID `unique` (POST /customer-journey) |
+| `engage main-switch off` | Turn Engage off site-wide (POST /main-switch/turn-off) |
+| `engage main-switch on` | Turn Engage on site-wide (POST /main-switch/turn-on) |
+| `engage persona create` | Create a persona (POST /persona) |
+| `engage persona delete <unique>` | Permanently delete a persona by its GUID `unique` |
+| `engage persona update <unique>` | Update a persona by its GUID `unique` (POST /persona) |
+| `engage personalization create` | Create a applied personalization (POST /applied-personalization) |
+| `engage personalization delete <unique>` | Permanently delete a applied personalization by its GUID `unique` |
+| `engage personalization update <unique>` | Update a applied personalization by its GUID `unique` (POST /applied-personalization) |
+| `engage referral-group create` | Create a referral group (POST /referral-group) |
+| `engage referral-group delete <unique>` | Permanently delete a referral group by its GUID `unique` |
+| `engage referral-group update <unique>` | Update a referral group by its GUID `unique` (POST /referral-group) |
+| `engage reporting generate` | Regenerate the reporting tables (POST /reporting/generation/start) |
+| `engage segment create` | Create a segment (POST /segments) |
+| `engage segment delete <unique>` | Permanently delete a segment by its GUID `unique` |
+| `engage segment update <unique>` | Update a segment by its GUID `unique` (POST /segments) |
+| `engage segment update-priority` | Reorder segment priority (POST /segments/update-priority) |
+| `engage traffic-filter create` | Create a traffic filter (POST /traffic-filter) |
+| `engage traffic-filter delete <key>` | Permanently delete a traffic filter by its GUID `key` |
+| `engage traffic-filter update <key>` | Update a traffic filter by its GUID `key` (POST /traffic-filter) |
 
 ### analytics query
 
@@ -510,6 +552,691 @@ umbraco engage analytics query [flags] --dry-run
 
 # 2. Execute with the same flags
 umbraco engage analytics query [flags]
+```
+
+### annotation create
+
+```bash
+umbraco engage annotation create
+```
+
+POST /annotations with `id` 0. Needs `timestamp` (RFC 3339), `description` and `visibility` (Always, Node, NodeAndDescendants, Created, Published, AbTestStart, AbTestEnd); anything but Always pins it to `pageVariants` [{"unique":<document GUID>,"culture":""}]. --print-template prints GET /annotations/empty, the server's blank template.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--json` | string | — | Annotation payload as JSON |
+| `--print-template` | bool | false | Print the server's blank annotation; edit it and pass it to --json |
+
+**Safe pattern:**
+
+```bash
+# 1. Rehearse with the exact flags you will execute with
+umbraco engage annotation create [flags] --dry-run
+
+# 2. Execute with the same flags
+umbraco engage annotation create [flags]
+```
+
+### annotation delete
+
+```bash
+umbraco engage annotation delete <id>
+```
+
+DELETE /annotations?id=<id>. Annotations carry only a numeric `id` (from 'umbraco engage annotation list'). Requires --force (or --dry-run to rehearse).
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--force` | bool | false | Confirm permanent deletion |
+
+**Safe pattern:**
+
+```bash
+# 1. Rehearse with the exact flags you will execute with
+umbraco engage annotation delete <id> [flags] --dry-run
+
+# 2. Execute with the same flags
+umbraco engage annotation delete <id> --force [flags]
+```
+
+### campaign-group create
+
+```bash
+umbraco engage campaign-group create
+```
+
+POST /campaign-group with `id` 0. --json is merged onto the create defaults; `unique` is generated when omitted. A non-zero `id` is rejected: Engage would update that entity instead, so use 'update'. --print-template prints a built-in scaffold mirroring the back office's. `campaigns[]` holds the UTM matches (utmSource, utmMedium, utmCampaign, ...); deleting a group reverts its campaigns to unscored.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--json` | string | — | Create payload as JSON (merged onto the create defaults) |
+| `--print-template` | bool | false | Print a JSON skeleton; edit it and pass it to --json |
+
+**Safe pattern:**
+
+```bash
+# 1. Rehearse with the exact flags you will execute with
+umbraco engage campaign-group create [flags] --dry-run
+
+# 2. Execute with the same flags
+umbraco engage campaign-group create [flags]
+```
+
+### campaign-group delete
+
+```bash
+umbraco engage campaign-group delete <unique>
+```
+
+DELETE /campaign-group?id=<unique>. Requires --force (or --dry-run to rehearse).
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--force` | bool | false | Confirm permanent deletion |
+
+**Safe pattern:**
+
+```bash
+# 1. Rehearse with the exact flags you will execute with
+umbraco engage campaign-group delete <unique> [flags] --dry-run
+
+# 2. Execute with the same flags
+umbraco engage campaign-group delete <unique> --force [flags]
+```
+
+### campaign-group update
+
+```bash
+umbraco engage campaign-group update <unique>
+```
+
+Fetches GET /campaign-group?id=<unique> (also under --dry-run, so an unknown GUID fails instead of creating a new campaign group), then POSTs /campaign-group with the entity's numeric `id` and `unique` pinned. Exactly one of --json (full replacement) or --merge-json (deep-merged into the fetched entity; arrays such as rules or scoring entries are replaced wholesale, not merged per entry). `campaigns[]` holds the UTM matches (utmSource, utmMedium, utmCampaign, ...); deleting a group reverts its campaigns to unscored.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--json` | string | — | Full replacement payload as JSON (fields not mentioned are reset by the server) |
+| `--merge-json` | string | — | Partial JSON deep-merged into the current entity before the save (fields not mentioned are preserved) |
+
+**Safe pattern:**
+
+```bash
+# 1. Rehearse with the exact flags you will execute with
+umbraco engage campaign-group update <unique> [flags] --dry-run
+
+# 2. Execute with the same flags
+umbraco engage campaign-group update <unique> [flags]
+```
+
+### goal create
+
+```bash
+umbraco engage goal create
+```
+
+POST /goal with `id` 0. --json is merged onto the create defaults; `unique` is generated when omitted. A non-zero `id` is rejected: Engage would update that entity instead, so use 'update'. --print-template prints a built-in scaffold mirroring the back office's. `goalTypeId` comes from 'umbraco engage goal types'. Like the back office, `isActive` defaults to false. Engage answers the goal's GUID. Engage's Management API has no goal delete route; deactivate a goal with --merge-json '{"isActive":false}'.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--json` | string | — | Create payload as JSON (merged onto the create defaults) |
+| `--print-template` | bool | false | Print a JSON skeleton; edit it and pass it to --json |
+
+**Safe pattern:**
+
+```bash
+# 1. Rehearse with the exact flags you will execute with
+umbraco engage goal create [flags] --dry-run
+
+# 2. Execute with the same flags
+umbraco engage goal create [flags]
+```
+
+### goal update
+
+```bash
+umbraco engage goal update <key>
+```
+
+Fetches GET /goal/details?id=<key> (also under --dry-run, so an unknown GUID fails instead of creating a new goal), then POSTs /goal with the entity's numeric `id` and `unique` pinned. Exactly one of --json (full replacement) or --merge-json (deep-merged into the fetched entity; arrays such as rules or scoring entries are replaced wholesale, not merged per entry). `goalTypeId` comes from 'umbraco engage goal types'. Like the back office, `isActive` defaults to false. Engage answers the goal's GUID. Engage's Management API has no goal delete route; deactivate a goal with --merge-json '{"isActive":false}'.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--json` | string | — | Full replacement payload as JSON (fields not mentioned are reset by the server) |
+| `--merge-json` | string | — | Partial JSON deep-merged into the current entity before the save (fields not mentioned are preserved) |
+
+**Safe pattern:**
+
+```bash
+# 1. Rehearse with the exact flags you will execute with
+umbraco engage goal update <key> [flags] --dry-run
+
+# 2. Execute with the same flags
+umbraco engage goal update <key> [flags]
+```
+
+### journey create
+
+```bash
+umbraco engage journey create
+```
+
+POST /customer-journey with `id` 0. --json is merged onto the create defaults; `unique` is generated when omitted. A non-zero `id` is rejected: Engage would update that entity instead, so use 'update'. --print-template prints GET /customer-journey/empty, the server's blank template. A journey holds its steps in `steps[]`; Engage answers {journey, validationResults} and a false `isValid` exits 4.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--json` | string | — | Create payload as JSON (merged onto the create defaults) |
+| `--print-template` | bool | false | Print a JSON skeleton; edit it and pass it to --json |
+
+**Safe pattern:**
+
+```bash
+# 1. Rehearse with the exact flags you will execute with
+umbraco engage journey create [flags] --dry-run
+
+# 2. Execute with the same flags
+umbraco engage journey create [flags]
+```
+
+### journey delete
+
+```bash
+umbraco engage journey delete <unique>
+```
+
+DELETE /customer-journey?id=<unique>. Requires --force (or --dry-run to rehearse).
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--force` | bool | false | Confirm permanent deletion |
+
+**Safe pattern:**
+
+```bash
+# 1. Rehearse with the exact flags you will execute with
+umbraco engage journey delete <unique> [flags] --dry-run
+
+# 2. Execute with the same flags
+umbraco engage journey delete <unique> --force [flags]
+```
+
+### journey update
+
+```bash
+umbraco engage journey update <unique>
+```
+
+Fetches GET /customer-journey/details?id=<unique> (also under --dry-run, so an unknown GUID fails instead of creating a new customer journey), then POSTs /customer-journey with the entity's numeric `id` and `unique` pinned. Exactly one of --json (full replacement) or --merge-json (deep-merged into the fetched entity; arrays such as rules or scoring entries are replaced wholesale, not merged per entry). A journey holds its steps in `steps[]`; Engage answers {journey, validationResults} and a false `isValid` exits 4.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--json` | string | — | Full replacement payload as JSON (fields not mentioned are reset by the server) |
+| `--merge-json` | string | — | Partial JSON deep-merged into the current entity before the save (fields not mentioned are preserved) |
+
+**Safe pattern:**
+
+```bash
+# 1. Rehearse with the exact flags you will execute with
+umbraco engage journey update <unique> [flags] --dry-run
+
+# 2. Execute with the same flags
+umbraco engage journey update <unique> [flags]
+```
+
+### main-switch off
+
+```bash
+umbraco engage main-switch off
+```
+
+POST /main-switch/turn-off (no body), then reads GET /main-switch back. Requires --force (or --dry-run to rehearse).
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--force` | bool | false | Confirm the site-wide switch |
+
+**Safe pattern:**
+
+```bash
+# 1. Rehearse with the exact flags you will execute with
+umbraco engage main-switch off [flags] --dry-run
+
+# 2. Execute with the same flags
+umbraco engage main-switch off --force [flags]
+```
+
+### main-switch on
+
+```bash
+umbraco engage main-switch on
+```
+
+POST /main-switch/turn-on (no body), then reads GET /main-switch back. Requires --force (or --dry-run to rehearse).
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--force` | bool | false | Confirm the site-wide switch |
+
+**Safe pattern:**
+
+```bash
+# 1. Rehearse with the exact flags you will execute with
+umbraco engage main-switch on [flags] --dry-run
+
+# 2. Execute with the same flags
+umbraco engage main-switch on --force [flags]
+```
+
+### persona create
+
+```bash
+umbraco engage persona create
+```
+
+POST /persona with `id` 0. --json is merged onto the create defaults; `unique` is generated when omitted. A non-zero `id` is rejected: Engage would update that entity instead, so use 'update'. --print-template prints GET /persona/empty, the server's blank template. A persona group holds its personas in `personas[]`; Engage answers {persona, validationResults} and a false `isValid` exits 4.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--json` | string | — | Create payload as JSON (merged onto the create defaults) |
+| `--print-template` | bool | false | Print a JSON skeleton; edit it and pass it to --json |
+
+**Safe pattern:**
+
+```bash
+# 1. Rehearse with the exact flags you will execute with
+umbraco engage persona create [flags] --dry-run
+
+# 2. Execute with the same flags
+umbraco engage persona create [flags]
+```
+
+### persona delete
+
+```bash
+umbraco engage persona delete <unique>
+```
+
+DELETE /persona?id=<unique>. Requires --force (or --dry-run to rehearse).
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--force` | bool | false | Confirm permanent deletion |
+
+**Safe pattern:**
+
+```bash
+# 1. Rehearse with the exact flags you will execute with
+umbraco engage persona delete <unique> [flags] --dry-run
+
+# 2. Execute with the same flags
+umbraco engage persona delete <unique> --force [flags]
+```
+
+### persona update
+
+```bash
+umbraco engage persona update <unique>
+```
+
+Fetches GET /persona/details?id=<unique> (also under --dry-run, so an unknown GUID fails instead of creating a new persona), then POSTs /persona with the entity's numeric `id` and `unique` pinned. Exactly one of --json (full replacement) or --merge-json (deep-merged into the fetched entity; arrays such as rules or scoring entries are replaced wholesale, not merged per entry). A persona group holds its personas in `personas[]`; Engage answers {persona, validationResults} and a false `isValid` exits 4.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--json` | string | — | Full replacement payload as JSON (fields not mentioned are reset by the server) |
+| `--merge-json` | string | — | Partial JSON deep-merged into the current entity before the save (fields not mentioned are preserved) |
+
+**Safe pattern:**
+
+```bash
+# 1. Rehearse with the exact flags you will execute with
+umbraco engage persona update <unique> [flags] --dry-run
+
+# 2. Execute with the same flags
+umbraco engage persona update <unique> [flags]
+```
+
+### personalization create
+
+```bash
+umbraco engage personalization create
+```
+
+POST /applied-personalization with `id` 0. --json is merged onto the create defaults; `unique` is generated when omitted. A non-zero `id` is rejected: Engage would update that entity instead, so use 'update'. --print-template prints a built-in scaffold mirroring the back office's. `segmentId` is the segment's numeric `id`. Like the back office, a `ContentType` personalization is saved with `pages` emptied and any other type with `contentTypes` emptied.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--json` | string | — | Create payload as JSON (merged onto the create defaults) |
+| `--print-template` | bool | false | Print a JSON skeleton; edit it and pass it to --json |
+
+**Safe pattern:**
+
+```bash
+# 1. Rehearse with the exact flags you will execute with
+umbraco engage personalization create [flags] --dry-run
+
+# 2. Execute with the same flags
+umbraco engage personalization create [flags]
+```
+
+### personalization delete
+
+```bash
+umbraco engage personalization delete <unique>
+```
+
+DELETE /applied-personalization?id=<unique>. Requires --force (or --dry-run to rehearse).
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--force` | bool | false | Confirm permanent deletion |
+
+**Safe pattern:**
+
+```bash
+# 1. Rehearse with the exact flags you will execute with
+umbraco engage personalization delete <unique> [flags] --dry-run
+
+# 2. Execute with the same flags
+umbraco engage personalization delete <unique> --force [flags]
+```
+
+### personalization update
+
+```bash
+umbraco engage personalization update <unique>
+```
+
+Fetches GET /applied-personalization/id?id=<unique> (also under --dry-run, so an unknown GUID fails instead of creating a new applied personalization), then POSTs /applied-personalization with the entity's numeric `id` and `unique` pinned. Exactly one of --json (full replacement) or --merge-json (deep-merged into the fetched entity; arrays such as rules or scoring entries are replaced wholesale, not merged per entry). `segmentId` is the segment's numeric `id`. Like the back office, a `ContentType` personalization is saved with `pages` emptied and any other type with `contentTypes` emptied.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--json` | string | — | Full replacement payload as JSON (fields not mentioned are reset by the server) |
+| `--merge-json` | string | — | Partial JSON deep-merged into the current entity before the save (fields not mentioned are preserved) |
+
+**Safe pattern:**
+
+```bash
+# 1. Rehearse with the exact flags you will execute with
+umbraco engage personalization update <unique> [flags] --dry-run
+
+# 2. Execute with the same flags
+umbraco engage personalization update <unique> [flags]
+```
+
+### referral-group create
+
+```bash
+umbraco engage referral-group create
+```
+
+POST /referral-group with `id` 0. --json is merged onto the create defaults; `unique` is generated when omitted. A non-zero `id` is rejected: Engage would update that entity instead, so use 'update'. --print-template prints a built-in scaffold mirroring the back office's. `pages[]` holds the referring pages (pageUrl, domainOnly).
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--json` | string | — | Create payload as JSON (merged onto the create defaults) |
+| `--print-template` | bool | false | Print a JSON skeleton; edit it and pass it to --json |
+
+**Safe pattern:**
+
+```bash
+# 1. Rehearse with the exact flags you will execute with
+umbraco engage referral-group create [flags] --dry-run
+
+# 2. Execute with the same flags
+umbraco engage referral-group create [flags]
+```
+
+### referral-group delete
+
+```bash
+umbraco engage referral-group delete <unique>
+```
+
+DELETE /referral-group?id=<unique>. Requires --force (or --dry-run to rehearse).
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--force` | bool | false | Confirm permanent deletion |
+
+**Safe pattern:**
+
+```bash
+# 1. Rehearse with the exact flags you will execute with
+umbraco engage referral-group delete <unique> [flags] --dry-run
+
+# 2. Execute with the same flags
+umbraco engage referral-group delete <unique> --force [flags]
+```
+
+### referral-group update
+
+```bash
+umbraco engage referral-group update <unique>
+```
+
+Fetches GET /referral-group?id=<unique> (also under --dry-run, so an unknown GUID fails instead of creating a new referral group), then POSTs /referral-group with the entity's numeric `id` and `unique` pinned. Exactly one of --json (full replacement) or --merge-json (deep-merged into the fetched entity; arrays such as rules or scoring entries are replaced wholesale, not merged per entry). `pages[]` holds the referring pages (pageUrl, domainOnly).
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--json` | string | — | Full replacement payload as JSON (fields not mentioned are reset by the server) |
+| `--merge-json` | string | — | Partial JSON deep-merged into the current entity before the save (fields not mentioned are preserved) |
+
+**Safe pattern:**
+
+```bash
+# 1. Rehearse with the exact flags you will execute with
+umbraco engage referral-group update <unique> [flags] --dry-run
+
+# 2. Execute with the same flags
+umbraco engage referral-group update <unique> [flags]
+```
+
+### reporting generate
+
+```bash
+umbraco engage reporting generate
+```
+
+POST /reporting/generation/start (no body) starts a regeneration of Engage's aggregated reporting tables in the background; follow it with 'umbraco engage reporting status'. The back office warns that regenerating can affect site performance, so this requires --force (or --dry-run to rehearse). A 409 other than "Umbraco Engage is unavailable" means a generation is already running.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--force` | bool | false | Confirm the regeneration |
+
+**Safe pattern:**
+
+```bash
+# 1. Rehearse with the exact flags you will execute with
+umbraco engage reporting generate [flags] --dry-run
+
+# 2. Execute with the same flags
+umbraco engage reporting generate --force [flags]
+```
+
+### segment create
+
+```bash
+umbraco engage segment create
+```
+
+POST /segments with `id` 0. --json is merged onto the create defaults; `unique` is generated when omitted. A non-zero `id` is rejected: Engage would update that entity instead, so use 'update'. --print-template prints a built-in scaffold mirroring the back office's. `controlGroupSize` is a fraction (0.2 = 20%), not the percentage the back office displays; rules come from 'umbraco engage segment get' on an existing segment.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--json` | string | — | Create payload as JSON (merged onto the create defaults) |
+| `--print-template` | bool | false | Print a JSON skeleton; edit it and pass it to --json |
+
+**Safe pattern:**
+
+```bash
+# 1. Rehearse with the exact flags you will execute with
+umbraco engage segment create [flags] --dry-run
+
+# 2. Execute with the same flags
+umbraco engage segment create [flags]
+```
+
+### segment delete
+
+```bash
+umbraco engage segment delete <unique>
+```
+
+DELETE /segments?id=<unique>. Requires --force (or --dry-run to rehearse).
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--force` | bool | false | Confirm permanent deletion |
+
+**Safe pattern:**
+
+```bash
+# 1. Rehearse with the exact flags you will execute with
+umbraco engage segment delete <unique> [flags] --dry-run
+
+# 2. Execute with the same flags
+umbraco engage segment delete <unique> --force [flags]
+```
+
+### segment update
+
+```bash
+umbraco engage segment update <unique>
+```
+
+Fetches GET /segments?id=<unique> (also under --dry-run, so an unknown GUID fails instead of creating a new segment), then POSTs /segments with the entity's numeric `id` and `unique` pinned. Exactly one of --json (full replacement) or --merge-json (deep-merged into the fetched entity; arrays such as rules or scoring entries are replaced wholesale, not merged per entry). `controlGroupSize` is a fraction (0.2 = 20%), not the percentage the back office displays; rules come from 'umbraco engage segment get' on an existing segment.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--json` | string | — | Full replacement payload as JSON (fields not mentioned are reset by the server) |
+| `--merge-json` | string | — | Partial JSON deep-merged into the current entity before the save (fields not mentioned are preserved) |
+
+**Safe pattern:**
+
+```bash
+# 1. Rehearse with the exact flags you will execute with
+umbraco engage segment update <unique> [flags] --dry-run
+
+# 2. Execute with the same flags
+umbraco engage segment update <unique> [flags]
+```
+
+### segment update-priority
+
+```bash
+umbraco engage segment update-priority
+```
+
+POST /segments/update-priority with a bare array of {id, sortOrder}. A visitor in several segments gets the content of the highest-priority one. --order 7,3,9 lists numeric segment `id`s (from 'umbraco engage segment list') highest priority first and sends sortOrder 0, 1, 2, ...; --json sends an array verbatim.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--json` | string | — | Raw [{"id":7,"sortOrder":0},...] array |
+| `--order` | string | — | Comma-separated numeric segment ids, highest priority first |
+
+**Safe pattern:**
+
+```bash
+# 1. Rehearse with the exact flags you will execute with
+umbraco engage segment update-priority [flags] --dry-run
+
+# 2. Execute with the same flags
+umbraco engage segment update-priority [flags]
+```
+
+### traffic-filter create
+
+```bash
+umbraco engage traffic-filter create
+```
+
+POST /traffic-filter with `id` 0. --json is merged onto the create defaults; `key` is generated when omitted. A non-zero `id` is rejected: Engage would update that entity instead, so use 'update'. --print-template prints GET /traffic-filter/empty, the server's blank template. `mode` is Block, Filter or BlockAndFilter. Engage answers the saved filter's `key`.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--json` | string | — | Create payload as JSON (merged onto the create defaults) |
+| `--print-template` | bool | false | Print a JSON skeleton; edit it and pass it to --json |
+
+**Safe pattern:**
+
+```bash
+# 1. Rehearse with the exact flags you will execute with
+umbraco engage traffic-filter create [flags] --dry-run
+
+# 2. Execute with the same flags
+umbraco engage traffic-filter create [flags]
+```
+
+### traffic-filter delete
+
+```bash
+umbraco engage traffic-filter delete <key>
+```
+
+DELETE /traffic-filter?key=<key>. Requires --force (or --dry-run to rehearse).
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--force` | bool | false | Confirm permanent deletion |
+
+**Safe pattern:**
+
+```bash
+# 1. Rehearse with the exact flags you will execute with
+umbraco engage traffic-filter delete <key> [flags] --dry-run
+
+# 2. Execute with the same flags
+umbraco engage traffic-filter delete <key> --force [flags]
+```
+
+### traffic-filter update
+
+```bash
+umbraco engage traffic-filter update <key>
+```
+
+Fetches GET /traffic-filter?key=<key> (also under --dry-run, so an unknown GUID fails instead of creating a new traffic filter), then POSTs /traffic-filter with the entity's numeric `id` and `key` pinned. Exactly one of --json (full replacement) or --merge-json (deep-merged into the fetched entity; arrays such as rules or scoring entries are replaced wholesale, not merged per entry). `mode` is Block, Filter or BlockAndFilter. Engage answers the saved filter's `key`.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--json` | string | — | Full replacement payload as JSON (fields not mentioned are reset by the server) |
+| `--merge-json` | string | — | Partial JSON deep-merged into the current entity before the save (fields not mentioned are preserved) |
+
+**Safe pattern:**
+
+```bash
+# 1. Rehearse with the exact flags you will execute with
+umbraco engage traffic-filter update <key> [flags] --dry-run
+
+# 2. Execute with the same flags
+umbraco engage traffic-filter update <key> [flags]
 ```
 
 ## Discovering Commands
