@@ -186,12 +186,14 @@ type engageAnalyticsQueryInput struct {
 // analytics-context.js: every required field present, sort defaulting to
 // the first dimension, and --node folded into the filter.
 func buildEngageAnalyticsQuery(in engageAnalyticsQueryInput, now time.Time) (map[string]any, error) {
-	if strings.TrimSpace(in.Metrics) == "" {
-		return nil, fmt.Errorf("missing required option: --metrics (see 'umbraco engage analytics metrics')")
-	}
 	metrics, err := canonicalEngageNames("--metrics", in.Metrics, engageMetrics, "umbraco engage analytics metrics")
 	if err != nil {
 		return nil, err
+	}
+	// Checked after canonicalisation: "--metrics ," names nothing and would
+	// otherwise reach the API as an empty list.
+	if len(metrics) == 0 {
+		return nil, fmt.Errorf("missing required option: --metrics (see 'umbraco engage analytics metrics')")
 	}
 	dimensions, err := canonicalEngageNames("--dimensions", in.Dimensions, engageDimensions, "umbraco engage analytics dimensions")
 	if err != nil {

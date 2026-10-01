@@ -250,6 +250,7 @@ func TestEngageAnalyticsQueryRejectsBadInputLocally(t *testing.T) {
 		want string
 	}{
 		{[]string{"--dimensions", "date"}, "missing required option: --metrics"},
+		{[]string{"--metrics", " , ,"}, "missing required option: --metrics"},
 		{[]string{"--metrics", "pageviews,clicks"}, "unknown name(s) clicks"},
 		{[]string{"--metrics", "pageviews", "--from", "01-09-2026"}, "--from must be an ISO 8601 date"},
 		{[]string{"--metrics", "pageviews", "--culture", "en-US"}, "--culture requires --node"},
