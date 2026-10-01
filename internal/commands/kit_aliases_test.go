@@ -27,5 +27,6 @@ var (
 	executeWithErr       = cmdtest.ExecuteWithErr
 	findChildCommand     = cmdtest.FindChildCommand
 	makeDeps             = cmdtest.MakeDeps
+	readBackup           = cmdkit.ReadBackup
 	tokenOr404           = cmdtest.TokenOr404
 )

@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/commands/cmdkit"
 )
 
 // mediaReplaceFile swaps the file behind an existing media item while keeping
@@ -16,7 +17,7 @@ import (
 // or mistyped) returns 200 while leaving the item with no values at all —
 // reproduced live on 18.1. The command therefore verifies after writing and
 // refuses to report success for an emptied item.
-func mediaReplaceFile(deps Dependencies) *cobra.Command {
+func mediaReplaceFile(deps cmdkit.Dependencies) *cobra.Command {
 	var propertyAlias string
 	var culture string
 	var segment string
@@ -38,7 +39,7 @@ func mediaReplaceFile(deps Dependencies) *cobra.Command {
 			id, filePath := args[0], args[1]
 			path := api.JoinPath("/media/%s", id)
 
-			current, err := fetchObject(ctx, deps.Client, path, api.RequestOptions{})
+			current, err := cmdkit.FetchObject(ctx, deps.Client, path, api.RequestOptions{})
 			if err != nil {
 				return err
 			}
@@ -54,13 +55,13 @@ func mediaReplaceFile(deps Dependencies) *cobra.Command {
 				if err != nil {
 					return fmt.Errorf("--backup could not download the current file: %w", err)
 				}
-				backupFile, err = writeBackup(resolveBackupPath(backup, "media", id), "media", id, path, current, binary)
+				backupFile, err = cmdkit.WriteBackup(cmdkit.ResolveBackupPath(backup, "media", id), "media", id, path, current, binary)
 				if err != nil {
 					return err
 				}
 			}
 
-			tempID, err := newUUIDv4()
+			tempID, err := cmdkit.NewUUIDv4()
 			if err != nil {
 				return fmt.Errorf("failed to generate temporary file id: %w", err)
 			}
@@ -82,14 +83,14 @@ func mediaReplaceFile(deps Dependencies) *cobra.Command {
 			if strings.TrimSpace(name) != "" {
 				patch["variants"] = renameVariants(current, name, selected)
 			}
-			body := mergeAliasPayload(current, patch)
+			body := cmdkit.MergeAliasPayload(current, patch)
 
 			putResult, err := deps.Client.Put(ctx, path, body, api.RequestOptions{DryRun: dryRun})
 			if err != nil {
 				return err
 			}
 			if dryRun {
-				return printResult(cmd, deps, map[string]any{
+				return cmdkit.PrintResult(cmd, deps, map[string]any{
 					"id":            id,
 					"property":      propertyAlias,
 					"before":        before,
@@ -117,7 +118,7 @@ func mediaReplaceFile(deps Dependencies) *cobra.Command {
 			if backupFile != "" {
 				result["backup"] = backupFile
 			}
-			return printResult(cmd, deps, result)
+			return cmdkit.PrintResult(cmd, deps, result)
 		},
 	}
 
@@ -125,13 +126,13 @@ func mediaReplaceFile(deps Dependencies) *cobra.Command {
 	cmd.Flags().StringVar(&culture, "culture", "", "Culture of the file value to replace (required when the property varies by culture)")
 	cmd.Flags().StringVar(&segment, "segment", "", "Segment of the file value to replace")
 	cmd.Flags().StringVar(&name, "name", "", "Also rename the media item")
-	addBackupFlag(cmd, &backup)
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddBackupFlag(cmd, &backup)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
 // mediaRestoreBackup PUTs a --backup file back onto its media item.
-func mediaRestoreBackup(deps Dependencies) *cobra.Command {
+func mediaRestoreBackup(deps cmdkit.Dependencies) *cobra.Command {
 	var dryRun bool
 	cmd := &cobra.Command{
 		Use:   "restore-backup <file>",
@@ -143,7 +144,7 @@ func mediaRestoreBackup(deps Dependencies) *cobra.Command {
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			envelope, err := readBackup(args[0], "media")
+			envelope, err := cmdkit.ReadBackup(args[0], "media")
 			if err != nil {
 				return err
 			}
@@ -166,18 +167,18 @@ func mediaRestoreBackup(deps Dependencies) *cobra.Command {
 					}
 				}
 			} else {
-				binaryPath, err := backupBinaryPath(args[0], envelope.File.Path)
+				binaryPath, err := cmdkit.BackupBinaryPath(args[0], envelope.File.Path)
 				if err != nil {
 					return err
 				}
-				tempID, err := newUUIDv4()
+				tempID, err := cmdkit.NewUUIDv4()
 				if err != nil {
 					return fmt.Errorf("failed to generate temporary file id: %w", err)
 				}
 				if _, err := deps.Client.MultipartPost(ctx, "/temporary-file", map[string]string{"id": tempID}, "file", binaryPath, api.RequestOptions{DryRun: dryRun}); err != nil {
 					return fmt.Errorf("re-uploading the backed-up file %s failed: %w", binaryPath, err)
 				}
-				body = mergeAliasPayload(envelope.Entity, map[string]any{
+				body = cmdkit.MergeAliasPayload(envelope.Entity, map[string]any{
 					"values": []any{map[string]any{
 						"alias":   envelope.File.Property,
 						"culture": nullableString(envelope.File.Culture),
@@ -194,9 +195,9 @@ func mediaRestoreBackup(deps Dependencies) *cobra.Command {
 			}
 			if dryRun {
 				result["update"] = putResult
-				return printResult(cmd, deps, result)
+				return cmdkit.PrintResult(cmd, deps, result)
 			}
-			after, err := fetchObject(ctx, deps.Client, path, api.RequestOptions{})
+			after, err := cmdkit.FetchObject(ctx, deps.Client, path, api.RequestOptions{})
 			if err != nil {
 				return err
 			}
@@ -205,17 +206,17 @@ func mediaRestoreBackup(deps Dependencies) *cobra.Command {
 			}
 			result["restored"] = true
 			result["values"] = len(mediaValues(after))
-			return printResult(cmd, deps, result)
+			return cmdkit.PrintResult(cmd, deps, result)
 		},
 	}
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
 // verifyMediaFileWrite re-fetches the item and returns the file property's
 // value, failing when the write emptied the item or dropped the property.
 func verifyMediaFileWrite(ctx context.Context, client *api.Client, path string, propertyAlias string, culture string, segment string) (map[string]any, error) {
-	after, err := fetchObject(ctx, client, path, api.RequestOptions{})
+	after, err := cmdkit.FetchObject(ctx, client, path, api.RequestOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("the update was accepted but re-reading the item failed: %w", err)
 	}
@@ -333,7 +334,7 @@ func renameVariants(current map[string]any, name string, selected mediaFileSelec
 
 // downloadMediaBinary fetches the file currently behind a media file property
 // so a backup can restore it after the server deletes the replaced file.
-func downloadMediaBinary(ctx context.Context, client *api.Client, propertyAlias string, selected mediaFileSelection, value map[string]any) (*backupBinary, error) {
+func downloadMediaBinary(ctx context.Context, client *api.Client, propertyAlias string, selected mediaFileSelection, value map[string]any) (*cmdkit.BackupBinary, error) {
 	src := strings.TrimSpace(fmt.Sprint(value["src"]))
 	if src == "" || src == "<nil>" {
 		return nil, nil
@@ -342,7 +343,7 @@ func downloadMediaBinary(ctx context.Context, client *api.Client, propertyAlias 
 	if err != nil {
 		return nil, err
 	}
-	return &backupBinary{Property: propertyAlias, Culture: variantString(selected.Culture), Segment: variantString(selected.Segment), Src: src, Content: content}, nil
+	return &cmdkit.BackupBinary{Property: propertyAlias, Culture: variantString(selected.Culture), Segment: variantString(selected.Segment), Src: src, Content: content}, nil
 }
 
 type mediaFileReference struct {

@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/commands/cmdkit"
 	"umbraco-cli/internal/validate"
 )
 
@@ -72,7 +73,7 @@ func fetchDocumentObject(ctx context.Context, client *api.Client, id string) (ma
 // documentPropertyPatch takes flag presence separately from content so that
 // --value "" clears a property instead of counting as a missing flag.
 func documentPropertyPatch(alias string, rawValue string, hasValue bool, rawValueJSON string, hasValueJSON bool) (map[string]any, error) {
-	if err := requireValue("--property", alias); err != nil {
+	if err := cmdkit.RequireValue("--property", alias); err != nil {
 		return nil, err
 	}
 	if err := validate.String(alias); err != nil {
@@ -109,10 +110,10 @@ func parseDocumentCSVFieldMappings(properties []string, rawMappings []string) ([
 	appendMapping := func(alias string, column string) error {
 		alias = strings.TrimSpace(alias)
 		column = strings.TrimSpace(column)
-		if err := requireValue("alias", alias); err != nil {
+		if err := cmdkit.RequireValue("alias", alias); err != nil {
 			return err
 		}
-		if err := requireValue("column", column); err != nil {
+		if err := cmdkit.RequireValue("column", column); err != nil {
 			return err
 		}
 		if err := validate.String(alias); err != nil {
@@ -215,7 +216,7 @@ func executeDocumentBulkUpdate(ctx context.Context, client *api.Client, ids []st
 				continue
 			}
 
-			merged := mergeAliasPayload(current, mergePatch)
+			merged := cmdkit.MergeAliasPayload(current, mergePatch)
 			if reflect.DeepEqual(current, merged) {
 				item.Action = "skip"
 				item.Message = "already up to date"
@@ -363,7 +364,7 @@ func executeDocumentCSVUpdate(ctx context.Context, client *api.Client, opts docu
 			continue
 		}
 
-		merged := mergeAliasPayload(current, map[string]any{"values": values})
+		merged := cmdkit.MergeAliasPayload(current, map[string]any{"values": values})
 		if reflect.DeepEqual(current, merged) {
 			resultItem.Action = "skip"
 			resultItem.Message = "already up to date"

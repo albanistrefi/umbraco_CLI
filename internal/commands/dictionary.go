@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/commands/cmdkit"
 	"umbraco-cli/internal/validate"
 )
 
@@ -61,7 +62,7 @@ type dictionaryExportItem struct {
 	Translations map[string]string `json:"translations"`
 }
 
-func RegisterDictionary(root *cobra.Command, deps Dependencies) {
+func RegisterDictionary(root *cobra.Command, deps cmdkit.Dependencies) {
 	dictionary := &cobra.Command{
 		Use:   "dictionary",
 		Short: "Dictionary item and translation key operations",
@@ -77,12 +78,12 @@ func RegisterDictionary(root *cobra.Command, deps Dependencies) {
 	root.AddCommand(dictionary)
 }
 
-func dictionaryList(deps Dependencies) *cobra.Command {
+func dictionaryList(deps cmdkit.Dependencies) *cobra.Command {
 	var fields string
 	var filter string
 	var skip int
 	var take int
-	var triage readTriageOptions
+	var triage cmdkit.ReadTriageOptions
 
 	cmd := &cobra.Command{
 		Use:   "list",
@@ -109,7 +110,7 @@ func dictionaryList(deps Dependencies) *cobra.Command {
 				return err
 			}
 
-			return printResult(cmd, deps, applyReadTriage(applyFieldsProjection(result, fields), triage))
+			return cmdkit.PrintResult(cmd, deps, cmdkit.ApplyReadTriage(cmdkit.ApplyFieldsProjection(result, fields), triage))
 		},
 	}
 
@@ -117,11 +118,11 @@ func dictionaryList(deps Dependencies) *cobra.Command {
 	cmd.Flags().StringVar(&filter, "filter", "", "Filter dictionary items by key name")
 	cmd.Flags().IntVar(&skip, "skip", 0, "Pagination offset")
 	cmd.Flags().IntVar(&take, "take", 100, "Pagination page size")
-	addReadTriageFlags(cmd, &triage)
+	cmdkit.AddReadTriageFlags(cmd, &triage)
 	return cmd
 }
 
-func dictionaryGet(deps Dependencies) *cobra.Command {
+func dictionaryGet(deps cmdkit.Dependencies) *cobra.Command {
 	var key string
 
 	cmd := &cobra.Command{
@@ -139,7 +140,7 @@ func dictionaryGet(deps Dependencies) *cobra.Command {
 				return err
 			}
 
-			return printResult(cmd, deps, result)
+			return cmdkit.PrintResult(cmd, deps, result)
 		},
 	}
 
@@ -147,7 +148,7 @@ func dictionaryGet(deps Dependencies) *cobra.Command {
 	return cmd
 }
 
-func dictionaryCreate(deps Dependencies) *cobra.Command {
+func dictionaryCreate(deps cmdkit.Dependencies) *cobra.Command {
 	var key string
 	var parentID string
 	var jsonPayload string
@@ -162,16 +163,16 @@ func dictionaryCreate(deps Dependencies) *cobra.Command {
 			var body any
 
 			if strings.TrimSpace(jsonPayload) != "" {
-				payload, err := parsePayload(jsonPayload)
+				payload, err := cmdkit.ParsePayload(jsonPayload)
 				if err != nil {
 					return err
 				}
-				if _, err := ensurePayloadID(payload); err != nil {
+				if _, err := cmdkit.EnsurePayloadID(payload); err != nil {
 					return err
 				}
 				body = payload
 			} else {
-				if err := requireValue("--key", key); err != nil {
+				if err := cmdkit.RequireValue("--key", key); err != nil {
 					return err
 				}
 				if err := validate.String(key); err != nil {
@@ -204,7 +205,7 @@ func dictionaryCreate(deps Dependencies) *cobra.Command {
 				return err
 			}
 
-			return printResult(cmd, deps, result)
+			return cmdkit.PrintResult(cmd, deps, result)
 		},
 	}
 
@@ -216,7 +217,7 @@ func dictionaryCreate(deps Dependencies) *cobra.Command {
 	return cmd
 }
 
-func dictionaryDelete(deps Dependencies) *cobra.Command {
+func dictionaryDelete(deps cmdkit.Dependencies) *cobra.Command {
 	var key string
 	var force bool
 	var dryRun bool
@@ -226,7 +227,7 @@ func dictionaryDelete(deps Dependencies) *cobra.Command {
 		Short: "Delete a dictionary item by ID or key",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := requireForceOrDryRun(cmd, "permanently deletes", force, dryRun); err != nil {
+			if err := cmdkit.RequireForceOrDryRun(cmd, "permanently deletes", force, dryRun); err != nil {
 				return err
 			}
 
@@ -240,7 +241,7 @@ func dictionaryDelete(deps Dependencies) *cobra.Command {
 				return err
 			}
 
-			return printResult(cmd, deps, result)
+			return cmdkit.PrintResult(cmd, deps, result)
 		},
 	}
 
@@ -250,7 +251,7 @@ func dictionaryDelete(deps Dependencies) *cobra.Command {
 	return cmd
 }
 
-func dictionaryExport(deps Dependencies) *cobra.Command {
+func dictionaryExport(deps cmdkit.Dependencies) *cobra.Command {
 	var file string
 
 	cmd := &cobra.Command{
@@ -282,7 +283,7 @@ func dictionaryExport(deps Dependencies) *cobra.Command {
 			})
 
 			if strings.TrimSpace(file) == "" {
-				return printResult(cmd, deps, exported)
+				return cmdkit.PrintResult(cmd, deps, exported)
 			}
 
 			payload, err := json.MarshalIndent(exported, "", "  ")
@@ -295,7 +296,7 @@ func dictionaryExport(deps Dependencies) *cobra.Command {
 				return err
 			}
 
-			return printResult(cmd, deps, map[string]any{
+			return cmdkit.PrintResult(cmd, deps, map[string]any{
 				"file":  file,
 				"count": len(exported),
 			})

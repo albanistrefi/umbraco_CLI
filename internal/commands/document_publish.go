@@ -10,12 +10,13 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/commands/cmdkit"
 )
 
 // Publish and unpublish operations for the document command group,
 // including the invariant-content race retry.
 
-func documentPublish(deps Dependencies) *cobra.Command {
+func documentPublish(deps cmdkit.Dependencies) *cobra.Command {
 	var jsonPayload string
 	var culture string
 	var idsCSV string
@@ -40,7 +41,7 @@ func documentPublish(deps Dependencies) *cobra.Command {
 					// The same payload single-document publish takes
 					// (publishSchedules with several cultures, scheduled
 					// entries), sent as-is to every listed document.
-					opts.PublishBody, err = parsePayload(jsonPayload)
+					opts.PublishBody, err = cmdkit.ParsePayload(jsonPayload)
 					if err != nil {
 						return err
 					}
@@ -55,13 +56,13 @@ func documentPublish(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printMutationResult(cmd, deps, "published", result, dryRun)
+			return cmdkit.PrintMutationResult(cmd, deps, "published", result, dryRun)
 		},
 	}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Publish payload as JSON")
 	cmd.Flags().StringVar(&culture, "culture", "", "Culture shortcut")
 	addDocumentBatchFlags(cmd, &idsCSV, &fromFile, &force, "publish")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
@@ -117,7 +118,7 @@ func isInvariantContentRaceError(err error) bool {
 
 func documentPublishBody(jsonPayload string, culture string) (map[string]any, error) {
 	if strings.TrimSpace(jsonPayload) != "" {
-		return parsePayload(jsonPayload)
+		return cmdkit.ParsePayload(jsonPayload)
 	}
 	// The publish model requires publishSchedules on every spec version the
 	// CLI has vendored; "cultures" belongs to the unpublish model and the
@@ -136,7 +137,7 @@ func documentPublishBody(jsonPayload string, culture string) (map[string]any, er
 	}, nil
 }
 
-func documentUnpublish(deps Dependencies) *cobra.Command {
+func documentUnpublish(deps cmdkit.Dependencies) *cobra.Command {
 	var jsonPayload string
 	var culture string
 	var dryRun bool
@@ -148,7 +149,7 @@ func documentUnpublish(deps Dependencies) *cobra.Command {
 			var body map[string]any
 			var err error
 			if jsonPayload != "" {
-				body, err = parsePayload(jsonPayload)
+				body, err = cmdkit.ParsePayload(jsonPayload)
 			} else if culture != "" {
 				body = map[string]any{"cultures": []any{culture}}
 			} else {
@@ -161,11 +162,11 @@ func documentUnpublish(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printMutationResult(cmd, deps, "unpublished", result, dryRun)
+			return cmdkit.PrintMutationResult(cmd, deps, "unpublished", result, dryRun)
 		},
 	}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Unpublish payload as JSON")
 	cmd.Flags().StringVar(&culture, "culture", "", "Culture shortcut")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }

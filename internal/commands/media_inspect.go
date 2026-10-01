@@ -13,13 +13,14 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/commands/cmdkit"
 )
 
 // mediaInspect answers "which file is this?" in one read: file src and URL,
 // extension, size, dimensions (raster from the umbracoWidth/umbracoHeight
 // values, SVG viewBox from the file itself), and the remaining values —
 // instead of digging through the values array and a separate urls call.
-func mediaInspect(deps Dependencies) *cobra.Command {
+func mediaInspect(deps cmdkit.Dependencies) *cobra.Command {
 	var propertyAlias string
 	var culture string
 	var segment string
@@ -34,7 +35,7 @@ func mediaInspect(deps Dependencies) *cobra.Command {
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			item, err := fetchObject(ctx, deps.Client, api.JoinPath("/media/%s", args[0]), api.RequestOptions{})
+			item, err := cmdkit.FetchObject(ctx, deps.Client, api.JoinPath("/media/%s", args[0]), api.RequestOptions{})
 			if err != nil {
 				return err
 			}
@@ -88,7 +89,7 @@ func mediaInspect(deps Dependencies) *cobra.Command {
 					}
 				}
 			}
-			return printResult(cmd, deps, summary)
+			return cmdkit.PrintResult(cmd, deps, summary)
 		},
 	}
 	cmd.Flags().StringVar(&propertyAlias, "property", "umbracoFile", "File property alias to summarize")
@@ -99,7 +100,7 @@ func mediaInspect(deps Dependencies) *cobra.Command {
 }
 
 // mediaDownload saves the file behind a media item to disk, byte for byte.
-func mediaDownload(deps Dependencies) *cobra.Command {
+func mediaDownload(deps cmdkit.Dependencies) *cobra.Command {
 	var propertyAlias string
 	var culture string
 	var segment string
@@ -112,7 +113,7 @@ func mediaDownload(deps Dependencies) *cobra.Command {
 		Args:    cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			item, err := fetchObject(ctx, deps.Client, api.JoinPath("/media/%s", args[0]), api.RequestOptions{})
+			item, err := cmdkit.FetchObject(ctx, deps.Client, api.JoinPath("/media/%s", args[0]), api.RequestOptions{})
 			if err != nil {
 				return err
 			}
@@ -128,7 +129,7 @@ func mediaDownload(deps Dependencies) *cobra.Command {
 			if info, statErr := os.Stat(target); strings.HasSuffix(target, "/") || (statErr == nil && info.IsDir()) {
 				// Server-controlled name: sanitize for the host OS and verify
 				// it stays a direct child of the requested directory.
-				child, err := safeChildPath(target, sanitizeFileName(path.Base(src), "download"))
+				child, err := cmdkit.SafeChildPath(target, cmdkit.SanitizeFileName(path.Base(src), "download"))
 				if err != nil {
 					return err
 				}
@@ -136,7 +137,7 @@ func mediaDownload(deps Dependencies) *cobra.Command {
 			}
 			_, existsErr := os.Stat(target)
 			if dryRun {
-				return printResult(cmd, deps, map[string]any{
+				return cmdkit.PrintResult(cmd, deps, map[string]any{
 					"dryRun":     true,
 					"id":         args[0],
 					"property":   propertyAlias,
@@ -176,7 +177,7 @@ func mediaDownload(deps Dependencies) *cobra.Command {
 				_ = os.Remove(tmpName)
 				return fmt.Errorf("failed to write %s: %w", target, err)
 			}
-			return printResult(cmd, deps, map[string]any{
+			return cmdkit.PrintResult(cmd, deps, map[string]any{
 				"id":          args[0],
 				"property":    propertyAlias,
 				"src":         src,
@@ -190,7 +191,7 @@ func mediaDownload(deps Dependencies) *cobra.Command {
 	cmd.Flags().StringVar(&propertyAlias, "property", "umbracoFile", "File property alias to download")
 	cmd.Flags().StringVar(&culture, "culture", "", "Culture of the file value to download (required when the property varies by culture)")
 	cmd.Flags().StringVar(&segment, "segment", "", "Segment of the file value to download")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
@@ -323,9 +324,9 @@ type mediaURLInfo struct {
 // mediaPublicURLs returns the public URLs reported by /media/urls with the
 // culture each belongs to ("" for invariant).
 func mediaPublicURLs(ctx context.Context, client *api.Client, id string) ([]mediaURLInfo, error) {
-	result, err := getWithFallback(ctx, client,
-		getRequestCandidate{Path: "/media/urls", Opts: api.RequestOptions{Params: map[string]any{"id": id}}},
-		getRequestCandidate{Path: api.JoinPath("/media/%s/urls", id), Opts: api.RequestOptions{}},
+	result, err := cmdkit.GetWithFallback(ctx, client,
+		cmdkit.GetRequestCandidate{Path: "/media/urls", Opts: api.RequestOptions{Params: map[string]any{"id": id}}},
+		cmdkit.GetRequestCandidate{Path: api.JoinPath("/media/%s/urls", id), Opts: api.RequestOptions{}},
 	)
 	if err != nil {
 		return nil, err

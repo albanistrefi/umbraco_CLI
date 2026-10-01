@@ -9,13 +9,14 @@ import (
 	"github.com/spf13/cobra"
 
 	"umbraco-cli/internal/api"
+	"umbraco-cli/internal/commands/cmdkit"
 )
 
 // This file holds the document lifecycle commands beyond single-node
 // publish: descendant publishing, sibling ordering, culture domains, and
 // public access (member-protected pages).
 
-func documentPublishDescendants(deps Dependencies) *cobra.Command {
+func documentPublishDescendants(deps cmdkit.Dependencies) *cobra.Command {
 	var jsonPayload string
 	var cultures []string
 	var includeUnpublished bool
@@ -30,14 +31,14 @@ On variant content pass --culture per culture to publish; with no --culture the 
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var body map[string]any
 			if strings.TrimSpace(jsonPayload) != "" {
-				parsed, err := parsePayload(jsonPayload)
+				parsed, err := cmdkit.ParsePayload(jsonPayload)
 				if err != nil {
 					return err
 				}
 				body = parsed
 			} else {
 				body = map[string]any{
-					"cultures":                      stringsToAny(cultures),
+					"cultures":                      cmdkit.StringsToAny(cultures),
 					"includeUnpublishedDescendants": includeUnpublished,
 				}
 			}
@@ -45,17 +46,17 @@ On variant content pass --culture per culture to publish; with no --culture the 
 			if err != nil {
 				return err
 			}
-			return printMutationResult(cmd, deps, "publishing", result, dryRun)
+			return cmdkit.PrintMutationResult(cmd, deps, "publishing", result, dryRun)
 		},
 	}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Publish payload as JSON")
 	cmd.Flags().StringArrayVar(&cultures, "culture", nil, "Culture to publish; repeat for multiple (omit for invariant content)")
 	cmd.Flags().BoolVar(&includeUnpublished, "include-unpublished", false, "Also publish descendants that have never been published")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
-func documentPublishDescendantsResult(deps Dependencies) *cobra.Command {
+func documentPublishDescendantsResult(deps cmdkit.Dependencies) *cobra.Command {
 	return &cobra.Command{
 		Use:   "publish-descendants-result <id> <task-id>",
 		Short: "Check the progress of an asynchronous publish-descendants run",
@@ -65,19 +66,19 @@ func documentPublishDescendantsResult(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, deps, result)
+			return cmdkit.PrintResult(cmd, deps, result)
 		},
 	}
 }
 
-func documentSort(deps Dependencies) *cobra.Command {
+func documentSort(deps cmdkit.Dependencies) *cobra.Command {
 	return sortCommand(deps, "document")
 }
 
 // sortCommand builds "<resource> sort" over PUT /<resource>/sort: an
 // explicit id-order reorder shared by document and media. For field-based
 // reordering of a whole sibling set see sortChildrenCommand.
-func sortCommand(deps Dependencies, resource string) *cobra.Command {
+func sortCommand(deps cmdkit.Dependencies, resource string) *cobra.Command {
 	var jsonPayload string
 	var parent string
 	var idsCSV string
@@ -90,13 +91,13 @@ func sortCommand(deps Dependencies, resource string) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var body map[string]any
 			if strings.TrimSpace(jsonPayload) != "" {
-				parsed, err := parsePayload(jsonPayload)
+				parsed, err := cmdkit.ParsePayload(jsonPayload)
 				if err != nil {
 					return err
 				}
 				body = parsed
 			} else {
-				ids := uniqueCSV(idsCSV)
+				ids := cmdkit.UniqueCSV(idsCSV)
 				if len(ids) == 0 {
 					return fmt.Errorf("%s sort requires --ids <comma-separated guids in the desired order> or --json", resource)
 				}
@@ -113,17 +114,17 @@ func sortCommand(deps Dependencies, resource string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printMutationResult(cmd, deps, "sorted", result, dryRun)
+			return cmdkit.PrintMutationResult(cmd, deps, "sorted", result, dryRun)
 		},
 	}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Sort payload as JSON")
 	cmd.Flags().StringVar(&parent, "parent", "", "Parent ID (omit for root-level items)")
 	cmd.Flags().StringVar(&idsCSV, "ids", "", "Comma-separated GUIDs in the desired order")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
-func documentDomains(deps Dependencies) *cobra.Command {
+func documentDomains(deps cmdkit.Dependencies) *cobra.Command {
 	domains := &cobra.Command{
 		Use:   "domains",
 		Short: "Culture domains (hostname → language routing) on a document",
@@ -133,7 +134,7 @@ func documentDomains(deps Dependencies) *cobra.Command {
 	return domains
 }
 
-func documentDomainsGet(deps Dependencies) *cobra.Command {
+func documentDomainsGet(deps cmdkit.Dependencies) *cobra.Command {
 	return &cobra.Command{
 		Use:   "get <id>",
 		Short: "Get the domains assigned to a document",
@@ -143,12 +144,12 @@ func documentDomainsGet(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, deps, result)
+			return cmdkit.PrintResult(cmd, deps, result)
 		},
 	}
 }
 
-func documentDomainsSet(deps Dependencies) *cobra.Command {
+func documentDomainsSet(deps cmdkit.Dependencies) *cobra.Command {
 	var jsonPayload string
 	var defaultIso string
 	var domainPairs []string
@@ -161,7 +162,7 @@ func documentDomainsSet(deps Dependencies) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var body map[string]any
 			if strings.TrimSpace(jsonPayload) != "" {
-				parsed, err := parsePayload(jsonPayload)
+				parsed, err := cmdkit.ParsePayload(jsonPayload)
 				if err != nil {
 					return err
 				}
@@ -187,17 +188,17 @@ func documentDomainsSet(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printMutationResult(cmd, deps, "updated", result, dryRun)
+			return cmdkit.PrintMutationResult(cmd, deps, "updated", result, dryRun)
 		},
 	}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Domains payload as JSON")
 	cmd.Flags().StringVar(&defaultIso, "default-iso-code", "", "Default culture for unmatched hosts")
 	cmd.Flags().StringArrayVar(&domainPairs, "domain", nil, "Domain assignment as host=isoCode; repeat for multiple")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
-func documentPublicAccess(deps Dependencies) *cobra.Command {
+func documentPublicAccess(deps cmdkit.Dependencies) *cobra.Command {
 	publicAccess := &cobra.Command{
 		Use:   "public-access",
 		Short: "Member protection (login-required access) on a document",
@@ -208,7 +209,7 @@ func documentPublicAccess(deps Dependencies) *cobra.Command {
 	return publicAccess
 }
 
-func documentPublicAccessGet(deps Dependencies) *cobra.Command {
+func documentPublicAccessGet(deps cmdkit.Dependencies) *cobra.Command {
 	return &cobra.Command{
 		Use:   "get <id>",
 		Short: "Get the public-access (member protection) rules on a document",
@@ -218,12 +219,12 @@ func documentPublicAccessGet(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, deps, result)
+			return cmdkit.PrintResult(cmd, deps, result)
 		},
 	}
 }
 
-func documentPublicAccessSet(deps Dependencies) *cobra.Command {
+func documentPublicAccessSet(deps cmdkit.Dependencies) *cobra.Command {
 	var jsonPayload string
 	var dryRun bool
 	cmd := &cobra.Command{
@@ -236,10 +237,10 @@ func documentPublicAccessSet(deps Dependencies) *cobra.Command {
 The CLI checks whether rules already exist and issues POST (create) or PUT (replace) accordingly.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := requireValue("--json", jsonPayload); err != nil {
+			if err := cmdkit.RequireValue("--json", jsonPayload); err != nil {
 				return err
 			}
-			body, err := parsePayload(jsonPayload)
+			body, err := cmdkit.ParsePayload(jsonPayload)
 			if err != nil {
 				return err
 			}
@@ -268,15 +269,15 @@ The CLI checks whether rules already exist and issues POST (create) or PUT (repl
 			if err != nil {
 				return err
 			}
-			return printMutationResult(cmd, deps, "updated", result, dryRun)
+			return cmdkit.PrintMutationResult(cmd, deps, "updated", result, dryRun)
 		},
 	}
 	cmd.Flags().StringVar(&jsonPayload, "json", "", "Public-access payload as JSON")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
-func documentPublicAccessRemove(deps Dependencies) *cobra.Command {
+func documentPublicAccessRemove(deps cmdkit.Dependencies) *cobra.Command {
 	var force bool
 	var dryRun bool
 	cmd := &cobra.Command{
@@ -284,17 +285,17 @@ func documentPublicAccessRemove(deps Dependencies) *cobra.Command {
 		Short: "Remove the public-access rules from a document (makes it publicly visible again)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := requireForceOrDryRun(cmd, "drops member protection", force, dryRun); err != nil {
+			if err := cmdkit.RequireForceOrDryRun(cmd, "drops member protection", force, dryRun); err != nil {
 				return err
 			}
 			result, err := deps.Client.Delete(cmd.Context(), api.JoinPath("/document/%s/public-access", args[0]), api.RequestOptions{DryRun: dryRun})
 			if err != nil {
 				return err
 			}
-			return printMutationResult(cmd, deps, "removed", result, dryRun)
+			return cmdkit.PrintMutationResult(cmd, deps, "removed", result, dryRun)
 		},
 	}
 	cmd.Flags().BoolVar(&force, "force", false, "Confirm removing member protection")
-	addDryRunFlag(cmd, &dryRun)
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
