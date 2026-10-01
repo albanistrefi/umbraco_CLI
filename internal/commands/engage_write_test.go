@@ -425,3 +425,62 @@ func TestEngageAnnotationCreateAndDelete(t *testing.T) {
 	}
 	engageRequestsEqual(t, *requests, "POST "+engageAPIPrefix+"/annotations", "DELETE "+engageAPIPrefix+"/annotations?id=21")
 }
+
+func TestEngageRejectsNonStringGUIDsInsteadOfGeneratingOne(t *testing.T) {
+	deps, requests := engageTestDeps(t, map[string]func(*http.Request) *http.Response{
+		"/persona/details": engageJSON(http.StatusOK, `{"id":11,"unique":"`+engageTestGUID+`","title":"Group"}`),
+	})
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"persona", "create", "--json", `{"title":"Group","unique":123}`}, "`unique` must be a GUID string, got a number"},
+		{[]string{"persona", "create", "--json", `{"title":"Group","personas":[{"title":"A","unique":{}}]}`}, "personas[]: `unique` must be a GUID string, got an object"},
+		{[]string{"persona", "update", engageTestGUID, "--merge-json", `{"unique":5}`}, "`unique` must be a GUID string, got a number"},
+	} {
+		_, err := execute(buildRootWithCollections(t, deps), append([]string{"engage"}, tc.args...)...)
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Fatalf("%v: expected error containing %q, got %v", tc.args, tc.want, err)
+		}
+	}
+	for _, request := range *requests {
+		if strings.HasPrefix(request, "POST ") {
+			t.Fatalf("a malformed GUID must never reach a save, got %v", *requests)
+		}
+	}
+}
+
+func TestEngageAnnotationCreateValidatesBeforePosting(t *testing.T) {
+	bodies := &engageBodies{}
+	deps, requests := engageTestDeps(t, map[string]func(*http.Request) *http.Response{
+		"/annotations": engageByMethod(t, bodies, map[string]func(*http.Request) *http.Response{
+			http.MethodPost: engageJSON(http.StatusOK, `{"id":22}`),
+		}),
+	})
+	for _, tc := range []struct {
+		json string
+		want string
+	}{
+		{`{"timestamp":"2026-09-01T00:00:00Z","visibility":"Always"}`, "non-empty string `description`"},
+		{`{"timestamp":"2026-09-01","description":"Launch","visibility":"Always"}`, "RFC 3339 date-time"},
+		{`{"timestamp":"2026-09-01T00:00:00Z","description":"Launch","visibility":"Sometimes"}`, "is not one of Always"},
+		{`{"timestamp":"2026-09-01T00:00:00Z","description":"Launch","visibility":"Node"}`, "needs at least one"},
+		{`{"timestamp":"2026-09-01T00:00:00Z","description":"Launch","visibility":"Node","pageVariants":[{"unique":"not-a-guid"}]}`, "pageVariants[0].unique must be a document GUID"},
+		{`{"timestamp":"2026-09-01T00:00:00Z","description":"Launch","visibility":"Always","pageVariants":"x"}`, "`pageVariants` must be an array"},
+	} {
+		_, err := execute(buildRootWithCollections(t, deps), "engage", "annotation", "create", "--json", tc.json, "--dry-run")
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Fatalf("%s: expected error containing %q, got %v", tc.json, tc.want, err)
+		}
+	}
+	if len(*requests) != 0 {
+		t.Fatalf("invalid annotations must fail before any request, got %v", *requests)
+	}
+	if _, err := execute(buildRootWithCollections(t, deps), "engage", "annotation", "create", "--json",
+		`{"timestamp":"2026-09-01T00:00:00Z","description":"Launch","visibility":"node","pageVariants":[{"unique":"`+engageTestGUID+`","culture":""}]}`); err != nil {
+		t.Fatalf("valid page annotation failed: %v", err)
+	}
+	if body := bodies.last(t); body["visibility"] != "Node" {
+		t.Fatalf("expected the visibility canonicalised to Node, got %+v", body["visibility"])
+	}
+}

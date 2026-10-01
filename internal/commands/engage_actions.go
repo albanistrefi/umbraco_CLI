@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -127,6 +129,9 @@ func engageAnnotationCreate(deps Dependencies) *cobra.Command {
 			if _, ok := body["pageVariants"]; !ok {
 				body["pageVariants"] = []any{}
 			}
+			if err := validateEngageAnnotation(body); err != nil {
+				return err
+			}
 			result, err := deps.Client.Post(cmd.Context(), "/annotations", body, engageWriteOpts(nil, dryRun))
 			if err != nil {
 				return engageError(err)
@@ -152,4 +157,61 @@ func engageAnnotationDelete(deps Dependencies) *cobra.Command {
 		ListCommand: "umbraco engage annotation list",
 		Consequence: "permanently deletes the annotation",
 	})
+}
+
+// engageAnnotationVisibilities is the AnnotationVisibilityModel enum
+// (Engage 18.1.0). Every value but Always pins the annotation to pages.
+var engageAnnotationVisibilities = []string{"Always", "Node", "NodeAndDescendants", "Created", "Published", "AbTestStart", "AbTestEnd"}
+
+// validateEngageAnnotation checks the fields the save model requires before
+// the POST, so --dry-run rehearses the real request rather than one the
+// server would reject. It canonicalises the visibility spelling in place.
+func validateEngageAnnotation(body map[string]any) error {
+	description, ok := body["description"].(string)
+	if !ok || strings.TrimSpace(description) == "" {
+		return fmt.Errorf("annotation create needs a non-empty string `description`")
+	}
+	timestamp, ok := body["timestamp"].(string)
+	if !ok {
+		return fmt.Errorf("annotation create needs a `timestamp` string (RFC 3339 date-time)")
+	}
+	if _, err := time.Parse(time.RFC3339, strings.TrimSpace(timestamp)); err != nil {
+		return fmt.Errorf("`timestamp` must be an RFC 3339 date-time such as 2026-09-01T00:00:00Z, got %q", timestamp)
+	}
+	visibility, ok := body["visibility"].(string)
+	if !ok {
+		return fmt.Errorf("annotation create needs a `visibility` string, one of %s", strings.Join(engageAnnotationVisibilities, ", "))
+	}
+	canonical := ""
+	for _, name := range engageAnnotationVisibilities {
+		if strings.EqualFold(strings.TrimSpace(visibility), name) {
+			canonical = name
+		}
+	}
+	if canonical == "" {
+		return fmt.Errorf("`visibility` %q is not one of %s", visibility, strings.Join(engageAnnotationVisibilities, ", "))
+	}
+	body["visibility"] = canonical
+	variants, ok := body["pageVariants"].([]any)
+	if !ok {
+		return fmt.Errorf("`pageVariants` must be an array of {\"unique\":<document GUID>,\"culture\":\"\"}")
+	}
+	if canonical != "Always" && len(variants) == 0 {
+		return fmt.Errorf("visibility %s pins the annotation to pages, so `pageVariants` needs at least one {\"unique\":<document GUID>,\"culture\":\"\"}", canonical)
+	}
+	for i, entry := range variants {
+		variant, ok := entry.(map[string]any)
+		if !ok {
+			return fmt.Errorf("pageVariants[%d] must be an object, got %s", i, jsonShapeName(entry))
+		}
+		if unique, ok := variant["unique"].(string); !ok || !isUUIDLike(unique) {
+			return fmt.Errorf("pageVariants[%d].unique must be a document GUID", i)
+		}
+		if culture, present := variant["culture"]; present && culture != nil {
+			if _, ok := culture.(string); !ok {
+				return fmt.Errorf("pageVariants[%d].culture must be a string or null", i)
+			}
+		}
+	}
+	return nil
 }
