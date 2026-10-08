@@ -364,7 +364,7 @@ func (s *schemaTracker) summary(phase string) watchSchemaPassEvent {
 	for _, result := range s.unverifiable {
 		unverifiable = append(unverifiable, map[string]any{"file": result.File, "kind": result.Kind, "status": result.Status, "reason": result.Reason})
 	}
-	return watchSchemaPassEvent{Timestamp: time.Now().UTC().Format(time.RFC3339), Type: "schema-summary", Status: s.verdict(), Detail: map[string]any{
+	detail := map[string]any{
 		"phase":        phase,
 		"settled":      settled,
 		"deployPass":   map[string]any{"started": s.passStarted, "ended": s.passEnded, "workStatus": s.workStatus},
@@ -373,7 +373,14 @@ func (s *schemaTracker) summary(phase string) watchSchemaPassEvent {
 		"unknown":      unknown,
 		"unverifiable": unverifiable,
 		"inSync":       s.inSync,
-	}}
+	}
+	verdict := s.verdict()
+	if verdict == "nothing-to-confirm" {
+		// 08-10: a deploy without schema changes, and the new process
+		// logged no schema pass at all; started/ended false read as missed.
+		detail["reason"] = "nothing was drifted or missing at baseline, so this deploy had no schema to confirm and verified did not wait for Umbraco Deploy's schema pass; deployPass says whether the new process logged one"
+	}
+	return watchSchemaPassEvent{Timestamp: time.Now().UTC().Format(time.RFC3339), Type: "schema-summary", Status: verdict, Detail: detail}
 }
 
 // verdict is the summary status: confirmed (every tracked artifact in

@@ -338,3 +338,22 @@ func TestWatchWithoutUdaDirIsUnchanged(t *testing.T) {
 		}
 	}
 }
+
+func TestWatchSchemaNothingTrackedSaysWhyThePassIsNotAwaited(t *testing.T) {
+	// 08-10: every artifact in sync at baseline, and the new process
+	// logged no schema pass.
+	sc := schemaScenario{dataType: func(int) (int, string) { return http.StatusOK, statusRemoteDataType }}
+	lines, err := runWatch(t, sc.env(), "--uda-dir", schemaDir(t, false))
+	if err != nil {
+		t.Fatalf("expected verified, got %v", err)
+	}
+	summary := summaryOf(t, lines)
+	detail := summary["detail"].(map[string]any)
+	pass := detail["deployPass"].(map[string]any)
+	if summary["status"] != "nothing-to-confirm" || pass["started"] != false || pass["ended"] != false {
+		t.Fatalf("unexpected summary %v", summary)
+	}
+	if !strings.Contains(fmt.Sprint(detail["reason"]), "no schema to confirm") {
+		t.Fatalf("the summary should say why no pass was awaited: %v", detail)
+	}
+}
