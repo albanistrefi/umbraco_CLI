@@ -92,9 +92,9 @@ Every --json line has a "type": "phase" for the transitions above. --logs adds t
 			if err != nil {
 				return err
 			}
-			// Every request after baseline, and every wait for a token, gives
-			// up after requestTimeout; a token request itself carries on and
-			// serves the next poll. The baseline keeps the longer bounds:
+			// Every call after baseline gives up after requestTimeout as a
+			// whole, token and rate-limit waits included; a token request
+			// itself carries on and serves the next poll. The baseline keeps the longer bounds:
 			// nothing is waiting on it, and a timed-out baseline refuses to
 			// arm.
 			loopDeps := deps

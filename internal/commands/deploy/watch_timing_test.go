@@ -400,3 +400,40 @@ func TestWatchRequestTimeoutDefaultsBelowTheIntervals(t *testing.T) {
 		}
 	}
 }
+
+func TestWatchRateLimitedSchemaRecheckDoesNotHoldBackPhasesOrTimeout(t *testing.T) {
+	// --uda-dir: the tracked data type is drifted at baseline; after the
+	// deploy lands every read of it answers 429 with Retry-After: 60. The
+	// re-check runs alongside a poll's probes, so a client that honoured
+	// the full Retry-After would hold the poll for a minute.
+	sc := schemaScenario{dataType: func(tick int) (int, string) { return http.StatusOK, driftedRemoteDataType }}
+	env := sc.env()
+	env.landTick = 2
+	inner := env.handler()
+	handler := func(req *http.Request) (*http.Response, error) {
+		tick := env.currentTick()
+		if req.URL.Path == dataTypePath && tick >= 2 {
+			resp := cmdtest.JSONResponse(http.StatusTooManyRequests, `{"title":"slow down"}`)
+			resp.Header.Set("Retry-After", "60")
+			return resp, nil
+		}
+		// The public page comes back two polls after landing, while the
+		// re-check is rate limited.
+		if req.URL.Path == "/" && (tick == 2 || tick == 3) {
+			return cmdtest.JSONResponse(http.StatusServiceUnavailable, `{}`), nil
+		}
+		return inner(req)
+	}
+	started := time.Now()
+	run := runWatchTimed(t, handler, 12*time.Second, "--json", "--uda-dir", schemaDir(t, false), "--interval", timingInterval, "--heartbeat", timingHeartbeat,
+		"--settle", "0", "--skip-index-verify", "--escalation", "1h", "--timeout", "3s")
+
+	assertPhasesOnTime(t, run, timingRequestTimeout+500*time.Millisecond, "restarting", "app-alive", "landed", "serving", "timeout")
+	if !run.finished || exitCode(run.err) != 6 {
+		t.Fatalf("expected the timeout exit (the schema never confirms), got finished=%v err=%v:\n%s", run.finished, run.err, run.describe(t))
+	}
+	if elapsed := time.Since(started); elapsed > 5*time.Second {
+		t.Fatalf("--timeout 3s took %s to end the watch:\n%s", elapsed, run.describe(t))
+	}
+	assertHeartbeatsOnSchedule(t, run, firstPhaseAt(t, run, "landed"), firstPhaseAt(t, run, "timeout"), 2*200*time.Millisecond)
+}

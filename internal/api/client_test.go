@@ -864,3 +864,28 @@ func TestWithTimeoutBoundsRequestsAndTokenWaits(t *testing.T) {
 		t.Fatalf("the original client's HTTP client must be unchanged, got timeout %s", httpClient.Timeout)
 	}
 }
+
+func TestWithTimeoutBoundsARateLimitRetryWait(t *testing.T) {
+	cfg := config.Config{BaseURL: "https://example.test", ClientID: "id", ClientSecret: "secret"}
+	var calls atomic.Int32
+	httpClient := newTestHTTPClient(func(req *http.Request) (*http.Response, error) {
+		if strings.HasSuffix(req.URL.Path, "/security/back-office/token") {
+			return jsonResponse(http.StatusOK, `{"access_token":"t","expires_in":3600}`, nil), nil
+		}
+		calls.Add(1)
+		return jsonResponse(http.StatusTooManyRequests, `{}`, map[string]string{"Retry-After": "60"}), nil
+	})
+	bounded := NewClient(cfg, httpClient, auth.New(cfg, httpClient)).WithTimeout(100 * time.Millisecond)
+
+	started := time.Now()
+	_, err := bounded.Get(context.Background(), "/server/status", RequestOptions{})
+	if err == nil {
+		t.Fatalf("expected the rate-limited call to give up")
+	}
+	if elapsed := time.Since(started); elapsed > time.Second {
+		t.Fatalf("a Retry-After of 60s held a 100ms-bounded call for %s", elapsed)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("expected one attempt inside the budget, got %d", calls.Load())
+	}
+}
