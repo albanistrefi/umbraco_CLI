@@ -199,25 +199,45 @@ func (s *schemaTracker) observeLogs(entries []map[string]any) []any {
 	return events
 }
 
-// recheck compares the tracked artifacts that are not in sync yet, once
-// the deploy has landed, and returns the status changes. An unknown result
-// (the API unavailable mid-restart) keeps the last definitive status.
-func (s *schemaTracker) recheck(ctx context.Context, landed bool) []any {
+// A recheck compares the tracked artifacts that are not in sync yet, once
+// the deploy has landed, and books the status changes. An unknown result
+// (the API unavailable mid-restart) keeps the last definitive status. It
+// runs in three steps so the comparison holds no lock (watchRun.recheckSchema).
+
+// recheckPlan lists the artifacts a recheck compares (none before landing
+// or once the schema has settled) and whether the pass had already ended
+// when it started: only a comparison begun after the end counts as a
+// re-check after it.
+func (s *schemaTracker) recheckPlan(landed bool) ([]udaArtifact, bool) {
 	if !landed || !s.pending() {
-		return nil
+		return nil, false
 	}
-	endedBefore := s.passEnded
 	pending := make([]udaArtifact, 0)
-	byFile := map[string]*trackedArtifact{}
 	for _, item := range s.tracked {
 		if item.current.Status != "in-sync" {
 			pending = append(pending, item.artifact)
+		}
+	}
+	return pending, s.passEnded
+}
+
+// recheckCompare compares the planned artifacts against the target. It
+// reads no tracker state, so it needs no lock.
+func (s *schemaTracker) recheckCompare(ctx context.Context, pending []udaArtifact) []udaStatusResult {
+	return compareArtifacts(ctx, s.deps, pending, nil, schemaRecheckConcurrency)
+}
+
+// recheckApply books a comparison's results and returns the status changes.
+func (s *schemaTracker) recheckApply(results []udaStatusResult, endedBefore bool) []any {
+	byFile := map[string]*trackedArtifact{}
+	for _, item := range s.tracked {
+		if item.current.Status != "in-sync" {
 			byFile[item.artifact.File] = item
 		}
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
 	events := make([]any, 0)
-	for _, result := range compareArtifacts(ctx, s.deps, pending, nil, schemaRecheckConcurrency) {
+	for _, result := range results {
 		item := byFile[result.File]
 		if item == nil {
 			continue

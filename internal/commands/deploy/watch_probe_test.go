@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"umbraco-cli/internal/commands/cmdtest"
 	"umbraco-cli/internal/config"
@@ -36,6 +37,7 @@ func TestWatchHealthProbeDoesNotCountTheBasicAuthLoginPageAsServing(t *testing.T
 	seen := map[string]string{}
 	probes := &watchProbes{
 		httpClient:  protectedSite(seen),
+		timeout:     time.Second,
 		cfg:         config.Config{BaseURL: "https://dev.example.test"},
 		publicURL:   "https://dev.example.test",
 		healthPaths: []string{"/"},
@@ -52,6 +54,7 @@ func TestWatchHealthProbeSendsSharedSecretToTheEnvironmentOnly(t *testing.T) {
 	seen := map[string]string{}
 	probes := &watchProbes{
 		httpClient:  protectedSite(seen),
+		timeout:     time.Second,
 		cfg:         config.Config{BaseURL: "https://dev.example.test", BasicAuthSharedSecret: "shh"},
 		publicURL:   "https://dev.example.test",
 		healthPaths: []string{"/"},

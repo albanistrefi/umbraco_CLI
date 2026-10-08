@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"umbraco-cli/internal/api"
@@ -16,11 +17,14 @@ import (
 )
 
 // watchProbes gathers one observation per poll. Probe failures during a
-// restart window are expected signals, not command errors.
+// restart window are expected signals, not command errors. Every request
+// gives up after timeout, so a slow or hanging endpoint costs one poll that
+// signal, never the whole watch.
 type watchProbes struct {
-	deps        cmdkit.Dependencies
+	client      *api.Client
 	cfg         config.Config
 	httpClient  *http.Client
+	timeout     time.Duration
 	tokenURL    string
 	publicURL   string
 	healthPaths []string
@@ -34,16 +38,33 @@ func watchHTTPClient(deps cmdkit.Dependencies) *http.Client {
 	return http.DefaultClient
 }
 
-func (p *watchProbes) observe(ctx context.Context) watchObservation {
+// observe probes the management endpoint first, then the health paths,
+// the newest log entry and the indexes side by side, with alongside (when
+// set) running next to them. A poll therefore takes about two request
+// timeouts at most, however many paths are probed: on 08-10 the probes ran
+// one after another and one poll took 1m48s while the app warmed up.
+func (p *watchProbes) observe(ctx context.Context, alongside func()) watchObservation {
 	obs := watchObservation{At: time.Now()}
 	obs.MgmtAlive, obs.MgmtStatus = p.probeManagement(ctx)
-	obs.Health = p.probeHealth(ctx)
+	var wg sync.WaitGroup
+	start := func(probe func()) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			probe()
+		}()
+	}
+	start(func() { obs.Health = p.probeHealth(ctx) })
 	if obs.MgmtAlive {
-		obs.ProcessID, obs.MachineName, obs.NewestLogAt, obs.LogErr = p.newestProcess(ctx)
+		start(func() { obs.ProcessID, obs.MachineName, obs.NewestLogAt, obs.LogErr = p.newestProcess(ctx) })
 		if !p.skipIndexes {
-			obs.BadIndexes = p.badIndexes(ctx)
+			start(func() { obs.BadIndexes = p.badIndexes(ctx) })
 		}
 	}
+	if alongside != nil {
+		start(alongside)
+	}
+	wg.Wait()
 	return obs
 }
 
@@ -52,7 +73,7 @@ func (p *watchProbes) observe(ctx context.Context) watchObservation {
 // app is alive and rejecting the probe — the earliest all-clear during a
 // restart window.
 func (p *watchProbes) probeManagement(ctx context.Context) (bool, int) {
-	requestCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	requestCtx, cancel := context.WithTimeout(ctx, p.timeout)
 	defer cancel()
 	request, err := http.NewRequestWithContext(requestCtx, http.MethodPost, p.tokenURL, strings.NewReader(""))
 	if err != nil {
@@ -71,31 +92,42 @@ func (p *watchProbes) probeManagement(ctx context.Context) (bool, int) {
 
 func (p *watchProbes) probeHealth(ctx context.Context) map[string]bool {
 	health := make(map[string]bool, len(p.healthPaths))
+	var mu sync.Mutex
+	var wg sync.WaitGroup
 	for _, path := range p.healthPaths {
 		if !strings.HasPrefix(path, "/") {
 			path = "/" + path
 		}
-		requestCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
-		request, err := http.NewRequestWithContext(requestCtx, http.MethodGet, p.publicURL+path, nil)
-		if err != nil {
-			cancel()
-			health[path] = false
-			continue
-		}
-		request.Header.Set("User-Agent", version.UserAgent())
-		secretHeader, secretSent := api.SetBasicAuthSecret(request, p.cfg)
-		response, err := p.healthClient(secretHeader, secretSent).Do(request)
-		if err != nil {
-			cancel()
-			health[path] = false
-			continue
-		}
-		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
-		_ = response.Body.Close()
-		cancel()
-		health[path] = response.StatusCode >= 200 && response.StatusCode < 300
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			healthy := p.probePath(ctx, path)
+			mu.Lock()
+			health[path] = healthy
+			mu.Unlock()
+		}()
 	}
+	wg.Wait()
 	return health
+}
+
+// probePath reports whether path answers 2xx within the request timeout.
+func (p *watchProbes) probePath(ctx context.Context, path string) bool {
+	requestCtx, cancel := context.WithTimeout(ctx, p.timeout)
+	defer cancel()
+	request, err := http.NewRequestWithContext(requestCtx, http.MethodGet, p.publicURL+path, nil)
+	if err != nil {
+		return false
+	}
+	request.Header.Set("User-Agent", version.UserAgent())
+	secretHeader, secretSent := api.SetBasicAuthSecret(request, p.cfg)
+	response, err := p.healthClient(secretHeader, secretSent).Do(request)
+	if err != nil {
+		return false
+	}
+	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
+	_ = response.Body.Close()
+	return response.StatusCode >= 200 && response.StatusCode < 300
 }
 
 // healthClient follows redirects as before, except to a login page: a
@@ -120,7 +152,9 @@ func (p *watchProbes) healthClient(secretHeader string, secretSent bool) *http.C
 }
 
 func (p *watchProbes) newestProcess(ctx context.Context) (string, string, time.Time, error) {
-	result, err := p.deps.Client.Get(ctx, cmdkit.LogViewerLogPath, api.RequestOptions{Params: map[string]any{
+	requestCtx, cancel := context.WithTimeout(ctx, p.timeout)
+	defer cancel()
+	result, err := p.client.Get(requestCtx, cmdkit.LogViewerLogPath, api.RequestOptions{Params: map[string]any{
 		"take": 1, "skip": 0, "orderDirection": "Descending",
 	}})
 	if err != nil {
@@ -160,7 +194,9 @@ func (p *watchProbes) newestProcess(ctx context.Context) (string, string, time.T
 }
 
 func (p *watchProbes) badIndexes(ctx context.Context) []string {
-	result, err := p.deps.Client.Get(ctx, "/indexer", api.RequestOptions{Params: map[string]any{"skip": 0, "take": 100}})
+	requestCtx, cancel := context.WithTimeout(ctx, p.timeout)
+	defer cancel()
+	result, err := p.client.Get(requestCtx, "/indexer", api.RequestOptions{Params: map[string]any{"skip": 0, "take": 100}})
 	if err != nil {
 		return nil
 	}

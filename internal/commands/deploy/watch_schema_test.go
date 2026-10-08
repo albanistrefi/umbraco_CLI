@@ -124,8 +124,11 @@ func TestWatchSchemaConfirmsTrackedArtifactsAfterDeployPass(t *testing.T) {
 	})
 	verified := indexOf(lines, isPhase("verified"))
 	serving := indexOf(lines, isPhase("serving"))
-	if serving < 0 || waiting < serving || started < waiting || ended < started || confirmed < ended || verified < confirmed {
-		t.Fatalf("expected serving < waiting < started < ended < confirmed < verified, got %d %d %d %d %d %d:\n%v", serving, waiting, started, ended, confirmed, verified, lines)
+	// Schema-pass lines come from the log follower and the re-check from
+	// the probe loop, which run independently: their relative order is the
+	// order they were read in, not fixed.
+	if serving < 0 || waiting < serving || started < waiting || ended < started || confirmed < waiting || verified < confirmed {
+		t.Fatalf("expected serving < waiting < started < ended, and waiting < confirmed < verified, got %d %d %d %d %d %d:\n%v", serving, waiting, started, ended, confirmed, verified, lines)
 	}
 	summary := summaryOf(t, lines)
 	if summary["status"] != "confirmed" || len(summary["detail"].(map[string]any)["confirmed"].([]any)) != 1 {
