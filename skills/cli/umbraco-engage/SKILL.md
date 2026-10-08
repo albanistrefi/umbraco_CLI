@@ -2,7 +2,7 @@
 name: umbraco-engage
 description: "Umbraco Engage operations (analytics, segments, personas, journeys, goals, A/B tests, personalization)"
 metadata:
-  version: 0.4.26
+  version: 0.4.27
   requires:
     bins:
       - umbraco
