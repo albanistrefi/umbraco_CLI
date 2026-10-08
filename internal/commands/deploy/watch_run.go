@@ -28,8 +28,11 @@ type watchRun struct {
 	logs     *logMonitor   // nil without --logs
 	schema   *schemaTracker
 	// landed tells the schema recheck the new process has been seen.
-	landed   bool
-	lastPoll time.Time
+	landed bool
+	// recheckKick asks the schema rechecker for a recheck; it holds at most
+	// one request, so kicks while one runs coalesce.
+	recheckKick chan struct{}
+	lastPoll    time.Time
 	// ended is set with the terminal phase; no heartbeat follows it.
 	ended bool
 }
@@ -136,9 +139,35 @@ func (r *watchRun) readLogs(ctx context.Context) {
 	}
 }
 
+// followSchema runs one schema recheck per kick until ctx ends. A recheck
+// is about one request per tracked artifact, eight at a time, so with many
+// artifacts it outlasts a poll; it runs here, beside the probe loop, and
+// the poll reads its result from the schema state when it is ready.
+func (r *watchRun) followSchema(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-r.recheckKick:
+			r.recheckSchema(ctx)
+		}
+	}
+}
+
+// kickRecheck asks for a recheck without waiting for it. Each poll kicks
+// after its management probe, so a recheck never reads the target from
+// before the poll that asked for it.
+func (r *watchRun) kickRecheck() {
+	select {
+	case r.recheckKick <- struct{}{}:
+	default:
+	}
+}
+
 // recheckSchema re-compares the tracked artifacts once the deploy has
-// landed and writes the status changes. It runs alongside a poll's probes,
-// so its lines precede that poll's phase lines.
+// landed and writes the status changes. A recheck cut off by the watch
+// ending is discarded, so the schema summary reflects the last completed
+// one.
 func (r *watchRun) recheckSchema(ctx context.Context) {
 	r.mu.Lock()
 	pending, endedBefore := r.schema.recheckPlan(r.landed)
@@ -147,6 +176,9 @@ func (r *watchRun) recheckSchema(ctx context.Context) {
 		return
 	}
 	results := r.schema.recheckCompare(ctx, pending)
+	if ctx.Err() != nil {
+		return
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for _, event := range r.schema.recheckApply(results, endedBefore) {
@@ -159,7 +191,7 @@ func (r *watchRun) recheckSchema(ctx context.Context) {
 func (r *watchRun) poll(ctx context.Context, probes *watchProbes) watchOutcome {
 	var alongside func()
 	if r.schema != nil {
-		alongside = func() { r.recheckSchema(ctx) }
+		alongside = r.kickRecheck
 	}
 	observation := probes.observe(ctx, alongside)
 

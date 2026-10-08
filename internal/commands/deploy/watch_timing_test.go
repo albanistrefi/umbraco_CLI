@@ -486,3 +486,58 @@ func TestWatchBlockedStderrDoesNotHoldBackStdout(t *testing.T) {
 		t.Fatalf("the stderr heartbeat lines should be written once stderr drains")
 	}
 }
+
+func TestWatchLargeSlowSchemaRecheckDoesNotHoldBackPhasesOrTimeout(t *testing.T) {
+	// --uda-dir with 120 tracked data types and an artifact API that takes
+	// 200ms a read after the deploy lands (the request timeout is 250ms):
+	// one re-check is 15 waves of 8, about 3s. It must not hold the poll.
+	const tracked = 120
+	dir := t.TempDir()
+	for i := range tracked {
+		body := strings.Replace(statusDataTypeUda, "aaaaaaaa111122223333444444444444", fmt.Sprintf("%08x111122223333444444444444", i+1), 1)
+		writeUda(t, dir, fmt.Sprintf("data-type__%03d.uda", i), body)
+	}
+	env := &fakeDeployEnv{downTicks: map[int]bool{1: true}, landTick: 2}
+	env.routes = func(tick int, req *http.Request) *http.Response {
+		if strings.HasPrefix(req.URL.Path, "/umbraco/management/api/v1/data-type/") {
+			return cmdtest.JSONResponse(http.StatusOK, driftedRemoteDataType)
+		}
+		return nil
+	}
+	inner := slowed(env.handler(), func(req *http.Request) time.Duration {
+		if strings.HasPrefix(req.URL.Path, "/umbraco/management/api/v1/data-type/") && env.currentTick() >= 2 {
+			return 200 * time.Millisecond
+		}
+		return 0
+	})
+	handler := func(req *http.Request) (*http.Response, error) {
+		// The public page comes back two polls after landing, while
+		// re-checks are running.
+		if tick := env.currentTick(); req.URL.Path == "/" && (tick == 2 || tick == 3) {
+			return cmdtest.JSONResponse(http.StatusServiceUnavailable, `{}`), nil
+		}
+		return inner(req)
+	}
+	started := time.Now()
+	run := runWatchTimed(t, handler, 15*time.Second, "--json", "--uda-dir", dir, "--interval", timingInterval, "--heartbeat", timingHeartbeat,
+		"--settle", "0", "--skip-index-verify", "--escalation", "1h", "--timeout", "3s")
+
+	assertPhasesOnTime(t, run, timingRequestTimeout+500*time.Millisecond, "restarting", "app-alive", "landed", "serving", "timeout")
+	if !run.finished || exitCode(run.err) != 6 {
+		t.Fatalf("expected the timeout exit (the pass never ends), got finished=%v err=%v:\n%s", run.finished, run.err, run.describe(t))
+	}
+	if elapsed := time.Since(started); elapsed > 4500*time.Millisecond {
+		t.Fatalf("--timeout 3s took %s to end the watch:\n%s", elapsed, run.describe(t))
+	}
+	assertHeartbeatsOnSchedule(t, run, firstPhaseAt(t, run, "landed"), firstPhaseAt(t, run, "timeout"), 2*200*time.Millisecond)
+	summary := run.events(t)
+	for _, event := range summary {
+		if event.value["type"] == "schema-summary" {
+			if event.value["status"] != "pending" || len(event.value["detail"].(map[string]any)["pending"].([]any)) != tracked {
+				t.Fatalf("expected all %d artifacts pending in the summary, got %v", tracked, event.value)
+			}
+			return
+		}
+	}
+	t.Fatalf("no schema-summary line")
+}

@@ -166,8 +166,8 @@ Every --json line has a "type": "phase" for the transitions above. --logs adds t
 				Detail:    baselineDetail,
 			})
 
-			// The heartbeat and the log follower run beside the probe loop
-			// until the terminal phase; finish then reads the feed once more
+			// The heartbeat, the log follower and the schema rechecker run
+			// beside the probe loop until the terminal phase; finish then reads the feed once more
 			// and closes the stream.
 			run.started = time.Now()
 			workers, stopWorkers := context.WithCancel(ctx)
@@ -189,6 +189,14 @@ Every --json line has a "type": "phase" for the transitions above. --logs adds t
 				go func() {
 					defer wg.Done()
 					run.followLogs(workers, interval)
+				}()
+			}
+			if schema != nil {
+				run.recheckKick = make(chan struct{}, 1)
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					run.followSchema(workers)
 				}()
 			}
 			end := func() {
