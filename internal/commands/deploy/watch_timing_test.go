@@ -437,3 +437,52 @@ func TestWatchRateLimitedSchemaRecheckDoesNotHoldBackPhasesOrTimeout(t *testing.
 	}
 	assertHeartbeatsOnSchedule(t, run, firstPhaseAt(t, run, "landed"), firstPhaseAt(t, run, "timeout"), 2*200*time.Millisecond)
 }
+
+// blockingWriter never returns from Write until released, like a stderr
+// pipe nobody drains.
+type blockingWriter struct {
+	release chan struct{}
+	inner   timedWriter
+}
+
+func (w *blockingWriter) Write(p []byte) (int, error) {
+	<-w.release
+	return w.inner.Write(p)
+}
+
+func TestWatchBlockedStderrDoesNotHoldBackStdout(t *testing.T) {
+	env := &fakeDeployEnv{downTicks: map[int]bool{1: true}, landTick: 2}
+	root := cmdtest.BuildRoot(t, cmdtest.Deps(env.handler()), Register)
+	stdout := &timedWriter{}
+	stderr := &blockingWriter{release: make(chan struct{})}
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(func() { close(stderr.release) }) }
+	t.Cleanup(release)
+	root.SetOut(stdout)
+	root.SetErr(stderr)
+	root.SetArgs([]string{"deploy", "watch", "--json", "--interval", timingInterval, "--heartbeat", timingHeartbeat,
+		"--settle", "1500ms", "--skip-index-verify", "--escalation", "1h", "--timeout", "20s"})
+	done := make(chan error, 1)
+	go func() { done <- root.Execute() }()
+
+	// While stderr is blocked, the whole run must still reach stdout.
+	deadline := time.Now().Add(8 * time.Second)
+	for time.Now().Before(deadline) && !strings.Contains(fmt.Sprint(stdout.snapshot()), `"phase":"verified"`) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	run := timedRun{stdout: stdout.snapshot()}
+	release()
+	select {
+	case run.err = <-done:
+		run.finished = true
+	case <-time.After(5 * time.Second):
+	}
+	assertPhasesOnTime(t, run, timingRequestTimeout+500*time.Millisecond, "restarting", "app-alive", "landed", "serving", "settling", "verified")
+	assertHeartbeatsOnSchedule(t, run, firstPhaseAt(t, run, "settling"), firstPhaseAt(t, run, "verified"), 2*200*time.Millisecond)
+	if !run.finished || run.err != nil {
+		t.Fatalf("expected the watch to end once stderr drains (finished=%v err=%v)", run.finished, run.err)
+	}
+	if len(stderr.inner.snapshot()) == 0 {
+		t.Fatalf("the stderr heartbeat lines should be written once stderr drains")
+	}
+}

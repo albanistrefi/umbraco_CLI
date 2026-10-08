@@ -144,9 +144,14 @@ Every --json line has a "type": "phase" for the transitions above. --logs adds t
 				logs = newLogMonitor(logFlags)
 				baselineDetail["logs"] = map[string]any{"excluding": logs.exclusionNames(), "level": logFlags.level}
 			}
+			// Output goes through per-stream writers, flushed when the watch
+			// returns (after the workers below have stopped).
+			stdout, stderr := newWatchStream(cmd.OutOrStdout()), newWatchStream(cmd.ErrOrStderr())
+			defer stderr.Close()
+			defer stdout.Close()
 			run := &watchRun{
-				write:    watchEmitter(cmd.OutOrStdout(), jsonOut),
-				errOut:   cmd.ErrOrStderr(),
+				write:    watchEmitter(stdout, jsonOut),
+				errOut:   stderr,
 				jsonOut:  jsonOut,
 				baseline: baseline,
 				machine:  machine,
@@ -289,9 +294,9 @@ type watchEvent struct {
 
 // watchEmitter writes phase transitions, log entries, log-monitor events
 // and (with --json) heartbeats to one stream: NDJSON with a "type" on every
-// line, or one text line each. Each line is one unbuffered write, so it
-// reaches a file or pipe as soon as it is emitted. Callers serialize calls
-// (watchRun.mu).
+// line, or one text line each. Each line is one write to a watchStream,
+// which passes it on unbuffered as soon as it is emitted. Callers serialize
+// calls (watchRun.mu).
 func watchEmitter(out io.Writer, jsonOut bool) func(any) {
 	encoder := json.NewEncoder(out)
 	return func(value any) {

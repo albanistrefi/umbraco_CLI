@@ -13,11 +13,12 @@ import (
 // mu; network requests are made without it. So a slow or hanging request
 // in one never holds back another's output: on 08-10 a single poll waited
 // on every request in turn, and app-alive, landed and the heartbeat came
-// out 1m48s late.
+// out 1m48s late. Nor is output written under mu: write and errOut only
+// queue to a watchStream, so an undrained stdout or stderr blocks nothing.
 type watchRun struct {
 	mu      sync.Mutex
 	write   func(any) // the stream emitter; call with mu held
-	errOut  io.Writer
+	errOut  io.Writer // a watchStream: writing never blocks
 	jsonOut bool
 	started time.Time
 
