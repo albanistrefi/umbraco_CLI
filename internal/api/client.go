@@ -89,6 +89,9 @@ type Client struct {
 	cfg           config.Config
 	httpClient    *http.Client
 	tokenProvider *auth.Provider
+	// requestTimeout, when set (WithTimeout), bounds each call as a whole:
+	// every attempt, rate-limit wait, token wait, redirect and the body read.
+	requestTimeout time.Duration
 	// initErr, when non-nil, fails every request with the startup problem
 	// (e.g. config resolution). Carrying it here keeps informational
 	// commands (--help, --version, schema) working on a broken setup while
@@ -155,6 +158,36 @@ func (e *APIError) ExitCode() int { return 4 }
 
 func NewClient(cfg config.Config, httpClient *http.Client, tokenProvider *auth.Provider) *Client {
 	return &Client{cfg: cfg, httpClient: httpClient, tokenProvider: tokenProvider}
+}
+
+// WithTimeout returns a client for the same environment and credentials
+// whose every call gives up after d: the attempts and their redirects, the
+// waits for a token or after a 429 (a Retry-After of 60s included), and
+// reading the response. The receiver is unchanged and the token cache is
+// shared, so a token request that outlasts d still completes and serves the
+// next call. A poller uses it so one slow or rate-limited response cannot
+// hold up the rest of its loop.
+func (c *Client) WithTimeout(d time.Duration) *Client {
+	if c == nil {
+		return nil
+	}
+	clone := *c
+	clone.requestTimeout = d
+	if c.httpClient != nil {
+		httpClient := *c.httpClient
+		httpClient.Timeout = d
+		clone.httpClient = &httpClient
+	}
+	return &clone
+}
+
+// bound limits one call to requestTimeout when the client has one; the
+// default client's calls are left to the caller's context.
+func (c *Client) bound(ctx context.Context) (context.Context, context.CancelFunc) {
+	if c.requestTimeout > 0 {
+		return context.WithTimeout(ctx, c.requestTimeout)
+	}
+	return ctx, func() {}
 }
 
 func (c *Client) ReplaceWith(next *Client) {
@@ -249,6 +282,8 @@ func (c *Client) Request(ctx context.Context, method string, path string, body a
 }
 
 func (c *Client) RequestResult(ctx context.Context, method string, path string, body any, opts RequestOptions) (ResponseResult, error) {
+	ctx, cancel := c.bound(ctx)
+	defer cancel()
 	if c.initErr != nil {
 		return ResponseResult{}, c.initErr
 	}
@@ -436,7 +471,7 @@ func (c *Client) sendWithRedirects(ctx context.Context, method string, fullURL s
 
 		if resp.StatusCode == http.StatusUnauthorized && attempt < maxRequestAttempts-1 && c.tokenProvider != nil {
 			drainAndClose(resp)
-			c.tokenProvider.Invalidate()
+			c.tokenProvider.InvalidateIfCurrent(token)
 			token, err = c.tokenProvider.AccessToken(ctx)
 			if err != nil {
 				return nil, err
@@ -700,6 +735,8 @@ func (c *Client) MultipartRequest(ctx context.Context, method string, path strin
 
 // MultipartResult is MultipartRequest with the HTTP status code preserved.
 func (c *Client) MultipartResult(ctx context.Context, method string, path string, fields map[string]string, files map[string]string, opts RequestOptions) (ResponseResult, error) {
+	ctx, cancel := c.bound(ctx)
+	defer cancel()
 	if c.initErr != nil {
 		return ResponseResult{}, c.initErr
 	}
@@ -848,6 +885,8 @@ type StreamResult struct {
 // so a large binary never has to fit in memory. Non-2xx responses are read
 // (bounded) into an APIError instead of being written to w.
 func (c *Client) GetStream(ctx context.Context, path string, w io.Writer, opts RequestOptions) (StreamResult, error) {
+	ctx, cancel := c.bound(ctx)
+	defer cancel()
 	if c.initErr != nil {
 		return StreamResult{}, c.initErr
 	}

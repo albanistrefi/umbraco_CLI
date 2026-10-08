@@ -7,7 +7,10 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"umbraco-cli/internal/config"
 )
@@ -204,5 +207,77 @@ func TestAccessTokenSendsClientCredentialsForm(t *testing.T) {
 		if !strings.Contains(observedBody, expected) {
 			t.Fatalf("expected %q in form body, got %q", expected, observedBody)
 		}
+	}
+}
+
+func TestAccessTokenFetchOutlivesAnImpatientCaller(t *testing.T) {
+	cfg := config.Config{BaseURL: "https://example.test", ClientID: "id", ClientSecret: "secret"}
+	var requests atomic.Int32
+	httpClient := &http.Client{Transport: authRoundTripper(func(req *http.Request) (*http.Response, error) {
+		requests.Add(1)
+		time.Sleep(200 * time.Millisecond)
+		return authJSONResponse(http.StatusOK, `{"access_token":"abc","expires_in":3600}`), nil
+	})}
+	provider := New(cfg, httpClient)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	_, err := provider.AccessToken(ctx)
+	var authError *Error
+	if !errors.As(err, &authError) || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("an impatient caller gets an auth error wrapping its deadline, got %v", err)
+	}
+
+	time.Sleep(300 * time.Millisecond)
+	token, err := provider.AccessToken(context.Background())
+	if err != nil || token != "abc" {
+		t.Fatalf("the abandoned request should have been cached, got %q %v", token, err)
+	}
+	if got := requests.Load(); got != 1 {
+		t.Fatalf("expected one token request, got %d", got)
+	}
+}
+
+func TestAccessTokenConcurrentCallersShareOneRequest(t *testing.T) {
+	cfg := config.Config{BaseURL: "https://example.test", ClientID: "id", ClientSecret: "secret"}
+	var requests atomic.Int32
+	httpClient := &http.Client{Transport: authRoundTripper(func(req *http.Request) (*http.Response, error) {
+		requests.Add(1)
+		time.Sleep(50 * time.Millisecond)
+		return authJSONResponse(http.StatusOK, `{"access_token":"abc","expires_in":3600}`), nil
+	})}
+	provider := New(cfg, httpClient)
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if token, err := provider.AccessToken(context.Background()); err != nil || token != "abc" {
+				t.Errorf("got %q %v", token, err)
+			}
+		}()
+	}
+	wg.Wait()
+	if got := requests.Load(); got != 1 {
+		t.Fatalf("expected the callers to share one token request, got %d", got)
+	}
+}
+
+func TestInvalidateIfCurrentKeepsANewerToken(t *testing.T) {
+	cfg := config.Config{BaseURL: "https://example.test", ClientID: "id", ClientSecret: "secret"}
+	var requests atomic.Int32
+	httpClient := &http.Client{Transport: authRoundTripper(func(req *http.Request) (*http.Response, error) {
+		requests.Add(1)
+		return authJSONResponse(http.StatusOK, fmt.Sprintf(`{"access_token":"t%d","expires_in":3600}`, requests.Load())), nil
+	})}
+	provider := New(cfg, httpClient)
+	current, _ := provider.AccessToken(context.Background())
+	provider.InvalidateIfCurrent("an-older-token")
+	if token, _ := provider.AccessToken(context.Background()); token != current || requests.Load() != 1 {
+		t.Fatalf("a stale invalidation discarded the current token: %q after %d requests", token, requests.Load())
+	}
+	provider.InvalidateIfCurrent(current)
+	if token, _ := provider.AccessToken(context.Background()); token == current || requests.Load() != 2 {
+		t.Fatalf("invalidating the current token should fetch a new one: %q after %d requests", token, requests.Load())
 	}
 }

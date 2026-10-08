@@ -246,11 +246,16 @@ func newWatchLogFeed(ctx context.Context, client *api.Client, since time.Time) *
 	return feed
 }
 
-// next returns the entries since the previous call and any monitor events
-// about the feed itself. Failures are reported as events, never returned.
-func (f *watchLogFeed) next(ctx context.Context) ([]map[string]any, []any) {
-	now := time.Now().UTC().Format(time.RFC3339)
-	entries, err := f.tail.Next(ctx)
+// fetch reads the entries since the previous read. It touches only the
+// tail, which one goroutine owns, so it runs without the watch's lock.
+func (f *watchLogFeed) fetch(ctx context.Context) ([]map[string]any, error) {
+	return f.tail.Next(ctx)
+}
+
+// record books one fetch, stamped when it started, and returns its entries
+// and any monitor events about the feed itself. Failures are reported as
+// events, never returned.
+func (f *watchLogFeed) record(ctx context.Context, now string, entries []map[string]any, err error) ([]map[string]any, []any) {
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, nil

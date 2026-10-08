@@ -124,8 +124,11 @@ func TestWatchSchemaConfirmsTrackedArtifactsAfterDeployPass(t *testing.T) {
 	})
 	verified := indexOf(lines, isPhase("verified"))
 	serving := indexOf(lines, isPhase("serving"))
-	if serving < 0 || waiting < serving || started < waiting || ended < started || confirmed < ended || verified < confirmed {
-		t.Fatalf("expected serving < waiting < started < ended < confirmed < verified, got %d %d %d %d %d %d:\n%v", serving, waiting, started, ended, confirmed, verified, lines)
+	// Schema-pass lines come from the log follower and the re-check from
+	// the probe loop, which run independently: their relative order is the
+	// order they were read in, not fixed.
+	if serving < 0 || waiting < serving || started < waiting || ended < started || confirmed < waiting || verified < confirmed {
+		t.Fatalf("expected serving < waiting < started < ended, and waiting < confirmed < verified, got %d %d %d %d %d %d:\n%v", serving, waiting, started, ended, confirmed, verified, lines)
 	}
 	summary := summaryOf(t, lines)
 	if summary["status"] != "confirmed" || len(summary["detail"].(map[string]any)["confirmed"].([]any)) != 1 {
@@ -333,5 +336,24 @@ func TestWatchWithoutUdaDirIsUnchanged(t *testing.T) {
 		if strings.HasPrefix(fmt.Sprint(line["type"]), "schema") {
 			t.Fatalf("schema output without --uda-dir: %v", line)
 		}
+	}
+}
+
+func TestWatchSchemaNothingTrackedSaysWhyThePassIsNotAwaited(t *testing.T) {
+	// 08-10: every artifact in sync at baseline, and the new process
+	// logged no schema pass.
+	sc := schemaScenario{dataType: func(int) (int, string) { return http.StatusOK, statusRemoteDataType }}
+	lines, err := runWatch(t, sc.env(), "--uda-dir", schemaDir(t, false))
+	if err != nil {
+		t.Fatalf("expected verified, got %v", err)
+	}
+	summary := summaryOf(t, lines)
+	detail := summary["detail"].(map[string]any)
+	pass := detail["deployPass"].(map[string]any)
+	if summary["status"] != "nothing-to-confirm" || pass["started"] != false || pass["ended"] != false {
+		t.Fatalf("unexpected summary %v", summary)
+	}
+	if !strings.Contains(fmt.Sprint(detail["reason"]), "no schema to confirm") {
+		t.Fatalf("the summary should say why no pass was awaited: %v", detail)
 	}
 }

@@ -10,6 +10,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -812,5 +814,137 @@ func TestRequestPassesLargeNonLoginHTMLThroughUntruncated(t *testing.T) {
 	result, err := client.Get(context.Background(), "/docs/index.html", RequestOptions{RawPath: true})
 	if err != nil || len(fmt.Sprint(result)) != len(page) {
 		t.Fatalf("expected the full HTML body, got err=%v len=%d want %d", err, len(fmt.Sprint(result)), len(page))
+	}
+}
+
+func TestWithTimeoutBoundsRequestsAndTokenWaits(t *testing.T) {
+	cfg := config.Config{BaseURL: "https://example.test", ClientID: "id", ClientSecret: "secret"}
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) })
+	var tokenRequests atomic.Int32
+	httpClient := newTestHTTPClient(func(req *http.Request) (*http.Response, error) {
+		if strings.HasSuffix(req.URL.Path, "/security/back-office/token") {
+			// Slower than the timeout, as Umbraco's token endpoint is while
+			// the app starts.
+			tokenRequests.Add(1)
+			time.Sleep(300 * time.Millisecond)
+			return jsonResponse(http.StatusOK, `{"access_token":"t","expires_in":3600}`, nil), nil
+		}
+		select {
+		case <-req.Context().Done():
+			return nil, req.Context().Err()
+		case <-release:
+			return jsonResponse(http.StatusOK, `{}`, nil), nil
+		}
+	})
+	client := NewClient(cfg, httpClient, auth.New(cfg, httpClient))
+	bounded := client.WithTimeout(50 * time.Millisecond)
+
+	started := time.Now()
+	if _, err := bounded.Get(context.Background(), "/server/status", RequestOptions{}); err == nil {
+		t.Fatalf("expected the wait for the slow token to time out")
+	}
+	if elapsed := time.Since(started); elapsed > 250*time.Millisecond {
+		t.Fatalf("the token wait took %s, the timeout was 50ms", elapsed)
+	}
+
+	// The token request carried on and was cached: the next request goes
+	// straight to the (hanging) endpoint and is cut there.
+	time.Sleep(400 * time.Millisecond)
+	started = time.Now()
+	if _, err := bounded.Get(context.Background(), "/server/status", RequestOptions{}); err == nil {
+		t.Fatalf("expected the hanging request to time out")
+	}
+	if elapsed := time.Since(started); elapsed > 250*time.Millisecond {
+		t.Fatalf("the request took %s, the timeout was 50ms", elapsed)
+	}
+	if got := tokenRequests.Load(); got != 1 {
+		t.Fatalf("expected the one token request to serve both, got %d", got)
+	}
+	if httpClient.Timeout != 0 {
+		t.Fatalf("the original client's HTTP client must be unchanged, got timeout %s", httpClient.Timeout)
+	}
+}
+
+func TestWithTimeoutBoundsARateLimitRetryWait(t *testing.T) {
+	cfg := config.Config{BaseURL: "https://example.test", ClientID: "id", ClientSecret: "secret"}
+	var calls atomic.Int32
+	httpClient := newTestHTTPClient(func(req *http.Request) (*http.Response, error) {
+		if strings.HasSuffix(req.URL.Path, "/security/back-office/token") {
+			return jsonResponse(http.StatusOK, `{"access_token":"t","expires_in":3600}`, nil), nil
+		}
+		calls.Add(1)
+		return jsonResponse(http.StatusTooManyRequests, `{}`, map[string]string{"Retry-After": "60"}), nil
+	})
+	bounded := NewClient(cfg, httpClient, auth.New(cfg, httpClient)).WithTimeout(100 * time.Millisecond)
+
+	started := time.Now()
+	_, err := bounded.Get(context.Background(), "/server/status", RequestOptions{})
+	if err == nil {
+		t.Fatalf("expected the rate-limited call to give up")
+	}
+	if elapsed := time.Since(started); elapsed > time.Second {
+		t.Fatalf("a Retry-After of 60s held a 100ms-bounded call for %s", elapsed)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("expected one attempt inside the budget, got %d", calls.Load())
+	}
+}
+
+func TestStale401DoesNotDiscardATokenAParallelRequestRefreshed(t *testing.T) {
+	// After a restart two requests in flight both carry the old token. The
+	// first 401 refreshes the token; the second 401 arrives after the new
+	// token is cached and must not throw it away for another (slow) token
+	// request.
+	cfg := config.Config{BaseURL: "https://example.test", ClientID: "id", ClientSecret: "secret"}
+	var tokenRequests atomic.Int32
+	refreshed := make(chan struct{})
+	var refreshOnce sync.Once
+	secondArrived := make(chan struct{})
+	var oldArrivals atomic.Int32
+	httpClient := newTestHTTPClient(func(req *http.Request) (*http.Response, error) {
+		if strings.HasSuffix(req.URL.Path, "/security/back-office/token") {
+			if tokenRequests.Add(1) == 1 {
+				return jsonResponse(http.StatusOK, `{"access_token":"old","expires_in":3600}`, nil), nil
+			}
+			defer refreshOnce.Do(func() { close(refreshed) })
+			return jsonResponse(http.StatusOK, `{"access_token":"new","expires_in":3600}`, nil), nil
+		}
+		if req.Header.Get("Authorization") == "Bearer new" {
+			return jsonResponse(http.StatusOK, `{"ok":true}`, nil), nil
+		}
+		if oldArrivals.Add(1) == 1 {
+			// Hold the first stale request until the second is in flight too.
+			select {
+			case <-secondArrived:
+			case <-time.After(2 * time.Second):
+			}
+			return jsonResponse(http.StatusUnauthorized, `{}`, nil), nil
+		}
+		close(secondArrived)
+		// Answer the second only once the first has refreshed and cached.
+		select {
+		case <-refreshed:
+		case <-time.After(2 * time.Second):
+		}
+		time.Sleep(50 * time.Millisecond)
+		return jsonResponse(http.StatusUnauthorized, `{}`, nil), nil
+	})
+	client := NewClient(cfg, httpClient, auth.New(cfg, httpClient))
+
+	// Both requests share the first token request and send "old".
+	var wg sync.WaitGroup
+	for range 2 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := client.Get(context.Background(), "/server/status", RequestOptions{}); err != nil {
+				t.Errorf("request failed: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+	if refreshes := tokenRequests.Load() - 1; refreshes != 1 {
+		t.Fatalf("expected exactly one token refresh for both stale 401s, got %d", refreshes)
 	}
 }
