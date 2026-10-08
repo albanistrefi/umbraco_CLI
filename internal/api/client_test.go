@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -812,5 +813,54 @@ func TestRequestPassesLargeNonLoginHTMLThroughUntruncated(t *testing.T) {
 	result, err := client.Get(context.Background(), "/docs/index.html", RequestOptions{RawPath: true})
 	if err != nil || len(fmt.Sprint(result)) != len(page) {
 		t.Fatalf("expected the full HTML body, got err=%v len=%d want %d", err, len(fmt.Sprint(result)), len(page))
+	}
+}
+
+func TestWithTimeoutBoundsRequestsAndTokenWaits(t *testing.T) {
+	cfg := config.Config{BaseURL: "https://example.test", ClientID: "id", ClientSecret: "secret"}
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) })
+	var tokenRequests atomic.Int32
+	httpClient := newTestHTTPClient(func(req *http.Request) (*http.Response, error) {
+		if strings.HasSuffix(req.URL.Path, "/security/back-office/token") {
+			// Slower than the timeout, as Umbraco's token endpoint is while
+			// the app starts.
+			tokenRequests.Add(1)
+			time.Sleep(300 * time.Millisecond)
+			return jsonResponse(http.StatusOK, `{"access_token":"t","expires_in":3600}`, nil), nil
+		}
+		select {
+		case <-req.Context().Done():
+			return nil, req.Context().Err()
+		case <-release:
+			return jsonResponse(http.StatusOK, `{}`, nil), nil
+		}
+	})
+	client := NewClient(cfg, httpClient, auth.New(cfg, httpClient))
+	bounded := client.WithTimeout(50 * time.Millisecond)
+
+	started := time.Now()
+	if _, err := bounded.Get(context.Background(), "/server/status", RequestOptions{}); err == nil {
+		t.Fatalf("expected the wait for the slow token to time out")
+	}
+	if elapsed := time.Since(started); elapsed > 250*time.Millisecond {
+		t.Fatalf("the token wait took %s, the timeout was 50ms", elapsed)
+	}
+
+	// The token request carried on and was cached: the next request goes
+	// straight to the (hanging) endpoint and is cut there.
+	time.Sleep(400 * time.Millisecond)
+	started = time.Now()
+	if _, err := bounded.Get(context.Background(), "/server/status", RequestOptions{}); err == nil {
+		t.Fatalf("expected the hanging request to time out")
+	}
+	if elapsed := time.Since(started); elapsed > 250*time.Millisecond {
+		t.Fatalf("the request took %s, the timeout was 50ms", elapsed)
+	}
+	if got := tokenRequests.Load(); got != 1 {
+		t.Fatalf("expected the one token request to serve both, got %d", got)
+	}
+	if httpClient.Timeout != 0 {
+		t.Fatalf("the original client's HTTP client must be unchanged, got timeout %s", httpClient.Timeout)
 	}
 }

@@ -89,6 +89,9 @@ type Client struct {
 	cfg           config.Config
 	httpClient    *http.Client
 	tokenProvider *auth.Provider
+	// requestTimeout, when set (WithTimeout), also bounds each wait for a
+	// token; the token request itself carries on (see auth.Provider).
+	requestTimeout time.Duration
 	// initErr, when non-nil, fails every request with the startup problem
 	// (e.g. config resolution). Carrying it here keeps informational
 	// commands (--help, --version, schema) working on a broken setup while
@@ -155,6 +158,36 @@ func (e *APIError) ExitCode() int { return 4 }
 
 func NewClient(cfg config.Config, httpClient *http.Client, tokenProvider *auth.Provider) *Client {
 	return &Client{cfg: cfg, httpClient: httpClient, tokenProvider: tokenProvider}
+}
+
+// WithTimeout returns a client for the same environment and credentials
+// that gives up on any HTTP exchange, and on any wait for a token, after d.
+// The receiver is unchanged and the token cache is shared, so a token
+// request that outlasts d still completes and serves the next request. A
+// poller uses it so one slow response cannot hold up the rest of its loop
+// for the default client's minute.
+func (c *Client) WithTimeout(d time.Duration) *Client {
+	if c == nil {
+		return nil
+	}
+	clone := *c
+	clone.requestTimeout = d
+	if c.httpClient != nil {
+		httpClient := *c.httpClient
+		httpClient.Timeout = d
+		clone.httpClient = &httpClient
+	}
+	return &clone
+}
+
+// accessToken waits for a token, no longer than requestTimeout when set.
+func (c *Client) accessToken(ctx context.Context) (string, error) {
+	if c.requestTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, c.requestTimeout)
+		defer cancel()
+	}
+	return c.tokenProvider.AccessToken(ctx)
 }
 
 func (c *Client) ReplaceWith(next *Client) {
@@ -366,7 +399,7 @@ func (c *Client) send(ctx context.Context, method string, fullURL string, conten
 }
 
 func (c *Client) sendWithRedirects(ctx context.Context, method string, fullURL string, contentType string, headers map[string]string, makeBody func() io.Reader, policy redirectPolicy) (*http.Response, error) {
-	token, err := c.tokenProvider.AccessToken(ctx)
+	token, err := c.accessToken(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -437,7 +470,7 @@ func (c *Client) sendWithRedirects(ctx context.Context, method string, fullURL s
 		if resp.StatusCode == http.StatusUnauthorized && attempt < maxRequestAttempts-1 && c.tokenProvider != nil {
 			drainAndClose(resp)
 			c.tokenProvider.Invalidate()
-			token, err = c.tokenProvider.AccessToken(ctx)
+			token, err = c.accessToken(ctx)
 			if err != nil {
 				return nil, err
 			}
