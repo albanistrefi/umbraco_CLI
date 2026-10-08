@@ -262,3 +262,22 @@ func TestAccessTokenConcurrentCallersShareOneRequest(t *testing.T) {
 		t.Fatalf("expected the callers to share one token request, got %d", got)
 	}
 }
+
+func TestInvalidateIfCurrentKeepsANewerToken(t *testing.T) {
+	cfg := config.Config{BaseURL: "https://example.test", ClientID: "id", ClientSecret: "secret"}
+	var requests atomic.Int32
+	httpClient := &http.Client{Transport: authRoundTripper(func(req *http.Request) (*http.Response, error) {
+		requests.Add(1)
+		return authJSONResponse(http.StatusOK, fmt.Sprintf(`{"access_token":"t%d","expires_in":3600}`, requests.Load())), nil
+	})}
+	provider := New(cfg, httpClient)
+	current, _ := provider.AccessToken(context.Background())
+	provider.InvalidateIfCurrent("an-older-token")
+	if token, _ := provider.AccessToken(context.Background()); token != current || requests.Load() != 1 {
+		t.Fatalf("a stale invalidation discarded the current token: %q after %d requests", token, requests.Load())
+	}
+	provider.InvalidateIfCurrent(current)
+	if token, _ := provider.AccessToken(context.Background()); token == current || requests.Load() != 2 {
+		t.Fatalf("invalidating the current token should fetch a new one: %q after %d requests", token, requests.Load())
+	}
+}

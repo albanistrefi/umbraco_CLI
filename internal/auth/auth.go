@@ -74,6 +74,19 @@ func (p *Provider) Invalidate() {
 	p.mu.Unlock()
 }
 
+// InvalidateIfCurrent drops the cached token only while it is still token,
+// the one a rejected request was sent with. A 401 for a request that went
+// out with an older token must not discard the token a parallel request has
+// just fetched, which would start another (slow) token request.
+func (p *Provider) InvalidateIfCurrent(token string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.cached == token {
+		p.cached = ""
+		p.expiresAt = time.Time{}
+	}
+}
+
 // AccessToken returns the cached token, or waits for a fresh one as long as
 // ctx allows. The request for it runs detached from the caller that
 // started it: a caller that stops waiting (a poll's request timeout) does

@@ -471,7 +471,7 @@ func (c *Client) sendWithRedirects(ctx context.Context, method string, fullURL s
 
 		if resp.StatusCode == http.StatusUnauthorized && attempt < maxRequestAttempts-1 && c.tokenProvider != nil {
 			drainAndClose(resp)
-			c.tokenProvider.Invalidate()
+			c.tokenProvider.InvalidateIfCurrent(token)
 			token, err = c.tokenProvider.AccessToken(ctx)
 			if err != nil {
 				return nil, err
