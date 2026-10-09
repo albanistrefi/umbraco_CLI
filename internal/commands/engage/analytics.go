@@ -190,7 +190,7 @@ func engageAnalyticsQuery(deps cmdkit.Dependencies) *cobra.Command {
 			result, err := deps.Client.Post(cmd.Context(), "/analytics/query", body, opts)
 			if err != nil {
 				realtime, _ := body["realtime"].(bool)
-				return engageAnalyticsQueryError(engageError(err), realtime)
+				return engageAnalyticsQueryError(engageError(err), realtime, strings.TrimSpace(jsonPayload) != "")
 			}
 			return cmdkit.PrintResult(cmd, deps, result)
 		},

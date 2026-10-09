@@ -339,7 +339,8 @@ func TestEngageAnalyticsQueryServerErrorKeepsStatusAndAddsHint(t *testing.T) {
 	}{
 		{[]string{"--metrics", "pageviews", "--dimensions", "visitorType"}, "add --realtime"},
 		{[]string{"--metrics", "totalEvents", "--realtime"}, "drop --realtime"},
-		{[]string{"--json", `{"metrics":["totalEvents"],"dimensions":[],"realtime":true}`}, "drop --realtime"},
+		{[]string{"--json", `{"metrics":["totalEvents"],"dimensions":[],"realtime":true}`}, `set "realtime": false in the --json body`},
+		{[]string{"--json", `{"metrics":["pageviews"],"dimensions":["week"]}`}, `set "realtime": true in the --json body`},
 	} {
 		deps, requests := engageTestDeps(t, map[string]func(*http.Request) *http.Response{
 			"/analytics/query": engageJSON(http.StatusInternalServerError, `null`),
@@ -356,12 +357,15 @@ func TestEngageAnalyticsQueryServerErrorKeepsStatusAndAddsHint(t *testing.T) {
 			"API 500 POST " + engageAPIPrefix + "/analytics/query: null. Hint: ",
 			"Engage failed on this combination of metrics, dimensions and filter",
 			"server error, not a validation result",
-			"Try fewer dimensions, drop the filter, or " + tc.toggle,
+			"Try fewer dimensions, drop the filter, or " + tc.toggle + ";",
 			"'umbraco engage analytics query --help'",
 		} {
 			if !strings.Contains(err.Error(), want) {
 				t.Fatalf("%v: expected %q in %v", tc.args, want, err)
 			}
+		}
+		if tc.args[0] == "--json" && (strings.Contains(err.Error(), "add --realtime") || strings.Contains(err.Error(), "drop --realtime")) {
+			t.Fatalf("%v: --json cannot be combined with --realtime, so the hint must not suggest the flag: %v", tc.args, err)
 		}
 		if len(*requests) != 1 {
 			t.Fatalf("%v: expected one request (no retry), got %v", tc.args, *requests)

@@ -483,7 +483,7 @@ Engage 18.1.0 answers some analytics queries with HTTP 500 and an empty body
 (for example the `week` or `visitorType` dimensions without `--realtime`);
 `analytics query --help` lists the combinations measured. The CLI keeps the
 error and exit code 4 and adds a hint to try fewer dimensions, drop the
-filter, or toggle `--realtime`.
+filter, or toggle `--realtime` (with `--json`, the body's `realtime` field).
 
 ## Agent Safety Rules
 

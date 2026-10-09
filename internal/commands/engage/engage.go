@@ -119,10 +119,14 @@ const engageDistinctFailedHint = "Engage failed while listing this dimension's v
 
 // engageAnalyticsQueryError hints at a 500 from /analytics/query, which
 // Engage answers with an empty body for some metric, dimension and filter
-// combinations.
-func engageAnalyticsQueryError(err error, realtime bool) error {
+// combinations. A --json body cannot be combined with --realtime, so the
+// hint names the body's `realtime` field instead.
+func engageAnalyticsQueryError(err error, realtime bool, rawBody bool) error {
 	toggle := "add --realtime"
-	if realtime {
+	switch {
+	case rawBody:
+		toggle = fmt.Sprintf("set \"realtime\": %t in the --json body", !realtime)
+	case realtime:
 		toggle = "drop --realtime"
 	}
 	return engageServerErrorHint(err, "Engage failed on this combination of metrics, dimensions and filter; this is a server error, not a validation result. "+
