@@ -188,8 +188,10 @@ The `+"`umbraco`"+` binary must be on `+"`$PATH`"+`. Install via Homebrew or bui
 
 `+"```bash"+`
 brew install --cask albanistrefi/tap/umbraco-cli   # first install
-brew upgrade --cask umbraco-cli                    # each later release
+brew upgrade --cask albanistrefi/tap/umbraco-cli   # each later release
 `+"```"+`
+
+If Homebrew refuses an untrusted tap, run `+"`brew trust --cask albanistrefi/tap/umbraco-cli`"+` once.
 
 ## Authentication
 

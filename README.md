@@ -21,20 +21,23 @@ Core behavior:
 
 ### macOS via Homebrew
 
-After the Homebrew tap is in place and a tagged GitHub release is published,
-macOS users can install the CLI with a single command:
+Install the CLI with Homebrew:
 
 ```bash
 brew install --cask albanistrefi/tap/umbraco-cli
 umbraco --help
 ```
 
-The fully qualified name taps `albanistrefi/tap` on the first install. Upgrade
-to each later release with:
+The fully qualified name taps `albanistrefi/tap` and trusts the
+`umbraco-cli` cask. Upgrade to each later release with the same fully
+qualified name:
 
 ```bash
-brew upgrade --cask umbraco-cli
+brew upgrade --cask albanistrefi/tap/umbraco-cli
 ```
+
+If Homebrew refuses to load the cask from an untrusted tap, run
+`brew trust --cask albanistrefi/tap/umbraco-cli` once.
 
 If you previously installed from `albanist/tap` (the project moved owners),
 move the install to `albanistrefi/tap`:
@@ -44,13 +47,13 @@ brew untap --force albanist/tap
 brew install --cask albanistrefi/tap/umbraco-cli
 ```
 
-The first command removes the old tap and uninstalls the CLI installed from
-it; the second installs it again from `albanistrefi/tap`. Profiles and config
-in `~/.umbraco` are kept. As of Homebrew 7.0.9 the gentler routes fail: while
-both taps are present `brew upgrade --cask umbraco-cli` asks for a fully
-qualified name, upgrading through `albanistrefi/tap/umbraco-cli` keeps the
-install recorded against `albanist/tap`, and a plain `brew untap albanist/tap`
-refuses because that tap still holds the installed cask.
+The first command removes the old tap and uninstalls `umbraco-cli`, because
+Homebrew matches installed casks to a tap by name. The second installs it
+again from `albanistrefi/tap`. Profiles and config in `~/.umbraco` are kept.
+Without `--force`, `brew untap albanist/tap` asks to uninstall the CLI first,
+and refuses when it is not run in a terminal. While both taps are present,
+`brew upgrade --cask umbraco-cli` stops with "Cask umbraco-cli exists in
+multiple taps".
 
 The Homebrew tap lives at `https://github.com/albanistrefi/homebrew-tap`.
 
