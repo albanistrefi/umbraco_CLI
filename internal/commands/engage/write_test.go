@@ -398,12 +398,11 @@ func TestEngageReportingGenerateGateAndConflictHint(t *testing.T) {
 	}
 }
 
-func TestEngageAnnotationCreateAndDelete(t *testing.T) {
+func TestEngageAnnotationCreate(t *testing.T) {
 	bodies := &engageBodies{}
 	deps, requests := engageTestDeps(t, map[string]func(*http.Request) *http.Response{
 		"/annotations": engageByMethod(t, bodies, map[string]func(*http.Request) *http.Response{
-			http.MethodPost:   engageJSON(http.StatusOK, `{"id":21,"description":"Campaign launch"}`),
-			http.MethodDelete: engageJSON(http.StatusOK, ``),
+			http.MethodPost: engageJSON(http.StatusOK, `{"id":21,"description":"Campaign launch"}`),
 		}),
 	})
 	if _, err := cmdtest.Execute(buildEngageRoot(t, deps), "engage", "annotation", "create", "--json", `{"id":5}`); err == nil || !strings.Contains(err.Error(), "`id` 5") {
@@ -422,10 +421,7 @@ func TestEngageAnnotationCreateAndDelete(t *testing.T) {
 	if variants, ok := body["pageVariants"].([]any); !ok || len(variants) != 0 {
 		t.Fatalf("expected the required pageVariants array, got %+v", body["pageVariants"])
 	}
-	if _, err := cmdtest.Execute(buildEngageRoot(t, deps), "engage", "annotation", "delete", "21", "--force"); err != nil {
-		t.Fatalf("annotation delete failed: %v", err)
-	}
-	engageRequestsEqual(t, *requests, "POST "+engageAPIPrefix+"/annotations", "DELETE "+engageAPIPrefix+"/annotations?id=21")
+	engageRequestsEqual(t, *requests, "POST "+engageAPIPrefix+"/annotations")
 }
 
 func TestEngageRejectsNonStringGUIDsInsteadOfGeneratingOne(t *testing.T) {

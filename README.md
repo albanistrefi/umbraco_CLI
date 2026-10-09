@@ -452,6 +452,15 @@ takes exactly one of `--json` (replace) or `--merge-json` (fetch and merge).
 Every write takes `--dry-run`; deletes, `main-switch on|off` and
 `reporting generate` also require `--force`.
 
+`engage annotation delete <id>` hides a stored annotation: Engage
+soft-deletes it, marking it invalid so it is no longer listed, and keeps the
+row. Engage answers 200 whether or not the id exists, so the command looks the
+id up among the stored annotations first, refuses one it cannot find (exit
+code 4), and after the DELETE reports success only once the annotation is no
+longer listed. Annotations Engage generates from A/B tests and page history
+list with `id` 0 and cannot be deleted; an id of 0 or less is refused (exit
+code 1).
+
 ```bash
 umbraco engage status
 umbraco engage segment list --fields unique,name

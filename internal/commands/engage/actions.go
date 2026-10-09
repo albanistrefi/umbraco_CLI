@@ -1,9 +1,11 @@
 package engage
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -148,18 +150,91 @@ func engageAnnotationCreate(deps cmdkit.Dependencies) *cobra.Command {
 	return cmd
 }
 
+// The annotation table's timestamp is a SQL datetime, so these are the
+// first and last values it can hold; Engage answers 500 for a range that
+// starts earlier.
+const (
+	engageAnnotationEarliest = "1753-01-01T00:00:00Z"
+	engageAnnotationLatest   = "9999-12-31T23:59:59.997Z"
+)
+
+// engageAnnotationDelete does not use engageDelete: Engage's DELETE
+// /annotations only marks a stored row invalid and answers 200 whether or not
+// the id exists, so the command checks the annotation is listed before the
+// DELETE and gone after it.
 func engageAnnotationDelete(deps cmdkit.Dependencies) *cobra.Command {
-	return engageDelete(deps, engageDeleteSpec{
-		Use:         "delete <id>",
-		Short:       "Permanently delete an annotation by its numeric `id`",
-		Long:        "DELETE /annotations?id=<id>. Annotations carry only a numeric `id` (from 'umbraco engage annotation list'). Requires --force (or --dry-run to rehearse).",
-		Path:        "/annotations",
-		Param:       "id",
-		IDKind:      engageNumeric,
-		IDField:     "id",
-		ListCommand: "umbraco engage annotation list",
-		Consequence: "permanently deletes the annotation",
-	})
+	var force, dryRun bool
+	cmd := &cobra.Command{
+		Use:   "delete <id>",
+		Short: "Hide (soft-delete) a stored annotation by its numeric `id`",
+		Long: "DELETE /annotations?id=<id>. Engage soft-deletes: it marks the annotation invalid, so it is no longer listed, but keeps its row. Requires --force (or --dry-run to rehearse).\n\n" +
+			"Only stored annotations, made with 'umbraco engage annotation create' or in the back office, have an `id`. The ones Engage generates from A/B tests (started, stopped) and page history (published, created) list with `id` 0 and cannot be deleted, so an id of 0 or less is refused.\n\n" +
+			"Engage answers 200 whether or not the id exists, so the command first looks the id up among the stored annotations (GET /annotations/all from " + engageAnnotationEarliest + " to " + engageAnnotationLatest + ") and refuses one it cannot find. " +
+			"After the DELETE it lists them again and reports success only when the annotation is gone. Either failure exits 4. --dry-run runs the lookup and prints the planned DELETE.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			command := "engage annotation delete"
+			listCommand := "umbraco engage annotation list"
+			if err := validateEngageID(command, args[0], engageNumeric, "id", listCommand); err != nil {
+				return err
+			}
+			id, _ := strconv.ParseInt(strings.TrimSpace(args[0]), 10, 64)
+			if id <= 0 {
+				return fmt.Errorf("%s: id %d is not a stored annotation. Annotations Engage generates from A/B tests (started, stopped) and page history (published, created) list with `id` 0 and cannot be deleted", command, id)
+			}
+			if err := cmdkit.RequireForceOrDryRun(cmd, "hides (soft-deletes) the annotation", force, dryRun); err != nil {
+				return err
+			}
+			if _, err := engageFindStoredAnnotation(cmd.Context(), deps, id); err != nil {
+				return err
+			}
+			result, err := deps.Client.Delete(cmd.Context(), "/annotations", engageWriteOpts(map[string]any{"id": strconv.FormatInt(id, 10)}, dryRun))
+			if err != nil {
+				return engageError(err)
+			}
+			if dryRun {
+				return cmdkit.PrintResult(cmd, deps, result)
+			}
+			if _, err := engageFindStoredAnnotation(cmd.Context(), deps, id); err == nil {
+				return engageAnnotationError(fmt.Sprintf("%s: Engage answered the DELETE for annotation %d, but it is still listed", command, id))
+			} else if !errors.As(err, new(engageAnnotationError)) {
+				return err
+			}
+			return cmdkit.PrintResult(cmd, deps, map[string]any{"deleted": true, "id": id})
+		},
+	}
+	cmd.Flags().BoolVar(&force, "force", false, "Confirm hiding the annotation")
+	cmdkit.AddDryRunFlag(cmd, &dryRun)
+	return cmd
+}
+
+// engageAnnotationError is an annotation delete that Engage's answers show
+// did not or cannot happen. It exits 4 like a Management API refusal.
+type engageAnnotationError string
+
+func (e engageAnnotationError) Error() string { return string(e) }
+func (engageAnnotationError) ExitCode() int   { return 4 }
+
+// engageFindStoredAnnotation returns the listed, non-invalid annotation with
+// id, or an engageAnnotationError when there is none.
+func engageFindStoredAnnotation(ctx context.Context, deps cmdkit.Dependencies, id int64) (map[string]any, error) {
+	result, err := deps.Client.Get(ctx, "/annotations/all", engageOpts(map[string]any{"from": engageAnnotationEarliest, "to": engageAnnotationLatest}))
+	if err != nil {
+		return nil, engageError(err)
+	}
+	entries, ok := result.([]any)
+	if !ok {
+		return nil, fmt.Errorf("GET /annotations/all: expected an array, got %s", jsonvalue.ShapeName(result))
+	}
+	want := strconv.FormatInt(id, 10)
+	for _, entry := range entries {
+		annotation, ok := entry.(map[string]any)
+		if !ok || jsonvalue.Text(annotation["id"]) != want || annotation["invalid"] == true {
+			continue
+		}
+		return annotation, nil
+	}
+	return nil, engageAnnotationError(fmt.Sprintf("engage annotation delete: no stored annotation with id %d (see 'umbraco engage annotation list')", id))
 }
 
 // engageAnnotationVisibilities is the AnnotationVisibilityModel enum
