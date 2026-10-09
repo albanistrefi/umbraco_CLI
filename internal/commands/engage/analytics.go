@@ -346,7 +346,8 @@ func engageAnnotation(deps cmdkit.Dependencies) *cobra.Command {
 		Short: "List annotations, optionally only global ones or those on one page",
 		Long: "GET /annotations/all by default; --global uses /annotations/global (annotations not tied to a page); --node <documentGuid> uses /annotations/page, with --culture for one culture.\n\n" +
 			"--from and --to are both required (YYYY-MM-DD or RFC 3339). They are instants, unlike the whole days of 'analytics query': Engage returns the annotations timestamped between them, honouring the time and any offset. " +
-			"A YYYY-MM-DD value is midnight at the start of that day, so --to 2026-09-30 leaves out annotations made on the 30th; pass --to 2026-10-01 to include them.",
+			"A YYYY-MM-DD value is midnight at the start of that day, so --to 2026-09-30 leaves out annotations made on the 30th; pass --to 2026-10-01 to include them.\n\n" +
+			"Stored annotations, made with 'umbraco engage annotation create' or in the back office, carry the `id` 'annotation delete' takes. Engage also generates annotations from A/B tests (started, stopped) and page history (published, created); those list with `id` 0 and cannot be deleted.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if global && strings.TrimSpace(node) != "" {

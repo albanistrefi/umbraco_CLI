@@ -172,6 +172,8 @@ GET /annotations/all by default; --global uses /annotations/global (annotations 
 
 --from and --to are both required (YYYY-MM-DD or RFC 3339). They are instants, unlike the whole days of 'analytics query': Engage returns the annotations timestamped between them, honouring the time and any offset. A YYYY-MM-DD value is midnight at the start of that day, so --to 2026-09-30 leaves out annotations made on the 30th; pass --to 2026-10-01 to include them.
 
+Stored annotations, made with 'umbraco engage annotation create' or in the back office, carry the `id` 'annotation delete' takes. Engage also generates annotations from A/B tests (started, stopped) and page history (published, created); those list with `id` 0 and cannot be deleted.
+
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--culture` | string | — | With --node: only this culture |
@@ -485,7 +487,7 @@ GET /traffic-filter/all. Returns a bare array, not paged. Each entry carries a n
 |---------|-------------|
 | `engage analytics query` | Run an analytics query (POST /analytics/query; read-only) |
 | `engage annotation create` | Create an analytics annotation (POST /annotations) |
-| `engage annotation delete <id>` | Permanently delete an annotation by its numeric `id` |
+| `engage annotation delete <id>` | Hide (soft-delete) a stored annotation by its numeric `id` |
 | `engage campaign-group create` | Create a campaign group (POST /campaign-group) |
 | `engage campaign-group delete <unique>` | Permanently delete a campaign group by its GUID `unique` |
 | `engage campaign-group update <unique>` | Update a campaign group by its GUID `unique` (POST /campaign-group) |
@@ -590,12 +592,16 @@ umbraco engage annotation create [flags]
 umbraco engage annotation delete <id>
 ```
 
-DELETE /annotations?id=<id>. Annotations carry only a numeric `id` (from 'umbraco engage annotation list'). Requires --force (or --dry-run to rehearse).
+DELETE /annotations?id=<id>. Engage soft-deletes: it marks the annotation invalid, so it is no longer listed, but keeps its row. Requires --force (or --dry-run to rehearse).
+
+Only stored annotations, made with 'umbraco engage annotation create' or in the back office, have an `id`. The ones Engage generates from A/B tests (started, stopped) and page history (published, created) list with `id` 0 and cannot be deleted, so an id of 0 or less is refused.
+
+Engage answers 200 whether or not the id exists, so the command first looks the id up among the stored annotations (GET /annotations/all from 1753-01-02T00:00:00Z to 9999-12-30T23:59:59Z) and refuses one it cannot find. After the DELETE it lists them again and reports success only when the annotation is gone. Either failure exits 4. --dry-run runs the lookup and prints the planned DELETE.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--dry-run` | bool | false | Print the planned request without executing |
-| `--force` | bool | false | Confirm permanent deletion |
+| `--force` | bool | false | Confirm hiding the annotation |
 
 **Safe pattern:**
 
