@@ -2,7 +2,7 @@
 name: umbraco-forms
 description: "Umbraco Forms operations: forms, folders, records, prevalue sources"
 metadata:
-  version: 0.5.0
+  version: 0.5.1
   requires:
     bins:
       - umbraco

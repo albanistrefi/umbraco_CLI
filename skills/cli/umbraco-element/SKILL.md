@@ -2,7 +2,7 @@
 name: umbraco-element
 description: "Element library content (Umbraco 18.1+): reusable content items with publish lifecycle"
 metadata:
-  version: 0.5.0
+  version: 0.5.1
   requires:
     bins:
       - umbraco

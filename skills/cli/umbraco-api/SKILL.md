@@ -2,7 +2,7 @@
 name: umbraco-api
 description: "Call an authenticated raw Umbraco Management API endpoint"
 metadata:
-  version: 0.5.0
+  version: 0.5.1
   requires:
     bins:
       - umbraco

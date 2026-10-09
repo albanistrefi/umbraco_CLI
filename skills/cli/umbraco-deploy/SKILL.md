@@ -2,7 +2,7 @@
 name: umbraco-deploy
 description: "Deployment observation, schema application, and content transfer (watch, status, apply, transfer, queue)"
 metadata:
-  version: 0.5.0
+  version: 0.5.1
   requires:
     bins:
       - umbraco
