@@ -166,7 +166,9 @@ List the metric names 'analytics query --metrics' accepts. Taken from the Engage
 umbraco engage annotation list
 ```
 
-GET /annotations/all by default; --global uses /annotations/global (annotations not tied to a page); --node <documentGuid> uses /annotations/page, with --culture for one culture. --from/--to (YYYY-MM-DD or RFC 3339) bound the range.
+GET /annotations/all by default; --global uses /annotations/global (annotations not tied to a page); --node <documentGuid> uses /annotations/page, with --culture for one culture.
+
+--from and --to (YYYY-MM-DD or RFC 3339) are instants, unlike the whole days of 'analytics query': Engage returns the annotations timestamped between them, honouring the time and any offset. A YYYY-MM-DD value is midnight at the start of that day, so --to 2026-09-30 leaves out annotations made on the 30th; pass --to 2026-10-01 to include them. Engage 18.1.0 answers HTTP 500 unless both are given.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
@@ -518,7 +520,7 @@ umbraco engage analytics query
 
 POST /analytics/query. The request is a POST but reads only.
 
---metrics is required; --dimensions is optional (none gives one total row). Names are checked against 'analytics metrics' / 'analytics dimensions'. --from/--to default to the last 30 days ending now (UTC); YYYY-MM-DD values are sent as given, which the server reads as midnight, so to include a whole --to day pass the next day or a full RFC 3339 timestamp.
+--metrics is required; --dimensions is optional (none gives one total row). Names are checked against 'analytics metrics' / 'analytics dimensions'. --from and --to are whole days, both inclusive: Engage counts every day from --from through --to and ignores any time of day, so --from 2026-10-01 --to 2026-10-01 is that one day. Pass days as YYYY-MM-DD. An RFC 3339 value is accepted only at midnight UTC (00:00:00Z) and is sent as its date; any other time or offset is refused, because Engage would drop the time and convert an offset to its UTC date. Without them the range is the last 30 days: today (UTC) and the 29 days before.
 
 --filter takes Engage's filter syntax: Dimension=='value' clauses joined with ';' (AND), e.g. "country=='Denmark';deviceCategory=='mobile'". --node <documentGuid> narrows to one page the way the back office does (NodeId=='<guid>', with a '+' suffix under --include-subpages); --culture adds NodeCulture.
 
@@ -533,7 +535,7 @@ POST /analytics/query. The request is a POST but reads only.
 | `--dimensions` | string | — | Comma-separated dimension names, e.g. date or pagePath,country |
 | `--dry-run` | bool | false | Print the planned request without executing |
 | `--filter` | string | — | Engage filter expression: Dimension=='value' clauses joined with ';' |
-| `--from` | string | — | Start of the range: YYYY-MM-DD or RFC 3339 (default: 30 days ago, midnight UTC) |
+| `--from` | string | — | First day of the range, inclusive, as YYYY-MM-DD (default: 29 days before today, UTC) |
 | `--include-subpages` | bool | false | With --node: include the page's descendants |
 | `--json` | string | — | Full AnalyticsQueryGetModel body, sent verbatim |
 | `--metrics` | string | — | Comma-separated metric names (required unless --json), e.g. pageviews,sessions |
@@ -542,7 +544,7 @@ POST /analytics/query. The request is a POST but reads only.
 | `--page-size` | int | 100 | Rows per page |
 | `--realtime` | bool | false | Query the realtime (unaggregated) data instead of the reporting tables |
 | `--sort` | string | — | Metric or dimension to sort by (default: the first dimension) |
-| `--to` | string | — | End of the range: YYYY-MM-DD or RFC 3339 (default: now) |
+| `--to` | string | — | Last day of the range, inclusive, as YYYY-MM-DD (default: today, UTC) |
 
 **Safe pattern:**
 
