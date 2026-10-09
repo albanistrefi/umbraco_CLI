@@ -2,7 +2,7 @@
 name: umbraco-searcher
 description: "Examine searcher queries"
 metadata:
-  version: 0.4.27
+  version: 0.5.0
   requires:
     bins:
       - umbraco
