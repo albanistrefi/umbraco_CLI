@@ -212,7 +212,7 @@ func TestEngageAnalyticsQueryBuildsBackOfficeBody(t *testing.T) {
 		"metrics":         []any{"pageviews", "sessions"},
 		"dimensions":      []any{"pagePath", "NodeId"},
 		"startDate":       "2026-09-01",
-		"endDate":         "2026-10-01T00:00:00Z",
+		"endDate":         "2026-10-01",
 		"filter":          "deviceCategory=='mobile';NodeId=='" + engageTestGUID + "+';NodeCulture=='en-US'",
 		"sort":            "pagePath",
 		"page":            float64(1),
@@ -228,14 +228,34 @@ func TestEngageAnalyticsQueryBuildsBackOfficeBody(t *testing.T) {
 	}
 }
 
-func TestEngageAnalyticsQueryDefaultsToLast30Days(t *testing.T) {
-	now := time.Date(2026, 10, 1, 9, 30, 0, 0, time.UTC)
-	body, err := buildEngageAnalyticsQuery(engageAnalyticsQueryInput{Metrics: "pageviews", Page: 1, PageSize: 100}, now)
+func TestEngageAnalyticsQueryDefaultsToLast30InclusiveDays(t *testing.T) {
+	for _, tc := range []struct {
+		now        time.Time
+		start, end string
+	}{
+		{time.Date(2026, 10, 1, 9, 30, 0, 0, time.UTC), "2026-09-02", "2026-10-01"},
+		{time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC), "2026-09-02", "2026-10-01"},
+		{time.Date(2026, 10, 1, 23, 59, 59, 0, time.UTC), "2026-09-02", "2026-10-01"},
+		// 01:00 at UTC+2 is still 30 September in UTC.
+		{time.Date(2026, 10, 1, 1, 0, 0, 0, time.FixedZone("UTC+2", 2*3600)), "2026-09-01", "2026-09-30"},
+		{time.Date(2024, 3, 1, 12, 0, 0, 0, time.UTC), "2024-02-01", "2024-03-01"},
+	} {
+		body, err := buildEngageAnalyticsQuery(engageAnalyticsQueryInput{Metrics: "pageviews", Page: 1, PageSize: 100}, tc.now)
+		if err != nil {
+			t.Fatalf("build: %v", err)
+		}
+		if body["startDate"] != tc.start || body["endDate"] != tc.end {
+			t.Fatalf("now %s: default range %v .. %v, want %s .. %s", tc.now, body["startDate"], body["endDate"], tc.start, tc.end)
+		}
+		start, _ := time.Parse(engageDayLayout, body["startDate"].(string))
+		end, _ := time.Parse(engageDayLayout, body["endDate"].(string))
+		if days := int(end.Sub(start).Hours()/24) + 1; days != 30 {
+			t.Fatalf("now %s: default range covers %d inclusive days, want 30", tc.now, days)
+		}
+	}
+	body, err := buildEngageAnalyticsQuery(engageAnalyticsQueryInput{Metrics: "pageviews", Page: 1, PageSize: 100}, time.Date(2026, 10, 1, 9, 30, 0, 0, time.UTC))
 	if err != nil {
 		t.Fatalf("build: %v", err)
-	}
-	if body["startDate"] != "2026-09-01T00:00:00Z" || body["endDate"] != "2026-10-01T09:30:00Z" {
-		t.Fatalf("unexpected default range %v .. %v", body["startDate"], body["endDate"])
 	}
 	if _, ok := body["sort"]; ok {
 		t.Fatalf("no dimensions means no default sort, got %v", body["sort"])
@@ -254,7 +274,7 @@ func TestEngageAnalyticsQueryRejectsBadInputLocally(t *testing.T) {
 		{[]string{"--dimensions", "date"}, "missing required option: --metrics"},
 		{[]string{"--metrics", " , ,"}, "missing required option: --metrics"},
 		{[]string{"--metrics", "pageviews,clicks"}, "unknown name(s) clicks"},
-		{[]string{"--metrics", "pageviews", "--from", "01-09-2026"}, "--from must be an ISO 8601 date"},
+		{[]string{"--metrics", "pageviews", "--from", "01-09-2026"}, "--from must be a day as YYYY-MM-DD"},
 		{[]string{"--metrics", "pageviews", "--culture", "en-US"}, "--culture requires --node"},
 		{[]string{"--metrics", "pageviews", "--page", "0"}, "--page is 1-based"},
 		{[]string{"--json", `{"metrics":["pageviews"]}`, "--metrics", "sessions"}, "cannot be combined with --metrics"},
@@ -266,6 +286,175 @@ func TestEngageAnalyticsQueryRejectsBadInputLocally(t *testing.T) {
 	}
 	if len(*requests) != 0 {
 		t.Fatalf("invalid input must not reach the API, got %v", *requests)
+	}
+}
+
+func TestEngageAnalyticsQueryRefusesATimeOfDayEngageWouldDrop(t *testing.T) {
+	deps, requests := engageTestDeps(t, nil)
+	for _, tc := range []struct {
+		flag, value string
+		want        []string
+	}{
+		{"--to", "2025-11-03T12:00:00Z", []string{`--to "2025-11-03T12:00:00Z" is not a whole day`, "both ends inclusive", "ignores the time of day", "YYYY-MM-DD"}},
+		{"--from", "2025-11-03T23:59:59.5Z", []string{"is not a whole day"}},
+		{"--to", "2025-11-03T23:30:00-05:00", []string{"is not a whole day", "UTC date (2025-11-04)"}},
+		{"--from", "2025-11-03T00:00:00+02:00", []string{"is not a whole day", "UTC date (2025-11-02)"}},
+		{"--to", "2025-11-02T19:00:00-05:00", []string{"is not a whole day", "UTC date (2025-11-03)"}},
+	} {
+		_, err := cmdtest.Execute(buildEngageRoot(t, deps), "engage", "analytics", "query", "--metrics", "pageviews", "--from", "2025-11-01", tc.flag, tc.value)
+		if err == nil {
+			t.Fatalf("%s %s: expected a refusal", tc.flag, tc.value)
+		}
+		for _, want := range tc.want {
+			if !strings.Contains(err.Error(), want) {
+				t.Fatalf("%s %s: expected %q in %v", tc.flag, tc.value, want, err)
+			}
+		}
+		if coder, ok := err.(interface{ ExitCode() int }); ok {
+			t.Fatalf("%s %s: a refused value is a usage error (exit 1), got exit %d", tc.flag, tc.value, coder.ExitCode())
+		}
+	}
+	if len(*requests) != 0 {
+		t.Fatalf("refused values must not reach the API, got %v", *requests)
+	}
+	for value, want := range map[string]string{
+		"2025-11-03":                    "2025-11-03",
+		"2025-11-03T00:00:00Z":          "2025-11-03",
+		"2025-11-03T00:00:00.000+00:00": "2025-11-03",
+	} {
+		body, err := buildEngageAnalyticsQuery(engageAnalyticsQueryInput{Metrics: "pageviews", From: value, To: value, Page: 1, PageSize: 100}, time.Now())
+		if err != nil {
+			t.Fatalf("%s: %v", value, err)
+		}
+		if body["startDate"] != want || body["endDate"] != want {
+			t.Fatalf("%s: sent %v .. %v, want %s", value, body["startDate"], body["endDate"], want)
+		}
+	}
+}
+
+func TestEngageAnalyticsQueryServerErrorKeepsStatusAndAddsHint(t *testing.T) {
+	for _, tc := range []struct {
+		args   []string
+		toggle string
+	}{
+		{[]string{"--metrics", "pageviews", "--dimensions", "visitorType"}, "add --realtime"},
+		{[]string{"--metrics", "totalEvents", "--realtime"}, "drop --realtime"},
+		{[]string{"--json", `{"metrics":["totalEvents"],"dimensions":[],"realtime":true}`}, `set "realtime": false in the --json body`},
+		{[]string{"--json", `{"metrics":["pageviews"],"dimensions":["week"]}`}, `set "realtime": true in the --json body`},
+	} {
+		deps, requests := engageTestDeps(t, map[string]func(*http.Request) *http.Response{
+			"/analytics/query": engageJSON(http.StatusInternalServerError, `null`),
+		})
+		_, err := cmdtest.Execute(buildEngageRoot(t, deps), append([]string{"engage", "analytics", "query"}, tc.args...)...)
+		var apiErr *api.APIError
+		if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusInternalServerError || apiErr.Payload != nil {
+			t.Fatalf("%v: expected the 500 APIError with its null body to survive, got %v", tc.args, err)
+		}
+		if coder, ok := err.(interface{ ExitCode() int }); !ok || coder.ExitCode() != 4 {
+			t.Fatalf("%v: expected exit code 4, got %v", tc.args, err)
+		}
+		for _, want := range []string{
+			"API 500 POST " + engageAPIPrefix + "/analytics/query: null. Hint: ",
+			"Engage failed on this combination of metrics, dimensions and filter",
+			"server error, not a validation result",
+			"Try fewer dimensions, drop the filter, or " + tc.toggle + ";",
+			"'umbraco engage analytics query --help'",
+		} {
+			if !strings.Contains(err.Error(), want) {
+				t.Fatalf("%v: expected %q in %v", tc.args, want, err)
+			}
+		}
+		if tc.args[0] == "--json" && (strings.Contains(err.Error(), "add --realtime") || strings.Contains(err.Error(), "drop --realtime")) {
+			t.Fatalf("%v: --json cannot be combined with --realtime, so the hint must not suggest the flag: %v", tc.args, err)
+		}
+		if len(*requests) != 1 {
+			t.Fatalf("%v: expected one request (no retry), got %v", tc.args, *requests)
+		}
+	}
+}
+
+func TestEngageAnalyticsQueryHintsOnlyServerErrors(t *testing.T) {
+	deps, _ := engageTestDeps(t, map[string]func(*http.Request) *http.Response{
+		"/analytics/query": engageJSON(http.StatusBadRequest, `{"title":"Bad Request","status":400}`),
+	})
+	_, err := cmdtest.Execute(buildEngageRoot(t, deps), "engage", "analytics", "query", "--metrics", "pageviews")
+	var apiErr *api.APIError
+	if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusBadRequest || apiErr.Hint != "" {
+		t.Fatalf("expected the 400 without a hint, got %v", err)
+	}
+}
+
+func TestEngageAnalyticsDistinctServerErrorKeepsStatusAndAddsHint(t *testing.T) {
+	deps, _ := engageTestDeps(t, map[string]func(*http.Request) *http.Response{
+		"/analytics/distinct": engageJSON(http.StatusInternalServerError, `null`),
+	})
+	_, err := cmdtest.Execute(buildEngageRoot(t, deps), "engage", "analytics", "distinct", "--dimension", "visitorType")
+	var apiErr *api.APIError
+	if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusInternalServerError || apiErr.Payload != nil {
+		t.Fatalf("expected the 500 APIError with its null body to survive, got %v", err)
+	}
+	if coder, ok := err.(interface{ ExitCode() int }); !ok || coder.ExitCode() != 4 {
+		t.Fatalf("expected exit code 4, got %v", err)
+	}
+	for _, want := range []string{
+		"API 500 GET " + engageAPIPrefix + "/analytics/distinct?dimension=visitorType: null. Hint: ",
+		"server error, not a validation result",
+		"'umbraco engage analytics distinct --help'",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("expected %q in %v", want, err)
+		}
+	}
+}
+
+func TestEngageDateHelpDescribesEngageSemantics(t *testing.T) {
+	help := func(args ...string) string {
+		t.Helper()
+		output, err := cmdtest.Execute(buildEngageRoot(t, cmdtest.MakeDeps()), append(args, "--help")...)
+		if err != nil {
+			t.Fatalf("%v --help failed: %v", args, err)
+		}
+		return strings.Join(strings.Fields(output), " ")
+	}
+	query := help("engage", "analytics", "query")
+	for _, want := range []string{
+		"--from and --to are whole days, both inclusive",
+		"ignores any time of day",
+		"--from 2026-10-01 --to 2026-10-01 is that one day",
+		"accepted only at midnight UTC",
+		"the last 30 days: today (UTC) and the 29 days before",
+		"First day of the range, inclusive",
+		"Last day of the range, inclusive",
+		"Engage 18.1.0 answers some combinations with HTTP 500",
+		"the visitorType and usertype dimensions",
+		"With --realtime, the totalEvents metric",
+	} {
+		if !strings.Contains(query, want) {
+			t.Fatalf("analytics query help lacks %q:\n%s", want, query)
+		}
+	}
+	for _, stale := range []string{"reads as midnight", "pass the next day", "ending now"} {
+		if strings.Contains(query, stale) {
+			t.Fatalf("analytics query help still says %q", stale)
+		}
+	}
+	if distinct := help("engage", "analytics", "distinct"); !strings.Contains(distinct, "Engage 18.1.0 answers HTTP 500 for the visitorType and usertype dimensions") {
+		t.Fatalf("analytics distinct help lacks the known failures:\n%s", distinct)
+	}
+	annotation := help("engage", "annotation", "list")
+	for _, want := range []string{
+		"are instants, unlike the whole days of 'analytics query'",
+		"--to 2026-09-30 leaves out annotations made on the 30th",
+		"--from and --to are both required",
+		"Start of the range (required)",
+		"End of the range (required)",
+	} {
+		if !strings.Contains(annotation, want) {
+			t.Fatalf("annotation list help lacks %q:\n%s", want, annotation)
+		}
+	}
+	if strings.Contains(annotation, "HTTP 500") {
+		t.Fatalf("annotation list no longer sends a request Engage answers with 500; drop the note:\n%s", annotation)
 	}
 }
 
@@ -302,24 +491,53 @@ func TestEngageAnnotationListRoutes(t *testing.T) {
 		"/annotations/page":   engageJSON(http.StatusOK, `[]`),
 	})
 	for _, args := range [][]string{
-		{"--from", "2026-09-01"},
+		{},
 		{"--global"},
 		{"--node", engageTestGUID, "--culture", "en-US"},
 	} {
-		if _, err := cmdtest.Execute(buildEngageRoot(t, deps), append([]string{"engage", "annotation", "list"}, args...)...); err != nil {
+		args = append([]string{"engage", "annotation", "list", "--from", "2026-09-01", "--to", "2026-10-01T12:00:00+02:00"}, args...)
+		if _, err := cmdtest.Execute(buildEngageRoot(t, deps), args...); err != nil {
 			t.Fatalf("%v failed: %v", args, err)
 		}
 	}
+	rangeQuery := "from=2026-09-01&to=2026-10-01T12%3A00%3A00%2B02%3A00"
 	want := []string{
-		"GET " + engageAPIPrefix + "/annotations/all?from=2026-09-01",
-		"GET " + engageAPIPrefix + "/annotations/global",
-		"GET " + engageAPIPrefix + "/annotations/page?culture=en-US&unique=" + engageTestGUID,
+		"GET " + engageAPIPrefix + "/annotations/all?" + rangeQuery,
+		"GET " + engageAPIPrefix + "/annotations/global?" + rangeQuery,
+		"GET " + engageAPIPrefix + "/annotations/page?culture=en-US&" + rangeQuery + "&unique=" + engageTestGUID,
 	}
 	if strings.Join(*requests, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("unexpected requests:\n%s", strings.Join(*requests, "\n"))
 	}
-	if _, err := cmdtest.Execute(buildEngageRoot(t, deps), "engage", "annotation", "list", "--global", "--node", engageTestGUID); err == nil {
+	if _, err := cmdtest.Execute(buildEngageRoot(t, deps), "engage", "annotation", "list", "--global", "--node", engageTestGUID, "--from", "2026-09-01", "--to", "2026-10-01"); err == nil {
 		t.Fatalf("--global with --node must be refused")
+	}
+}
+
+func TestEngageAnnotationListRequiresBothEndsOfTheRange(t *testing.T) {
+	deps, requests := engageTestDeps(t, nil)
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{nil, "missing required options: --from, --to"},
+		{[]string{"--from", "2026-09-01"}, "missing required option: --to (annotation list needs both --from and --to)"},
+		{[]string{"--to", "2026-10-01"}, "missing required option: --from (annotation list needs both --from and --to)"},
+		{[]string{"--from", " ", "--to", "2026-10-01"}, "missing required option: --from"},
+		{[]string{"--global"}, "missing required options: --from, --to"},
+		{[]string{"--global", "--from", "2026-09-01"}, "missing required option: --to"},
+		{[]string{"--node", engageTestGUID, "--to", "2026-10-01"}, "missing required option: --from"},
+	} {
+		_, err := cmdtest.Execute(buildEngageRoot(t, deps), append([]string{"engage", "annotation", "list"}, tc.args...)...)
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Fatalf("%v: expected an error containing %q, got %v", tc.args, tc.want, err)
+		}
+		if coder, ok := err.(interface{ ExitCode() int }); ok {
+			t.Fatalf("%v: a missing option is a usage error (exit 1), got exit %d", tc.args, coder.ExitCode())
+		}
+	}
+	if len(*requests) != 0 {
+		t.Fatalf("a missing --from or --to must not reach the API, got %v", *requests)
 	}
 }
 

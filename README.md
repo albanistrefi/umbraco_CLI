@@ -457,7 +457,7 @@ umbraco engage status
 umbraco engage segment list --fields unique,name
 umbraco engage persona get <unique>
 umbraco engage abtest list --fields id,name,status
-umbraco engage analytics query --metrics pageviews,sessions --dimensions date --from 2026-09-01 --to 2026-10-01
+umbraco engage analytics query --metrics pageviews,sessions --dimensions date --from 2026-09-01 --to 2026-09-30
 umbraco engage analytics query --metrics pageviews --dimensions pagePath --filter "deviceCategory=='mobile'" --page-size 20
 umbraco engage analytics distinct --dimension country
 umbraco engage persona create --print-template
@@ -469,6 +469,21 @@ umbraco engage segment update-priority --order 7,3,9 --dry-run
 When Engage's database schema alignment is incomplete, Engage answers every
 data route with HTTP 409 "Umbraco Engage is unavailable" (exit code 4);
 `engage status` reports this as `dataAvailable: false`.
+
+`engage analytics query` ranges are whole days, both ends inclusive:
+`--from 2026-09-01 --to 2026-09-30` is the 30 days of September. Engage
+ignores the time of day, so the CLI takes days as `YYYY-MM-DD` and refuses an
+RFC 3339 value other than midnight UTC instead of sending a range Engage would
+read differently. Without `--from`/`--to` the range is the last 30 days: today
+(UTC) and the 29 days before. `engage annotation list` is different: it
+requires both `--from` and `--to`, they are instants, and a bare date means
+midnight at the start of that day.
+
+Engage 18.1.0 answers some analytics queries with HTTP 500 and an empty body
+(for example the `week` or `visitorType` dimensions without `--realtime`);
+`analytics query --help` lists the combinations measured. The CLI keeps the
+error and exit code 4 and adds a hint to try fewer dimensions, drop the
+filter, or toggle `--realtime` (with `--json`, the body's `realtime` field).
 
 ## Agent Safety Rules
 

@@ -115,6 +115,34 @@ func engageError(err error) error {
 	return err
 }
 
+const engageDistinctFailedHint = "Engage failed while listing this dimension's values; this is a server error, not a validation result. 'umbraco engage analytics distinct --help' lists the dimensions known to fail"
+
+// engageAnalyticsQueryError hints at a 500 from /analytics/query, which
+// Engage answers with an empty body for some metric, dimension and filter
+// combinations. A --json body cannot be combined with --realtime, so the
+// hint names the body's `realtime` field instead.
+func engageAnalyticsQueryError(err error, realtime bool, rawBody bool) error {
+	toggle := "add --realtime"
+	switch {
+	case rawBody:
+		toggle = fmt.Sprintf("set \"realtime\": %t in the --json body", !realtime)
+	case realtime:
+		toggle = "drop --realtime"
+	}
+	return engageServerErrorHint(err, "Engage failed on this combination of metrics, dimensions and filter; this is a server error, not a validation result. "+
+		"Try fewer dimensions, drop the filter, or "+toggle+"; 'umbraco engage analytics query --help' lists the combinations known to fail")
+}
+
+// engageServerErrorHint sets hint on a 500 APIError, keeping the error (and
+// so exit code 4) intact.
+func engageServerErrorHint(err error, hint string) error {
+	var apiErr *api.APIError
+	if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusInternalServerError {
+		apiErr.Hint = hint
+	}
+	return err
+}
+
 func engageGet(cmd *cobra.Command, deps cmdkit.Dependencies, path string, params map[string]any) (any, error) {
 	result, err := deps.Client.Get(cmd.Context(), path, engageOpts(params))
 	if err != nil {

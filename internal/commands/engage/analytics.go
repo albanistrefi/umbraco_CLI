@@ -46,8 +46,11 @@ var engageDimensions = []string{
 	"creativeFormat", "marketingTactic", "segmentId", "segmentName", "searchTerm",
 }
 
-// engageAnalyticsDefaultDays matches the Engage back-office default window.
+// engageAnalyticsDefaultDays is the length of the default query range,
+// today included.
 const engageAnalyticsDefaultDays = 30
+
+const engageDayLayout = "2006-01-02"
 
 // canonicalEngageNames maps a comma-separated list onto the canonical enum
 // spelling, case-insensitively, and reports unknown names together.
@@ -77,16 +80,41 @@ func canonicalEngageNames(flag string, raw string, known []string, catalogue str
 }
 
 // parseEngageDate accepts YYYY-MM-DD or RFC 3339 and returns the value as
-// given, so the server applies its own date-only semantics.
+// given. The annotation routes compare it with timestamps as an instant.
 func parseEngageDate(flag string, value string) (string, error) {
 	value = strings.TrimSpace(value)
-	if _, err := time.Parse("2006-01-02", value); err == nil {
+	if _, err := time.Parse(engageDayLayout, value); err == nil {
 		return value, nil
 	}
 	if _, err := time.Parse(time.RFC3339, value); err == nil {
 		return value, nil
 	}
 	return "", fmt.Errorf("%s must be an ISO 8601 date (YYYY-MM-DD) or RFC 3339 date-time, got %q", flag, value)
+}
+
+// parseEngageDay reads one end of an analytics query range. Engage counts
+// whole days and drops the time of day, after converting an offset to its
+// UTC date, so only a value that names a day exactly is accepted: YYYY-MM-DD,
+// or RFC 3339 at midnight UTC (sent as its date). Anything else would query
+// a different range than the one written.
+func parseEngageDay(flag string, value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if _, err := time.Parse(engageDayLayout, value); err == nil {
+		return value, nil
+	}
+	parsed, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		return "", fmt.Errorf("%s must be a day as YYYY-MM-DD, got %q", flag, value)
+	}
+	_, offset := parsed.Zone()
+	if offset == 0 && parsed.Equal(parsed.Truncate(24*time.Hour)) {
+		return parsed.Format(engageDayLayout), nil
+	}
+	moved := ""
+	if offset != 0 {
+		moved = fmt.Sprintf(", after converting it to its UTC date (%s)", parsed.UTC().Format(engageDayLayout))
+	}
+	return "", fmt.Errorf("%s %q is not a whole day: Engage counts whole days, both ends inclusive, and ignores the time of day%s. Pass the day as YYYY-MM-DD", flag, value, moved)
 }
 
 func engageAnalytics(deps cmdkit.Dependencies) *cobra.Command {
@@ -123,11 +151,16 @@ func engageAnalyticsQuery(deps cmdkit.Dependencies) *cobra.Command {
 		Short: "Run an analytics query (POST /analytics/query; read-only)",
 		Long: "POST /analytics/query. The request is a POST but reads only.\n\n" +
 			"--metrics is required; --dimensions is optional (none gives one total row). Names are checked against 'analytics metrics' / 'analytics dimensions'. " +
-			"--from/--to default to the last 30 days ending now (UTC); YYYY-MM-DD values are sent as given, which the server reads as midnight, so to include a whole --to day pass the next day or a full RFC 3339 timestamp.\n\n" +
+			"--from and --to are whole days, both inclusive: Engage counts every day from --from through --to and ignores any time of day, so --from 2026-10-01 --to 2026-10-01 is that one day. " +
+			"Pass days as YYYY-MM-DD. An RFC 3339 value is accepted only at midnight UTC (00:00:00Z) and is sent as its date; any other time or offset is refused, because Engage would drop the time and convert an offset to its UTC date. " +
+			"Without them the range is the last 30 days: today (UTC) and the 29 days before.\n\n" +
 			"--filter takes Engage's filter syntax: Dimension=='value' clauses joined with ';' (AND), e.g. \"country=='Denmark';deviceCategory=='mobile'\". " +
 			"--node <documentGuid> narrows to one page the way the back office does (NodeId=='<guid>', with a '+' suffix under --include-subpages); --culture adds NodeCulture.\n\n" +
 			"--sort defaults to the first dimension. --page is 1-based. The result carries `columns` and `rows` (one array per row, in column order) plus paging totals.\n\n" +
-			"--json sends a full AnalyticsQueryGetModel body verbatim and cannot be combined with the builder flags.",
+			"--json sends a full AnalyticsQueryGetModel body verbatim and cannot be combined with the builder flags.\n\n" +
+			"Engage 18.1.0 answers some combinations with HTTP 500 and an empty body; the CLI keeps the error (exit code 4) and adds a hint. Measured on 18.1.0: " +
+			"without --realtime, the year, month, week and day dimensions; the visitorType and usertype dimensions; totalEvents by pagePath; an eventCategory/eventAction filter with pageviews, sessions or goalCompletionsAll; and a goal filter with sessions or users. " +
+			"With --realtime, the totalEvents metric.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var body map[string]any
@@ -156,15 +189,16 @@ func engageAnalyticsQuery(deps cmdkit.Dependencies) *cobra.Command {
 			opts.DryRun = dryRun
 			result, err := deps.Client.Post(cmd.Context(), "/analytics/query", body, opts)
 			if err != nil {
-				return engageError(err)
+				realtime, _ := body["realtime"].(bool)
+				return engageAnalyticsQueryError(engageError(err), realtime, strings.TrimSpace(jsonPayload) != "")
 			}
 			return cmdkit.PrintResult(cmd, deps, result)
 		},
 	}
 	cmd.Flags().StringVar(&metricsRaw, "metrics", "", "Comma-separated metric names (required unless --json), e.g. pageviews,sessions")
 	cmd.Flags().StringVar(&dimensionsRaw, "dimensions", "", "Comma-separated dimension names, e.g. date or pagePath,country")
-	cmd.Flags().StringVar(&from, "from", "", "Start of the range: YYYY-MM-DD or RFC 3339 (default: 30 days ago, midnight UTC)")
-	cmd.Flags().StringVar(&to, "to", "", "End of the range: YYYY-MM-DD or RFC 3339 (default: now)")
+	cmd.Flags().StringVar(&from, "from", "", "First day of the range, inclusive, as YYYY-MM-DD (default: 29 days before today, UTC)")
+	cmd.Flags().StringVar(&to, "to", "", "Last day of the range, inclusive, as YYYY-MM-DD (default: today, UTC)")
 	cmd.Flags().StringVar(&filter, "filter", "", "Engage filter expression: Dimension=='value' clauses joined with ';'")
 	cmd.Flags().StringVar(&node, "node", "", "Restrict to one page by its document GUID")
 	cmd.Flags().StringVar(&culture, "culture", "", "With --node: restrict to one culture, e.g. en-US")
@@ -208,15 +242,16 @@ func buildEngageAnalyticsQuery(in engageAnalyticsQueryInput, now time.Time) (map
 	if in.PageSize < 1 {
 		return nil, fmt.Errorf("--page-size must be positive, got %d", in.PageSize)
 	}
-	start := now.AddDate(0, 0, -engageAnalyticsDefaultDays).Truncate(24 * time.Hour).Format(time.RFC3339)
-	end := now.Format(time.RFC3339)
+	today := now.UTC().Truncate(24 * time.Hour)
+	start := today.AddDate(0, 0, 1-engageAnalyticsDefaultDays).Format(engageDayLayout)
+	end := today.Format(engageDayLayout)
 	if strings.TrimSpace(in.From) != "" {
-		if start, err = parseEngageDate("--from", in.From); err != nil {
+		if start, err = parseEngageDay("--from", in.From); err != nil {
 			return nil, err
 		}
 	}
 	if strings.TrimSpace(in.To) != "" {
-		if end, err = parseEngageDate("--to", in.To); err != nil {
+		if end, err = parseEngageDay("--to", in.To); err != nil {
 			return nil, err
 		}
 	}
@@ -277,8 +312,9 @@ func engageAnalyticsDistinct(deps cmdkit.Dependencies) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "distinct",
 		Short: "List the distinct values recorded for one dimension (GET /analytics/distinct)",
-		Long:  "GET /analytics/distinct?dimension=<name>. Useful for building --filter values, e.g. the countries or device categories Engage has seen.",
-		Args:  cobra.NoArgs,
+		Long: "GET /analytics/distinct?dimension=<name>. Useful for building --filter values, e.g. the countries or device categories Engage has seen.\n\n" +
+			"Engage 18.1.0 answers HTTP 500 for the visitorType and usertype dimensions; the CLI keeps the error (exit code 4) and adds a hint.",
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := cmdkit.RequireValue("--dimension", dimension); err != nil {
 				return err
@@ -292,7 +328,7 @@ func engageAnalyticsDistinct(deps cmdkit.Dependencies) *cobra.Command {
 			}
 			result, err := engageGet(cmd, deps, "/analytics/distinct", map[string]any{"dimension": names[0]})
 			if err != nil {
-				return err
+				return engageServerErrorHint(err, engageDistinctFailedHint)
 			}
 			return cmdkit.PrintResult(cmd, deps, result)
 		},
@@ -308,8 +344,10 @@ func engageAnnotation(deps cmdkit.Dependencies) *cobra.Command {
 	list := &cobra.Command{
 		Use:   "list",
 		Short: "List annotations, optionally only global ones or those on one page",
-		Long:  "GET /annotations/all by default; --global uses /annotations/global (annotations not tied to a page); --node <documentGuid> uses /annotations/page, with --culture for one culture. --from/--to (YYYY-MM-DD or RFC 3339) bound the range.",
-		Args:  cobra.NoArgs,
+		Long: "GET /annotations/all by default; --global uses /annotations/global (annotations not tied to a page); --node <documentGuid> uses /annotations/page, with --culture for one culture.\n\n" +
+			"--from and --to are both required (YYYY-MM-DD or RFC 3339). They are instants, unlike the whole days of 'analytics query': Engage returns the annotations timestamped between them, honouring the time and any offset. " +
+			"A YYYY-MM-DD value is midnight at the start of that day, so --to 2026-09-30 leaves out annotations made on the 30th; pass --to 2026-10-01 to include them.",
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if global && strings.TrimSpace(node) != "" {
 				return fmt.Errorf("--global and --node are mutually exclusive")
@@ -317,11 +355,22 @@ func engageAnnotation(deps cmdkit.Dependencies) *cobra.Command {
 			if strings.TrimSpace(culture) != "" && strings.TrimSpace(node) == "" {
 				return fmt.Errorf("--culture requires --node")
 			}
+			// Engage 18.1.0 answers 500 on every annotation route unless
+			// both ends of the range are given.
+			missing := []string{}
+			for _, flag := range []struct{ name, value string }{{"--from", from}, {"--to", to}} {
+				if strings.TrimSpace(flag.value) == "" {
+					missing = append(missing, flag.name)
+				}
+			}
+			switch len(missing) {
+			case 1:
+				return fmt.Errorf("missing required option: %s (annotation list needs both --from and --to)", missing[0])
+			case 2:
+				return fmt.Errorf("missing required options: --from, --to (annotation list needs both ends of the range)")
+			}
 			params := map[string]any{}
 			for flag, value := range map[string]string{"from": from, "to": to} {
-				if strings.TrimSpace(value) == "" {
-					continue
-				}
 				parsed, err := parseEngageDate("--"+flag, value)
 				if err != nil {
 					return err
@@ -342,9 +391,6 @@ func engageAnnotation(deps cmdkit.Dependencies) *cobra.Command {
 					params["culture"] = strings.TrimSpace(culture)
 				}
 			}
-			if len(params) == 0 {
-				params = nil
-			}
 			result, err := engageGet(cmd, deps, path, params)
 			if err != nil {
 				return err
@@ -353,8 +399,8 @@ func engageAnnotation(deps cmdkit.Dependencies) *cobra.Command {
 		},
 	}
 	cmdkit.AddFieldsFlag(list, &fields)
-	list.Flags().StringVar(&from, "from", "", "Start of the range: YYYY-MM-DD or RFC 3339")
-	list.Flags().StringVar(&to, "to", "", "End of the range: YYYY-MM-DD or RFC 3339")
+	list.Flags().StringVar(&from, "from", "", "Start of the range (required): YYYY-MM-DD or RFC 3339")
+	list.Flags().StringVar(&to, "to", "", "End of the range (required): YYYY-MM-DD or RFC 3339")
 	list.Flags().BoolVar(&global, "global", false, "Only annotations not tied to a page")
 	list.Flags().StringVar(&node, "node", "", "Only annotations on this page (document GUID)")
 	list.Flags().StringVar(&culture, "culture", "", "With --node: only this culture")

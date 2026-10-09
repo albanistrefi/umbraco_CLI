@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+## v0.5.0 - unreleased
+
+### Breaking changes
+
+- **`engage analytics query` refuses a time of day in `--from`/`--to`.** Engage counts whole days and ignores the time, so an RFC 3339 value other than midnight UTC is now a usage error (exit code 1) instead of being sent. Before, `--to 2025-11-03T12:00:00Z` ran and counted all of 03-11-2025, and an offset moved the day: `--to 2025-11-03T23:30:00-05:00` counted 2025-11-04, which Engage gets by converting to UTC. The error names the UTC date Engage would have used. Pass days as `YYYY-MM-DD`; `T00:00:00Z` is still accepted and sent as its date.
+- **The default `engage analytics query` range is one day shorter.** Without `--from`/`--to` it is exactly 30 days, today (UTC) and the 29 days before, sent as `YYYY-MM-DD`. It used to run from midnight UTC 30 days ago to now, which Engage counted as 31 days. On live on 09-10-2026 the default returned 131,475 pageviews; 0.4.27 returned 136,761.
+- **`engage annotation list` requires both `--from` and `--to`.** A missing one is a usage error (exit code 1) naming it, and no request is sent. Engage 18.1.0 answers HTTP 500 on `/annotations/all`, `/annotations/global` and `/annotations/page` unless both are given. On live, no range, only `--from` and only `--to` each failed on all three routes, and both succeeded. In 0.4.27, running it without both failed with exit code 4.
+
+### Fixed
+
+- fixed the `engage analytics query` help for `--from`/`--to`. It said a `YYYY-MM-DD` `--to` is read as midnight and told you to pass the next day to include it, which counted one day too many. Measured on live (Engage 18.1.0), 03-11-2025 alone has 5,598 pageviews. `--from 2025-11-03 --to 2025-11-03` returns 5,598, and so do `--to 2025-11-03T12:00:00Z` and `--from 2025-11-03T12:00:00Z --to 2025-11-03T23:59:59Z`. `--to 2025-11-04` returns 11,504 (two days), with or without `--realtime`. Engage 18.1.0's query builder takes the date of each end and counts whole days, both inclusive. The help now says so.
+- `engage annotation list` help says its `--from`/`--to` are instants, unlike `analytics query`: its routes honour them to the second and with offsets. It also says a bare `--to` date means midnight, so that day is left out.
+
+### Added
+
+- `engage analytics query` and `engage analytics distinct` add a hint to an HTTP 500 from Engage, which otherwise read like an outage (`API 500 POST .../analytics/query: null`). The status, the body and exit code 4 are kept. The hint says:
+  - Engage failed on this combination;
+  - it is a server error, not a validation result;
+  - try fewer dimensions, drop the filter, or add or drop `--realtime`. With `--json`, which cannot be combined with `--realtime`, it names the body's `realtime` field instead.
+
+  Both helps list the combinations measured to fail on Engage 18.1.0 (live):
+  - without `--realtime`: the `year`, `month`, `week` and `day` dimensions; the `visitorType` and `usertype` dimensions; `totalEvents` by `pagePath`; an `eventCategory`/`eventAction` filter with `pageviews`, `sessions` or `goalCompletionsAll`; and a `goal` filter with `sessions` or `users`;
+  - with `--realtime`: the `totalEvents` metric;
+  - `distinct`: `visitorType` and `usertype`.
+
 ## v0.4.27 - 2026-10-08
 
 - fixed `deploy watch` going silent for about two minutes during a restart while the app was already back. On the 2026-10-08 live deploy, `app-alive` and `landed` were stamped 08:41:24 but written at 08:43:12, with no heartbeat in between although `--heartbeat 1m` was set. One poll waited on its requests one after another: the three health paths (up to 15s each), the newest-log probe (which re-authenticated after the restart), the indexer while Examine opened its indexes (up to 60s each), and the `--logs` tail (up to 20 pages of 60s). The phase lines and the heartbeat were only written after all of them. The live log shows the poll's management probe answered at 08:41:26 and its log read served after 08:43:11.9. A restart simulator reproduced it with 0.4.26: app-alive written 43.6s after its observation, a 47s heartbeat gap at `--heartbeat 5s`. Now each poll probes the management endpoint, then the health paths, the newest log entry and the indexes side by side. The `--uda-dir` re-check runs beside the poll, one at a time, kicked by each poll after its management probe. Its result counts toward verified once that re-check completes. With many tracked artifacts a re-check takes several request timeouts, but it never holds a poll. Every API call after baseline gives up after the new `--request-timeout`, as a whole: its attempts, its waits for a token and its waits after a 429 (a `Retry-After: 60` included). Default: half of the shorter of `--interval` and `--heartbeat`, clamped to 250ms–15s (2.5s with the defaults), and an explicit value must be shorter than both. A request that times out counts as unknown for that poll, and a health path as failing. A token request is now shared by every caller that needs a token while it runs, and it runs detached from the caller that started it. So one that outlasts a poll's timeout still completes and serves the next poll: on 08-10, issuing the token took 9s on the server after the restart. A 401 for a request that went out with an older token no longer discards a token a parallel request has just fetched. Other commands just wait for it as before. The `--logs` and `--uda-dir` log reads run beside the probes on their own schedule, and heartbeats on their own clock. Output is queued to stdout and stderr by a writer per stream, so a reader that stops draining one stream holds back neither the other stream nor the watch. Against the simulator, phases are now written within a second of their observation, and heartbeats arrive every 5s throughout. Baseline requests keep a 15s bound. Two behaviour changes: a health path slower than the request timeout now counts as failing (raise `--interval`, or set `--request-timeout`, for a slow site); and log and schema-pass lines appear in the order they were read, so they can interleave with phase lines differently than before, and the last log read happens after the terminal phase, before `schema-summary` and the monitor's `stopped`
