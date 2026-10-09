@@ -157,7 +157,10 @@ func engageAnalyticsQuery(deps cmdkit.Dependencies) *cobra.Command {
 			"--filter takes Engage's filter syntax: Dimension=='value' clauses joined with ';' (AND), e.g. \"country=='Denmark';deviceCategory=='mobile'\". " +
 			"--node <documentGuid> narrows to one page the way the back office does (NodeId=='<guid>', with a '+' suffix under --include-subpages); --culture adds NodeCulture.\n\n" +
 			"--sort defaults to the first dimension. --page is 1-based. The result carries `columns` and `rows` (one array per row, in column order) plus paging totals.\n\n" +
-			"--json sends a full AnalyticsQueryGetModel body verbatim and cannot be combined with the builder flags.",
+			"--json sends a full AnalyticsQueryGetModel body verbatim and cannot be combined with the builder flags.\n\n" +
+			"Engage 18.1.0 answers some combinations with HTTP 500 and an empty body; the CLI keeps the error (exit code 4) and adds a hint. Measured on 18.1.0: " +
+			"without --realtime, the year, month, week and day dimensions; the visitorType and usertype dimensions; totalEvents by pagePath; an eventCategory/eventAction filter with pageviews, sessions or goalCompletionsAll; and a goal filter with sessions or users. " +
+			"With --realtime, the totalEvents metric.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var body map[string]any
@@ -186,7 +189,8 @@ func engageAnalyticsQuery(deps cmdkit.Dependencies) *cobra.Command {
 			opts.DryRun = dryRun
 			result, err := deps.Client.Post(cmd.Context(), "/analytics/query", body, opts)
 			if err != nil {
-				return engageError(err)
+				realtime, _ := body["realtime"].(bool)
+				return engageAnalyticsQueryError(engageError(err), realtime)
 			}
 			return cmdkit.PrintResult(cmd, deps, result)
 		},
@@ -308,8 +312,9 @@ func engageAnalyticsDistinct(deps cmdkit.Dependencies) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "distinct",
 		Short: "List the distinct values recorded for one dimension (GET /analytics/distinct)",
-		Long:  "GET /analytics/distinct?dimension=<name>. Useful for building --filter values, e.g. the countries or device categories Engage has seen.",
-		Args:  cobra.NoArgs,
+		Long: "GET /analytics/distinct?dimension=<name>. Useful for building --filter values, e.g. the countries or device categories Engage has seen.\n\n" +
+			"Engage 18.1.0 answers HTTP 500 for the visitorType and usertype dimensions; the CLI keeps the error (exit code 4) and adds a hint.",
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := cmdkit.RequireValue("--dimension", dimension); err != nil {
 				return err
@@ -323,7 +328,7 @@ func engageAnalyticsDistinct(deps cmdkit.Dependencies) *cobra.Command {
 			}
 			result, err := engageGet(cmd, deps, "/analytics/distinct", map[string]any{"dimension": names[0]})
 			if err != nil {
-				return err
+				return engageServerErrorHint(err, engageDistinctFailedHint)
 			}
 			return cmdkit.PrintResult(cmd, deps, result)
 		},

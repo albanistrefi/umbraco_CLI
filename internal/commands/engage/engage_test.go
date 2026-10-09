@@ -332,6 +332,77 @@ func TestEngageAnalyticsQueryRefusesATimeOfDayEngageWouldDrop(t *testing.T) {
 	}
 }
 
+func TestEngageAnalyticsQueryServerErrorKeepsStatusAndAddsHint(t *testing.T) {
+	for _, tc := range []struct {
+		args   []string
+		toggle string
+	}{
+		{[]string{"--metrics", "pageviews", "--dimensions", "visitorType"}, "add --realtime"},
+		{[]string{"--metrics", "totalEvents", "--realtime"}, "drop --realtime"},
+		{[]string{"--json", `{"metrics":["totalEvents"],"dimensions":[],"realtime":true}`}, "drop --realtime"},
+	} {
+		deps, requests := engageTestDeps(t, map[string]func(*http.Request) *http.Response{
+			"/analytics/query": engageJSON(http.StatusInternalServerError, `null`),
+		})
+		_, err := cmdtest.Execute(buildEngageRoot(t, deps), append([]string{"engage", "analytics", "query"}, tc.args...)...)
+		var apiErr *api.APIError
+		if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusInternalServerError || apiErr.Payload != nil {
+			t.Fatalf("%v: expected the 500 APIError with its null body to survive, got %v", tc.args, err)
+		}
+		if coder, ok := err.(interface{ ExitCode() int }); !ok || coder.ExitCode() != 4 {
+			t.Fatalf("%v: expected exit code 4, got %v", tc.args, err)
+		}
+		for _, want := range []string{
+			"API 500 POST " + engageAPIPrefix + "/analytics/query: null. Hint: ",
+			"Engage failed on this combination of metrics, dimensions and filter",
+			"server error, not a validation result",
+			"Try fewer dimensions, drop the filter, or " + tc.toggle,
+			"'umbraco engage analytics query --help'",
+		} {
+			if !strings.Contains(err.Error(), want) {
+				t.Fatalf("%v: expected %q in %v", tc.args, want, err)
+			}
+		}
+		if len(*requests) != 1 {
+			t.Fatalf("%v: expected one request (no retry), got %v", tc.args, *requests)
+		}
+	}
+}
+
+func TestEngageAnalyticsQueryHintsOnlyServerErrors(t *testing.T) {
+	deps, _ := engageTestDeps(t, map[string]func(*http.Request) *http.Response{
+		"/analytics/query": engageJSON(http.StatusBadRequest, `{"title":"Bad Request","status":400}`),
+	})
+	_, err := cmdtest.Execute(buildEngageRoot(t, deps), "engage", "analytics", "query", "--metrics", "pageviews")
+	var apiErr *api.APIError
+	if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusBadRequest || apiErr.Hint != "" {
+		t.Fatalf("expected the 400 without a hint, got %v", err)
+	}
+}
+
+func TestEngageAnalyticsDistinctServerErrorKeepsStatusAndAddsHint(t *testing.T) {
+	deps, _ := engageTestDeps(t, map[string]func(*http.Request) *http.Response{
+		"/analytics/distinct": engageJSON(http.StatusInternalServerError, `null`),
+	})
+	_, err := cmdtest.Execute(buildEngageRoot(t, deps), "engage", "analytics", "distinct", "--dimension", "visitorType")
+	var apiErr *api.APIError
+	if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusInternalServerError || apiErr.Payload != nil {
+		t.Fatalf("expected the 500 APIError with its null body to survive, got %v", err)
+	}
+	if coder, ok := err.(interface{ ExitCode() int }); !ok || coder.ExitCode() != 4 {
+		t.Fatalf("expected exit code 4, got %v", err)
+	}
+	for _, want := range []string{
+		"API 500 GET " + engageAPIPrefix + "/analytics/distinct?dimension=visitorType: null. Hint: ",
+		"server error, not a validation result",
+		"'umbraco engage analytics distinct --help'",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("expected %q in %v", want, err)
+		}
+	}
+}
+
 func TestEngageDateHelpDescribesEngageSemantics(t *testing.T) {
 	help := func(args ...string) string {
 		t.Helper()
@@ -350,6 +421,9 @@ func TestEngageDateHelpDescribesEngageSemantics(t *testing.T) {
 		"the last 30 days: today (UTC) and the 29 days before",
 		"First day of the range, inclusive",
 		"Last day of the range, inclusive",
+		"Engage 18.1.0 answers some combinations with HTTP 500",
+		"the visitorType and usertype dimensions",
+		"With --realtime, the totalEvents metric",
 	} {
 		if !strings.Contains(query, want) {
 			t.Fatalf("analytics query help lacks %q:\n%s", want, query)
@@ -359,6 +433,9 @@ func TestEngageDateHelpDescribesEngageSemantics(t *testing.T) {
 		if strings.Contains(query, stale) {
 			t.Fatalf("analytics query help still says %q", stale)
 		}
+	}
+	if distinct := help("engage", "analytics", "distinct"); !strings.Contains(distinct, "Engage 18.1.0 answers HTTP 500 for the visitorType and usertype dimensions") {
+		t.Fatalf("analytics distinct help lacks the known failures:\n%s", distinct)
 	}
 	annotation := help("engage", "annotation", "list")
 	for _, want := range []string{

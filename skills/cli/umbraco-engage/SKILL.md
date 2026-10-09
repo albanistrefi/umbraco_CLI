@@ -148,6 +148,8 @@ umbraco engage analytics distinct
 
 GET /analytics/distinct?dimension=<name>. Useful for building --filter values, e.g. the countries or device categories Engage has seen.
 
+Engage 18.1.0 answers HTTP 500 for the visitorType and usertype dimensions; the CLI keeps the error (exit code 4) and adds a hint.
+
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--dimension` | string | — | Dimension name (see 'analytics dimensions') |
@@ -527,6 +529,8 @@ POST /analytics/query. The request is a POST but reads only.
 --sort defaults to the first dimension. --page is 1-based. The result carries `columns` and `rows` (one array per row, in column order) plus paging totals.
 
 --json sends a full AnalyticsQueryGetModel body verbatim and cannot be combined with the builder flags.
+
+Engage 18.1.0 answers some combinations with HTTP 500 and an empty body; the CLI keeps the error (exit code 4) and adds a hint. Measured on 18.1.0: without --realtime, the year, month, week and day dimensions; the visitorType and usertype dimensions; totalEvents by pagePath; an eventCategory/eventAction filter with pageviews, sessions or goalCompletionsAll; and a goal filter with sessions or users. With --realtime, the totalEvents metric.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|

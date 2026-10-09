@@ -479,6 +479,12 @@ read differently. Without `--from`/`--to` the range is the last 30 days: today
 `--from`/`--to` are instants, and a bare date means midnight at the start of
 that day.
 
+Engage 18.1.0 answers some analytics queries with HTTP 500 and an empty body
+(for example the `week` or `visitorType` dimensions without `--realtime`);
+`analytics query --help` lists the combinations measured. The CLI keeps the
+error and exit code 4 and adds a hint to try fewer dimensions, drop the
+filter, or toggle `--realtime`.
+
 ## Agent Safety Rules
 
 - Use `--dry-run` first for all mutating commands; it prints the planned request without executing.
