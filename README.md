@@ -21,22 +21,39 @@ Core behavior:
 
 ### macOS via Homebrew
 
-After the Homebrew tap is in place and a tagged GitHub release is published,
-macOS users can install the CLI with a single command:
+Install the CLI with Homebrew:
 
 ```bash
 brew install --cask albanistrefi/tap/umbraco-cli
 umbraco --help
 ```
 
-If you previously installed from `albanist/tap` (the project moved owners),
-re-tap so future upgrades pick up new releases and then clean up the stale tap:
+The fully qualified name taps `albanistrefi/tap` and trusts the
+`umbraco-cli` cask. Upgrade to each later release with the same fully
+qualified name:
 
 ```bash
-brew tap albanistrefi/tap
 brew upgrade --cask albanistrefi/tap/umbraco-cli
-brew untap albanist/tap
 ```
+
+If Homebrew refuses to load the cask from an untrusted tap, run
+`brew trust --cask albanistrefi/tap/umbraco-cli` once.
+
+If you previously installed from `albanist/tap` (the project moved owners),
+move the install to `albanistrefi/tap`:
+
+```bash
+brew untap --force albanist/tap
+brew install --cask albanistrefi/tap/umbraco-cli
+```
+
+The first command removes the old tap and uninstalls `umbraco-cli`, because
+Homebrew matches installed casks to a tap by name. The second installs it
+again from `albanistrefi/tap`. Profiles and config in `~/.umbraco` are kept.
+Without `--force`, `brew untap albanist/tap` asks to uninstall the CLI first,
+and refuses when it is not run in a terminal. While both taps are present,
+`brew upgrade --cask umbraco-cli` stops with "Cask umbraco-cli exists in
+multiple taps".
 
 The Homebrew tap lives at `https://github.com/albanistrefi/homebrew-tap`.
 
