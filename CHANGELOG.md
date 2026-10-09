@@ -2,13 +2,30 @@
 
 ## Unreleased
 
-- changed the default range of `engage analytics query` to exactly 30 days: today (UTC) and the 29 days before, sent as `YYYY-MM-DD`. Before, it ran from midnight UTC 30 days ago to now, and since Engage counts both ends as whole days that covered 31 calendar days. The same command without `--from`/`--to` now returns one day less data than 0.4.27 did.
+## v0.5.0 - unreleased
 
-- fixed the `engage analytics query` help for `--from`/`--to`, which said a `YYYY-MM-DD` `--to` is read as midnight and told you to pass the next day to include it. Measured on live (Engage 18.1.0), 03-11-2025 alone has 5,598 pageviews: `--from 2025-11-03 --to 2025-11-03` returns 5,598, so do `--to 2025-11-03T12:00:00Z` and `--from 2025-11-03T12:00:00Z --to 2025-11-03T23:59:59Z`, and `--to 2025-11-04` returns 11,504 (two days), with and without `--realtime`. Following the old help counted one day too many. Engage 18.1.0's query builder takes the date of each end and counts whole days, both inclusive; an RFC 3339 offset is converted first, so `--to 2025-11-03T23:30:00-05:00` counted 2025-11-04 (11,504). The help now says the range is whole days, both inclusive, and the CLI refuses an RFC 3339 value whose time is not midnight UTC (exit code 1, naming the UTC date Engage would have used) instead of sending a range Engage reads differently; `T00:00:00Z` is still accepted and sent as its date. `engage annotation list` keeps taking instants, which its routes do honour to the second and with offsets; its help now says so, and says a bare `--to` date leaves that day out.
+### Breaking changes
 
-- `engage annotation list` requires both `--from` and `--to`, and a missing one is a usage error (exit code 1) naming it, with no request sent. Engage 18.1.0 answers HTTP 500 on `/annotations/all`, `/annotations/global` and `/annotations/page` unless both are given: on live, no range, only `--from` and only `--to` each failed on all three routes, and both succeeded. In 0.4.27, running it without both failed with exit code 4.
+- **`engage analytics query` refuses a time of day in `--from`/`--to`.** Engage counts whole days and ignores the time, so an RFC 3339 value other than midnight UTC is now a usage error (exit code 1) instead of being sent. Before, `--to 2025-11-03T12:00:00Z` ran and counted all of 03-11-2025, and an offset moved the day: `--to 2025-11-03T23:30:00-05:00` counted 2025-11-04, which Engage gets by converting to UTC. The error names the UTC date Engage would have used. Pass days as `YYYY-MM-DD`; `T00:00:00Z` is still accepted and sent as its date.
+- **The default `engage analytics query` range is one day shorter.** Without `--from`/`--to` it is exactly 30 days, today (UTC) and the 29 days before, sent as `YYYY-MM-DD`. It used to run from midnight UTC 30 days ago to now, which Engage counted as 31 days. On live on 09-10-2026 the default returned 131,475 pageviews; 0.4.27 returned 136,761.
+- **`engage annotation list` requires both `--from` and `--to`.** A missing one is a usage error (exit code 1) naming it, and no request is sent. Engage 18.1.0 answers HTTP 500 on `/annotations/all`, `/annotations/global` and `/annotations/page` unless both are given. On live, no range, only `--from` and only `--to` each failed on all three routes, and both succeeded. In 0.4.27, running it without both failed with exit code 4.
 
-- `engage analytics query` and `engage analytics distinct` add a hint to an HTTP 500 from Engage, which otherwise read like an outage (`API 500 POST .../analytics/query: null`). The status, the body and exit code 4 are kept; the hint says Engage failed on this combination, that it is a server error rather than a validation result, and to try fewer dimensions, drop the filter, or add or drop `--realtime` (with `--json`, which cannot be combined with `--realtime`, it names the body's `realtime` field instead). Both helps list the combinations measured to fail on Engage 18.1.0 (live): without `--realtime`, the `year`, `month`, `week` and `day` dimensions, the `visitorType` and `usertype` dimensions, `totalEvents` by `pagePath`, an `eventCategory`/`eventAction` filter with `pageviews`, `sessions` or `goalCompletionsAll`, and a `goal` filter with `sessions` or `users`; with `--realtime`, the `totalEvents` metric; and `distinct` for `visitorType` and `usertype`.
+### Fixed
+
+- fixed the `engage analytics query` help for `--from`/`--to`. It said a `YYYY-MM-DD` `--to` is read as midnight and told you to pass the next day to include it, which counted one day too many. Measured on live (Engage 18.1.0), 03-11-2025 alone has 5,598 pageviews. `--from 2025-11-03 --to 2025-11-03` returns 5,598, and so do `--to 2025-11-03T12:00:00Z` and `--from 2025-11-03T12:00:00Z --to 2025-11-03T23:59:59Z`. `--to 2025-11-04` returns 11,504 (two days), with or without `--realtime`. Engage 18.1.0's query builder takes the date of each end and counts whole days, both inclusive. The help now says so.
+- `engage annotation list` help says its `--from`/`--to` are instants, unlike `analytics query`: its routes honour them to the second and with offsets. It also says a bare `--to` date means midnight, so that day is left out.
+
+### Added
+
+- `engage analytics query` and `engage analytics distinct` add a hint to an HTTP 500 from Engage, which otherwise read like an outage (`API 500 POST .../analytics/query: null`). The status, the body and exit code 4 are kept. The hint says:
+  - Engage failed on this combination;
+  - it is a server error, not a validation result;
+  - try fewer dimensions, drop the filter, or add or drop `--realtime`. With `--json`, which cannot be combined with `--realtime`, it names the body's `realtime` field instead.
+
+  Both helps list the combinations measured to fail on Engage 18.1.0 (live):
+  - without `--realtime`: the `year`, `month`, `week` and `day` dimensions; the `visitorType` and `usertype` dimensions; `totalEvents` by `pagePath`; an `eventCategory`/`eventAction` filter with `pageviews`, `sessions` or `goalCompletionsAll`; and a `goal` filter with `sessions` or `users`;
+  - with `--realtime`: the `totalEvents` metric;
+  - `distinct`: `visitorType` and `usertype`.
 
 ## v0.4.27 - 2026-10-08
 
