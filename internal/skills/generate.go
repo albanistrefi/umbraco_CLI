@@ -187,7 +187,8 @@ metadata:
 The `+"`umbraco`"+` binary must be on `+"`$PATH`"+`. Install via Homebrew or build from source.
 
 `+"```bash"+`
-brew install --cask albanist/tap/umbraco-cli
+brew install --cask albanistrefi/tap/umbraco-cli   # first install
+brew upgrade --cask umbraco-cli                    # each later release
 `+"```"+`
 
 ## Authentication
