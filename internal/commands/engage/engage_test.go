@@ -445,11 +445,16 @@ func TestEngageDateHelpDescribesEngageSemantics(t *testing.T) {
 	for _, want := range []string{
 		"are instants, unlike the whole days of 'analytics query'",
 		"--to 2026-09-30 leaves out annotations made on the 30th",
-		"Engage 18.1.0 answers HTTP 500 unless both are given",
+		"--from and --to are both required",
+		"Start of the range (required)",
+		"End of the range (required)",
 	} {
 		if !strings.Contains(annotation, want) {
 			t.Fatalf("annotation list help lacks %q:\n%s", want, annotation)
 		}
+	}
+	if strings.Contains(annotation, "HTTP 500") {
+		t.Fatalf("annotation list no longer sends a request Engage answers with 500; drop the note:\n%s", annotation)
 	}
 }
 
@@ -486,24 +491,53 @@ func TestEngageAnnotationListRoutes(t *testing.T) {
 		"/annotations/page":   engageJSON(http.StatusOK, `[]`),
 	})
 	for _, args := range [][]string{
-		{"--from", "2026-09-01"},
+		{},
 		{"--global"},
 		{"--node", engageTestGUID, "--culture", "en-US"},
 	} {
-		if _, err := cmdtest.Execute(buildEngageRoot(t, deps), append([]string{"engage", "annotation", "list"}, args...)...); err != nil {
+		args = append([]string{"engage", "annotation", "list", "--from", "2026-09-01", "--to", "2026-10-01T12:00:00+02:00"}, args...)
+		if _, err := cmdtest.Execute(buildEngageRoot(t, deps), args...); err != nil {
 			t.Fatalf("%v failed: %v", args, err)
 		}
 	}
+	rangeQuery := "from=2026-09-01&to=2026-10-01T12%3A00%3A00%2B02%3A00"
 	want := []string{
-		"GET " + engageAPIPrefix + "/annotations/all?from=2026-09-01",
-		"GET " + engageAPIPrefix + "/annotations/global",
-		"GET " + engageAPIPrefix + "/annotations/page?culture=en-US&unique=" + engageTestGUID,
+		"GET " + engageAPIPrefix + "/annotations/all?" + rangeQuery,
+		"GET " + engageAPIPrefix + "/annotations/global?" + rangeQuery,
+		"GET " + engageAPIPrefix + "/annotations/page?culture=en-US&" + rangeQuery + "&unique=" + engageTestGUID,
 	}
 	if strings.Join(*requests, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("unexpected requests:\n%s", strings.Join(*requests, "\n"))
 	}
-	if _, err := cmdtest.Execute(buildEngageRoot(t, deps), "engage", "annotation", "list", "--global", "--node", engageTestGUID); err == nil {
+	if _, err := cmdtest.Execute(buildEngageRoot(t, deps), "engage", "annotation", "list", "--global", "--node", engageTestGUID, "--from", "2026-09-01", "--to", "2026-10-01"); err == nil {
 		t.Fatalf("--global with --node must be refused")
+	}
+}
+
+func TestEngageAnnotationListRequiresBothEndsOfTheRange(t *testing.T) {
+	deps, requests := engageTestDeps(t, nil)
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{nil, "missing required options: --from, --to"},
+		{[]string{"--from", "2026-09-01"}, "missing required option: --to (annotation list needs both --from and --to)"},
+		{[]string{"--to", "2026-10-01"}, "missing required option: --from (annotation list needs both --from and --to)"},
+		{[]string{"--from", " ", "--to", "2026-10-01"}, "missing required option: --from"},
+		{[]string{"--global"}, "missing required options: --from, --to"},
+		{[]string{"--global", "--from", "2026-09-01"}, "missing required option: --to"},
+		{[]string{"--node", engageTestGUID, "--to", "2026-10-01"}, "missing required option: --from"},
+	} {
+		_, err := cmdtest.Execute(buildEngageRoot(t, deps), append([]string{"engage", "annotation", "list"}, tc.args...)...)
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Fatalf("%v: expected an error containing %q, got %v", tc.args, tc.want, err)
+		}
+		if coder, ok := err.(interface{ ExitCode() int }); ok {
+			t.Fatalf("%v: a missing option is a usage error (exit 1), got exit %d", tc.args, coder.ExitCode())
+		}
+	}
+	if len(*requests) != 0 {
+		t.Fatalf("a missing --from or --to must not reach the API, got %v", *requests)
 	}
 }
 

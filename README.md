@@ -475,9 +475,9 @@ data route with HTTP 409 "Umbraco Engage is unavailable" (exit code 4);
 ignores the time of day, so the CLI takes days as `YYYY-MM-DD` and refuses an
 RFC 3339 value other than midnight UTC instead of sending a range Engage would
 read differently. Without `--from`/`--to` the range is the last 30 days: today
-(UTC) and the 29 days before. `engage annotation list` is different: its
-`--from`/`--to` are instants, and a bare date means midnight at the start of
-that day.
+(UTC) and the 29 days before. `engage annotation list` is different: it
+requires both `--from` and `--to`, they are instants, and a bare date means
+midnight at the start of that day.
 
 Engage 18.1.0 answers some analytics queries with HTTP 500 and an empty body
 (for example the `week` or `visitorType` dimensions without `--realtime`);

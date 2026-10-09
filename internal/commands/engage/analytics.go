@@ -345,9 +345,8 @@ func engageAnnotation(deps cmdkit.Dependencies) *cobra.Command {
 		Use:   "list",
 		Short: "List annotations, optionally only global ones or those on one page",
 		Long: "GET /annotations/all by default; --global uses /annotations/global (annotations not tied to a page); --node <documentGuid> uses /annotations/page, with --culture for one culture.\n\n" +
-			"--from and --to (YYYY-MM-DD or RFC 3339) are instants, unlike the whole days of 'analytics query': Engage returns the annotations timestamped between them, honouring the time and any offset. " +
-			"A YYYY-MM-DD value is midnight at the start of that day, so --to 2026-09-30 leaves out annotations made on the 30th; pass --to 2026-10-01 to include them. " +
-			"Engage 18.1.0 answers HTTP 500 unless both are given.",
+			"--from and --to are both required (YYYY-MM-DD or RFC 3339). They are instants, unlike the whole days of 'analytics query': Engage returns the annotations timestamped between them, honouring the time and any offset. " +
+			"A YYYY-MM-DD value is midnight at the start of that day, so --to 2026-09-30 leaves out annotations made on the 30th; pass --to 2026-10-01 to include them.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if global && strings.TrimSpace(node) != "" {
@@ -356,11 +355,22 @@ func engageAnnotation(deps cmdkit.Dependencies) *cobra.Command {
 			if strings.TrimSpace(culture) != "" && strings.TrimSpace(node) == "" {
 				return fmt.Errorf("--culture requires --node")
 			}
+			// Engage 18.1.0 answers 500 on every annotation route unless
+			// both ends of the range are given.
+			missing := []string{}
+			for _, flag := range []struct{ name, value string }{{"--from", from}, {"--to", to}} {
+				if strings.TrimSpace(flag.value) == "" {
+					missing = append(missing, flag.name)
+				}
+			}
+			switch len(missing) {
+			case 1:
+				return fmt.Errorf("missing required option: %s (annotation list needs both --from and --to)", missing[0])
+			case 2:
+				return fmt.Errorf("missing required options: --from, --to (annotation list needs both ends of the range)")
+			}
 			params := map[string]any{}
 			for flag, value := range map[string]string{"from": from, "to": to} {
-				if strings.TrimSpace(value) == "" {
-					continue
-				}
 				parsed, err := parseEngageDate("--"+flag, value)
 				if err != nil {
 					return err
@@ -381,9 +391,6 @@ func engageAnnotation(deps cmdkit.Dependencies) *cobra.Command {
 					params["culture"] = strings.TrimSpace(culture)
 				}
 			}
-			if len(params) == 0 {
-				params = nil
-			}
 			result, err := engageGet(cmd, deps, path, params)
 			if err != nil {
 				return err
@@ -392,8 +399,8 @@ func engageAnnotation(deps cmdkit.Dependencies) *cobra.Command {
 		},
 	}
 	cmdkit.AddFieldsFlag(list, &fields)
-	list.Flags().StringVar(&from, "from", "", "Start of the range: YYYY-MM-DD or RFC 3339")
-	list.Flags().StringVar(&to, "to", "", "End of the range: YYYY-MM-DD or RFC 3339")
+	list.Flags().StringVar(&from, "from", "", "Start of the range (required): YYYY-MM-DD or RFC 3339")
+	list.Flags().StringVar(&to, "to", "", "End of the range (required): YYYY-MM-DD or RFC 3339")
 	list.Flags().BoolVar(&global, "global", false, "Only annotations not tied to a page")
 	list.Flags().StringVar(&node, "node", "", "Only annotations on this page (document GUID)")
 	list.Flags().StringVar(&culture, "culture", "", "With --node: only this culture")

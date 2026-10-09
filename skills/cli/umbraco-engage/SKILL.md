@@ -170,16 +170,16 @@ umbraco engage annotation list
 
 GET /annotations/all by default; --global uses /annotations/global (annotations not tied to a page); --node <documentGuid> uses /annotations/page, with --culture for one culture.
 
---from and --to (YYYY-MM-DD or RFC 3339) are instants, unlike the whole days of 'analytics query': Engage returns the annotations timestamped between them, honouring the time and any offset. A YYYY-MM-DD value is midnight at the start of that day, so --to 2026-09-30 leaves out annotations made on the 30th; pass --to 2026-10-01 to include them. Engage 18.1.0 answers HTTP 500 unless both are given.
+--from and --to are both required (YYYY-MM-DD or RFC 3339). They are instants, unlike the whole days of 'analytics query': Engage returns the annotations timestamped between them, honouring the time and any offset. A YYYY-MM-DD value is midnight at the start of that day, so --to 2026-09-30 leaves out annotations made on the 30th; pass --to 2026-10-01 to include them.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--culture` | string | — | With --node: only this culture |
 | `--fields` | string | — | Limit response fields (comma-separated top-level keys) |
-| `--from` | string | — | Start of the range: YYYY-MM-DD or RFC 3339 |
+| `--from` | string | — | Start of the range (required): YYYY-MM-DD or RFC 3339 |
 | `--global` | bool | false | Only annotations not tied to a page |
 | `--node` | string | — | Only annotations on this page (document GUID) |
-| `--to` | string | — | End of the range: YYYY-MM-DD or RFC 3339 |
+| `--to` | string | — | End of the range (required): YYYY-MM-DD or RFC 3339 |
 
 ### campaign-group get
 
