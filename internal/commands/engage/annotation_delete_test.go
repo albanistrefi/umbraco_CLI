@@ -5,35 +5,56 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"umbraco-cli/internal/commands/cmdtest"
 )
 
 // fakeAnnotationStore mimics Engage 18.1.0's annotation routes: the list
-// returns stored rows that are not invalid plus generated A/B test entries
-// with id 0, answers 500 without both ends of the range, and DELETE marks a
+// returns the stored rows that are not invalid and whose timestamp is within
+// the range, plus a generated A/B test entry with id 0, and DELETE marks a
 // row invalid and answers 200 whether or not the id exists.
 type fakeAnnotationStore struct {
 	t *testing.T
 	// invalid maps each stored annotation id to its invalid flag.
 	invalid map[int64]bool
+	// timestamps overrides a stored annotation's timestamp (default
+	// 2026-09-01T00:00:00Z).
+	timestamps map[int64]string
 	// ignoreDelete makes DELETE answer 200 without changing anything.
 	ignoreDelete bool
+	// listStatus, when set, is the list route's answer instead of the rows.
+	listStatus int
+}
+
+func (s *fakeAnnotationStore) timestamp(id int64) string {
+	if ts, ok := s.timestamps[id]; ok {
+		return ts
+	}
+	return "2026-09-01T00:00:00Z"
 }
 
 func (s *fakeAnnotationStore) routes() map[string]func(*http.Request) *http.Response {
 	return map[string]func(*http.Request) *http.Response{
 		"/annotations/all": func(req *http.Request) *http.Response {
-			query := req.URL.Query()
-			if query.Get("from") != engageAnnotationEarliest || query.Get("to") != engageAnnotationLatest {
-				s.t.Fatalf("lookup must list the widest range Engage accepts, got %s", req.URL.RawQuery)
+			if req.URL.RawQuery != "from=1753-01-01T00%3A00%3A00Z&to=9999-12-31T23%3A59%3A59.997Z" {
+				s.t.Fatalf("lookup must list the whole SQL datetime range with the fraction intact, got %s", req.URL.RawQuery)
 			}
+			if s.listStatus != 0 {
+				return cmdtest.JSONResponse(s.listStatus, `null`)
+			}
+			from, _ := time.Parse(time.RFC3339Nano, req.URL.Query().Get("from"))
+			to, _ := time.Parse(time.RFC3339Nano, req.URL.Query().Get("to"))
 			entries := []map[string]any{
 				{"id": 0, "description": `A/B Test "CTA" started`, "visibility": "AbTestStart", "invalid": false, "timestamp": "2026-04-24T05:53:49.88Z"},
 			}
 			for id, invalid := range s.invalid {
-				if !invalid {
-					entries = append(entries, map[string]any{"id": id, "description": "Campaign launch", "visibility": "Always", "invalid": false, "timestamp": "2026-09-01T00:00:00Z"})
+				stamp, err := time.Parse(time.RFC3339Nano, s.timestamp(id))
+				if err != nil {
+					s.t.Fatalf("bad fake timestamp: %v", err)
+				}
+				if !invalid && !stamp.Before(from) && !stamp.After(to) {
+					entries = append(entries, map[string]any{"id": id, "description": "Campaign launch", "visibility": "Always", "invalid": false, "timestamp": s.timestamp(id)})
 				}
 			}
 			raw, _ := json.Marshal(entries)
@@ -60,7 +81,7 @@ func jsonNumber(id int64) string {
 	return string(raw)
 }
 
-const engageAnnotationLookup = "GET " + engageAPIPrefix + "/annotations/all?from=1753-01-02T00%3A00%3A00Z&to=9999-12-30T23%3A59%3A59Z"
+const engageAnnotationLookup = "GET " + engageAPIPrefix + "/annotations/all?from=1753-01-01T00%3A00%3A00Z&to=9999-12-31T23%3A59%3A59.997Z"
 
 func exitCodeOf(err error) int {
 	if coder, ok := err.(interface{ ExitCode() int }); ok {
@@ -126,6 +147,39 @@ func TestEngageAnnotationDeleteHidesAndConfirms(t *testing.T) {
 	if !store.invalid[21] || store.invalid[30] {
 		t.Fatalf("expected only 21 hidden, got %v", store.invalid)
 	}
+}
+
+func TestEngageAnnotationDeleteFindsAnnotationsAtTheDatetimeBounds(t *testing.T) {
+	store := &fakeAnnotationStore{t: t, invalid: map[int64]bool{1: false, 2: false, 3: false}, timestamps: map[int64]string{
+		1: "1753-01-01T00:00:00Z",
+		2: "9999-12-31T00:00:00Z",
+		3: "9999-12-31T23:59:59.997Z",
+	}}
+	deps, requests := engageTestDeps(t, store.routes())
+	for _, id := range []string{"1", "2", "3"} {
+		if _, err := cmdtest.Execute(buildEngageRoot(t, deps), "engage", "annotation", "delete", id, "--force"); err != nil {
+			t.Fatalf("delete %s failed: %v", id, err)
+		}
+	}
+	if !store.invalid[1] || !store.invalid[2] || !store.invalid[3] {
+		t.Fatalf("expected every boundary annotation hidden, got %v", store.invalid)
+	}
+	if len(*requests) != 9 {
+		t.Fatalf("expected lookup, DELETE and re-check per id, got %v", *requests)
+	}
+}
+
+func TestEngageAnnotationDeleteReportsALookupFailureAsItIs(t *testing.T) {
+	store := &fakeAnnotationStore{t: t, invalid: map[int64]bool{21: false}, listStatus: http.StatusInternalServerError}
+	deps, requests := engageTestDeps(t, store.routes())
+	_, err := cmdtest.Execute(buildEngageRoot(t, deps), "engage", "annotation", "delete", "21", "--force")
+	if err == nil || !strings.Contains(err.Error(), "API 500 GET "+engageAPIPrefix+"/annotations/all") || strings.Contains(err.Error(), "no stored annotation") {
+		t.Fatalf("expected Engage's 500 reported, not a not-found, got %v", err)
+	}
+	if code := exitCodeOf(err); code != 4 {
+		t.Fatalf("expected exit 4, got %d", code)
+	}
+	engageRequestsEqual(t, *requests, engageAnnotationLookup)
 }
 
 func TestEngageAnnotationDeleteErrorsWhenStillListed(t *testing.T) {

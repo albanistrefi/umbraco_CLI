@@ -596,7 +596,7 @@ DELETE /annotations?id=<id>. Engage soft-deletes: it marks the annotation invali
 
 Only stored annotations, made with 'umbraco engage annotation create' or in the back office, have an `id`. The ones Engage generates from A/B tests (started, stopped) and page history (published, created) list with `id` 0 and cannot be deleted, so an id of 0 or less is refused.
 
-Engage answers 200 whether or not the id exists, so the command first looks the id up among the stored annotations (GET /annotations/all from 1753-01-02T00:00:00Z to 9999-12-30T23:59:59Z) and refuses one it cannot find. After the DELETE it lists them again and reports success only when the annotation is gone. Either failure exits 4. --dry-run runs the lookup and prints the planned DELETE.
+Engage answers 200 whether or not the id exists, so the command first looks the id up among the stored annotations (GET /annotations/all from 1753-01-01T00:00:00Z to 9999-12-31T23:59:59.997Z) and refuses one it cannot find. After the DELETE it lists them again and reports success only when the annotation is gone. Either failure exits 4. --dry-run runs the lookup and prints the planned DELETE.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|

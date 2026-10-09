@@ -150,12 +150,12 @@ func engageAnnotationCreate(deps cmdkit.Dependencies) *cobra.Command {
 	return cmd
 }
 
-// The annotation table's timestamp is a SQL datetime (1753-01-01 to
-// 9999-12-31), and Engage answers 500 for a range outside it. A day inside
-// each end keeps a conversion to the server's time zone in range.
+// The annotation table's timestamp is a SQL datetime, so these are the
+// first and last values it can hold; Engage answers 500 for a range that
+// starts earlier.
 const (
-	engageAnnotationEarliest = "1753-01-02T00:00:00Z"
-	engageAnnotationLatest   = "9999-12-30T23:59:59Z"
+	engageAnnotationEarliest = "1753-01-01T00:00:00Z"
+	engageAnnotationLatest   = "9999-12-31T23:59:59.997Z"
 )
 
 // engageAnnotationDelete does not use engageDelete: Engage's DELETE

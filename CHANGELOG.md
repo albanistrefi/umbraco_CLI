@@ -4,7 +4,7 @@
 
 - fixed `engage annotation delete` reporting success for an annotation it did not delete. Engage 18.1.0's `DELETE /annotations?id=` soft-deletes: it sets the stored row's `invalid` flag, and answers 200 whether or not a row has that id. Annotations Engage generates from A/B tests (started, stopped) and page history (published, created) have no row and list with `id` 0; on live, every annotation listed was one of these. So `annotation delete 0 --force`, or any unknown id, printed `{"deleted": true}` while nothing changed.
   - An id of 0 or less is now refused before any request (exit code 1).
-  - Before the DELETE, the command looks the id up among the stored annotations: `GET /annotations/all` from 1753-01-02 to 9999-12-30, inside the SQL `datetime` range Engage answers 500 outside of. An id it cannot find is an error (exit code 4) and no DELETE is sent.
+  - Before the DELETE, the command looks the id up among the stored annotations: `GET /annotations/all` over the whole SQL `datetime` range of the timestamp column, `1753-01-01T00:00:00Z` to `9999-12-31T23:59:59.997Z` (Engage answers 500 for a range starting earlier). If that lookup fails, its error is reported as it is. An id it cannot find is an error (exit code 4) and no DELETE is sent.
   - After the DELETE, it lists again and reports `{"deleted": true, "id": <id>}` only when the annotation is gone; if it is still listed, that is an error (exit code 4).
   - `--dry-run` runs the lookup and prints the planned DELETE.
   - The help says the annotation is hidden (soft-deleted) rather than "permanently deleted", and `annotation list` help says `id` 0 marks a generated annotation.
