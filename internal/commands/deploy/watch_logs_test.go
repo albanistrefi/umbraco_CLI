@@ -29,8 +29,18 @@ type fakeDeployEnv struct {
 	// the size refusal live gave on 15-10, the landing probe included.
 	refuseLogs     bool
 	refuseLogsFrom int
-	entries        []fakeLogEntry
-	tailReads      int
+	// refuseLogsUntil, when above refuseLogsFrom, ends the refusal there.
+	refuseLogsUntil int
+	// blipTicks answer 502 to the liveness probe only, as one failed probe
+	// would, while everything else keeps working.
+	blipTicks map[int]bool
+	// newestFails answers the landing probe 500 at these ticks.
+	newestFails map[int]bool
+	// firstTailOK is the tick of the first tail read that succeeded after a
+	// refusal (0 = none yet).
+	firstTailOK int
+	entries     []fakeLogEntry
+	tailReads   int
 	// routes answers any other request for the current tick (nil = 404).
 	routes func(tick int, req *http.Request) *http.Response
 }
@@ -72,6 +82,9 @@ func (e *fakeDeployEnv) handler() cmdtest.RoundTripper {
 			}
 			if body == "" { // the watch's unauthenticated liveness probe
 				e.tick++
+				if e.blipTicks[e.tick-1] {
+					return cmdtest.JSONResponse(http.StatusBadGateway, `{}`), nil
+				}
 				if e.downTicks[e.tick-1] {
 					return cmdtest.JSONResponse(http.StatusServiceUnavailable, `{}`), nil
 				}
@@ -87,16 +100,22 @@ func (e *fakeDeployEnv) handler() cmdtest.RoundTripper {
 		case "/":
 			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("home"))}, nil
 		case "/umbraco/management/api/v1/log-viewer/log":
-			if e.refuseLogs && tick >= e.refuseLogsFrom {
+			if e.refuseLogs && tick >= e.refuseLogsFrom && (e.refuseLogsUntil <= e.refuseLogsFrom || tick < e.refuseLogsUntil) {
 				if req.URL.Query().Get("take") != "1" {
 					e.tailReads++
 				}
 				return cmdtest.JSONResponse(http.StatusBadRequest, logSizeRefusalBody), nil
 			}
 			if req.URL.Query().Get("take") == "1" {
+				if e.newestFails[tick] {
+					return cmdtest.JSONResponse(http.StatusInternalServerError, `{"title":"log viewer broke"}`), nil
+				}
 				return cmdtest.JSONResponse(http.StatusOK, `{"total":1,"items":[`+e.newest(tick)+`]}`), nil
 			}
 			e.tailReads++
+			if e.refuseLogs && e.firstTailOK == 0 {
+				e.firstTailOK = tick
+			}
 			if e.tailBroken {
 				return cmdtest.JSONResponse(http.StatusInternalServerError, `{"title":"log viewer broke"}`), nil
 			}

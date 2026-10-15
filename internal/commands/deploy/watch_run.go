@@ -222,8 +222,7 @@ func (r *watchRun) poll(ctx context.Context, probes *watchProbes) watchOutcome {
 	for _, event := range events {
 		r.write(event)
 	}
-	if r.machine.sawLanded || (r.baseline.ProcessID != "" && observation.ProcessID != "" &&
-		(observation.ProcessID != r.baseline.ProcessID || observation.MachineName != r.baseline.MachineName)) {
+	if r.machine.sawLanded || r.machine.processChanged(observation) {
 		r.landed = true
 	}
 	if r.schema != nil && terminal == watchOutcomeNone && r.machine.sawLanded && r.machine.sawServing {

@@ -48,6 +48,9 @@ type watchMachine struct {
 	escalation           time.Duration
 	settle               time.Duration
 	skipIndexVerify      bool
+	// restartMinDown is how long one outage must last to count as a
+	// restart on the restart-cycle basis; 0 counts any observed outage.
+	restartMinDown time.Duration
 
 	phase          string
 	prevAlive      bool
@@ -60,6 +63,12 @@ type watchMachine struct {
 	settleStart    time.Time
 	settleAttempt  int
 	failureReason  string
+	// cycleArmed is set by an outage of at least restartMinDown and cleared
+	// when a later poll reads the baseline process again; cycleDownSince
+	// and cycleDownFor describe that outage.
+	cycleArmed     bool
+	cycleDownSince time.Time
+	cycleDownFor   time.Duration
 }
 
 func newWatchMachine(baseline watchObservation, escalation time.Duration, settle time.Duration, skipIndexVerify bool) (*watchMachine, error) {
@@ -140,12 +149,21 @@ func (m *watchMachine) observe(obs watchObservation) ([]watchEvent, watchOutcome
 		downFor := obs.At.Sub(m.downSince).Round(time.Second)
 		transition("app-alive", map[string]any{"managementStatus": obs.MgmtStatus, "downFor": downFor.String()})
 	}
+	if !m.prevAlive && !m.downSince.IsZero() && obs.At.Sub(m.downSince) >= m.restartMinDown {
+		m.cycleArmed = true
+		m.cycleDownSince = m.downSince
+		m.cycleDownFor = obs.At.Sub(m.downSince)
+	}
 	m.downSince = time.Time{}
 	m.prevAlive = true
+	// The baseline process still writing the newest entry disproves the
+	// outage as a restart.
+	if m.cycleArmed && m.baselineProcessID != "" && obs.ProcessID == m.baselineProcessID && obs.MachineName == m.baselineMachineName {
+		m.cycleArmed = false
+	}
 
 	processKnown := m.baselineProcessID != "" && obs.ProcessID != ""
-	if !m.sawLanded && processKnown &&
-		(obs.ProcessID != m.baselineProcessID || obs.MachineName != m.baselineMachineName) {
+	if !m.sawLanded && m.processChanged(obs) {
 		m.sawLanded = true
 		transition("landed", map[string]any{
 			"basis":       "process-id",
@@ -161,21 +179,22 @@ func (m *watchMachine) observe(obs watchObservation) ([]watchEvent, watchOutcome
 		transition("serving", map[string]any{"paths": m.baselineHealthy})
 	}
 
-	// Without a process id on both sides (the log viewer refused to read
-	// it), the only landing evidence is a full restart cycle: the management
-	// endpoint went down, came back, and the health paths serve again. A
-	// watch that never saw the endpoint go down does not land.
-	if !m.sawLanded && !processKnown && m.sawRestarting && m.sawAppAlive && m.sawServing {
+	// When the log viewer refuses to read the process id (at baseline, or
+	// on this poll), the only landing evidence is a restart cycle: one
+	// outage of at least restartMinDown, then the health paths serve again.
+	// Any other failure to read it, or an entry without one, waits for a
+	// readable process id as before.
+	refused := m.processIDUnavailable != "" || isLogSizeRefusal(obs.LogErr)
+	if !m.sawLanded && !processKnown && refused && m.cycleArmed && m.sawServing && healthOK {
 		m.sawLanded = true
-		detail := map[string]any{
-			"basis":       "restart-cycle",
-			"processId":   "unavailable",
-			"machineName": "unavailable",
-		}
-		if reason := m.processIDReason(obs); reason != "" {
-			detail["processIdReason"] = reason
-		}
-		transition("landed", detail)
+		transition("landed", map[string]any{
+			"basis":           "restart-cycle",
+			"processId":       "unavailable",
+			"machineName":     "unavailable",
+			"processIdReason": logSizeRefusalReason,
+			"downSince":       m.cycleDownSince.UTC().Format(time.RFC3339),
+			"downFor":         m.cycleDownFor.Round(time.Second).String(),
+		})
 	}
 
 	// Post-landing health escalation: the deploy landed but the site never
@@ -237,18 +256,11 @@ func (m *watchMachine) observe(obs watchObservation) ([]watchEvent, watchOutcome
 	return events, watchOutcomeNone
 }
 
-// processIDReason says why the process id is missing for a restart-cycle
-// landing.
-func (m *watchMachine) processIDReason(obs watchObservation) string {
-	switch {
-	case m.processIDUnavailable != "":
-		return m.processIDUnavailable
-	case isLogSizeRefusal(obs.LogErr):
-		return logSizeRefusalReason
-	case obs.LogErr != nil:
-		return "the newest log entry could not be read"
-	}
-	return "the newest log entry carries no ProcessId"
+// processChanged reports whether obs reads a process other than the
+// baseline's. Without a baseline process id there is nothing to compare.
+func (m *watchMachine) processChanged(obs watchObservation) bool {
+	return m.baselineProcessID != "" && obs.ProcessID != "" &&
+		(obs.ProcessID != m.baselineProcessID || obs.MachineName != m.baselineMachineName)
 }
 
 // baselineHealthyOK reports whether every path that was healthy at baseline
