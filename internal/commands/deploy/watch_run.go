@@ -36,8 +36,10 @@ type watchRun struct {
 	// ended is set with the terminal phase; no heartbeat follows it.
 	ended bool
 	// logRefusedRetry spaces the log follower's reads while the log viewer
-	// refuses them for size.
+	// refuses them for size; logWake cuts that wait short when a poll reads
+	// the newest entry again.
 	logRefusedRetry time.Duration
+	logWake         chan struct{}
 }
 
 // emit writes values to the stream as one uninterrupted sequence.
@@ -128,6 +130,7 @@ func (r *watchRun) followLogs(ctx context.Context, every time.Duration) {
 		case <-ctx.Done():
 			return
 		case <-time.After(wait):
+		case <-r.logWake:
 		}
 		r.readLogs(ctx)
 	}
@@ -221,6 +224,12 @@ func (r *watchRun) poll(ctx context.Context, probes *watchProbes) watchOutcome {
 	events, terminal := r.machine.observe(observation)
 	for _, event := range events {
 		r.write(event)
+	}
+	if r.feed != nil && r.feed.refused && observation.MgmtAlive && observation.LogErr == nil && r.logWake != nil {
+		select {
+		case r.logWake <- struct{}{}:
+		default:
+		}
 	}
 	if r.machine.sawLanded || r.machine.processChanged(observation) {
 		r.landed = true

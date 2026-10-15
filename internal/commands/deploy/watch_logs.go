@@ -252,9 +252,13 @@ type watchLogFeed struct {
 	tail        *cmdkit.LogTail
 	read        int
 	unavailable bool
-	// refused is set while the log viewer refuses reads for size.
+	// refused is set while the log viewer refuses reads for size. Other
+	// failures meanwhile (a 5xx during the restart) leave it set.
 	refused bool
 	gaps    int
+	// initial holds the monitor events of the feed's first read, made
+	// before the watch arms: a size refusal is known from the start.
+	initial []any
 }
 
 // state is the feed's condition for heartbeats: reading, unavailable, or
@@ -279,7 +283,9 @@ func newWatchLogFeed(ctx context.Context, client *api.Client, since time.Time) *
 	feed := &watchLogFeed{tail: cmdkit.NewLogTail(client, nil, since)}
 	// The entries stamped at the baseline instant are already history;
 	// reading them once marks them seen.
-	_, _ = feed.tail.Next(ctx)
+	if _, err := feed.tail.Next(ctx); isLogSizeRefusal(err) {
+		_, feed.initial = feed.record(ctx, time.Now().UTC().Format(time.RFC3339), nil, err)
+	}
 	return feed
 }
 
@@ -317,13 +323,13 @@ func (f *watchLogFeed) record(ctx context.Context, now string, entries []map[str
 				"reason":          api.SanitizeTerminalText(err.Error()),
 				"operationStatus": "CancelledByLogsSizeValidation",
 				"note": "Umbraco refuses log-viewer reads while the log files of the days a read covers exceed 100 MB, and these reads cover every day since the baseline, " +
-					"so the log stream is unavailable for the rest of this run; retried every " + watchLogRefusedRetry.String(),
+					"so the log stream is usually unavailable for the rest of the run; retried every " + watchLogRefusedRetry.String() + ", and sooner once the newest entry reads again",
 			}}}
 		}
-		if f.unavailable && !f.refused {
+		if f.unavailable {
 			return nil, nil
 		}
-		f.refused, f.unavailable = false, true
+		f.unavailable = true
 		note := "the log viewer rejected the read; entries are read if it recovers"
 		var apiErr *api.APIError
 		if !errors.As(err, &apiErr) || apiErr.StatusCode >= http.StatusInternalServerError {

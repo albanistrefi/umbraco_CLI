@@ -70,8 +70,17 @@ func TestWatchLandsOnARestartCycleWhenTheLogViewerRefusesFromBaseline(t *testing
 		!strings.Contains(fmt.Sprint(landed["processIdReason"]), "CancelledByLogsSizeValidation") {
 		t.Fatalf("landed must name the fallback basis and the outage: %v", landed)
 	}
-	if !strings.Contains(monitorStatuses(lines), "refused") {
-		t.Fatalf("expected a refused log-monitor line, got %s", monitorStatuses(lines))
+	// The refusal is known from the first read and stays refused through
+	// the restart's 503s: no "unavailable" in between.
+	if got := monitorStatuses(lines); got != "refused,stopped" {
+		t.Fatalf("unexpected monitor statuses %s", got)
+	}
+	refused := detailOf(ofType(lines, "log-monitor")[0])
+	if refused["operationStatus"] != "CancelledByLogsSizeValidation" || strings.Contains(fmt.Sprint(refused["note"]), "expected while the app restarts") {
+		t.Fatalf("the refused line must say what happened: %v", refused)
+	}
+	if lines[1]["type"] != "log-monitor" || lines[1]["status"] != "refused" {
+		t.Fatalf("the refusal is reported right after the baseline: %v", lines[1])
 	}
 }
 
@@ -192,6 +201,68 @@ func TestWatchRestartMinDownMustNotBeNegative(t *testing.T) {
 	_, err := cmdtest.Execute(cmdtest.BuildRoot(t, deps, Register), "deploy", "watch", "--restart-min-down", "-1s")
 	if err == nil || exitCode(err) != 1 || !strings.Contains(err.Error(), "--restart-min-down cannot be negative") {
 		t.Fatalf("expected a usage error, got %v", err)
+	}
+}
+
+func TestWatchHeartbeatsSayTheLogStreamIsRefused(t *testing.T) {
+	env := &fakeDeployEnv{downTicks: map[int]bool{}, landTick: 1 << 30, refuseLogs: true}
+	deps := cmdtest.Deps(env.handler())
+	out, errOut, err := cmdtest.ExecuteWithErr(cmdtest.BuildRoot(t, deps, Register), "deploy", "watch", "--json", "--logs",
+		"--interval", "5ms", "--request-timeout", "4ms", "--heartbeat", "20ms", "--settle", "0", "--skip-index-verify", "--timeout", "300ms")
+	if exitCode(err) != 6 {
+		t.Fatalf("expected a timeout, got %v", err)
+	}
+	if strings.Contains(errOut, "logs: 0 read") || !strings.Contains(errOut, "logs: unavailable (size), 0 read, 0 emitted") {
+		t.Fatalf("every stderr heartbeat must show the refused log stream:\n%s", errOut)
+	}
+	heartbeats := 0
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		var decoded map[string]any
+		if json.Unmarshal([]byte(line), &decoded) != nil || decoded["type"] != "heartbeat" {
+			continue
+		}
+		heartbeats++
+		if logs, _ := decoded["logs"].(map[string]any); logs["status"] != "refused" {
+			t.Fatalf("every JSON heartbeat must carry the refused status: %v", decoded)
+		}
+	}
+	if heartbeats == 0 {
+		t.Fatalf("no JSON heartbeats:\n%s", out)
+	}
+}
+
+// Per-poll reads over 300ms at a 5ms interval would be dozens; after the
+// refusal the follower waits 5 minutes, so only the first read and the final
+// drain reach the log viewer.
+func TestWatchLogFollowerBacksOffWhileRefused(t *testing.T) {
+	env := &fakeDeployEnv{downTicks: map[int]bool{}, landTick: 1 << 30, refuseLogs: true}
+	deps := cmdtest.Deps(env.handler())
+	_, err := cmdtest.Execute(cmdtest.BuildRoot(t, deps, Register), "deploy", "watch", "--json", "--logs",
+		"--interval", "5ms", "--request-timeout", "4ms", "--heartbeat", "0", "--settle", "0", "--skip-index-verify", "--timeout", "300ms")
+	if exitCode(err) != 6 {
+		t.Fatalf("expected a timeout, got %v", err)
+	}
+	if env.tick < 20 {
+		t.Fatalf("too few polls (%d) to tell per-poll reads from backoff", env.tick)
+	}
+	if env.tailReads > 3 {
+		t.Fatalf("the follower read %d times over %d polls while refused", env.tailReads, env.tick)
+	}
+}
+
+// When a poll reads the newest entry again, the follower reads at once
+// instead of waiting out the 5-minute backoff.
+func TestWatchLogFollowerWakesWhenTheNewestEntryReadsAgain(t *testing.T) {
+	env := &fakeDeployEnv{downTicks: map[int]bool{}, landTick: 1 << 30, refuseLogs: true, refuseLogsUntil: 5}
+	lines, err := runWatch(t, env, "--logs", "--timeout", "300ms")
+	if exitCode(err) != 6 {
+		t.Fatalf("expected a timeout, got %v", err)
+	}
+	if got := monitorStatuses(lines); got != "refused,resumed,stopped" {
+		t.Fatalf("unexpected monitor statuses %s", got)
+	}
+	if env.firstTailOK == 0 || env.firstTailOK > 15 || env.tick < 40 {
+		t.Fatalf("the follower should read soon after tick 5, first good read at tick %d of %d", env.firstTailOK, env.tick)
 	}
 }
 
@@ -327,5 +398,36 @@ func TestWatchMachineArmsWithoutAProcessIDOnlyForASizeRefusal(t *testing.T) {
 	base.LogErr = nil
 	if _, err := newWatchMachine(base, time.Hour, 0, true); err == nil {
 		t.Fatalf("a newest entry without ProcessId must still refuse to arm")
+	}
+}
+
+func TestWatchLogFeedReportsEachFailureTruthfully(t *testing.T) {
+	ctx := t.Context()
+	feed := &watchLogFeed{}
+	_, events := feed.record(ctx, "now", nil, sizeRefusal())
+	if len(events) != 1 || events[0].(watchLogMonitorEvent).Status != "refused" || feed.state() != "refused" {
+		t.Fatalf("a size refusal is refused: %v", events)
+	}
+	if note := fmt.Sprint(events[0].(watchLogMonitorEvent).Detail["note"]); strings.Contains(note, "for the rest of this run") {
+		t.Fatalf("the note must not promise a refusal for the whole run, resumed can follow: %s", note)
+	}
+	for _, err := range []error{sizeRefusal(), &api.APIError{StatusCode: http.StatusServiceUnavailable}, errors.New("connection refused"), sizeRefusal()} {
+		if _, events = feed.record(ctx, "now", nil, err); len(events) != 0 || feed.state() != "refused" {
+			t.Fatalf("refused stays refused through %v, got %v (%s)", err, events, feed.state())
+		}
+	}
+	if _, events = feed.record(ctx, "now", []map[string]any{}, nil); len(events) != 1 || events[0].(watchLogMonitorEvent).Status != "resumed" || feed.state() != "reading" {
+		t.Fatalf("a good read resumes: %v", events)
+	}
+
+	feed = &watchLogFeed{}
+	_, events = feed.record(ctx, "now", nil, &api.APIError{StatusCode: http.StatusServiceUnavailable})
+	if len(events) != 1 || !strings.Contains(fmt.Sprint(events[0].(watchLogMonitorEvent).Detail["note"]), "expected while the app restarts") {
+		t.Fatalf("a 503 is the expected restart outage: %v", events)
+	}
+	feed = &watchLogFeed{}
+	_, events = feed.record(ctx, "now", nil, &api.APIError{StatusCode: http.StatusForbidden})
+	if len(events) != 1 || strings.Contains(fmt.Sprint(events[0].(watchLogMonitorEvent).Detail["note"]), "restart") {
+		t.Fatalf("a 4xx is not described as a restart: %v", events)
 	}
 }
