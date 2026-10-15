@@ -52,6 +52,30 @@ func TestWatchLandsOnARestartCycleWhenTheLogViewerRefusesFromBaseline(t *testing
 	if landed["basis"] != "restart-cycle" || landed["processId"] != "unavailable" || !strings.Contains(fmt.Sprint(landed["processIdReason"]), "CancelledByLogsSizeValidation") {
 		t.Fatalf("landed must name the fallback basis: %v", landed)
 	}
+	var refused []map[string]any
+	for _, event := range ofType(lines, "log-monitor") {
+		switch event["status"] {
+		case "refused":
+			refused = append(refused, event)
+		case "unavailable":
+			if reason := fmt.Sprint(detailOf(event)["reason"]); !strings.Contains(reason, "API 503") {
+				t.Fatalf("a size refusal must not be reported as an expected restart outage: %v", event)
+			}
+		}
+	}
+	if len(refused) == 0 {
+		t.Fatalf("expected a refused log-monitor line, got %v", ofType(lines, "log-monitor"))
+	}
+	detail := detailOf(refused[0])
+	if detail["operationStatus"] != "CancelledByLogsSizeValidation" || !strings.Contains(fmt.Sprint(detail["note"]), "unavailable for the rest of this run") ||
+		strings.Contains(fmt.Sprint(detail["note"]), "expected while the app restarts") {
+		t.Fatalf("the refused line must say what happened: %v", refused[0])
+	}
+	// Downtime ticks can interleave a 503 between refusals; past that the
+	// follower backs off instead of reading every 1ms interval.
+	if env.tailReads > 8 {
+		t.Fatalf("the log follower kept reading at full rate after the refusal: %d reads", env.tailReads)
+	}
 }
 
 // The 15-10 sequence exactly: the baseline read the process id, then the log
@@ -98,6 +122,33 @@ func TestWatchStillRefusesToArmWhenTheLogViewerFailsOtherwise(t *testing.T) {
 	var apiErr *api.APIError
 	if err == nil || !strings.Contains(err.Error(), "cannot baseline the target: reading the newest log entry failed") || !errors.As(err, &apiErr) || apiErr.ExitCode() != 4 {
 		t.Fatalf("a broken log viewer at baseline must still refuse to arm with exit 4, got %v", err)
+	}
+}
+
+func TestWatchHeartbeatsSayTheLogStreamIsRefused(t *testing.T) {
+	env := &fakeDeployEnv{downTicks: map[int]bool{}, landTick: 1 << 30, refuseLogs: true}
+	deps := cmdtest.Deps(env.handler())
+	out, errOut, err := cmdtest.ExecuteWithErr(cmdtest.BuildRoot(t, deps, Register), "deploy", "watch", "--json", "--logs",
+		"--interval", "5ms", "--request-timeout", "4ms", "--heartbeat", "20ms", "--settle", "0", "--skip-index-verify", "--timeout", "300ms")
+	if exitCode(err) != 6 {
+		t.Fatalf("expected a timeout, got %v", err)
+	}
+	if !strings.Contains(errOut, "logs: unavailable (size), 0 read, 0 emitted") {
+		t.Fatalf("stderr heartbeats must show the refused log stream:\n%s", errOut)
+	}
+	heartbeats := 0
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		var decoded map[string]any
+		if json.Unmarshal([]byte(line), &decoded) != nil || decoded["type"] != "heartbeat" {
+			continue
+		}
+		heartbeats++
+		if logs, _ := decoded["logs"].(map[string]any); logs["status"] != "refused" {
+			t.Fatalf("JSON heartbeat must carry the log status: %v", decoded)
+		}
+	}
+	if heartbeats == 0 {
+		t.Fatalf("no JSON heartbeats:\n%s", out)
 	}
 }
 
@@ -168,5 +219,25 @@ func TestWatchMachineArmsWithoutAProcessIDOnlyForASizeRefusal(t *testing.T) {
 	base.LogErr = nil
 	if _, err := newWatchMachine(base, time.Hour, 0, true); err == nil {
 		t.Fatalf("a newest entry without ProcessId must still refuse to arm")
+	}
+}
+
+func TestWatchLogFeedReportsEachFailureTruthfully(t *testing.T) {
+	feed := &watchLogFeed{}
+	_, events := feed.record(t.Context(), "now", nil, sizeRefusal())
+	if len(events) != 1 || events[0].(watchLogMonitorEvent).Status != "refused" || feed.state() != "refused" {
+		t.Fatalf("a size refusal is refused: %v", events)
+	}
+	if _, events = feed.record(t.Context(), "now", nil, sizeRefusal()); len(events) != 0 {
+		t.Fatalf("a persisting refusal is reported once, got %v", events)
+	}
+	_, events = feed.record(t.Context(), "now", nil, &api.APIError{StatusCode: http.StatusServiceUnavailable})
+	if len(events) != 1 || !strings.Contains(fmt.Sprint(events[0].(watchLogMonitorEvent).Detail["note"]), "expected while the app restarts") {
+		t.Fatalf("a 503 is the expected restart outage: %v", events)
+	}
+	feed = &watchLogFeed{}
+	_, events = feed.record(t.Context(), "now", nil, &api.APIError{StatusCode: http.StatusForbidden})
+	if len(events) != 1 || strings.Contains(fmt.Sprint(events[0].(watchLogMonitorEvent).Detail["note"]), "restart") {
+		t.Fatalf("a 4xx is not described as a restart: %v", events)
 	}
 }

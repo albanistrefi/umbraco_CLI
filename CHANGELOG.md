@@ -7,6 +7,7 @@
   - No other process or instance identity is readable on live: `/server/information` has only versions, `/server/troubleshooting` only OS, framework, culture and server role, and the public site sits behind Cloudflare with no instance header.
   - When the process id is unavailable on either side, the watch now lands on a restart cycle instead: the management endpoint went down, came back, and the health paths serve again. The `landed` line says `"basis": "restart-cycle"`, `"processId": "unavailable"` and why; a process-id landing says `"basis": "process-id"`. A watch that never saw the endpoint go down still does not land.
   - A size refusal at baseline arms the watch with `"landingBasis": "restart-cycle"`; any other failure to read the newest log entry at baseline still refuses to arm.
+- `deploy watch --logs` reports a size refusal as `log-monitor` status `refused`, with the reason and that the log stream is unavailable for the rest of the run. It used to say `unavailable` with "expected while the app restarts", which was wrong on 15-10: there was no restart then. The follower then retries every 5 minutes instead of every poll. Another rejected read (a 4xx) is no longer described as a restart. Heartbeats show the log state: `logs: unavailable (size), …` on stderr, and `logs.status` (`reading`, `unavailable` or `refused`) in the JSON heartbeat.
 
 ## v0.5.1 - 2026-10-09
 

@@ -35,6 +35,9 @@ type watchRun struct {
 	lastPoll    time.Time
 	// ended is set with the terminal phase; no heartbeat follows it.
 	ended bool
+	// logRefusedRetry spaces the log follower's reads while the log viewer
+	// refuses them for size.
+	logRefusedRetry time.Duration
 }
 
 // emit writes values to the stream as one uninterrupted sequence.
@@ -93,8 +96,16 @@ func (r *watchRun) heartbeat(now time.Time) {
 	}
 	logStatus := ""
 	if r.logs != nil {
-		logStatus = fmt.Sprintf(", logs: %d read, %d emitted", r.feed.read, r.logs.total())
-		event.Logs = map[string]any{"read": r.feed.read, "emitted": r.logs.total()}
+		state := r.feed.state()
+		condition := ""
+		switch state {
+		case "refused":
+			condition = "unavailable (size), "
+		case "unavailable":
+			condition = "unavailable, "
+		}
+		logStatus = fmt.Sprintf(", logs: %s%d read, %d emitted", condition, r.feed.read, r.logs.total())
+		event.Logs = map[string]any{"read": r.feed.read, "emitted": r.logs.total(), "status": state}
 	}
 	fmt.Fprintf(r.errOut, "%s still watching — phase %s, elapsed %s%s\n", event.Timestamp, event.CurrentPhase, elapsed, logStatus)
 	if r.jsonOut {
@@ -107,10 +118,16 @@ func (r *watchRun) heartbeat(now time.Time) {
 // or a log viewer that does not answer, delays only the log lines.
 func (r *watchRun) followLogs(ctx context.Context, every time.Duration) {
 	for {
+		wait := every
+		r.mu.Lock()
+		if r.feed.refused && r.logRefusedRetry > wait {
+			wait = r.logRefusedRetry
+		}
+		r.mu.Unlock()
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(every):
+		case <-time.After(wait):
 		}
 		r.readLogs(ctx)
 	}

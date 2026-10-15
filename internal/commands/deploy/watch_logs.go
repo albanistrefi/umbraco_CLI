@@ -232,6 +232,11 @@ type watchLogMonitorEvent struct {
 // narrower read of today's entries gets past it.
 const logSizeRefusalReason = "the log viewer refuses reads while the log files of the days requested exceed 100 MB (CancelledByLogsSizeValidation)"
 
+// watchLogRefusedRetry is how often the feed retries after a size refusal.
+// Its reads start at the baseline, so the refusal lasts the rest of the run
+// unless log files are removed.
+const watchLogRefusedRetry = 5 * time.Minute
+
 func isLogSizeRefusal(err error) bool {
 	var apiErr *api.APIError
 	if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusBadRequest {
@@ -247,7 +252,21 @@ type watchLogFeed struct {
 	tail        *cmdkit.LogTail
 	read        int
 	unavailable bool
-	gaps        int
+	// refused is set while the log viewer refuses reads for size.
+	refused bool
+	gaps    int
+}
+
+// state is the feed's condition for heartbeats: reading, unavailable, or
+// refused (the log viewer's size check).
+func (f *watchLogFeed) state() string {
+	switch {
+	case f.refused:
+		return "refused"
+	case f.unavailable:
+		return "unavailable"
+	}
+	return "reading"
 }
 
 // newWatchLogFeed starts reading after the newest entry at baseline, by the
@@ -289,18 +308,35 @@ func (f *watchLogFeed) record(ctx context.Context, now string, entries []map[str
 				"to":     to.UTC().Format(time.RFC3339Nano),
 			}}}
 		}
-		if f.unavailable {
+		if isLogSizeRefusal(err) {
+			if f.refused {
+				return nil, nil
+			}
+			f.refused, f.unavailable = true, true
+			return nil, []any{watchLogMonitorEvent{Timestamp: now, Type: "log-monitor", Status: "refused", Detail: map[string]any{
+				"reason":          api.SanitizeTerminalText(err.Error()),
+				"operationStatus": "CancelledByLogsSizeValidation",
+				"note": "Umbraco refuses log-viewer reads while the log files of the days a read covers exceed 100 MB, and these reads cover every day since the baseline, " +
+					"so the log stream is unavailable for the rest of this run; retried every " + watchLogRefusedRetry.String(),
+			}}}
+		}
+		if f.unavailable && !f.refused {
 			return nil, nil
 		}
-		f.unavailable = true
+		f.refused, f.unavailable = false, true
+		note := "the log viewer rejected the read; entries are read if it recovers"
+		var apiErr *api.APIError
+		if !errors.As(err, &apiErr) || apiErr.StatusCode >= http.StatusInternalServerError {
+			note = "expected while the app restarts; entries are read on recovery"
+		}
 		return nil, []any{watchLogMonitorEvent{Timestamp: now, Type: "log-monitor", Status: "unavailable", Detail: map[string]any{
 			"reason": api.SanitizeTerminalText(err.Error()),
-			"note":   "expected while the app restarts; entries are read on recovery",
+			"note":   note,
 		}}}
 	}
 	f.read += len(entries)
 	if f.unavailable {
-		f.unavailable = false
+		f.refused, f.unavailable = false, false
 		return entries, []any{watchLogMonitorEvent{Timestamp: now, Type: "log-monitor", Status: "resumed"}}
 	}
 	return entries, nil
