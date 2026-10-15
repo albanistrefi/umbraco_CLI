@@ -431,3 +431,41 @@ func TestWatchLogFeedReportsEachFailureTruthfully(t *testing.T) {
 		t.Fatalf("a 4xx is not described as a restart: %v", events)
 	}
 }
+
+// With no baseline process id, entries written before the deploy cannot be
+// told from the schema pass's, so pass detection is off: an older "Work
+// Status" entry must not book the pass, and a deploy leaving the artifact
+// drifted times out (exit 6) instead of exiting 7.
+func TestWatchSchemaPassDetectionIsOffWithoutABaselineProcess(t *testing.T) {
+	future := time.Now().UTC().Add(time.Hour).Format(time.RFC3339)
+	oldPassEnd := `{"timestamp":"` + future + `","level":"Information","renderedMessage":"Work Status \"Completed\".","properties":[` +
+		`{"name":"SourceContext","value":"Umbraco.Deploy.Infrastructure.Disk.DiskService"},{"name":"ProcessId","value":"111"},{"name":"MachineName","value":"m1"}]}`
+	env := schemaScenario{
+		dataType: func(int) (int, string) { return http.StatusOK, driftedRemoteDataType },
+		logs:     []fakeLogEntry{{5, oldPassEnd}},
+	}.env()
+	env.downTicks, env.landTick = map[int]bool{8: true, 9: true}, 1<<30
+	env.refuseLogs, env.refuseLogsUntil = true, 5
+	lines, err := runWatch(t, env, "--uda-dir", schemaDir(t, false), "--restart-min-down", "1ms", "--timeout", "400ms")
+	if exitCode(err) != 6 {
+		t.Fatalf("expected a timeout (exit 6), got %v\n%v", err, phasesOf(lines))
+	}
+	for _, line := range ofType(lines, "schema-pass") {
+		if line["status"] != "waiting" || !strings.Contains(fmt.Sprint(detailOf(line)["reason"]), "detection is off") {
+			t.Fatalf("an entry from before the deploy booked the schema pass, or the wait names a pass: %v", line)
+		}
+	}
+	if timeout := detailOf(phaseLine(lines, "timeout")); !strings.Contains(fmt.Sprint(timeout["reason"]), "schema pass detection off") {
+		t.Fatalf("the timeout must not say a pass end was awaited: %v", timeout)
+	}
+	if pass, _ := detailOf(ofType(lines, "schema-summary")[0])["deployPass"].(map[string]any); pass["detection"] != "off" || pass["ended"] != false {
+		t.Fatalf("the summary must say detection was off: %v", pass)
+	}
+	schema, _ := detailOf(phaseLine(lines, "baseline"))["schema"].(map[string]any)
+	if !strings.HasPrefix(fmt.Sprint(schema["passDetection"]), "off:") {
+		t.Fatalf("the baseline must say pass detection is off: %v", schema)
+	}
+	if env.firstTailOK == 0 {
+		t.Fatalf("the log viewer never recovered, so the old entry was never offered")
+	}
+}

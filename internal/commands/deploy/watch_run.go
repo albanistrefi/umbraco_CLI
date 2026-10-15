@@ -251,7 +251,7 @@ func (r *watchRun) timedOut(timeout time.Duration) string {
 	defer r.mu.Unlock()
 	reason := fmt.Sprintf("no verification within %s (last phase: %s) — deployment status unknown", timeout, r.machine.phase)
 	if r.schema != nil && r.schema.pending() {
-		reason += fmt.Sprintf("; schema: %d tracked artifacts unconfirmed, Umbraco Deploy's schema pass end not observed", len(r.schema.pendingFiles()))
+		reason += "; " + r.schema.pendingReason()
 	}
 	r.ended = true
 	r.write(watchEvent{Timestamp: time.Now().UTC().Format(time.RFC3339), Phase: "timeout", Detail: map[string]any{"reason": reason}})
