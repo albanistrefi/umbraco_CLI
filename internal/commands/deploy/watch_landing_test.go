@@ -41,6 +41,16 @@ func monitorStatuses(lines []map[string]any) string {
 	return strings.Join(statuses, ",")
 }
 
+// fakeOutage marks ticks from..to (inclusive) down. Five down polls at a 1ms
+// interval span at least 4ms between the first and last failed probe.
+func fakeOutage(from int, to int) map[int]bool {
+	down := map[int]bool{}
+	for tick := from; tick <= to; tick++ {
+		down[tick] = true
+	}
+	return down
+}
+
 func assertNotLanded(t *testing.T, lines []map[string]any) {
 	t.Helper()
 	for _, phase := range phasesOf(lines) {
@@ -53,8 +63,8 @@ func assertNotLanded(t *testing.T, lines []map[string]any) {
 // The 15-10 live deploy: the log viewer refused every read for size, the app
 // restarted and recovered, and the watch must still land and verify.
 func TestWatchLandsOnARestartCycleWhenTheLogViewerRefusesFromBaseline(t *testing.T) {
-	env := &fakeDeployEnv{downTicks: map[int]bool{2: true, 3: true}, landTick: 1 << 30, refuseLogs: true}
-	lines, err := runWatch(t, env, "--logs", "--restart-min-down", "1ms")
+	env := &fakeDeployEnv{downTicks: fakeOutage(2, 6), landTick: 1 << 30, refuseLogs: true}
+	lines, err := runWatch(t, env, "--logs", "--restart-min-down", "3ms")
 	if err != nil {
 		t.Fatalf("watch failed: %v\n%v", err, lines)
 	}
@@ -87,8 +97,8 @@ func TestWatchLandsOnARestartCycleWhenTheLogViewerRefusesFromBaseline(t *testing
 // The 15-10 sequence exactly: the baseline read the process id, then the log
 // viewer started refusing before the restart.
 func TestWatchLandsOnARestartCycleWhenTheLogViewerStartsRefusingAfterBaseline(t *testing.T) {
-	env := &fakeDeployEnv{downTicks: map[int]bool{3: true, 4: true}, landTick: 1 << 30, refuseLogs: true, refuseLogsFrom: 1}
-	lines, err := runWatch(t, env, "--logs", "--restart-min-down", "1ms")
+	env := &fakeDeployEnv{downTicks: fakeOutage(3, 7), landTick: 1 << 30, refuseLogs: true, refuseLogsFrom: 1}
+	lines, err := runWatch(t, env, "--logs", "--restart-min-down", "3ms")
 	if err != nil {
 		t.Fatalf("watch failed: %v\n%v", err, lines)
 	}
@@ -103,9 +113,8 @@ func TestWatchLandsOnARestartCycleWhenTheLogViewerStartsRefusingAfterBaseline(t 
 	}
 }
 
-// P1-a, the reviewer's sequence: refusal from tick 1, one 502 on the
-// liveness probe only, the process never changes. One failed probe is not a
-// restart.
+// The log viewer refuses from tick 1, one liveness probe answers 502, and
+// the process never changes: one failed probe is not a restart.
 func TestWatchOneFailedProbeIsNotARestart(t *testing.T) {
 	env := &fakeDeployEnv{downTicks: map[int]bool{}, blipTicks: map[int]bool{2: true}, landTick: 1 << 30, refuseLogs: true, refuseLogsFrom: 1}
 	lines, err := runWatch(t, env, "--logs", "--timeout", "300ms")
@@ -118,24 +127,24 @@ func TestWatchOneFailedProbeIsNotARestart(t *testing.T) {
 	}
 }
 
-// P1-b, scenario 2: a real cycle, but the first alive poll's newest-entry
-// read fails with a 500 (not a size refusal), and the next one reads the
-// baseline process.
+// A real outage, but the first alive poll's newest-entry read fails with a
+// 500 (not a size refusal), and the polls after it read the baseline
+// process: no landing.
 func TestWatchATransientLogErrorAfterACycleDoesNotLand(t *testing.T) {
-	env := &fakeDeployEnv{downTicks: map[int]bool{2: true, 3: true}, newestFails: map[int]bool{4: true}, landTick: 1 << 30}
-	lines, err := runWatch(t, env, "--restart-min-down", "1ms", "--timeout", "300ms")
+	env := &fakeDeployEnv{downTicks: fakeOutage(2, 6), newestFails: map[int]bool{7: true}, landTick: 1 << 30}
+	lines, err := runWatch(t, env, "--restart-min-down", "3ms", "--timeout", "300ms")
 	if exitCode(err) != 6 {
 		t.Fatalf("expected a timeout (exit 6), got %v\n%v", err, phasesOf(lines))
 	}
 	assertNotLanded(t, lines)
 }
 
-// P1-b, scenario 1: the process id is known, an outage is followed by the
+// The process id is known, an outage is followed by polls that read the
 // baseline process (no landing), and the log viewer starts refusing much
-// later. The disproved outage must not land the watch.
+// later: the disproved outage must not land the watch.
 func TestWatchAnOutageDisprovedByTheBaselineProcessDoesNotLandLater(t *testing.T) {
-	env := &fakeDeployEnv{downTicks: map[int]bool{2: true, 3: true}, landTick: 1 << 30, refuseLogs: true, refuseLogsFrom: 20}
-	lines, err := runWatch(t, env, "--restart-min-down", "1ms", "--timeout", "300ms")
+	env := &fakeDeployEnv{downTicks: fakeOutage(2, 6), landTick: 1 << 30, refuseLogs: true, refuseLogsFrom: 20}
+	lines, err := runWatch(t, env, "--restart-min-down", "3ms", "--timeout", "300ms")
 	if exitCode(err) != 6 {
 		t.Fatalf("expected a timeout (exit 6), got %v\n%v", err, phasesOf(lines))
 	}
@@ -149,7 +158,7 @@ func TestWatchAnOutageDisprovedByTheBaselineProcessDoesNotLandLater(t *testing.T
 // restart: there is no baseline process to compare, so it must not land.
 func TestWatchARecoveredLogViewerWithoutARestartDoesNotLand(t *testing.T) {
 	env := &fakeDeployEnv{downTicks: map[int]bool{}, landTick: 1 << 30, refuseLogs: true, refuseLogsUntil: 5}
-	lines, err := runWatch(t, env, "--restart-min-down", "1ms", "--timeout", "300ms")
+	lines, err := runWatch(t, env, "--restart-min-down", "3ms", "--timeout", "300ms")
 	if exitCode(err) != 6 {
 		t.Fatalf("expected a timeout (exit 6), got %v\n%v", err, phasesOf(lines))
 	}
@@ -159,8 +168,8 @@ func TestWatchARecoveredLogViewerWithoutARestartDoesNotLand(t *testing.T) {
 // Baseline refused, a real cycle, then the log viewer reads again and shows
 // the new process: without a baseline process to compare, the cycle lands.
 func TestWatchARecoveredLogViewerAfterACycleLandsOnTheCycle(t *testing.T) {
-	env := &fakeDeployEnv{downTicks: map[int]bool{2: true, 3: true}, landTick: 4, refuseLogs: true, refuseLogsUntil: 4}
-	lines, err := runWatch(t, env, "--restart-min-down", "1ms")
+	env := &fakeDeployEnv{downTicks: fakeOutage(2, 6), landTick: 7, refuseLogs: true, refuseLogsUntil: 7}
+	lines, err := runWatch(t, env, "--restart-min-down", "3ms")
 	if err != nil {
 		t.Fatalf("watch failed: %v\n%v", err, phasesOf(lines))
 	}
@@ -198,9 +207,15 @@ func TestWatchRestartMinDownMustNotBeNegative(t *testing.T) {
 		t.Fatalf("no request may be sent on a usage error, got %s", req.URL)
 		return nil, nil
 	})
-	_, err := cmdtest.Execute(cmdtest.BuildRoot(t, deps, Register), "deploy", "watch", "--restart-min-down", "-1s")
-	if err == nil || exitCode(err) != 1 || !strings.Contains(err.Error(), "--restart-min-down cannot be negative") {
-		t.Fatalf("expected a usage error, got %v", err)
+	for args, want := range map[string]string{
+		"--restart-min-down -1s":                "--restart-min-down cannot be negative",
+		"--restart-min-down 5s":                 "--restart-min-down 5s must be longer than --interval 5s",
+		"--interval 30s --restart-min-down 20s": "--restart-min-down 20s must be longer than --interval 30s",
+	} {
+		_, err := cmdtest.Execute(cmdtest.BuildRoot(t, deps, Register), append([]string{"deploy", "watch"}, strings.Fields(args)...)...)
+		if err == nil || exitCode(err) != 1 || !strings.Contains(err.Error(), want) {
+			t.Fatalf("%s: expected a usage error containing %q, got %v", args, want, err)
+		}
 	}
 }
 
@@ -208,10 +223,12 @@ func TestWatchHeartbeatsSayTheLogStreamIsRefused(t *testing.T) {
 	env := &fakeDeployEnv{downTicks: map[int]bool{}, landTick: 1 << 30, refuseLogs: true}
 	deps := cmdtest.Deps(env.handler())
 	out, errOut, err := cmdtest.ExecuteWithErr(cmdtest.BuildRoot(t, deps, Register), "deploy", "watch", "--json", "--logs",
-		"--interval", "5ms", "--request-timeout", "4ms", "--heartbeat", "20ms", "--settle", "0", "--skip-index-verify", "--timeout", "300ms")
+		"--interval", "1s", "--request-timeout", "40ms", "--heartbeat", "50ms", "--settle", "0", "--skip-index-verify", "--timeout", "300ms")
 	if exitCode(err) != 6 {
 		t.Fatalf("expected a timeout, got %v", err)
 	}
+	// With a 1s interval the follower never reads within the run: only the
+	// feed's first read can tell the heartbeats about the refusal.
 	if strings.Contains(errOut, "logs: 0 read") || !strings.Contains(errOut, "logs: unavailable (size), 0 read, 0 emitted") {
 		t.Fatalf("every stderr heartbeat must show the refused log stream:\n%s", errOut)
 	}
@@ -288,16 +305,18 @@ func TestWatchMachineRestartCycleNeedsAnOutageOfRestartMinDown(t *testing.T) {
 	if got := strings.Join(phases(all), ","); got != "restarting,app-alive,serving" {
 		t.Fatalf("a 5s blip must not land, got %s", got)
 	}
-	// A 30s outage: lands once the paths serve.
-	feed(watchObservation{At: tick(20), MgmtAlive: false, MgmtStatus: 503})
+	// An outage with failed probes 25s apart: lands once the paths serve.
+	for s := 20; s <= 45; s += 5 {
+		feed(watchObservation{At: tick(s), MgmtAlive: false, MgmtStatus: 503})
+	}
 	feed(watchObservation{At: tick(50), MgmtAlive: true, MgmtStatus: 401, LogErr: sizeRefusal(), Health: map[string]bool{"/": false}})
 	feed(watchObservation{At: tick(55), MgmtAlive: true, MgmtStatus: 401, LogErr: sizeRefusal(), Health: healthy})
 	if got := strings.Join(phases(all), ","); got != "restarting,app-alive,serving,landed,verified" {
 		t.Fatalf("a 30s outage should land, got %s", got)
 	}
 	landed := all[3]
-	if landed.Detail["downFor"] != "30s" || landed.Detail["basis"] != "restart-cycle" {
-		t.Fatalf("landed must carry the qualifying outage: %v", landed.Detail)
+	if landed.Detail["downFor"] != "25s" || landed.Detail["failedProbes"] != 6 || landed.Detail["basis"] != "restart-cycle" {
+		t.Fatalf("landed must carry the proven outage: %v", landed.Detail)
 	}
 	if landed.Timestamp != tick(55).UTC().Format(time.RFC3339) {
 		t.Fatalf("landing waits for the paths to serve after the outage, landed at %s", landed.Timestamp)
@@ -352,7 +371,8 @@ func TestWatchMachineTheBaselineProcessDisprovesTheCycle(t *testing.T) {
 	var all []watchEvent
 	for _, obs := range []watchObservation{
 		{At: tick(1), MgmtAlive: false, MgmtStatus: 503},
-		{At: tick(40), MgmtAlive: true, MgmtStatus: 401, ProcessID: base.ProcessID, MachineName: base.MachineName, Health: healthy},
+		{At: tick(35), MgmtAlive: false, MgmtStatus: 503},
+		{At: tick(40), MgmtAlive: true, MgmtStatus: 401, ProcessID: base.ProcessID, MachineName: base.MachineName, NewestLogAt: tick(38), Health: healthy},
 		{At: tick(300), MgmtAlive: true, MgmtStatus: 401, LogErr: sizeRefusal(), Health: healthy},
 	} {
 		events, _ := m.observe(obs)
@@ -364,6 +384,7 @@ func TestWatchMachineTheBaselineProcessDisprovesTheCycle(t *testing.T) {
 	// A later qualifying outage arms a new cycle.
 	for _, obs := range []watchObservation{
 		{At: tick(310), MgmtAlive: false, MgmtStatus: 503},
+		{At: tick(345), MgmtAlive: false, MgmtStatus: 503},
 		{At: tick(350), MgmtAlive: true, MgmtStatus: 401, LogErr: sizeRefusal(), Health: healthy},
 	} {
 		events, _ := m.observe(obs)
@@ -440,13 +461,17 @@ func TestWatchSchemaPassDetectionIsOffWithoutABaselineProcess(t *testing.T) {
 	future := time.Now().UTC().Add(time.Hour).Format(time.RFC3339)
 	oldPassEnd := `{"timestamp":"` + future + `","level":"Information","renderedMessage":"Work Status \"Completed\".","properties":[` +
 		`{"name":"SourceContext","value":"Umbraco.Deploy.Infrastructure.Disk.DiskService"},{"name":"ProcessId","value":"111"},{"name":"MachineName","value":"m1"}]}`
+	var comparedAt []int
 	env := schemaScenario{
-		dataType: func(int) (int, string) { return http.StatusOK, driftedRemoteDataType },
-		logs:     []fakeLogEntry{{5, oldPassEnd}},
+		dataType: func(tick int) (int, string) {
+			comparedAt = append(comparedAt, tick)
+			return http.StatusOK, driftedRemoteDataType
+		},
+		logs: []fakeLogEntry{{5, oldPassEnd}},
 	}.env()
-	env.downTicks, env.landTick = map[int]bool{8: true, 9: true}, 1<<30
+	env.downTicks, env.landTick = fakeOutage(8, 12), 1<<30
 	env.refuseLogs, env.refuseLogsUntil = true, 5
-	lines, err := runWatch(t, env, "--uda-dir", schemaDir(t, false), "--restart-min-down", "1ms", "--timeout", "400ms")
+	lines, err := runWatch(t, env, "--uda-dir", schemaDir(t, false), "--restart-min-down", "3ms", "--timeout", "400ms")
 	if exitCode(err) != 6 {
 		t.Fatalf("expected a timeout (exit 6), got %v\n%v", err, phasesOf(lines))
 	}
@@ -467,5 +492,50 @@ func TestWatchSchemaPassDetectionIsOffWithoutABaselineProcess(t *testing.T) {
 	}
 	if env.firstTailOK == 0 {
 		t.Fatalf("the log viewer never recovered, so the old entry was never offered")
+	}
+	// The artifacts are re-checked only after landing: a process id read
+	// once the log viewer recovers (tick 5) is no landing without a baseline
+	// one to compare it with.
+	if phaseLine(lines, "landed") == nil {
+		t.Fatalf("the outage should land: %v", phasesOf(lines))
+	}
+	for _, tick := range comparedAt {
+		if tick > 0 && tick < 13 {
+			t.Fatalf("schema compared at tick %d, before the landing at 13 or later: %v", tick, comparedAt)
+		}
+	}
+}
+
+func TestWatchMachineRestartMinDownIsProvenBetweenFailedProbes(t *testing.T) {
+	base := watchBaseline()
+	base.ProcessID, base.MachineName, base.LogErr = "", "", sizeRefusal()
+	tick := func(s int) time.Time { return base.At.Add(time.Duration(s) * time.Second) }
+	healthy := map[string]bool{"/": true}
+	run := func(downAt []int, aliveAt int) []string {
+		m, _ := newWatchMachine(base, time.Hour, 0, true)
+		m.restartMinDown = 20 * time.Second
+		var all []watchEvent
+		for _, s := range downAt {
+			events, _ := m.observe(watchObservation{At: tick(s), MgmtAlive: false, MgmtStatus: 503})
+			all = append(all, events...)
+		}
+		for _, s := range []int{aliveAt, aliveAt + 5} {
+			events, _ := m.observe(watchObservation{At: tick(s), MgmtAlive: true, MgmtStatus: 401, LogErr: sizeRefusal(), Health: healthy})
+			all = append(all, events...)
+		}
+		return phases(all)
+	}
+	// --interval 30s: one failed probe, the next poll 30s later is alive.
+	if got := strings.Join(run([]int{30}, 60), ","); strings.Contains(got, "landed") {
+		t.Fatalf("one failed probe at a 30s interval must not land: %s", got)
+	}
+	// Two timed-out probes 10s apart at the defaults (2.5s token, 2.5s
+	// health, 5s sleep), alive 10s later: 10s proven, below 20s.
+	if got := strings.Join(run([]int{0, 10}, 20), ","); strings.Contains(got, "landed") {
+		t.Fatalf("two failed probes 10s apart must not land: %s", got)
+	}
+	// The 15-10 restart: down 47s, failed probes every 5s from 5s to 45s.
+	if got := strings.Join(run([]int{5, 10, 15, 20, 25, 30, 35, 40, 45}, 50), ","); !strings.Contains(got, "landed") {
+		t.Fatalf("a 47s outage at 5s polls should land: %s", got)
 	}
 }

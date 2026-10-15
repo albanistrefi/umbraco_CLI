@@ -48,8 +48,9 @@ type watchMachine struct {
 	escalation           time.Duration
 	settle               time.Duration
 	skipIndexVerify      bool
-	// restartMinDown is how long one outage must last to count as a
-	// restart on the restart-cycle basis; 0 counts any observed outage.
+	// restartMinDown is how long one outage must provably last to count as
+	// a restart on the restart-cycle basis: the span from its first to its
+	// last failed probe, at least two probes. 0 counts any observed outage.
 	restartMinDown time.Duration
 
 	phase          string
@@ -63,12 +64,16 @@ type watchMachine struct {
 	settleStart    time.Time
 	settleAttempt  int
 	failureReason  string
+	// lastDownAt and downPolls describe the current outage's failed probes.
+	lastDownAt time.Time
+	downPolls  int
 	// cycleArmed is set by an outage of at least restartMinDown and cleared
-	// when a later poll reads the baseline process again; cycleDownSince
-	// and cycleDownFor describe that outage.
+	// when a later poll reads the baseline process again; cycleDownSince,
+	// cycleDownFor and cycleDownPolls describe that outage.
 	cycleArmed     bool
 	cycleDownSince time.Time
 	cycleDownFor   time.Duration
+	cycleDownPolls int
 }
 
 func newWatchMachine(baseline watchObservation, escalation time.Duration, settle time.Duration, skipIndexVerify bool) (*watchMachine, error) {
@@ -122,7 +127,10 @@ func (m *watchMachine) observe(obs watchObservation) ([]watchEvent, watchOutcome
 	if !obs.MgmtAlive {
 		if m.downSince.IsZero() {
 			m.downSince = obs.At
+			m.downPolls = 0
 		}
+		m.lastDownAt = obs.At
+		m.downPolls++
 		if !m.sawRestarting {
 			m.sawRestarting = true
 			transition("restarting", map[string]any{"managementStatus": obs.MgmtStatus})
@@ -149,10 +157,17 @@ func (m *watchMachine) observe(obs watchObservation) ([]watchEvent, watchOutcome
 		downFor := obs.At.Sub(m.downSince).Round(time.Second)
 		transition("app-alive", map[string]any{"managementStatus": obs.MgmtStatus, "downFor": downFor.String()})
 	}
-	if !m.prevAlive && !m.downSince.IsZero() && obs.At.Sub(m.downSince) >= m.restartMinDown {
-		m.cycleArmed = true
-		m.cycleDownSince = m.downSince
-		m.cycleDownFor = obs.At.Sub(m.downSince)
+	if !m.prevAlive && !m.downSince.IsZero() {
+		// Measured between failed probes, so the span is a lower bound on the
+		// downtime however far apart the polls are; a positive minimum
+		// therefore needs at least two of them.
+		provenDown := m.lastDownAt.Sub(m.downSince)
+		if m.restartMinDown == 0 || provenDown >= m.restartMinDown {
+			m.cycleArmed = true
+			m.cycleDownSince = m.downSince
+			m.cycleDownFor = provenDown
+			m.cycleDownPolls = m.downPolls
+		}
 	}
 	m.downSince = time.Time{}
 	m.prevAlive = true
@@ -194,6 +209,7 @@ func (m *watchMachine) observe(obs watchObservation) ([]watchEvent, watchOutcome
 			"processIdReason": logSizeRefusalReason,
 			"downSince":       m.cycleDownSince.UTC().Format(time.RFC3339),
 			"downFor":         m.cycleDownFor.Round(time.Second).String(),
+			"failedProbes":    m.cycleDownPolls,
 		})
 	}
 
