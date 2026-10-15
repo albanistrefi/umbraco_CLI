@@ -68,12 +68,16 @@ type watchMachine struct {
 	lastDownAt time.Time
 	downPolls  int
 	// cycleArmed is set by an outage of at least restartMinDown and cleared
-	// when a later poll reads the baseline process again; cycleDownSince,
-	// cycleDownFor and cycleDownPolls describe that outage.
-	cycleArmed     bool
-	cycleDownSince time.Time
-	cycleDownFor   time.Duration
-	cycleDownPolls int
+	// when the baseline process is shown to have outlived it; cycleDownSince
+	// and cycleDownFor describe that outage, cycleLastDownAt is its last
+	// failed probe, and cycleBaselineReads counts consecutive baseline reads
+	// since.
+	cycleArmed         bool
+	cycleDownSince     time.Time
+	cycleDownFor       time.Duration
+	cycleLastDownAt    time.Time
+	cycleDownPolls     int
+	cycleBaselineReads int
 }
 
 func newWatchMachine(baseline watchObservation, escalation time.Duration, settle time.Duration, skipIndexVerify bool) (*watchMachine, error) {
@@ -166,15 +170,26 @@ func (m *watchMachine) observe(obs watchObservation) ([]watchEvent, watchOutcome
 			m.cycleArmed = true
 			m.cycleDownSince = m.downSince
 			m.cycleDownFor = provenDown
+			m.cycleLastDownAt = m.lastDownAt
 			m.cycleDownPolls = m.downPolls
+			m.cycleBaselineReads = 0
 		}
 	}
 	m.downSince = time.Time{}
 	m.prevAlive = true
-	// The baseline process still writing the newest entry disproves the
-	// outage as a restart.
-	if m.cycleArmed && m.baselineProcessID != "" && obs.ProcessID == m.baselineProcessID && obs.MachineName == m.baselineMachineName {
-		m.cycleArmed = false
+	// The baseline process writing an entry after the outage's last failed
+	// probe, or still being newest on two polls in a row, disproves the
+	// outage as a restart. One stale read (the old process's last lines)
+	// does not.
+	if m.cycleArmed && m.baselineProcessID != "" {
+		if obs.ProcessID == m.baselineProcessID && obs.MachineName == m.baselineMachineName {
+			m.cycleBaselineReads++
+			if obs.NewestLogAt.After(m.cycleLastDownAt) || m.cycleBaselineReads >= 2 {
+				m.cycleArmed = false
+			}
+		} else {
+			m.cycleBaselineReads = 0
+		}
 	}
 
 	processKnown := m.baselineProcessID != "" && obs.ProcessID != ""

@@ -539,3 +539,40 @@ func TestWatchMachineRestartMinDownIsProvenBetweenFailedProbes(t *testing.T) {
 		t.Fatalf("a 47s outage at 5s polls should land: %s", got)
 	}
 }
+
+func TestWatchMachineOneStaleBaselineReadDoesNotDisproveTheCycle(t *testing.T) {
+	base := watchBaseline()
+	tick := func(s int) time.Time { return base.At.Add(time.Duration(s) * time.Second) }
+	healthy := map[string]bool{"/": true}
+	outage := []watchObservation{}
+	for s := 5; s <= 45; s += 5 {
+		outage = append(outage, watchObservation{At: tick(s), MgmtAlive: false, MgmtStatus: 503})
+	}
+	stale := watchObservation{At: tick(50), MgmtAlive: true, MgmtStatus: 401, ProcessID: base.ProcessID, MachineName: base.MachineName, NewestLogAt: tick(2), Health: healthy}
+	refusedRead := watchObservation{At: tick(55), MgmtAlive: true, MgmtStatus: 401, LogErr: sizeRefusal(), Health: healthy}
+
+	m, _ := newWatchMachine(base, time.Hour, 0, true)
+	m.restartMinDown = 20 * time.Second
+	var all []watchEvent
+	for _, obs := range append(append(outage, stale), refusedRead) {
+		events, _ := m.observe(obs)
+		all = append(all, events...)
+	}
+	if !strings.Contains(strings.Join(phases(all), ","), "landed") {
+		t.Fatalf("the old process's last entry, written before the outage ended, must not disprove it: %v", phases(all))
+	}
+
+	// The same stale entry newest on two polls in a row does.
+	m, _ = newWatchMachine(base, time.Hour, 0, true)
+	m.restartMinDown = 20 * time.Second
+	all = nil
+	again := stale
+	again.At = tick(52)
+	for _, obs := range append(append(outage, stale, again), refusedRead) {
+		events, _ := m.observe(obs)
+		all = append(all, events...)
+	}
+	if strings.Contains(strings.Join(phases(all), ","), "landed") {
+		t.Fatalf("the baseline process newest on two polls in a row disproves the outage: %v", phases(all))
+	}
+}
