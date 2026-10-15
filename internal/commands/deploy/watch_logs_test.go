@@ -25,8 +25,12 @@ type fakeDeployEnv struct {
 	// tailBroken makes every tail read fail, as if the log viewer were
 	// unusable, while the single-entry landing probe keeps working.
 	tailBroken bool
-	entries    []fakeLogEntry
-	tailReads  int
+	// refuseLogs makes every log-viewer read from refuseLogsFrom on answer
+	// the size refusal live gave on 15-10, the landing probe included.
+	refuseLogs     bool
+	refuseLogsFrom int
+	entries        []fakeLogEntry
+	tailReads      int
 	// routes answers any other request for the current tick (nil = 404).
 	routes func(tick int, req *http.Request) *http.Response
 }
@@ -37,6 +41,9 @@ type fakeLogEntry struct {
 }
 
 const fakeBaselineAt = "2026-10-01T10:00:00Z"
+
+// logSizeRefusalBody is the body live's log viewer answered on 15-10.
+const logSizeRefusalBody = `{"detail":"The log file size for the requested date range prevented the operation.","operationStatus":"CancelledByLogsSizeValidation","status":400,"title":"Cancelled due to log file size","type":"Error"}`
 
 func logJSON(second int, level string, source string, message string, extra string) string {
 	body := fmt.Sprintf(`"timestamp":"2026-10-01T10:00:%02dZ","level":%q,"renderedMessage":%q,"properties":[{"name":"SourceContext","value":%q},{"name":"ProcessId","value":"222"},{"name":"MachineName","value":"m1"}]`, second, level, message, source)
@@ -80,6 +87,12 @@ func (e *fakeDeployEnv) handler() cmdtest.RoundTripper {
 		case "/":
 			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("home"))}, nil
 		case "/umbraco/management/api/v1/log-viewer/log":
+			if e.refuseLogs && tick >= e.refuseLogsFrom {
+				if req.URL.Query().Get("take") != "1" {
+					e.tailReads++
+				}
+				return cmdtest.JSONResponse(http.StatusBadRequest, logSizeRefusalBody), nil
+			}
 			if req.URL.Query().Get("take") == "1" {
 				return cmdtest.JSONResponse(http.StatusOK, `{"total":1,"items":[`+e.newest(tick)+`]}`), nil
 			}

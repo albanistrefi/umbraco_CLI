@@ -50,7 +50,9 @@ func deployWatch(deps cmdkit.Dependencies) *cobra.Command {
 		Short: "Watch an environment for the effects of a deployment and report phase transitions",
 		Long: `Observes the target environment for state deltas only a deployment can cause — no pipeline or portal API involved, so it works identically on Umbraco Cloud and on-prem, and it is strictly read-only.
 
-Signals: the newest log entry's ProcessId/MachineName (an app recycle means the deploy landed), the management token endpoint probed unauthenticated (503/unreachable = down; 401 = app alive and rejecting the probe — the earliest all-clear, typically ~15s before public pages return), configured health paths on the public host, and Examine index health (deploys can trigger full index rebuilds, during which search is empty — "deploy succeeded" and "the site works" are different questions).
+Signals: the newest log entry's ProcessId/MachineName (an app recycle means the deploy landed; the "landed" line says "basis": "process-id"), the management token endpoint probed unauthenticated (503/unreachable = down; 401 = app alive and rejecting the probe — the earliest all-clear, typically ~15s before public pages return), configured health paths on the public host, and Examine index health (deploys can trigger full index rebuilds, during which search is empty — "deploy succeeded" and "the site works" are different questions).
+
+Umbraco 18.2's log viewer refuses every read (HTTP 400, CancelledByLogsSizeValidation) once the log files of the days a read covers exceed 100 MB, which a busy site can reach during the day. Without a process id the watch infers landing from a restart cycle instead: the management endpoint went down, came back, and the health paths serve again. The "landed" line then says "basis": "restart-cycle" with "processId": "unavailable" and the reason; a watch that never saw the endpoint go down does not land. If the log viewer already refuses at baseline, the watch arms with "landingBasis": "restart-cycle"; any other failure to read the newest log entry at baseline still refuses to arm.
 
 Phases: baseline → restarting → app-alive → serving → landed → settling → verified | failed | timeout. Everything is baselined before arming — a signal already true on the target is not a signal. Verified requires the environment to stay healthy for a full --settle window after everything first looks good: deployment pipelines can disturb the environment AFTER the app is already serving (observed in production: Umbraco Deploy wiped every Examine index 27 seconds after a single-sample check had passed, leaving search empty for 17 minutes), so a single passing sample is not verification. An interrupted settle (index rebuild, health flap) is emitted as settle-interrupted and the window restarts once the environment recovers. Transitions are emitted with timestamps as they are observed (fast recycles may skip phases); silence between transitions means "still in the current phase", and --heartbeat writes a periodic still-alive line so silence is never ambiguous: text on stderr, and with --json also a "heartbeat" line on stdout ({timestamp, type, currentPhase, elapsed, lastPoll, logs: {read, emitted}} with --logs; lastPoll is when the latest completed poll started). Heartbeats run on their own clock and the log monitor reads beside the probes, so neither waits on a slow request; each poll probes the management endpoint, then the health paths, the newest log entry and the indexes side by side, and every request gives up after --request-timeout (a health path that does not answer in time counts as failing for that poll). Success is never inferred from silence: reaching --timeout without verification exits 6 (status unknown), and sustained downtime or post-landing health failure beyond --escalation exits 5.
 
@@ -122,9 +124,16 @@ Every --json line has a "type": "phase" for the transitions above. --logs adds t
 			baselineDetail := map[string]any{
 				"processId":      baseline.ProcessID,
 				"machineName":    baseline.MachineName,
+				"landingBasis":   "process-id",
 				"healthyPaths":   machine.baselineHealthy,
 				"unhealthyPaths": unhealthyPathNames(baseline.Health),
 				"ignoredIndexes": cmdkit.SortedKeys(machine.baselineBadIndexes),
+			}
+			if machine.processIDUnavailable != "" {
+				baselineDetail["processId"] = "unavailable"
+				baselineDetail["machineName"] = "unavailable"
+				baselineDetail["landingBasis"] = "restart-cycle"
+				baselineDetail["processIdReason"] = machine.processIDUnavailable
 			}
 			var schema *schemaTracker
 			if udaDir != "" {

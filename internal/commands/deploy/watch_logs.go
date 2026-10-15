@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"sort"
 	"strings"
 	"time"
@@ -221,6 +222,23 @@ type watchLogMonitorEvent struct {
 	Type      string         `json:"type"`
 	Status    string         `json:"status"`
 	Detail    map[string]any `json:"detail,omitempty"`
+}
+
+// Umbraco 18.2's log viewer refuses every read (HTTP 400, operationStatus
+// CancelledByLogsSizeValidation) when the log files of the calendar days the
+// read covers add up to more than 100 MB: LogViewerService sums every
+// *yyyyMMdd*.json file for each day from the start date (default: a day ago)
+// to now. take, levels and filters apply only after that check, so no
+// narrower read of today's entries gets past it.
+const logSizeRefusalReason = "the log viewer refuses reads while the log files of the days requested exceed 100 MB (CancelledByLogsSizeValidation)"
+
+func isLogSizeRefusal(err error) bool {
+	var apiErr *api.APIError
+	if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusBadRequest {
+		return false
+	}
+	problem, ok := apiErr.Payload.(map[string]any)
+	return ok && problem["operationStatus"] == "CancelledByLogsSizeValidation"
 }
 
 // watchLogFeed reads the log viewer once per tick for every consumer (the

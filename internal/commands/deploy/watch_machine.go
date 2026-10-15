@@ -39,11 +39,15 @@ const (
 type watchMachine struct {
 	baselineProcessID   string
 	baselineMachineName string
-	baselineHealthy     []string
-	baselineBadIndexes  map[string]struct{}
-	escalation          time.Duration
-	settle              time.Duration
-	skipIndexVerify     bool
+	// processIDUnavailable is why the baseline has no process id: the log
+	// viewer refused to read the newest entry. Landing is then inferred
+	// from an observed restart cycle.
+	processIDUnavailable string
+	baselineHealthy      []string
+	baselineBadIndexes   map[string]struct{}
+	escalation           time.Duration
+	settle               time.Duration
+	skipIndexVerify      bool
 
 	phase          string
 	prevAlive      bool
@@ -62,7 +66,10 @@ func newWatchMachine(baseline watchObservation, escalation time.Duration, settle
 	if !baseline.MgmtAlive {
 		return nil, fmt.Errorf("cannot baseline the target: the management endpoint is not answering (status %d) — refusing to arm, a watch started mid-outage cannot tell a deploy from the outage", baseline.MgmtStatus)
 	}
-	if baseline.ProcessID == "" {
+	unavailable := ""
+	if baseline.ProcessID == "" && isLogSizeRefusal(baseline.LogErr) {
+		unavailable = logSizeRefusalReason
+	} else if baseline.ProcessID == "" {
 		// Surface the real probe error (wrapped, so auth failures keep exit
 		// code 3 and API errors keep 4) instead of a generic local failure.
 		if baseline.LogErr != nil {
@@ -82,15 +89,16 @@ func newWatchMachine(baseline watchObservation, escalation time.Duration, settle
 		bad[name] = struct{}{}
 	}
 	return &watchMachine{
-		baselineProcessID:   baseline.ProcessID,
-		baselineMachineName: baseline.MachineName,
-		baselineHealthy:     healthy,
-		baselineBadIndexes:  bad,
-		escalation:          escalation,
-		settle:              settle,
-		skipIndexVerify:     skipIndexVerify,
-		phase:               "baseline",
-		prevAlive:           true,
+		baselineProcessID:    baseline.ProcessID,
+		baselineMachineName:  baseline.MachineName,
+		processIDUnavailable: unavailable,
+		baselineHealthy:      healthy,
+		baselineBadIndexes:   bad,
+		escalation:           escalation,
+		settle:               settle,
+		skipIndexVerify:      skipIndexVerify,
+		phase:                "baseline",
+		prevAlive:            true,
 	}, nil
 }
 
@@ -135,10 +143,12 @@ func (m *watchMachine) observe(obs watchObservation) ([]watchEvent, watchOutcome
 	m.downSince = time.Time{}
 	m.prevAlive = true
 
-	if !m.sawLanded && obs.ProcessID != "" &&
+	processKnown := m.baselineProcessID != "" && obs.ProcessID != ""
+	if !m.sawLanded && processKnown &&
 		(obs.ProcessID != m.baselineProcessID || obs.MachineName != m.baselineMachineName) {
 		m.sawLanded = true
 		transition("landed", map[string]any{
+			"basis":       "process-id",
 			"processId":   fmt.Sprintf("%s → %s", m.baselineProcessID, obs.ProcessID),
 			"machineName": fmt.Sprintf("%s → %s", m.baselineMachineName, obs.MachineName),
 		})
@@ -149,6 +159,23 @@ func (m *watchMachine) observe(obs watchObservation) ([]watchEvent, watchOutcome
 	if (m.sawRestarting || m.sawLanded) && !m.sawServing && healthOK {
 		m.sawServing = true
 		transition("serving", map[string]any{"paths": m.baselineHealthy})
+	}
+
+	// Without a process id on both sides (the log viewer refused to read
+	// it), the only landing evidence is a full restart cycle: the management
+	// endpoint went down, came back, and the health paths serve again. A
+	// watch that never saw the endpoint go down does not land.
+	if !m.sawLanded && !processKnown && m.sawRestarting && m.sawAppAlive && m.sawServing {
+		m.sawLanded = true
+		detail := map[string]any{
+			"basis":       "restart-cycle",
+			"processId":   "unavailable",
+			"machineName": "unavailable",
+		}
+		if reason := m.processIDReason(obs); reason != "" {
+			detail["processIdReason"] = reason
+		}
+		transition("landed", detail)
 	}
 
 	// Post-landing health escalation: the deploy landed but the site never
@@ -208,6 +235,20 @@ func (m *watchMachine) observe(obs watchObservation) ([]watchEvent, watchOutcome
 	}
 
 	return events, watchOutcomeNone
+}
+
+// processIDReason says why the process id is missing for a restart-cycle
+// landing.
+func (m *watchMachine) processIDReason(obs watchObservation) string {
+	switch {
+	case m.processIDUnavailable != "":
+		return m.processIDUnavailable
+	case isLogSizeRefusal(obs.LogErr):
+		return logSizeRefusalReason
+	case obs.LogErr != nil:
+		return "the newest log entry could not be read"
+	}
+	return "the newest log entry carries no ProcessId"
 }
 
 // baselineHealthyOK reports whether every path that was healthy at baseline
