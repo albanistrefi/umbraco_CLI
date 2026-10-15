@@ -178,16 +178,20 @@ func (m *watchMachine) observe(obs watchObservation) ([]watchEvent, watchOutcome
 	m.downSince = time.Time{}
 	m.prevAlive = true
 	// The baseline process writing an entry after the outage's last failed
-	// probe, or still being newest on two polls in a row, disproves the
-	// outage as a restart. One stale read (the old process's last lines)
-	// does not.
+	// probe, or being newest on two reads in a row, disproves the outage as
+	// a restart. One stale read (the old process's last lines) does not:
+	// that tolerance keeps a real restart whose old process stays newest for
+	// a poll, at the cost of landing an outage the process survived if it is
+	// read once before the log viewer refuses. Only a different process
+	// breaks the run of reads; an unreadable one (a 500, a refusal) does not.
 	if m.cycleArmed && m.baselineProcessID != "" {
-		if obs.ProcessID == m.baselineProcessID && obs.MachineName == m.baselineMachineName {
+		switch {
+		case obs.ProcessID == m.baselineProcessID && obs.MachineName == m.baselineMachineName:
 			m.cycleBaselineReads++
 			if obs.NewestLogAt.After(m.cycleLastDownAt) || m.cycleBaselineReads >= 2 {
 				m.cycleArmed = false
 			}
-		} else {
+		case obs.ProcessID != "":
 			m.cycleBaselineReads = 0
 		}
 	}

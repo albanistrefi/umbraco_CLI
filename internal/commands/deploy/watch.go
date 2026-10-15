@@ -53,7 +53,7 @@ func deployWatch(deps cmdkit.Dependencies) *cobra.Command {
 
 Signals: the newest log entry's ProcessId/MachineName (an app recycle means the deploy landed; the "landed" line says "basis": "process-id"), the management token endpoint probed unauthenticated (503/unreachable = down; 401 = app alive and rejecting the probe — the earliest all-clear, typically ~15s before public pages return), configured health paths on the public host, and Examine index health (deploys can trigger full index rebuilds, during which search is empty — "deploy succeeded" and "the site works" are different questions).
 
-Umbraco 18.2's log viewer refuses every read (HTTP 400, CancelledByLogsSizeValidation) once the log files of the days a read covers exceed 100 MB, which a busy site can reach during the day. When that refusal is why the process id is missing (at baseline, or on the poll in question), the watch infers landing from a restart cycle instead: one outage of the management endpoint lasting at least --restart-min-down, then the health paths serving again. The outage is measured from its first to its last failed probe, at least two, so it is a lower bound on the downtime whatever the poll spacing (the 15-10 live restart was down 47s, about 40s of it between failed probes at the 5s interval); the default is 20s, or twice --interval when that is longer. The "landed" line then says "basis": "restart-cycle" with "processId": "unavailable", the reason and the outage (downSince, downFor, failedProbes). Shorter outages count as blips. The baseline process writing the newest entry after the outage's last failed probe, or being newest on two polls in a row, means it was no restart; a single older entry from it (its last lines before the restart) does not. Any other failure to read the process id, or an entry without one, waits for a readable process id as before. Residual risk on this basis: a restart that is not a deploy (a platform recycle) and lasts long enough also lands it, and a deploy whose restart is shorter than --restart-min-down never lands (timeout, exit 6). If the log viewer already refuses at baseline, the watch arms with "landingBasis": "restart-cycle"; any other failure to read the newest log entry at baseline still refuses to arm. With --uda-dir and no baseline process id, schema pass detection is off (log entries from before the deploy cannot be told apart): verified then waits for every tracked artifact to be in sync, so a deploy that leaves one drifted times out (exit 6) instead of exiting 7.
+Umbraco 18.2's log viewer refuses every read (HTTP 400, CancelledByLogsSizeValidation) once the log files of the days a read covers exceed 100 MB, which a busy site can reach during the day. When that refusal is why the process id is missing (at baseline, or on the poll in question), the watch infers landing from a restart cycle instead: one outage of the management endpoint lasting at least --restart-min-down, then the health paths serving again. The outage is measured from its first to its last failed probe, at least two, so it is a lower bound on the downtime whatever the poll spacing (the 15-10 live restart was down 47s, about 40s of it between failed probes at the 5s interval); the default is 20s, or twice --interval when that is longer, and it must be shorter than --escalation. Since the first and last failed probes can each fall up to one --interval inside the outage, a restart must last --restart-min-down plus up to two poll gaps to be measured: with the default, intervals above about 11s may miss a 47s restart. The "landed" line then says "basis": "restart-cycle" with "processId": "unavailable", the reason and the outage (downSince, downFor, failedProbes). Shorter outages count as blips. The baseline process writing the newest entry after the outage's last failed probe, or being newest on two polls in a row, means it was no restart; a single older entry from it (its last lines before the restart) does not. Any other failure to read the process id, or an entry without one, waits for a readable process id as before. Residual risk on this basis: a restart that is not a deploy (a platform recycle) and lasts long enough also lands it; a deploy whose restart is too short to measure never lands (timeout, exit 6); and because one older entry from the baseline process is tolerated, an outage of --restart-min-down or more that the process survived, followed by one read of its pre-outage entry and then refusals, lands it too. If the log viewer already refuses at baseline, the watch arms with "landingBasis": "restart-cycle"; any other failure to read the newest log entry at baseline still refuses to arm. With --uda-dir and no baseline process id, schema pass detection is off (log entries from before the deploy cannot be told apart): verified then waits for every tracked artifact to be in sync, so a deploy that leaves one drifted times out (exit 6) instead of exiting 7.
 
 Phases: baseline → restarting → app-alive → serving → landed → settling → verified | failed | timeout. Everything is baselined before arming — a signal already true on the target is not a signal. Verified requires the environment to stay healthy for a full --settle window after everything first looks good: deployment pipelines can disturb the environment AFTER the app is already serving (observed in production: Umbraco Deploy wiped every Examine index 27 seconds after a single-sample check had passed, leaving search empty for 17 minutes), so a single passing sample is not verification. An interrupted settle (index rebuild, health flap) is emitted as settle-interrupted and the window restarts once the environment recovers. Transitions are emitted with timestamps as they are observed (fast recycles may skip phases); silence between transitions means "still in the current phase", and --heartbeat writes a periodic still-alive line so silence is never ambiguous: text on stderr, and with --json also a "heartbeat" line on stdout ({timestamp, type, currentPhase, elapsed, lastPoll, logs: {read, emitted, status} with --logs, status being reading, unavailable or refused}; lastPoll is when the latest completed poll started). Heartbeats run on their own clock and the log monitor reads beside the probes, so neither waits on a slow request; each poll probes the management endpoint, then the health paths, the newest log entry and the indexes side by side, and every request gives up after --request-timeout (a health path that does not answer in time counts as failing for that poll). Success is never inferred from silence: reaching --timeout without verification exits 6 (status unknown), and sustained downtime or post-landing health failure beyond --escalation exits 5.
 
@@ -91,14 +91,11 @@ Every --json line has a "type": "phase" for the transitions above. --logs adds t
 			if settle < 0 {
 				return fmt.Errorf("--settle cannot be negative")
 			}
-			if restartMinDown < 0 {
-				return fmt.Errorf("--restart-min-down cannot be negative")
+			resolvedMinDown, err := watchRestartMinDownFor(restartMinDown, cmd.Flags().Changed("restart-min-down"), interval, escalation)
+			if err != nil {
+				return err
 			}
-			if !cmd.Flags().Changed("restart-min-down") {
-				restartMinDown = max(watchRestartMinDown, 2*interval)
-			} else if restartMinDown != 0 && restartMinDown <= interval {
-				return fmt.Errorf("--restart-min-down %s must be longer than --interval %s: it is measured between failed probes, so one failed probe can never prove it (or pass 0 to count any outage)", restartMinDown, interval)
-			}
+			restartMinDown = resolvedMinDown
 			requestTimeout, err := watchRequestTimeout(requestTimeoutFlag, interval, heartbeat)
 			if err != nil {
 				return err
@@ -281,12 +278,40 @@ Every --json line has a "type": "phase" for the transitions above. --logs adds t
 	cmd.Flags().DurationVar(&settle, "settle", 90*time.Second, "How long the environment must stay healthy after everything first looks good before verified is emitted; 0 disables (single-sample verification)")
 	cmd.Flags().DurationVar(&heartbeat, "heartbeat", time.Minute, "Interval for still-alive lines: text on stderr, and with --json also a \"heartbeat\" NDJSON line on stdout; on their own clock, so they keep coming while a request is slow; 0 disables")
 	cmd.Flags().DurationVar(&requestTimeoutFlag, "request-timeout", 0, "Give up on any one request after this long; that signal counts as unknown (a health path as failing) for the poll. Must be shorter than --interval and --heartbeat; default half of the shorter of the two, between 250ms and 15s (2.5s with the defaults)")
-	cmd.Flags().DurationVar(&restartMinDown, "restart-min-down", watchRestartMinDown, "When the log viewer refuses to read the process id, one outage of the management endpoint must last at least this long to count as the restart that lands the deploy, measured from its first to its last failed probe (at least two), so it is a lower bound on the downtime; shorter outages are blips. Default 20s, or twice --interval when that is longer; an explicit value must be longer than --interval, or 0 to count any outage")
+	cmd.Flags().DurationVar(&restartMinDown, "restart-min-down", watchRestartMinDown, "When the log viewer refuses to read the process id, one outage of the management endpoint must last at least this long to count as the restart that lands the deploy, measured from its first to its last failed probe (at least two), so it is a lower bound on the downtime: a restart must last this plus up to two --interval gaps to be measured. Shorter outages are blips. Default 20s, or twice --interval when that is longer; a value must be longer than --interval (or 0 to count any outage) and shorter than --escalation")
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "Emit phase transitions, heartbeats and the other lines as NDJSON")
 	cmd.Flags().BoolVar(&skipIndexVerify, "skip-index-verify", false, "Do not require Examine indexes to be healthy for the verified phase")
 	addWatchLogFlags(cmd, &logFlags)
 	cmd.Flags().StringVar(&udaDir, "uda-dir", "", "Check schema tripwires: the .uda artifacts here (the site repo's umbraco/Deploy/Revision) that are drifted or missing on the target at baseline are re-checked after landing; verified waits until they are in sync or Umbraco Deploy's schema pass has ended, and exits 7 if any is still drifted or missing then")
 	return cmd
+}
+
+// watchRestartMinDownFor resolves --restart-min-down: unset, it is
+// watchRestartMinDown or twice the interval when that is longer. A positive
+// value must be longer than the interval, since one failed probe proves no
+// downtime, and shorter than the escalation, since an outage that long has
+// already failed the watch.
+func watchRestartMinDownFor(value time.Duration, explicit bool, interval time.Duration, escalation time.Duration) (time.Duration, error) {
+	if value < 0 {
+		return 0, fmt.Errorf("--restart-min-down cannot be negative")
+	}
+	if !explicit {
+		value = max(watchRestartMinDown, 2*interval)
+	} else if value != 0 && value <= interval {
+		return 0, fmt.Errorf("--restart-min-down %s must be longer than --interval %s: it is measured between failed probes, so one failed probe can never prove it (or pass 0 to count any outage)", value, interval)
+	}
+	if value != 0 && value >= escalation {
+		source := "--restart-min-down " + value.String()
+		if !explicit {
+			basis := "its 20s floor"
+			if value > watchRestartMinDown {
+				basis = "twice --interval"
+			}
+			source = "the default --restart-min-down " + value.String() + " (" + basis + ")"
+		}
+		return 0, fmt.Errorf("%s must be shorter than --escalation %s: an outage that long fails the watch (exit 5) before it can count as a restart; set a shorter --restart-min-down or a longer --escalation", source, escalation)
+	}
+	return value, nil
 }
 
 // watchRestartMinDown is the default minimum provable outage for a

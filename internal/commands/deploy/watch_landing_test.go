@@ -208,9 +208,11 @@ func TestWatchRestartMinDownMustNotBeNegative(t *testing.T) {
 		return nil, nil
 	})
 	for args, want := range map[string]string{
-		"--restart-min-down -1s":                "--restart-min-down cannot be negative",
-		"--restart-min-down 5s":                 "--restart-min-down 5s must be longer than --interval 5s",
-		"--interval 30s --restart-min-down 20s": "--restart-min-down 20s must be longer than --interval 30s",
+		"--restart-min-down -1s":                  "--restart-min-down cannot be negative",
+		"--restart-min-down 5s":                   "--restart-min-down 5s must be longer than --interval 5s",
+		"--interval 30s --restart-min-down 20s":   "--restart-min-down 20s must be longer than --interval 30s",
+		"--escalation 15s":                        "the default --restart-min-down 20s (its 20s floor) must be shorter than --escalation 15s",
+		"--restart-min-down 30s --escalation 30s": "--restart-min-down 30s must be shorter than --escalation 30s",
 	} {
 		_, err := cmdtest.Execute(cmdtest.BuildRoot(t, deps, Register), append([]string{"deploy", "watch"}, strings.Fields(args)...)...)
 		if err == nil || exitCode(err) != 1 || !strings.Contains(err.Error(), want) {
@@ -574,5 +576,117 @@ func TestWatchMachineOneStaleBaselineReadDoesNotDisproveTheCycle(t *testing.T) {
 	}
 	if strings.Contains(strings.Join(phases(all), ","), "landed") {
 		t.Fatalf("the baseline process newest on two polls in a row disproves the outage: %v", phases(all))
+	}
+}
+
+func TestWatchRestartMinDownDefaultsAndLimits(t *testing.T) {
+	for _, tc := range []struct {
+		value      time.Duration
+		explicit   bool
+		interval   time.Duration
+		escalation time.Duration
+		want       time.Duration
+		err        string
+	}{
+		{0, false, 5 * time.Second, 10 * time.Minute, 20 * time.Second, ""},
+		{0, false, 15 * time.Second, 10 * time.Minute, 30 * time.Second, ""},
+		{0, true, 5 * time.Second, 10 * time.Minute, 0, ""},
+		{45 * time.Second, true, 30 * time.Second, 10 * time.Minute, 45 * time.Second, ""},
+		{5 * time.Second, true, 5 * time.Second, 10 * time.Minute, 0, "must be longer than --interval 5s"},
+		{0, false, 10 * time.Minute, 10 * time.Minute, 0, "the default --restart-min-down 20m0s (twice --interval) must be shorter than --escalation 10m0s"},
+		{10 * time.Minute, true, 5 * time.Second, 10 * time.Minute, 0, "--restart-min-down 10m0s must be shorter than --escalation 10m0s"},
+	} {
+		got, err := watchRestartMinDownFor(tc.value, tc.explicit, tc.interval, tc.escalation)
+		if tc.err != "" {
+			if err == nil || !strings.Contains(err.Error(), tc.err) {
+				t.Fatalf("%+v: expected an error containing %q, got %v (%s)", tc, tc.err, err, got)
+			}
+			continue
+		}
+		if err != nil || got != tc.want {
+			t.Fatalf("%+v: got %s (%v), want %s", tc, got, err, tc.want)
+		}
+	}
+}
+
+func TestWatchMachineRestartMinDownZeroCountsOneFailedProbe(t *testing.T) {
+	base := watchBaseline()
+	base.ProcessID, base.MachineName, base.LogErr = "", "", sizeRefusal()
+	tick := func(s int) time.Time { return base.At.Add(time.Duration(s) * time.Second) }
+	m, _ := newWatchMachine(base, time.Hour, 0, true)
+	var all []watchEvent
+	for _, obs := range []watchObservation{
+		{At: tick(5), MgmtAlive: false, MgmtStatus: 503},
+		{At: tick(10), MgmtAlive: true, MgmtStatus: 401, LogErr: sizeRefusal(), Health: map[string]bool{"/": true}},
+	} {
+		events, _ := m.observe(obs)
+		all = append(all, events...)
+	}
+	if !strings.Contains(strings.Join(phases(all), ","), "landed") {
+		t.Fatalf("--restart-min-down 0 counts any outage: %v", phases(all))
+	}
+}
+
+// After an outage the baseline process stays newest: a stale read, an
+// unreadable read (500), the same stale read again. Two baseline reads are
+// a survivor; the 500 in between must not reset the count.
+func TestWatchMachineAnUnreadablePollDoesNotResetTheBaselineReads(t *testing.T) {
+	base := watchBaseline()
+	tick := func(s int) time.Time { return base.At.Add(time.Duration(s) * time.Second) }
+	healthy := map[string]bool{"/": true}
+	m, _ := newWatchMachine(base, time.Hour, 0, true)
+	m.restartMinDown = 20 * time.Second
+	var all []watchEvent
+	observations := []watchObservation{}
+	for s := 5; s <= 45; s += 5 {
+		observations = append(observations, watchObservation{At: tick(s), MgmtAlive: false, MgmtStatus: 503})
+	}
+	survivor := watchObservation{MgmtAlive: true, MgmtStatus: 401, ProcessID: base.ProcessID, MachineName: base.MachineName, NewestLogAt: tick(2), Health: healthy}
+	first, second := survivor, survivor
+	first.At, second.At = tick(50), tick(60)
+	observations = append(observations,
+		first,
+		watchObservation{At: tick(55), MgmtAlive: true, MgmtStatus: 401, LogErr: &api.APIError{StatusCode: http.StatusInternalServerError}, Health: healthy},
+		second,
+		watchObservation{At: tick(65), MgmtAlive: true, MgmtStatus: 401, LogErr: sizeRefusal(), Health: healthy},
+	)
+	for _, obs := range observations {
+		events, _ := m.observe(obs)
+		all = append(all, events...)
+	}
+	if strings.Contains(strings.Join(phases(all), ","), "landed") {
+		t.Fatalf("the baseline process read twice around a 500 must disprove the outage: %v", phases(all))
+	}
+}
+
+// A disproved cycle's baseline reads must not count against the next one:
+// one stale read after the first outage, then a second real outage with one
+// stale read of its own, then refusals, lands.
+func TestWatchMachineANewCycleStartsItsOwnBaselineReadCount(t *testing.T) {
+	base := watchBaseline()
+	tick := func(s int) time.Time { return base.At.Add(time.Duration(s) * time.Second) }
+	healthy := map[string]bool{"/": true}
+	m, _ := newWatchMachine(base, time.Hour, 0, true)
+	m.restartMinDown = 20 * time.Second
+	stale := func(at int) watchObservation {
+		return watchObservation{At: tick(at), MgmtAlive: true, MgmtStatus: 401, ProcessID: base.ProcessID, MachineName: base.MachineName, NewestLogAt: tick(1), Health: healthy}
+	}
+	observations := []watchObservation{}
+	for s := 5; s <= 45; s += 5 {
+		observations = append(observations, watchObservation{At: tick(s), MgmtAlive: false, MgmtStatus: 503})
+	}
+	observations = append(observations, stale(50))
+	for s := 100; s <= 140; s += 5 {
+		observations = append(observations, watchObservation{At: tick(s), MgmtAlive: false, MgmtStatus: 503})
+	}
+	observations = append(observations, stale(145),
+		watchObservation{At: tick(150), MgmtAlive: true, MgmtStatus: 401, LogErr: sizeRefusal(), Health: healthy})
+	var all []watchEvent
+	for _, obs := range observations {
+		events, _ := m.observe(obs)
+		all = append(all, events...)
+	}
+	if !strings.Contains(strings.Join(phases(all), ","), "landed") {
+		t.Fatalf("the second outage's single stale read must not add to the first one's: %v", phases(all))
 	}
 }

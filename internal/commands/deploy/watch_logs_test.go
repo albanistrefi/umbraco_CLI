@@ -295,7 +295,7 @@ func TestWatchLogsNeverChangePhasesOrExitCode(t *testing.T) {
 				down[i] = true
 			}
 			return &fakeDeployEnv{downTicks: down, landTick: 1 << 30, entries: deployLogs(1)}
-		}, args: []string{"--escalation", "1ms"}, exit: 5},
+		}, args: []string{"--escalation", "1ms", "--restart-min-down", "0"}, exit: 5},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			without, errWithout := runWatch(t, tc.env(), tc.args...)
