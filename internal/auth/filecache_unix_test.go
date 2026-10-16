@@ -21,3 +21,20 @@ func withOwner(info os.FileInfo, uid int) os.FileInfo {
 	stat.Uid = uint32(uid)
 	return ownedInfo{FileInfo: info, stat: &stat}
 }
+
+// fifoFeedingAToken opens a FIFO at path for writing and queues a valid
+// token file's bytes, returning a func that closes the writer.
+func fifoFeedingAToken(path string, payload []byte) (func(), error) {
+	if err := syscall.Mkfifo(path, 0o600); err != nil {
+		return nil, err
+	}
+	writer, err := os.OpenFile(path, os.O_RDWR, 0)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := writer.Write(payload); err != nil {
+		_ = writer.Close()
+		return nil, err
+	}
+	return func() { _ = writer.Close() }, nil
+}

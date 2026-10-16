@@ -376,3 +376,28 @@ func TestInvalidateDeletesTheCachedFile(t *testing.T) {
 		t.Fatalf("Invalidate must delete the file: %v", err)
 	}
 }
+
+// A FIFO that feeds valid token bytes is still not a token file: only a
+// regular file is trusted.
+func TestAFIFOFeedingAForgedTokenIsAMiss(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("no FIFOs on Windows")
+	}
+	cache, path := fileCacheAt(t)
+	key := CacheKey("profile:live", testConfig)
+	other := filepath.Join(t.TempDir(), "real.token.json")
+	FileTokenCache(other, testConfig.BaseURL, testConfig.ClientID, "profile:live").Store(key, "forged", time.Now().Add(time.Hour))
+	payload, _ := os.ReadFile(other)
+	_ = os.MkdirAll(filepath.Dir(path), 0o700)
+	closeWriter, err := fifoFeedingAToken(path, payload)
+	if err != nil {
+		t.Skipf("fifo: %v", err)
+	}
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		closeWriter()
+	}()
+	if token, _, ok := cache.Load(key); ok {
+		t.Fatalf("a FIFO must not be trusted, got %q", token)
+	}
+}

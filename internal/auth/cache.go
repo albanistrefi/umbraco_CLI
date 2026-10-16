@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -196,12 +195,9 @@ func (c fileCache) Store(key string, token string, expiresAt time.Time) {
 	if err != nil {
 		return
 	}
+	// os.CreateTemp creates the file 0600.
 	tmpName := tmp.Name()
 	defer func() { _ = os.Remove(tmpName) }()
-	if err := tmp.Chmod(0o600); err != nil && runtime.GOOS != "windows" {
-		_ = tmp.Close()
-		return
-	}
 	if _, err := tmp.Write(payload); err != nil {
 		_ = tmp.Close()
 		return

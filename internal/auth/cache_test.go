@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -173,5 +174,56 @@ func TestTheOptOutDisablesTheCache(t *testing.T) {
 		if (cache == nil) != disabled {
 			t.Fatalf("%s=%q: cache %v, want disabled %v", NoTokenCacheEnv, value, cache != nil, disabled)
 		}
+	}
+}
+
+// stubbornCache never deletes: a cache whose delete reports success but
+// leaves the refused token in place, as a file a parallel invocation wrote
+// back would.
+type stubbornCache struct{ fakeCache }
+
+func (c *stubbornCache) Delete(string, string) error { return nil }
+
+func TestARefusedTokenTheCacheKeepsIsNotReused(t *testing.T) {
+	requests := 0
+	cache := &stubbornCache{fakeCache{items: map[string]fakeItem{}}}
+	key := CacheKey("profile:live", testConfig)
+	cache.Store(key, "revoked", time.Now().Add(time.Hour))
+	provider := NewCached(testConfig, tokenServer(&requests), cache, key)
+	token, _ := provider.AccessToken(context.Background())
+	provider.InvalidateIfCurrent(token)
+	next, err := provider.AccessToken(context.Background())
+	if err != nil || next == "revoked" || requests != 1 {
+		t.Fatalf("a refused token the cache still holds must not be reused: %q %v after %d requests", next, err, requests)
+	}
+}
+
+// failingCache cannot delete and counts its loads.
+type failingCache struct {
+	fakeCache
+	loads int
+}
+
+func (c *failingCache) Load(key string) (string, time.Time, bool) {
+	c.loads++
+	return c.fakeCache.Load(key)
+}
+
+func (c *failingCache) Delete(string, string) error { return errors.New("read-only") }
+
+func TestACacheThatCannotDeleteIsBypassedUntilTheNextFetch(t *testing.T) {
+	requests := 0
+	cache := &failingCache{fakeCache: fakeCache{items: map[string]fakeItem{}}}
+	key := CacheKey("profile:live", testConfig)
+	cache.Store(key, "revoked", time.Now().Add(time.Hour))
+	provider := NewCached(testConfig, tokenServer(&requests), cache, key)
+	token, _ := provider.AccessToken(context.Background())
+	provider.InvalidateIfCurrent(token)
+	loadsBefore := cache.loads
+	if _, err := provider.AccessToken(context.Background()); err != nil || requests != 1 {
+		t.Fatalf("expected one refetch: %v after %d requests", err, requests)
+	}
+	if cache.loads != loadsBefore {
+		t.Fatalf("a cache that could not delete the refused token must be skipped until a fetch: %d loads", cache.loads-loadsBefore)
 	}
 }
