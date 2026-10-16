@@ -30,13 +30,13 @@ func TestDocumentSearchUsesItemSearchEndpointAndFallsBack(t *testing.T) {
 			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		case "/umbraco/management/api/v1/document/search":
 			requests = append(requests, req.URL.String())
-			return cmdtest.JSONResponse(http.StatusOK, `{"items":[{"id":"doc-1","name":"Toxic"}]}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"items":[{"id":"doc-1","name":"Pricing"}]}`), nil
 		default:
 			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
 	})
 
-	output, err := cmdtest.Execute(buildRootWithCollections(t, deps), "document", "search", "--query", "Toxic", "--skip", "0", "--take", "25")
+	output, err := cmdtest.Execute(buildRootWithCollections(t, deps), "document", "search", "--query", "Pricing", "--skip", "0", "--take", "25")
 	if err != nil {
 		t.Fatalf("document search failed: %v", err)
 	}
@@ -44,7 +44,7 @@ func TestDocumentSearchUsesItemSearchEndpointAndFallsBack(t *testing.T) {
 	if len(requests) != 2 {
 		t.Fatalf("expected 2 search attempts, got %+v", requests)
 	}
-	if !strings.Contains(requests[0], "/item/document/search") || !strings.Contains(requests[0], "query=Toxic") {
+	if !strings.Contains(requests[0], "/item/document/search") || !strings.Contains(requests[0], "query=Pricing") {
 		t.Fatalf("unexpected primary document search request: %q", requests[0])
 	}
 	if !strings.Contains(requests[1], "/document/search") {
@@ -759,7 +759,7 @@ func TestDocumentSearchSupportsUnderShortcut(t *testing.T) {
 			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/item/document/search":
 			observedPath = req.URL.String()
-			return cmdtest.JSONResponse(http.StatusOK, `{"items":[{"id":"doc-1","name":"Toxic"}]}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"items":[{"id":"doc-1","name":"Pricing"}]}`), nil
 		default:
 			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
@@ -768,7 +768,7 @@ func TestDocumentSearchSupportsUnderShortcut(t *testing.T) {
 	_, err := cmdtest.Execute(
 		buildRootWithCollections(t, deps),
 		"document", "search",
-		"--query", "Toxic",
+		"--query", "Pricing",
 		"--under", "partners-root",
 		"--skip", "0",
 		"--take", "25",
@@ -837,7 +837,7 @@ func TestDocumentUpdateMergeJSONFetchesAndMergesCurrentDocument(t *testing.T) {
 			if req.Method == http.MethodGet {
 				return cmdtest.JSONResponse(http.StatusOK, `{
   "id":"doc-1",
-  "name":"Toxic",
+  "name":"Pricing",
   "documentType":{"id":"type-1"},
   "values":[
     {"alias":"title","value":"Old title"},
@@ -862,7 +862,7 @@ func TestDocumentUpdateMergeJSONFetchesAndMergesCurrentDocument(t *testing.T) {
 		t.Fatalf("document update --merge-json failed: %v", err)
 	}
 
-	if observedPutBody["name"] != "Toxic" {
+	if observedPutBody["name"] != "Pricing" {
 		t.Fatalf("expected merged document to preserve root fields, got %+v", observedPutBody)
 	}
 
@@ -2108,7 +2108,7 @@ func TestDocumentUpdateBackupWritesEnvelopeAndReportsPath(t *testing.T) {
 			return cmdtest.JSONResponse(http.StatusOK, `{"access_token":"token-123","expires_in":3600}`), nil
 		case "/umbraco/management/api/v1/document/doc-1":
 			if req.Method == http.MethodGet {
-				return cmdtest.JSONResponse(http.StatusOK, `{"id":"doc-1","documentType":{"id":"type-1"},"variants":[{"culture":null,"segment":null,"name":"Toxic"}],"values":[{"alias":"title","culture":null,"segment":null,"value":"Old title"}]}`), nil
+				return cmdtest.JSONResponse(http.StatusOK, `{"id":"doc-1","documentType":{"id":"type-1"},"variants":[{"culture":null,"segment":null,"name":"Pricing"}],"values":[{"alias":"title","culture":null,"segment":null,"value":"Old title"}]}`), nil
 			}
 			if req.Method == http.MethodPut {
 				_ = json.NewDecoder(req.Body).Decode(&putBody)
@@ -2168,7 +2168,7 @@ func TestDocumentUpdateBackupWritesEnvelopeAndReportsPath(t *testing.T) {
 func TestDocumentRestoreBackupPutsEntityBackAndVerifies(t *testing.T) {
 	dir := t.TempDir()
 	file := dir + "/doc-1.backup.json"
-	if err := os.WriteFile(file, []byte(`{"resource":"document","id":"doc-1","path":"/document/doc-1","savedAt":"2026-09-15T08:00:00Z","entity":{"id":"doc-1","documentType":{"id":"type-1"},"variants":[{"culture":null,"segment":null,"name":"Toxic"}],"values":[{"alias":"title","culture":null,"segment":null,"value":"Old title"},{"alias":"summary","culture":null,"segment":null,"value":"S"}]}}`), 0o600); err != nil {
+	if err := os.WriteFile(file, []byte(`{"resource":"document","id":"doc-1","path":"/document/doc-1","savedAt":"2026-09-15T08:00:00Z","entity":{"id":"doc-1","documentType":{"id":"type-1"},"variants":[{"culture":null,"segment":null,"name":"Pricing"}],"values":[{"alias":"title","culture":null,"segment":null,"value":"Old title"},{"alias":"summary","culture":null,"segment":null,"value":"S"}]}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	var putBody map[string]any
@@ -2184,7 +2184,7 @@ func TestDocumentRestoreBackupPutsEntityBackAndVerifies(t *testing.T) {
 				afterValues = string(encoded)
 				return cmdtest.NoContent(), nil
 			}
-			return cmdtest.JSONResponse(http.StatusOK, `{"id":"doc-1","variants":[{"name":"Toxic"}],"values":`+afterValues+`}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"id":"doc-1","variants":[{"name":"Pricing"}],"values":`+afterValues+`}`), nil
 		default:
 			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
@@ -2196,7 +2196,7 @@ func TestDocumentRestoreBackupPutsEntityBackAndVerifies(t *testing.T) {
 	if putBody["values"].([]any)[0].(map[string]any)["value"] != "Old title" {
 		t.Fatalf("expected the saved entity PUT back, got %+v", putBody)
 	}
-	if !strings.Contains(out, `"restored": true`) || !strings.Contains(out, `"verified": true`) || !strings.Contains(out, `"name": "Toxic"`) {
+	if !strings.Contains(out, `"restored": true`) || !strings.Contains(out, `"verified": true`) || !strings.Contains(out, `"name": "Pricing"`) {
 		t.Fatalf("unexpected restore result: %s", out)
 	}
 
@@ -2234,7 +2234,7 @@ func TestDocumentRestoreBackupPutsEntityBackAndVerifies(t *testing.T) {
 			if req.Method == http.MethodPut {
 				return cmdtest.NoContent(), nil
 			}
-			return cmdtest.JSONResponse(http.StatusOK, `{"id":"doc-1","variants":[{"culture":null,"segment":null,"name":"Toxic"}],"values":[{"alias":"title","culture":null,"segment":null,"value":"Newer"},{"alias":"summary","culture":null,"segment":null,"value":"S"}]}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"id":"doc-1","variants":[{"culture":null,"segment":null,"name":"Pricing"}],"values":[{"alias":"title","culture":null,"segment":null,"value":"Newer"},{"alias":"summary","culture":null,"segment":null,"value":"S"}]}`), nil
 		default:
 			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
@@ -2262,7 +2262,7 @@ func TestDocumentUpdateSaveAndPublishKeepsBackupPathOnPublishFailure(t *testing.
 			if req.Method == http.MethodPut {
 				return cmdtest.NoContent(), nil
 			}
-			return cmdtest.JSONResponse(http.StatusOK, `{"id":"doc-1","variants":[{"name":"Toxic"}],"values":[{"alias":"title","value":"Old"}]}`), nil
+			return cmdtest.JSONResponse(http.StatusOK, `{"id":"doc-1","variants":[{"name":"Pricing"}],"values":[{"alias":"title","value":"Old"}]}`), nil
 		default:
 			return cmdtest.JSONResponse(http.StatusNotFound, `null`), nil
 		}
