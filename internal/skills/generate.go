@@ -218,7 +218,7 @@ export UMBRACO_CLIENT_ID="umbraco-back-office-api-user"
 export UMBRACO_CLIENT_SECRET="your-secret"
 `+"```"+`
 
-On macOS the access token is cached in the login keychain and reused across invocations until a minute before it expires (one item per profile, base URL and client id; the config and the client secret are unchanged). `+"`umbraco auth logout --token-only`"+` clears it; `+"`UMBRACO_NO_TOKEN_CACHE=1`"+` turns the cache off. For bulk work, prefer batch flags (`+"`--ids`"+`, `+"`--from-file`"+`, `+"`--all`"+`, `+"`document bulk-update`"+` / `+"`csv-update`"+`) or one long-running command over one invocation per item.
+On macOS the access token is cached in the default keychain and reused across invocations until a minute before it expires (one item per profile, base URL and client id; the config and the client secret are unchanged). It is written only from an interactive terminal outside CI and only when the default keychain exists; piped (agent) invocations reuse a cached token but never write one. `+"`umbraco auth logout --token-only`"+` clears it; `+"`UMBRACO_NO_TOKEN_CACHE=1`"+` turns the cache off. For bulk work, prefer batch flags (`+"`--ids`"+`, `+"`--from-file`"+`, `+"`--all`"+`, `+"`document bulk-update`"+` / `+"`csv-update`"+`) or one long-running command over one invocation per item.
 
 ## Config Precedence
 

@@ -13,6 +13,8 @@ import (
 	"os/exec"
 	"regexp"
 	"runtime"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -45,7 +47,7 @@ func System() Store {
 	if _, err := os.Stat(securityPath); err != nil {
 		return Unavailable{}
 	}
-	return &SecurityStore{Run: runSecurity}
+	return &SecurityStore{Run: runSecurity, Stat: statFile, Interactive: interactiveSession, Getenv: os.Getenv}
 }
 
 // Unavailable is the store on platforms without one.
@@ -60,8 +62,65 @@ func (Unavailable) Delete(string, string) error              { return ErrUnavail
 type Runner func(ctx context.Context, args []string, stdin string) (string, int, error)
 
 // SecurityStore is the macOS keychain, through /usr/bin/security.
+//
+// security has no option that suppresses the system's dialogs: asked to
+// write where no keychain exists, it shows "Keychain Not Found". So the store
+// only calls it when that cannot happen. Every call needs a default keychain
+// that resolves to an existing file, checked with 'security default-keychain'
+// (a preference read) and a file stat; writes also need an interactive
+// session (stdin and stdout terminals, no CI environment). Otherwise the
+// call is skipped and returns ErrUnavailable.
 type SecurityStore struct {
 	Run Runner
+	// Stat reports whether path is an existing regular file.
+	Stat func(path string) bool
+	// Interactive reports whether stdin and stdout are terminals.
+	Interactive func() bool
+	Getenv      func(string) string
+
+	once     sync.Once
+	keychain string
+}
+
+// ciEnvironment are variables CI systems set; with any of them set the
+// store never writes.
+var ciEnvironment = []string{"CI", "GITHUB_ACTIONS", "TF_BUILD", "GITLAB_CI", "BUILDKITE", "CIRCLECI", "JENKINS_URL", "TEAMCITY_VERSION", "BITBUCKET_BUILD_NUMBER"}
+
+// defaultKeychain is the default keychain's path when it resolves to an
+// existing file, "" otherwise. Resolved once per process.
+func (s *SecurityStore) defaultKeychain() string {
+	s.once.Do(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
+		defer cancel()
+		out, code, err := s.Run(ctx, []string{"default-keychain"}, "")
+		if err != nil || code != 0 {
+			return
+		}
+		path := strings.Trim(strings.TrimSpace(out), `"`)
+		if path != "" && s.Stat != nil && s.Stat(path) {
+			s.keychain = path
+		}
+	})
+	return s.keychain
+}
+
+// usable reports whether a call cannot run into a missing keychain.
+func (s *SecurityStore) usable() bool {
+	return s.defaultKeychain() != ""
+}
+
+// writable reports whether a write is allowed: a usable keychain and an
+// interactive session outside CI.
+func (s *SecurityStore) writable() bool {
+	if s.Interactive == nil || !s.Interactive() {
+		return false
+	}
+	for _, name := range ciEnvironment {
+		if s.Getenv != nil && strings.TrimSpace(s.Getenv(name)) != "" {
+			return false
+		}
+	}
+	return s.usable()
 }
 
 // securityItemNotFound is security's exit code for a missing item
@@ -77,12 +136,15 @@ var safeValue = regexp.MustCompile(`^[A-Za-z0-9 ._~+/=:@()-]*$`)
 // interactive mode (security -i), never in its arguments, so it does not
 // show up in the process list.
 func (s *SecurityStore) Set(service string, account string, label string, secret string) error {
-	for _, value := range []string{service, account, label, secret} {
+	if !s.writable() {
+		return ErrUnavailable
+	}
+	for _, value := range []string{service, account, label, secret, s.keychain} {
 		if !safeValue.MatchString(value) {
 			return fmt.Errorf("keychain: refusing a value with characters outside %s", safeValue)
 		}
 	}
-	line := fmt.Sprintf("add-generic-password -U -s %q -a %q -l %q -w %q\n", service, account, label, secret)
+	line := fmt.Sprintf("add-generic-password -U -s %q -a %q -l %q -w %q %q\n", service, account, label, secret, s.keychain)
 	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
 	defer cancel()
 	_, code, err := s.Run(ctx, []string{"-i"}, line)
@@ -96,9 +158,12 @@ func (s *SecurityStore) Set(service string, account string, label string, secret
 }
 
 func (s *SecurityStore) Get(service string, account string) (string, error) {
+	if !s.usable() {
+		return "", ErrUnavailable
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
 	defer cancel()
-	out, code, err := s.Run(ctx, []string{"find-generic-password", "-s", service, "-a", account, "-w"}, "")
+	out, code, err := s.Run(ctx, []string{"find-generic-password", "-s", service, "-a", account, "-w", s.keychain}, "")
 	if err != nil {
 		return "", err
 	}
@@ -112,9 +177,12 @@ func (s *SecurityStore) Get(service string, account string) (string, error) {
 }
 
 func (s *SecurityStore) Delete(service string, account string) error {
+	if !s.usable() {
+		return ErrUnavailable
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
 	defer cancel()
-	_, code, err := s.Run(ctx, []string{"delete-generic-password", "-s", service, "-a", account}, "")
+	_, code, err := s.Run(ctx, []string{"delete-generic-password", "-s", service, "-a", account, s.keychain}, "")
 	if err != nil {
 		return err
 	}
@@ -125,6 +193,22 @@ func (s *SecurityStore) Delete(service string, account string) error {
 		return ErrNotFound
 	}
 	return fmt.Errorf("keychain: security delete-generic-password exited %d", code)
+}
+
+func statFile(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.Mode().IsRegular()
+}
+
+// interactiveSession reports whether stdin and stdout are both terminals.
+func interactiveSession() bool {
+	for _, file := range []*os.File{os.Stdin, os.Stdout} {
+		info, err := file.Stat()
+		if err != nil || info.Mode()&os.ModeCharDevice == 0 {
+			return false
+		}
+	}
+	return true
 }
 
 func runSecurity(ctx context.Context, args []string, stdin string) (string, int, error) {

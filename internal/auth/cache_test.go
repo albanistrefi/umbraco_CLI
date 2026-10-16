@@ -233,3 +233,31 @@ func TestAnUnavailableKeychainStillAuthenticates(t *testing.T) {
 		t.Fatalf("without a keychain each invocation fetches its own token, got %d requests", requests)
 	}
 }
+
+// The guarded keychain store with no default keychain: every invocation
+// authenticates, nothing errors, and security is never asked to write.
+func TestNoDefaultKeychainStillAuthenticatesWithoutWriting(t *testing.T) {
+	var commands []string
+	store := &keychain.SecurityStore{
+		Run: func(_ context.Context, args []string, _ string) (string, int, error) {
+			commands = append(commands, args[0])
+			if args[0] == "default-keychain" {
+				return "", 50, nil
+			}
+			return "", 0, nil
+		},
+		Stat:        func(string) bool { return false },
+		Interactive: func() bool { return true },
+		Getenv:      func(string) string { return "" },
+	}
+	requests := 0
+	cache := KeychainTokenCache(store)
+	key := CacheKey("profile:live", testConfig)
+	token, err := NewCached(testConfig, tokenServer(&requests), cache, key).AccessToken(context.Background())
+	if err != nil || token == "" || requests != 1 {
+		t.Fatalf("expected a normal fetch, got %q (%v) after %d requests", token, err, requests)
+	}
+	if strings.Join(commands, ",") != "default-keychain" {
+		t.Fatalf("only the read-only keychain check may run: %v", commands)
+	}
+}

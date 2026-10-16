@@ -197,9 +197,16 @@ Example user config:
 
 Each invocation needs an access token, and fetching one costs the site a
 token request (four OpenIddict log lines on Umbraco 18.2). On macOS the CLI
-keeps the access token in the login keychain and reuses it across
+keeps the access token in the default keychain and reuses it across
 invocations until a minute before it expires. Only the short-lived access
 token is cached: the config files and the client secret stay as they are.
+
+The cache never risks a macOS dialog it can rule out: `security` has no
+option that suppresses them, so it is only called when the default keychain
+resolves to an existing file, and the token is only written from an
+interactive terminal (stdin and stdout terminals, no CI variables). Agents
+and scripts, whose output is piped, reuse a cached token but never write
+one. If the default keychain is locked, macOS may still ask to unlock it.
 
 - The item is named `umbraco-cli access token`, one per profile (or config
   file), base URL and client id; its account is a hash of those, so it
