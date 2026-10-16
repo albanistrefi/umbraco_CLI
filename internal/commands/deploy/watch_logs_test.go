@@ -37,8 +37,12 @@ type fakeDeployEnv struct {
 	// these ticks.
 	todayEmpty   bool
 	sameDayFails map[int]bool
-	serverOffset string
-	newestStarts []string
+	// sameDayFailsFrom fails every same-day read from this tick on (0 = no).
+	sameDayFailsFrom int
+	// serverInfoFails answers /server/information 500.
+	serverInfoFails bool
+	serverOffset    string
+	newestStarts    []string
 	// refuseLogs makes every log-viewer read from refuseLogsFrom on answer
 	// the size refusal live gave on 15-10, the landing probe included.
 	refuseLogs     bool
@@ -133,6 +137,9 @@ func (e *fakeDeployEnv) handler() cmdtest.RoundTripper {
 		case "/":
 			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("home"))}, nil
 		case "/umbraco/management/api/v1/server/information":
+			if e.serverInfoFails {
+				return cmdtest.JSONResponse(http.StatusInternalServerError, `{"title":"boom"}`), nil
+			}
 			if e.serverOffset != "" {
 				return cmdtest.JSONResponse(http.StatusOK, `{"version":"18.2.0","baseUtcOffset":"`+e.serverOffset+`"}`), nil
 			}
@@ -146,7 +153,7 @@ func (e *fakeDeployEnv) handler() cmdtest.RoundTripper {
 				}
 				return cmdtest.JSONResponse(http.StatusBadRequest, logSizeRefusalBody), nil
 			}
-			if e.sameDayFails[tick] && req.URL.Query().Get("startDate") != "" && req.URL.Query().Get("take") == "1" {
+			if (e.sameDayFails[tick] || e.sameDayFailsFrom > 0 && tick >= e.sameDayFailsFrom) && req.URL.Query().Get("startDate") != "" && req.URL.Query().Get("take") == "1" {
 				return cmdtest.JSONResponse(http.StatusInternalServerError, `{"title":"log viewer broke"}`), nil
 			}
 			if e.todayEmpty && req.URL.Query().Get("startDate") != "" && req.URL.Query().Get("take") == "1" {

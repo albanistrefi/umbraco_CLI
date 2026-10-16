@@ -120,6 +120,7 @@ Every --json line has a "type": "phase" for the transitions above. --logs adds t
 			}
 			baselineProbes := *probes
 			baselineProbes.client = deps.Client
+			baselineProbes.baseline = true
 			baselineProbes.timeout = max(requestTimeout, watchBaselineRequestTimeout)
 
 			ctx := cmd.Context()

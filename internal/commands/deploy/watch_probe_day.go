@@ -16,11 +16,18 @@ import (
 
 // Umbraco 18.2's log viewer sizes a read by the daily log files of every
 // server-local day from startDate to now, and an unset startDate means a day
-// ago. 18.2 also filters the entries by timestamp from startDate on, so a
-// same-day read returns the newest entry since the server's midnight. So the day after a busy log day, the default newest-entry read is
+// ago. It also filters the entries by timestamp from startDate on, so a
+// same-day read returns the newest entry since the server's midnight. The
+// day after a busy log day, the default newest-entry read is therefore
 // refused while one starting at today's server midnight is not. The probe
 // keeps the default read and, only when that is refused for size, reads
 // from the start of the server's day.
+//
+// A same-day read that keeps failing (a persistent 500, or reads that
+// outgrow the request timeout as today's files grow) leaves the process id
+// unavailable for the same reason as the refusal: after
+// watchSameDayFailureLimit failed attempts in a row it is reported as the
+// size refusal, so a restart cycle can still land the watch.
 //
 // The server's day comes from /server/information's baseUtcOffset, which is
 // the time zone's standard offset (TimeZoneInfo.BaseUtcOffset). Daylight
@@ -31,6 +38,11 @@ import (
 
 // watchNow is the clock of the server-day computation; tests fix it.
 var watchNow = time.Now
+
+// watchSameDayFailureLimit is how many same-day attempts in a row (the
+// offset request or the read) may fail before the probe reports the size
+// refusal instead of the failure.
+const watchSameDayFailureLimit = 3
 
 // watchProbeDay is the state the probes share across the baseline and the
 // poll loop: the server's offset, and whether the same-day read is the one
@@ -43,6 +55,24 @@ type watchProbeDay struct {
 	offset  time.Duration
 	known   bool
 	sameDay bool
+	// failures counts same-day attempts that failed in a row.
+	failures int
+}
+
+// failed books a failed same-day attempt and reports whether the limit is
+// reached.
+func (d *watchProbeDay) failed() bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.failures++
+	return d.failures >= watchSameDayFailureLimit
+}
+
+// succeeded resets the run of failed same-day attempts.
+func (d *watchProbeDay) succeeded() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.failures = 0
 }
 
 func (d *watchProbeDay) useSameDay() bool {

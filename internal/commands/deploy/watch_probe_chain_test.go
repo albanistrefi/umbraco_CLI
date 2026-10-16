@@ -258,3 +258,89 @@ func TestTheProbeChainStaysWithinOneRequestTimeout(t *testing.T) {
 		t.Fatalf("a chain cut short reports the timeout, not the refusal: %v", err)
 	}
 }
+
+func TestSameDayFailuresBelowTheLimitStayTransient(t *testing.T) {
+	fixClock(t)
+	answers := []func() *http.Response{process("111")}
+	for i := 1; i < watchSameDayFailureLimit; i++ {
+		answers = append(answers, failed)
+	}
+	answers = append(answers, process("111"), failed)
+	script := &probeScript{def: []func() *http.Response{refused}, same: answers, info: []func() *http.Response{offset}}
+	p := script.probes(t, time.Second)
+	_, _ = newest(t, p)
+	for i := 1; i < watchSameDayFailureLimit; i++ {
+		if _, err := newest(t, p); err == nil || isLogSizeRefusal(err) {
+			t.Fatalf("failure %d of %d is transient, got %v", i, watchSameDayFailureLimit-1, err)
+		}
+	}
+	if id, err := newest(t, p); err != nil || id != "111" {
+		t.Fatalf("a success after %d failures reads the process: %q %v", watchSameDayFailureLimit-1, id, err)
+	}
+	if _, err := newest(t, p); err == nil || isLogSizeRefusal(err) {
+		t.Fatalf("the success resets the count, so the next failure is transient again: %v", err)
+	}
+}
+
+func TestSameDayFailuresAtTheLimitReportTheSizeRefusal(t *testing.T) {
+	fixClock(t)
+	script := &probeScript{def: []func() *http.Response{refused}, same: []func() *http.Response{process("111"), failed}, info: []func() *http.Response{offset}}
+	p := script.probes(t, time.Second)
+	_, _ = newest(t, p)
+	script.took()
+	for i := 1; i <= watchSameDayFailureLimit; i++ {
+		_, err := newest(t, p)
+		if refusal := isLogSizeRefusal(err); refusal != (i == watchSameDayFailureLimit) {
+			t.Fatalf("failure %d: refusal %v (%v)", i, refusal, err)
+		}
+	}
+	got := strings.Split(script.took(), ",")
+	if strings.Join(got[len(got)-2:], ",") != "same-day,default" {
+		t.Fatalf("the failure at the limit falls back to one default read, no second same-day read: %v", got)
+	}
+	// Fresh path: refused, then the same-day read keeps failing.
+	script = &probeScript{def: []func() *http.Response{refused}, same: []func() *http.Response{failed}, info: []func() *http.Response{offset}}
+	p = script.probes(t, time.Second)
+	for i := 1; i <= watchSameDayFailureLimit; i++ {
+		_, err := newest(t, p)
+		if refusal := isLogSizeRefusal(err); refusal != (i == watchSameDayFailureLimit) {
+			t.Fatalf("fresh path failure %d: refusal %v (%v)", i, refusal, err)
+		}
+	}
+}
+
+// The process changes at tick 4 after a real outage, but every same-day
+// read after the baseline fails: once the failures reach the limit the
+// probe reports the size refusal, and the restart cycle lands the watch.
+func TestPersistentSameDayFailuresLetTheRestartCycleLand(t *testing.T) {
+	fixClock(t)
+	env := &fakeDeployEnv{downTicks: map[int]bool{2: true, 3: true}, landTick: 4, yesterdayOversized: true, serverOffset: "00:00:00", sameDayFailsFrom: 1}
+	lines, err := runWatch(t, env, "--restart-min-down", "0")
+	if err != nil {
+		t.Fatalf("watch failed: %v\n%v", err, phasesOf(lines))
+	}
+	if landed := detailOf(phaseLine(lines, "landed")); landed["basis"] != "restart-cycle" {
+		t.Fatalf("expected a restart-cycle landing: %v", phasesOf(lines))
+	}
+}
+
+// At baseline, a failure on the same-day path after a size refusal arms
+// the watch on the restart-cycle basis, as before the same-day read, rather
+// than refusing to arm.
+func TestABaselineSameDayFailureArmsOnTheRestartCycle(t *testing.T) {
+	for name, env := range map[string]*fakeDeployEnv{
+		"server information 500": {downTicks: map[int]bool{}, landTick: 1 << 30, yesterdayOversized: true, serverInfoFails: true},
+		"same-day read 500":      {downTicks: map[int]bool{}, landTick: 1 << 30, yesterdayOversized: true, serverOffset: "00:00:00", sameDayFails: map[int]bool{0: true}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			fixClock(t)
+			lines, err := runWatch(t, env, "--timeout", "100ms")
+			if exitCode(err) != 6 {
+				t.Fatalf("expected the watch to arm and time out (exit 6), got %v", err)
+			}
+			if baseline := detailOf(phaseLine(lines, "baseline")); baseline["landingBasis"] != "restart-cycle" {
+				t.Fatalf("expected the restart-cycle basis: %v", baseline)
+			}
+		})
+	}
+}

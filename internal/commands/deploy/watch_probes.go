@@ -31,6 +31,10 @@ type watchProbes struct {
 	skipIndexes bool
 	// day is shared by the baseline's copy and the poll loop's probes.
 	day *watchProbeDay
+	// baseline makes any same-day failure after a size refusal report the
+	// refusal, so the watch arms on the restart-cycle basis instead of
+	// refusing to arm over a transient error.
+	baseline bool
 }
 
 func watchHTTPClient(deps cmdkit.Dependencies) *http.Client {
@@ -172,14 +176,27 @@ func (p *watchProbes) newestProcess(ctx context.Context) (string, string, time.T
 		return p.readNewest(ctx, time.Time{})
 	}
 	if p.day.useSameDay() {
-		if start, ok, _ := p.sameDayStart(ctx); ok {
+		start, ok, offsetErr := p.sameDayStart(ctx)
+		if offsetErr != nil {
+			if !p.day.failed() {
+				return "", "", time.Time{}, offsetErr
+			}
+			return p.readNewest(ctx, time.Time{})
+		}
+		if ok {
 			processID, machineName, newestAt, err := p.readNewest(ctx, start)
 			switch {
 			case err == nil && processID != "":
+				p.day.succeeded()
 				return processID, machineName, newestAt, nil
 			case err != nil && !isLogSizeRefusal(err):
-				// Transient: keep the mode, report this failure.
-				return "", "", time.Time{}, err
+				// Transient: keep the mode and report this failure, until
+				// too many in a row make the process id unavailable for
+				// size after all: then the default read's answer stands.
+				if !p.day.failed() {
+					return "", "", time.Time{}, err
+				}
+				return p.readNewest(ctx, time.Time{})
 			}
 		}
 		// Refused for size, or nothing logged yet today: back to the
@@ -192,6 +209,9 @@ func (p *watchProbes) newestProcess(ctx context.Context) (string, string, time.T
 	}
 	start, ok, offsetErr := p.sameDayStart(ctx)
 	if offsetErr != nil {
+		if p.baseline || p.day.failed() {
+			return processID, machineName, newestAt, err
+		}
 		return "", "", time.Time{}, offsetErr
 	}
 	if !ok {
@@ -200,9 +220,13 @@ func (p *watchProbes) newestProcess(ctx context.Context) (string, string, time.T
 	sameID, sameMachine, sameAt, sameErr := p.readNewest(ctx, start)
 	switch {
 	case sameErr == nil && sameID != "":
+		p.day.succeeded()
 		p.day.setSameDay(true)
 		return sameID, sameMachine, sameAt, nil
 	case sameErr != nil && !isLogSizeRefusal(sameErr):
+		if p.baseline || p.day.failed() {
+			return processID, machineName, newestAt, err
+		}
 		return "", "", time.Time{}, sameErr
 	}
 	return processID, machineName, newestAt, err
