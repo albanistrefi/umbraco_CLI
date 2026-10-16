@@ -988,7 +988,7 @@ func TestDocumentUpdateMergeJSONAllowsExistingControlCharactersInFetchedDocument
 	output, err := cmdtest.Execute(
 		buildRootWithCollections(t, deps),
 		"document", "update", "doc-1",
-		"--merge-json", `{"values":[{"alias":"skills","value":[{"type":"document","unique":"62689bb1-3a4d-478f-a7b1-1c0e560d4748"}]}]}`,
+		"--merge-json", `{"values":[{"alias":"skills","value":[{"type":"document","unique":"00000000-0000-4000-8000-0000000000aa"}]}]}`,
 	)
 	if err != nil {
 		t.Fatalf("document update --merge-json with existing control characters failed: %v", err)

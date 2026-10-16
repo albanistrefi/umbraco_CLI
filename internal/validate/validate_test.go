@@ -23,7 +23,7 @@ func TestResourceIDRejectsQueryChars(t *testing.T) {
 }
 
 func TestResourceIDAllowsGUIDs(t *testing.T) {
-	if err := ResourceID("62689bb1-3a4d-478f-a7b1-1c0e560d4748"); err != nil {
+	if err := ResourceID("00000000-0000-4000-8000-0000000000aa"); err != nil {
 		t.Fatalf("expected GUID to pass: %v", err)
 	}
 }
