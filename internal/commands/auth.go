@@ -271,12 +271,25 @@ func authStatus(deps cmdkit.Dependencies) *cobra.Command {
 }
 
 func authLogout(deps cmdkit.Dependencies) *cobra.Command {
-	var dryRun bool
+	var dryRun, tokenOnly bool
 	cmd := &cobra.Command{
 		Use:   "logout",
-		Short: "Remove stored credentials from the user config",
-		Args:  cobra.NoArgs,
+		Short: "Remove stored credentials from the user config and clear the cached access token",
+		Long: "Removes the client id and secret from the selected user config, and clears the access token cached for it in the system credential store (the macOS keychain). " +
+			"--token-only clears just the cached access token and leaves the config untouched. " +
+			"The token cache reuses one access token across invocations until shortly before it expires; set " + auth.NoTokenCacheEnv + "=1 to turn it off.",
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			key := auth.CacheKey(auth.SelectionName(deps.ConfigOptions()), deps.CurrentConfig())
+			if tokenOnly {
+				if dryRun {
+					return cmdkit.PrintResult(cmd, deps, map[string]any{"dryRun": true, "tokenCacheAvailable": deps.TokenCache != nil, "message": "the cached access token would be cleared"})
+				}
+				if deps.TokenCache != nil {
+					deps.TokenCache.Delete(key)
+				}
+				return cmdkit.PrintResult(cmd, deps, map[string]any{"cachedTokenCleared": deps.TokenCache != nil})
+			}
 			_, _, selection, err := config.LoadUserConfigWithOptions(deps.ConfigOptions())
 			if err != nil {
 				return err
@@ -293,13 +306,18 @@ func authLogout(deps cmdkit.Dependencies) *cobra.Command {
 			if err := config.ClearUserAuthWithOptions(deps.ConfigOptions()); err != nil {
 				return err
 			}
+			if deps.TokenCache != nil {
+				deps.TokenCache.Delete(key)
+			}
 			return cmdkit.PrintResult(cmd, deps, map[string]any{
-				"loggedOut": true,
-				"source":    source,
+				"loggedOut":          true,
+				"source":             source,
+				"cachedTokenCleared": deps.TokenCache != nil,
 			})
 		},
 	}
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview logout without modifying the user config")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview logout without modifying the user config or the token cache")
+	cmd.Flags().BoolVar(&tokenOnly, "token-only", false, "Clear only the cached access token; leave the user config untouched")
 	return cmd
 }
 

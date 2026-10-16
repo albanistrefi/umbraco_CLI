@@ -33,9 +33,20 @@ func NewRuntime() *Runtime {
 		return &Runtime{HTTPClient: httpClient, Client: api.NewUnavailableClient(err)}
 	}
 
-	tokenProvider := auth.New(cfg, httpClient)
+	tokenProvider := newTokenProvider(cfg, config.LoadOptions{}, httpClient)
 	client := api.NewClient(cfg, httpClient, tokenProvider)
 	return &Runtime{Config: cfg, Client: client, HTTPClient: httpClient}
+}
+
+// newTokenProvider reuses the access token across invocations through the
+// system's credential store when one is available (auth.SystemTokenCache),
+// keyed by the selected profile, base URL and client id.
+func newTokenProvider(cfg config.Config, opts config.LoadOptions, httpClient *http.Client) *auth.Provider {
+	cache := auth.SystemTokenCache()
+	if cache == nil {
+		return auth.New(cfg, httpClient)
+	}
+	return auth.NewCached(cfg, httpClient, cache, auth.CacheKey(auth.SelectionName(opts), cfg))
 }
 
 func (r *Runtime) Reload(opts config.LoadOptions) error {
@@ -49,7 +60,7 @@ func (r *Runtime) Reload(opts config.LoadOptions) error {
 		return err
 	}
 
-	tokenProvider := auth.New(cfg, r.HTTPClient)
+	tokenProvider := newTokenProvider(cfg, opts, r.HTTPClient)
 	client := api.NewClient(cfg, r.HTTPClient, tokenProvider)
 	if r.Client == nil {
 		r.Client = client

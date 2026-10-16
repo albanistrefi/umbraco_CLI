@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- on macOS, the access token is now cached in the login keychain and reused across invocations until a minute before it expires, instead of being fetched by every invocation. Each fetch costs the site a token request, four OpenIddict Information log lines on Umbraco 18.2, and per-invocation fetches added to live's oversized log on 15-10. Only the access token is cached; `~/.umbraco/*.config.json` and the client secret are unchanged. Items are named `umbraco-cli access token`, one per profile (or config file), base URL and client id, under a hashed account. A token the server rejects (401) is dropped from the keychain and fetched once more. `umbraco auth logout --token-only` clears the cached token for the selected profile without touching the config, and `auth logout` now clears it too. `UMBRACO_NO_TOKEN_CACHE=1` turns the cache off; without a keychain (Linux, Windows) every invocation fetches its own token, and nothing is written to a file. The keychain is driven through `/usr/bin/security` in interactive mode, so the token goes over stdin and never appears in a process's arguments; no new dependency.
+
 ## v0.5.2 - 2026-10-16
 
 - fixed `deploy watch` never reaching `landed` when Umbraco's log viewer refuses reads for size. On the 2026-10-15 live deploy (CLI 0.5.1, CMS 18.2), the baseline read the process id at 12:24:31. From 12:25:06 every log-viewer read answered HTTP 400 `CancelledByLogsSizeValidation`. The app restarted at 12:34:16, was alive at 12:35:03 and serving at 12:35:57, and the deploy had landed, but `landed` needs a new process id from the newest log entry. So the watch sat in `serving` and would have timed out (exit 6).

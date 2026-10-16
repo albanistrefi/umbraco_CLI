@@ -193,6 +193,30 @@ Example user config:
 }
 ```
 
+### Access token cache
+
+Each invocation needs an access token, and fetching one costs the site a
+token request (four OpenIddict log lines on Umbraco 18.2). On macOS the CLI
+keeps the access token in the login keychain and reuses it across
+invocations until a minute before it expires. Only the short-lived access
+token is cached: the config files and the client secret stay as they are.
+
+- The item is named `umbraco-cli access token`, one per profile (or config
+  file), base URL and client id; its account is a hash of those, so it
+  names no host or client.
+- A token the server rejects (401) is dropped from the keychain and fetched
+  again once.
+- `umbraco auth logout --token-only` clears the cached token for the
+  selected profile and leaves the config untouched; `umbraco auth logout`
+  clears it along with the stored credentials.
+- `UMBRACO_NO_TOKEN_CACHE=1` turns the cache off. Without a keychain
+  (Linux, Windows) every invocation fetches its own token; nothing is
+  written to a file.
+
+For bulk work, prefer the batch flags (`--ids`, `--from-file`, `--all`, and
+`document bulk-update` / `csv-update`) or one long-running command over one
+invocation per item: a single process fetches one token and reuses it.
+
 ### Environments behind basic authentication (Umbraco Cloud non-live)
 
 Umbraco Cloud's Public Access turns on the CMS basic authentication

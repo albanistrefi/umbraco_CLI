@@ -44,6 +44,10 @@ type tokenResponse struct {
 type Provider struct {
 	cfg        config.Config
 	httpClient *http.Client
+	// cache, when set, keeps the access token between invocations under
+	// cacheKey.
+	cache    TokenCache
+	cacheKey string
 
 	mu        sync.Mutex
 	cached    string
@@ -67,11 +71,22 @@ func New(cfg config.Config, client *http.Client) *Provider {
 	return &Provider{cfg: cfg, httpClient: client}
 }
 
+// NewCached is New with a token cache shared across invocations: a token
+// another invocation fetched is reused until shortly before it expires,
+// instead of requesting one per invocation. A nil cache is New.
+func NewCached(cfg config.Config, client *http.Client, cache TokenCache, key string) *Provider {
+	return &Provider{cfg: cfg, httpClient: client, cache: cache, cacheKey: key}
+}
+
 func (p *Provider) Invalidate() {
 	p.mu.Lock()
+	dropped := p.cached != ""
 	p.cached = ""
 	p.expiresAt = time.Time{}
 	p.mu.Unlock()
+	if dropped && p.cache != nil {
+		p.cache.Delete(p.cacheKey)
+	}
 }
 
 // InvalidateIfCurrent drops the cached token only while it is still token,
@@ -80,10 +95,16 @@ func (p *Provider) Invalidate() {
 // just fetched, which would start another (slow) token request.
 func (p *Provider) InvalidateIfCurrent(token string) {
 	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.cached == token {
+	dropped := p.cached == token && token != ""
+	if dropped {
 		p.cached = ""
 		p.expiresAt = time.Time{}
+	}
+	p.mu.Unlock()
+	// The rejected token may be the cached one: drop it there too, so the
+	// next invocation does not start with it.
+	if dropped && p.cache != nil {
+		p.cache.Delete(p.cacheKey)
 	}
 }
 
@@ -103,6 +124,13 @@ func (p *Provider) AccessToken(ctx context.Context) (string, error) {
 	if err := p.cfg.ValidateAuth(); err != nil {
 		p.mu.Unlock()
 		return "", authErr(err)
+	}
+	if p.cache != nil && p.inflight == nil {
+		if token, expiresAt, ok := p.cache.Load(p.cacheKey); ok && time.Now().Before(expiresAt) {
+			p.cached, p.expiresAt = token, expiresAt
+			p.mu.Unlock()
+			return token, nil
+		}
 	}
 	fetch := p.inflight
 	if fetch == nil {
@@ -137,6 +165,9 @@ func (p *Provider) fetch(ctx context.Context, fetch *tokenFetch) {
 	}
 	p.inflight = nil
 	p.mu.Unlock()
+	if err == nil && p.cache != nil {
+		p.cache.Store(p.cacheKey, token, expiresAt)
+	}
 	fetch.token, fetch.err = token, err
 	close(fetch.done)
 }
