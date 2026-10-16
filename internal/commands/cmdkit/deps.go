@@ -4,7 +4,6 @@ import (
 	"net/http"
 
 	"umbraco-cli/internal/api"
-	"umbraco-cli/internal/auth"
 	"umbraco-cli/internal/config"
 )
 
@@ -25,9 +24,6 @@ type Dependencies struct {
 	// commands that need the base URL must read it through this provider
 	// or they will target the default environment regardless of --profile.
 	ConfigProvider func() config.Config
-	// TokenCache is the cross-invocation access-token cache, nil when
-	// there is none ('auth logout' clears it).
-	TokenCache auth.TokenCache
 }
 
 // RequestedOutput is the --output value, or "" when none was given.

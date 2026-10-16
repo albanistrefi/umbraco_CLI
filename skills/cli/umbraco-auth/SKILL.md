@@ -55,7 +55,7 @@ umbraco auth use <profile>
 | Command | Description |
 |---------|-------------|
 | `auth login` | Store Umbraco API credentials in the user config after verifying them |
-| `auth logout` | Remove stored credentials from the user config and clear the cached access token |
+| `auth logout` | Remove stored credentials from the user config and delete the cached access token |
 
 ### login
 
@@ -88,12 +88,12 @@ umbraco auth login [flags]
 umbraco auth logout
 ```
 
-Removes the client id and secret from the selected user config, and clears the access token cached for it in the system credential store (the macOS keychain). --token-only clears just the cached access token and leaves the config untouched. The token cache reuses one access token across invocations until shortly before it expires; set UMBRACO_NO_TOKEN_CACHE=1 to turn it off.
+Removes the client id and secret from the selected user config, and deletes the access-token file cached for it (~/.umbraco/<profile>.token.json, <file>.token.json next to a --config file, or ~/.umbraco/tokens/<hash>.token.json). --token-only deletes just the token file and leaves the config untouched. The token cache reuses one access token across invocations until shortly before it expires; set UMBRACO_NO_TOKEN_CACHE=1 to turn it off.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--dry-run` | bool | false | Preview logout without modifying the user config or the token cache |
-| `--token-only` | bool | false | Clear only the cached access token; leave the user config untouched |
+| `--dry-run` | bool | false | Preview logout without modifying the user config or the token file |
+| `--token-only` | bool | false | Delete only the cached access token; leave the user config untouched |
 
 **Safe pattern:**
 

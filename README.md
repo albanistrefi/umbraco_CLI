@@ -196,29 +196,30 @@ Example user config:
 ### Access token cache
 
 Each invocation needs an access token, and fetching one costs the site a
-token request (four OpenIddict log lines on Umbraco 18.2). On macOS the CLI
-keeps the access token in the default keychain and reuses it across
+token request (four OpenIddict log lines on Umbraco 18.2). The CLI keeps the
+access token in a file next to the profile's config and reuses it across
 invocations until a minute before it expires. Only the short-lived access
 token is cached: the config files and the client secret stay as they are.
 
-The cache never risks a macOS dialog it can rule out: `security` has no
-option that suppresses them, so it is only called when the default keychain
-resolves to an existing file, and the token is only written from an
-interactive terminal (stdin and stdout terminals, no CI variables). Agents
-and scripts, whose output is piped, reuse a cached token but never write
-one. If the default keychain is locked, macOS may still ask to unlock it.
+| Credentials from | Token file |
+|---|---|
+| `--profile <name>` or the active profile | `~/.umbraco/<name>.token.json` |
+| `--config <file>` | `<file>.token.json` |
+| environment variables, project files, `~/.umbraco/config.json` | `~/.umbraco/tokens/<hash>.token.json` |
 
-- The item is named `umbraco-cli access token`, one per profile (or config
-  file), base URL and client id; its account is a hash of those, so it
-  names no host or client.
-- A token the server rejects (401) is dropped from the keychain and fetched
-  again once.
-- `umbraco auth logout --token-only` clears the cached token for the
-  selected profile and leaves the config untouched; `umbraco auth logout`
-  clears it along with the stored credentials.
-- `UMBRACO_NO_TOKEN_CACHE=1` turns the cache off. Without a keychain
-  (Linux, Windows) every invocation fetches its own token; nothing is
-  written to a file.
+- The file holds the access token, its expiry, and the key it belongs to
+  (a hash of the profile or config file, the base URL and the client id,
+  plus those values in plain text). A different key is a miss. The client
+  secret is never written.
+- It is created with mode 0600 (and a new directory with 0700) and written
+  atomically, so parallel invocations never read a partial file. A file
+  readable by group or others is ignored and replaced on the next write.
+  On Windows the permission bits do not apply; the file inherits the
+  folder's access control.
+- A token the server rejects (401) is deleted and fetched again once.
+- `umbraco auth logout --token-only` deletes the token file and leaves the
+  config untouched; `umbraco auth logout` deletes it along with the stored
+  credentials. `UMBRACO_NO_TOKEN_CACHE=1` turns the cache off.
 
 For bulk work, prefer the batch flags (`--ids`, `--from-file`, `--all`, and
 `document bulk-update` / `csv-update`) or one long-running command over one

@@ -274,21 +274,26 @@ func authLogout(deps cmdkit.Dependencies) *cobra.Command {
 	var dryRun, tokenOnly bool
 	cmd := &cobra.Command{
 		Use:   "logout",
-		Short: "Remove stored credentials from the user config and clear the cached access token",
-		Long: "Removes the client id and secret from the selected user config, and clears the access token cached for it in the system credential store (the macOS keychain). " +
-			"--token-only clears just the cached access token and leaves the config untouched. " +
+		Short: "Remove stored credentials from the user config and delete the cached access token",
+		Long: "Removes the client id and secret from the selected user config, and deletes the access-token file cached for it " +
+			"(~/.umbraco/<profile>.token.json, <file>.token.json next to a --config file, or ~/.umbraco/tokens/<hash>.token.json). " +
+			"--token-only deletes just the token file and leaves the config untouched. " +
 			"The token cache reuses one access token across invocations until shortly before it expires; set " + auth.NoTokenCacheEnv + "=1 to turn it off.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			key := auth.CacheKey(auth.SelectionName(deps.ConfigOptions()), deps.CurrentConfig())
+			tokenFile, _, err := auth.TokenCacheFile(deps.ConfigOptions(), deps.CurrentConfig())
+			if err != nil {
+				return err
+			}
 			if tokenOnly {
 				if dryRun {
-					return cmdkit.PrintResult(cmd, deps, map[string]any{"dryRun": true, "tokenCacheAvailable": deps.TokenCache != nil, "message": "the cached access token would be cleared"})
+					return cmdkit.PrintResult(cmd, deps, map[string]any{"dryRun": true, "tokenFile": tokenFile, "message": "the cached access token would be deleted"})
 				}
-				if deps.TokenCache != nil {
-					deps.TokenCache.Delete(key)
+				removed, err := auth.RemoveTokenFile(tokenFile)
+				if err != nil {
+					return err
 				}
-				return cmdkit.PrintResult(cmd, deps, map[string]any{"cachedTokenCleared": deps.TokenCache != nil})
+				return cmdkit.PrintResult(cmd, deps, map[string]any{"tokenFile": tokenFile, "cachedTokenDeleted": removed})
 			}
 			_, _, selection, err := config.LoadUserConfigWithOptions(deps.ConfigOptions())
 			if err != nil {
@@ -300,24 +305,27 @@ func authLogout(deps cmdkit.Dependencies) *cobra.Command {
 					"loggedOut": false,
 					"dryRun":    true,
 					"source":    source,
-					"message":   "stored credentials would be removed",
+					"tokenFile": tokenFile,
+					"message":   "stored credentials and the cached access token would be removed",
 				})
 			}
 			if err := config.ClearUserAuthWithOptions(deps.ConfigOptions()); err != nil {
 				return err
 			}
-			if deps.TokenCache != nil {
-				deps.TokenCache.Delete(key)
+			removed, err := auth.RemoveTokenFile(tokenFile)
+			if err != nil {
+				return err
 			}
 			return cmdkit.PrintResult(cmd, deps, map[string]any{
 				"loggedOut":          true,
 				"source":             source,
-				"cachedTokenCleared": deps.TokenCache != nil,
+				"tokenFile":          tokenFile,
+				"cachedTokenDeleted": removed,
 			})
 		},
 	}
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview logout without modifying the user config or the token cache")
-	cmd.Flags().BoolVar(&tokenOnly, "token-only", false, "Clear only the cached access token; leave the user config untouched")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview logout without modifying the user config or the token file")
+	cmd.Flags().BoolVar(&tokenOnly, "token-only", false, "Delete only the cached access token; leave the user config untouched")
 	return cmd
 }
 

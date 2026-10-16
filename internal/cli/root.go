@@ -3,7 +3,6 @@ package cli
 import (
 	"github.com/spf13/cobra"
 
-	"umbraco-cli/internal/auth"
 	"umbraco-cli/internal/commands"
 	"umbraco-cli/internal/commands/cmdkit"
 	"umbraco-cli/internal/config"
@@ -42,7 +41,6 @@ func NewRootCommand() *cobra.Command {
 	root.PersistentFlags().StringVar(&baseURL, "base-url", "", "Override the Umbraco base URL from any config source, keeping the resolved credentials (e.g. point a profile at another host)")
 
 	deps := cmdkit.Dependencies{
-		TokenCache: auth.SystemTokenCache(),
 		Client:     runtime.Client,
 		Config:     runtime.Config,
 		HTTPClient: runtime.HTTPClient,

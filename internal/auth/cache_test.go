@@ -4,23 +4,28 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"umbraco-cli/internal/config"
-	"umbraco-cli/internal/keychain"
 )
 
 // fakeCache is an in-memory TokenCache that counts its calls.
+type fakeItem struct {
+	Token     string
+	ExpiresAt int64
+}
+
 type fakeCache struct {
 	mu      sync.Mutex
-	items   map[string]cachedToken
+	items   map[string]fakeItem
 	deletes []string
 }
 
-func newFakeCache() *fakeCache { return &fakeCache{items: map[string]cachedToken{}} }
+func newFakeCache() *fakeCache { return &fakeCache{items: map[string]fakeItem{}} }
 
 func (c *fakeCache) Load(key string) (string, time.Time, bool) {
 	c.mu.Lock()
@@ -32,7 +37,7 @@ func (c *fakeCache) Load(key string) (string, time.Time, bool) {
 func (c *fakeCache) Store(key string, token string, expiresAt time.Time) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.items[key] = cachedToken{Token: token, ExpiresAt: expiresAt.Unix()}
+	c.items[key] = fakeItem{Token: token, ExpiresAt: expiresAt.Unix()}
 }
 
 func (c *fakeCache) Delete(key string) {
@@ -66,9 +71,9 @@ func TestCachedTokenIsReusedWithoutATokenRequest(t *testing.T) {
 	requests := 0
 	cache := newFakeCache()
 	key := CacheKey("profile:live", testConfig)
-	cache.Store(key, "from-keychain", time.Now().Add(4*time.Minute))
+	cache.Store(key, "from-cache", time.Now().Add(4*time.Minute))
 	token, err := NewCached(testConfig, tokenServer(&requests), cache, key).AccessToken(context.Background())
-	if err != nil || token != "from-keychain" || requests != 0 {
+	if err != nil || token != "from-cache" || requests != 0 {
 		t.Fatalf("expected the cached token without a request, got %q (%v), %d requests", token, err, requests)
 	}
 }
@@ -101,7 +106,7 @@ func TestInvalidatingTheRejectedTokenDropsItFromTheCache(t *testing.T) {
 	requests := 0
 	cache := newFakeCache()
 	key := CacheKey("profile:live", testConfig)
-	cache.Store(key, "from-keychain", time.Now().Add(4*time.Minute))
+	cache.Store(key, "from-cache", time.Now().Add(4*time.Minute))
 	provider := NewCached(testConfig, tokenServer(&requests), cache, key)
 	token, _ := provider.AccessToken(context.Background())
 	provider.InvalidateIfCurrent("an-older-token")
@@ -146,9 +151,6 @@ func TestCacheKeysIsolateProfilesServersAndClients(t *testing.T) {
 	if CacheKey("profile:live", trailing) != keys["live"] {
 		t.Fatalf("a trailing slash must not change the key")
 	}
-	if SelectionName(config.LoadOptions{Profile: "Live"}) != "profile:live" || SelectionName(config.LoadOptions{ConfigPath: "/a.json"}) != "config:/a.json" || SelectionName(config.LoadOptions{}) != "" {
-		t.Fatalf("unexpected selection names")
-	}
 
 	// Two profiles sharing one store never see each other's token.
 	requests := 0
@@ -160,68 +162,20 @@ func TestCacheKeysIsolateProfilesServersAndClients(t *testing.T) {
 	}
 }
 
-type fakeStore struct{ items map[string]string }
-
-func (s *fakeStore) Get(service, account string) (string, error) {
-	value, ok := s.items[service+"/"+account]
-	if !ok {
-		return "", keychain.ErrNotFound
-	}
-	return value, nil
-}
-func (s *fakeStore) Set(service, account, _ string, secret string) error {
-	s.items[service+"/"+account] = secret
-	return nil
-}
-func (s *fakeStore) Delete(service, account string) error {
-	delete(s.items, service+"/"+account)
-	return nil
-}
-
-func TestSystemTokenCacheHonoursTheOptOut(t *testing.T) {
-	store := &fakeStore{items: map[string]string{}}
-	defer func(previous func() keychain.Store) { systemStore = previous }(systemStore)
-	systemStore = func() keychain.Store { return store }
-	for value, wantCache := range map[string]bool{"": true, "0": true, "false": true, "1": false, "true": false, "yes": false} {
+func TestTheOptOutDisablesTheCache(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	for value, disabled := range map[string]bool{"": false, "0": false, "false": false, "1": true, "true": true, "yes": true} {
 		t.Setenv(NoTokenCacheEnv, value)
-		if got := SystemTokenCache() != nil; got != wantCache {
-			t.Fatalf("%s=%q: cache %v, want %v", NoTokenCacheEnv, value, got, wantCache)
+		cache, _ := SystemTokenCache(config.LoadOptions{Profile: "live"}, testConfig)
+		if (cache == nil) != disabled {
+			t.Fatalf("%s=%q: cache %v, want disabled %v", NoTokenCacheEnv, value, cache != nil, disabled)
 		}
-	}
-	systemStore = func() keychain.Store { return keychain.Unavailable{} }
-	t.Setenv(NoTokenCacheEnv, "")
-	if SystemTokenCache() != nil {
-		t.Fatalf("an unavailable keychain means no cache")
 	}
 }
 
-func TestKeychainTokenCacheRoundTripsAndToleratesGarbage(t *testing.T) {
-	store := &fakeStore{items: map[string]string{}}
-	cache := KeychainTokenCache(store)
-	expires := time.Now().Add(4 * time.Minute).Truncate(time.Second)
-	cache.Store("k", "eyJ.a-b_c", expires)
-	for _, value := range store.items {
-		if strings.Contains(value, "a-b_c") {
-			t.Fatalf("the stored value is encoded, got %q", value)
-		}
-	}
-	token, at, ok := cache.Load("k")
-	if !ok || token != "eyJ.a-b_c" || !at.Equal(expires) {
-		t.Fatalf("round trip: %q %s %v", token, at, ok)
-	}
-	store.items[keychainService+"/k"] = "not base64 !"
-	if _, _, ok := cache.Load("k"); ok {
-		t.Fatalf("an unreadable item is a miss")
-	}
-	cache.Delete("k")
-	if len(store.items) != 0 {
-		t.Fatalf("delete must remove the item")
-	}
-}
-
-func TestAnUnavailableKeychainStillAuthenticates(t *testing.T) {
+func TestAnUnwritableCacheStillAuthenticates(t *testing.T) {
 	requests := 0
-	cache := KeychainTokenCache(keychain.Unavailable{})
+	cache := FileTokenCache(filepath.Join(t.TempDir(), "missing-dir", "nested", "\x00bad", "t.token.json"), testConfig.BaseURL, testConfig.ClientID, "profile:live")
 	key := CacheKey("profile:live", testConfig)
 	for i := 0; i < 2; i++ {
 		token, err := NewCached(testConfig, tokenServer(&requests), cache, key).AccessToken(context.Background())
@@ -230,34 +184,6 @@ func TestAnUnavailableKeychainStillAuthenticates(t *testing.T) {
 		}
 	}
 	if requests != 2 {
-		t.Fatalf("without a keychain each invocation fetches its own token, got %d requests", requests)
-	}
-}
-
-// The guarded keychain store with no default keychain: every invocation
-// authenticates, nothing errors, and security is never asked to write.
-func TestNoDefaultKeychainStillAuthenticatesWithoutWriting(t *testing.T) {
-	var commands []string
-	store := &keychain.SecurityStore{
-		Run: func(_ context.Context, args []string, _ string) (string, int, error) {
-			commands = append(commands, args[0])
-			if args[0] == "default-keychain" {
-				return "", 50, nil
-			}
-			return "", 0, nil
-		},
-		Stat:        func(string) bool { return false },
-		Interactive: func() bool { return true },
-		Getenv:      func(string) string { return "" },
-	}
-	requests := 0
-	cache := KeychainTokenCache(store)
-	key := CacheKey("profile:live", testConfig)
-	token, err := NewCached(testConfig, tokenServer(&requests), cache, key).AccessToken(context.Background())
-	if err != nil || token == "" || requests != 1 {
-		t.Fatalf("expected a normal fetch, got %q (%v) after %d requests", token, err, requests)
-	}
-	if strings.Join(commands, ",") != "default-keychain" {
-		t.Fatalf("only the read-only keychain check may run: %v", commands)
+		t.Fatalf("without a usable file each invocation fetches its own token, got %d requests", requests)
 	}
 }

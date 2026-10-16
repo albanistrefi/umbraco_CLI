@@ -39,14 +39,13 @@ func NewRuntime() *Runtime {
 }
 
 // newTokenProvider reuses the access token across invocations through the
-// system's credential store when one is available (auth.SystemTokenCache),
-// keyed by the selected profile, base URL and client id.
+// token file of the selected profile or config (auth.SystemTokenCache).
 func newTokenProvider(cfg config.Config, opts config.LoadOptions, httpClient *http.Client) *auth.Provider {
-	cache := auth.SystemTokenCache()
+	cache, key := auth.SystemTokenCache(opts, cfg)
 	if cache == nil {
 		return auth.New(cfg, httpClient)
 	}
-	return auth.NewCached(cfg, httpClient, cache, auth.CacheKey(auth.SelectionName(opts), cfg))
+	return auth.NewCached(cfg, httpClient, cache, key)
 }
 
 func (r *Runtime) Reload(opts config.LoadOptions) error {
