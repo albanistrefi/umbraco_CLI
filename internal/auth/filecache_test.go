@@ -377,8 +377,10 @@ func TestInvalidateDeletesTheCachedFile(t *testing.T) {
 	}
 }
 
-// A FIFO that feeds valid token bytes is still not a token file: only a
-// regular file is trusted.
+// A FIFO that feeds valid token bytes is still not a token file. It is
+// refused as a non-regular file; because the file is opened O_NONBLOCK, the
+// read could not complete either (it fails with EAGAIN once the queued
+// bytes are read), so this test cannot tell the two guards apart.
 func TestAFIFOFeedingAForgedTokenIsAMiss(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("no FIFOs on Windows")
