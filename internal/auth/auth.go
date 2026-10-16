@@ -44,11 +44,20 @@ type tokenResponse struct {
 type Provider struct {
 	cfg        config.Config
 	httpClient *http.Client
+	// cache, when set, keeps the access token between invocations under
+	// cacheKey.
+	cache    TokenCache
+	cacheKey string
 
 	mu        sync.Mutex
 	cached    string
 	expiresAt time.Time
 	inflight  *tokenFetch
+	// rejected is the last token the server refused; the cache handing it
+	// back is a miss. bypassCache is set when a refused token could not be
+	// deleted from the cache, and skips it until the next fetch.
+	rejected    string
+	bypassCache bool
 }
 
 // tokenFetch is one token request in flight. Callers that need a token
@@ -67,11 +76,41 @@ func New(cfg config.Config, client *http.Client) *Provider {
 	return &Provider{cfg: cfg, httpClient: client}
 }
 
+// NewCached is New with a token cache shared across invocations: a token
+// another invocation fetched is reused until shortly before it expires,
+// instead of requesting one per invocation. A nil cache is New.
+func NewCached(cfg config.Config, client *http.Client, cache TokenCache, key string) *Provider {
+	return &Provider{cfg: cfg, httpClient: client, cache: cache, cacheKey: key}
+}
+
 func (p *Provider) Invalidate() {
 	p.mu.Lock()
+	token := p.cached
 	p.cached = ""
 	p.expiresAt = time.Time{}
+	if token != "" {
+		p.rejected = token
+	}
 	p.mu.Unlock()
+	if token != "" {
+		p.forget(token)
+	}
+}
+
+// forget drops a refused token from the cross-invocation cache. The caller
+// has already recorded it as rejected, under the same lock that cleared it,
+// so no concurrent caller can load it back while the file is deleted. A
+// cache that cannot delete it (a read-only directory) is bypassed until the
+// next fetch.
+func (p *Provider) forget(token string) {
+	if p.cache == nil {
+		return
+	}
+	if err := p.cache.Delete(p.cacheKey, token); err != nil {
+		p.mu.Lock()
+		p.bypassCache = true
+		p.mu.Unlock()
+	}
 }
 
 // InvalidateIfCurrent drops the cached token only while it is still token,
@@ -80,10 +119,18 @@ func (p *Provider) Invalidate() {
 // just fetched, which would start another (slow) token request.
 func (p *Provider) InvalidateIfCurrent(token string) {
 	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.cached == token {
+	dropped := p.cached == token && token != ""
+	if dropped {
 		p.cached = ""
 		p.expiresAt = time.Time{}
+		p.rejected = token
+	}
+	p.mu.Unlock()
+	// The rejected token may be the cached one: drop it there too (only
+	// while the file still holds it), so the next invocation does not start
+	// with it.
+	if dropped {
+		p.forget(token)
 	}
 }
 
@@ -103,6 +150,13 @@ func (p *Provider) AccessToken(ctx context.Context) (string, error) {
 	if err := p.cfg.ValidateAuth(); err != nil {
 		p.mu.Unlock()
 		return "", authErr(err)
+	}
+	if p.cache != nil && p.inflight == nil && !p.bypassCache {
+		if token, expiresAt, ok := p.cache.Load(p.cacheKey); ok && token != p.rejected && time.Now().Before(expiresAt) {
+			p.cached, p.expiresAt = token, expiresAt
+			p.mu.Unlock()
+			return token, nil
+		}
 	}
 	fetch := p.inflight
 	if fetch == nil {
@@ -134,9 +188,13 @@ func (p *Provider) fetch(ctx context.Context, fetch *tokenFetch) {
 	if err == nil {
 		p.cached = token
 		p.expiresAt = expiresAt
+		p.bypassCache = false
 	}
 	p.inflight = nil
 	p.mu.Unlock()
+	if err == nil && p.cache != nil {
+		p.cache.Store(p.cacheKey, token, expiresAt)
+	}
 	fetch.token, fetch.err = token, err
 	close(fetch.done)
 }

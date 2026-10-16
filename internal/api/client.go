@@ -478,6 +478,11 @@ func (c *Client) sendWithRedirects(ctx context.Context, method string, fullURL s
 			}
 			continue
 		}
+		if resp.StatusCode == http.StatusUnauthorized && c.tokenProvider != nil {
+			// The last attempt was refused too: drop the token, so the next
+			// request or invocation does not start with it.
+			c.tokenProvider.InvalidateIfCurrent(token)
+		}
 
 		return resp, nil
 	}
