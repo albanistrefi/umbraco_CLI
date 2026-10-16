@@ -88,26 +88,29 @@ func (p *Provider) Invalidate() {
 	token := p.cached
 	p.cached = ""
 	p.expiresAt = time.Time{}
+	if token != "" {
+		p.rejected = token
+	}
 	p.mu.Unlock()
 	if token != "" {
 		p.forget(token)
 	}
 }
 
-// forget drops a refused token from the cross-invocation cache. A cache
-// that cannot delete it (a read-only directory) is bypassed until the next
-// fetch, and the token is remembered so the cache handing it back is a miss.
+// forget drops a refused token from the cross-invocation cache. The caller
+// has already recorded it as rejected, under the same lock that cleared it,
+// so no concurrent caller can load it back while the file is deleted. A
+// cache that cannot delete it (a read-only directory) is bypassed until the
+// next fetch.
 func (p *Provider) forget(token string) {
 	if p.cache == nil {
 		return
 	}
-	err := p.cache.Delete(p.cacheKey, token)
-	p.mu.Lock()
-	p.rejected = token
-	if err != nil {
+	if err := p.cache.Delete(p.cacheKey, token); err != nil {
+		p.mu.Lock()
 		p.bypassCache = true
+		p.mu.Unlock()
 	}
-	p.mu.Unlock()
 }
 
 // InvalidateIfCurrent drops the cached token only while it is still token,
@@ -120,6 +123,7 @@ func (p *Provider) InvalidateIfCurrent(token string) {
 	if dropped {
 		p.cached = ""
 		p.expiresAt = time.Time{}
+		p.rejected = token
 	}
 	p.mu.Unlock()
 	// The rejected token may be the cached one: drop it there too (only

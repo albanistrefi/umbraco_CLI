@@ -229,8 +229,12 @@ in a project repository.
   its attempt budget, so a token the server keeps refusing costs up to three
   refetches before the 401 is returned.
 - `umbraco auth logout --token-only` deletes the token file and leaves the
-  config untouched, even if that config does not parse; `umbraco auth
-  logout` deletes it along with the stored credentials.
+  config untouched, even if a selected profile's or `--config` file does not
+  parse; `umbraco auth logout` deletes it along with the stored credentials.
+  With credentials from environment variables and an unreadable
+  `~/.umbraco/config.json`, `--token-only` may not find the file, because its
+  name depends on the resolved credentials; delete it from
+  `~/.umbraco/tokens/` by hand in that case.
   `UMBRACO_NO_TOKEN_CACHE=1` turns the cache off.
 
 For bulk work, prefer the batch flags (`--ids`, `--from-file`, `--all`, and

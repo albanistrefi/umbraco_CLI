@@ -227,3 +227,39 @@ func TestACacheThatCannotDeleteIsBypassedUntilTheNextFetch(t *testing.T) {
 		t.Fatalf("a cache that could not delete the refused token must be skipped until a fetch: %d loads", cache.loads-loadsBefore)
 	}
 }
+
+// blockingCache holds the refused token and blocks inside Delete until
+// released, opening the window between clearing the token in memory and
+// removing it from the cache.
+type blockingCache struct {
+	fakeCache
+	deleting chan struct{}
+	release  chan struct{}
+}
+
+func (c *blockingCache) Delete(key string, token string) error {
+	close(c.deleting)
+	<-c.release
+	return c.fakeCache.Delete(key, token)
+}
+
+func TestARefusedTokenCannotBeReloadedWhileItIsBeingDeleted(t *testing.T) {
+	requests := 0
+	cache := &blockingCache{fakeCache: fakeCache{items: map[string]fakeItem{}}, deleting: make(chan struct{}), release: make(chan struct{})}
+	key := CacheKey("profile:live", testConfig)
+	cache.Store(key, "revoked", time.Now().Add(time.Hour))
+	provider := NewCached(testConfig, tokenServer(&requests), cache, key)
+	token, _ := provider.AccessToken(context.Background())
+	done := make(chan struct{})
+	go func() {
+		provider.InvalidateIfCurrent(token)
+		close(done)
+	}()
+	<-cache.deleting
+	next, err := provider.AccessToken(context.Background())
+	close(cache.release)
+	<-done
+	if err != nil || next == "revoked" {
+		t.Fatalf("a token refused a moment ago must not be reloaded while it is deleted: %q %v", next, err)
+	}
+}

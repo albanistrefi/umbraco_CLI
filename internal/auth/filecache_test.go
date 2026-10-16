@@ -377,10 +377,12 @@ func TestInvalidateDeletesTheCachedFile(t *testing.T) {
 	}
 }
 
-// A FIFO that feeds valid token bytes is still not a token file. It is
-// refused as a non-regular file; because the file is opened O_NONBLOCK, the
-// read could not complete either (it fails with EAGAIN once the queued
-// bytes are read), so this test cannot tell the two guards apart.
+// A FIFO that feeds valid token bytes is still not a token file: it is
+// refused as a non-regular file. On macOS the read would fail anyway (Go
+// leaves the O_NONBLOCK FIFO outside its poller, so it returns EAGAIN once
+// the queued bytes are read), which makes the regular-file check redundant
+// there; on Linux Go polls the FIFO and the read blocks, so the check is
+// what keeps Load from hanging or trusting it.
 func TestAFIFOFeedingAForgedTokenIsAMiss(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("no FIFOs on Windows")
@@ -401,5 +403,33 @@ func TestAFIFOFeedingAForgedTokenIsAMiss(t *testing.T) {
 	}()
 	if token, _, ok := cache.Load(key); ok {
 		t.Fatalf("a FIFO must not be trusted, got %q", token)
+	}
+}
+
+// A FIFO whose writer stays open without writing must not hang Load: on
+// Linux a read of it would block until the writer closes.
+func TestAFIFOWithAnIdleWriterDoesNotHangLoad(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("no FIFOs on Windows")
+	}
+	cache, path := fileCacheAt(t)
+	_ = os.MkdirAll(filepath.Dir(path), 0o700)
+	closeWriter, err := fifoFeedingAToken(path, nil)
+	if err != nil {
+		t.Skipf("fifo: %v", err)
+	}
+	defer closeWriter()
+	done := make(chan bool, 1)
+	go func() {
+		_, _, ok := cache.Load(CacheKey("profile:live", testConfig))
+		done <- ok
+	}()
+	select {
+	case ok := <-done:
+		if ok {
+			t.Fatalf("a FIFO must be a miss")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatalf("Load hung on a FIFO with an idle writer")
 	}
 }

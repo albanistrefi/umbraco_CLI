@@ -32,9 +32,11 @@ func fifoFeedingAToken(path string, payload []byte) (func(), error) {
 	if err != nil {
 		return nil, err
 	}
-	if _, err := writer.Write(payload); err != nil {
-		_ = writer.Close()
-		return nil, err
+	if len(payload) > 0 {
+		if _, err := writer.Write(payload); err != nil {
+			_ = writer.Close()
+			return nil, err
+		}
 	}
 	return func() { _ = writer.Close() }, nil
 }
