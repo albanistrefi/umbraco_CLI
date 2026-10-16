@@ -2,7 +2,7 @@
 name: umbraco-language
 description: "Language and culture management for variant content"
 metadata:
-  version: 0.5.1
+  version: 0.5.2
   requires:
     bins:
       - umbraco

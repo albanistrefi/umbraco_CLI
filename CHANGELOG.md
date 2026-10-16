@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.5.2 - 2026-10-16
+
 - fixed `deploy watch` never reaching `landed` when Umbraco's log viewer refuses reads for size. On the 2026-10-15 live deploy (CLI 0.5.1, CMS 18.2), the baseline read the process id at 12:24:31. From 12:25:06 every log-viewer read answered HTTP 400 `CancelledByLogsSizeValidation`. The app restarted at 12:34:16, was alive at 12:35:03 and serving at 12:35:57, and the deploy had landed, but `landed` needs a new process id from the newest log entry. So the watch sat in `serving` and would have timed out (exit 6).
   - Umbraco 18.2's `LogViewerService` sums the size of every `*yyyyMMdd*.json` log file for each day a read covers (from its start date, default a day ago, to now) and refuses above 100 MB. `take`, levels and filters apply after that check, so no narrower read of today gets past it. Read-only on live: a newest-entry read, a read from 12:00, `validate-logs-size` and `level-count` were all refused.
   - No other process or instance identity is readable on live: `/server/information` has only versions, `/server/troubleshooting` only OS, framework, culture and server role, and the public site sits behind Cloudflare with no instance header.
