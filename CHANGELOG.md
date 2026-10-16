@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- fixed `deploy watch` missing the process id the day after a busy log day. Its newest-entry read sent no `startDate`, so Umbraco 18.2 read from a day ago and refused it for size while yesterday's log files were over 100 MB, and the watch armed on the restart-cycle basis although today's log read fine. On live on 16-10, `GET /log-viewer/log?take=1` was refused while the same read with `startDate=2026-10-16T00:00:00Z` returned process 9076. When the default read is refused for size, the watch now reads the newest entry from the start of the server's day and keeps doing so while that works; the day comes from `/server/information`'s `baseUtcOffset`, the server time zone's standard offset, so during daylight saving time the read starts at 01:00 local, still the same day. Without the offset, when today's files are oversized too, or before anything has been logged today, it falls back as before.
+
 ## v0.5.2 - 2026-10-16
 
 - fixed `deploy watch` never reaching `landed` when Umbraco's log viewer refuses reads for size. On the 2026-10-15 live deploy (CLI 0.5.1, CMS 18.2), the baseline read the process id at 12:24:31. From 12:25:06 every log-viewer read answered HTTP 400 `CancelledByLogsSizeValidation`. The app restarted at 12:34:16, was alive at 12:35:03 and serving at 12:35:57, and the deploy had landed, but `landed` needs a new process id from the newest log entry. So the watch sat in `serving` and would have timed out (exit 6).

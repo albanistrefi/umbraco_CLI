@@ -29,6 +29,8 @@ type watchProbes struct {
 	publicURL   string
 	healthPaths []string
 	skipIndexes bool
+	// day is shared by the baseline's copy and the poll loop's probes.
+	day *watchProbeDay
 }
 
 func watchHTTPClient(deps cmdkit.Dependencies) *http.Client {
@@ -151,12 +153,58 @@ func (p *watchProbes) healthClient(secretHeader string, secretSent bool) *http.C
 	return &client
 }
 
+// newestProcess reads the newest log entry's process. When the default read
+// is refused for size it reads from the start of the server's day instead,
+// and keeps doing so while that works (see watch_probe_day.go).
 func (p *watchProbes) newestProcess(ctx context.Context) (string, string, time.Time, error) {
+	if p.day == nil {
+		return p.readNewest(ctx, time.Time{})
+	}
+	if p.day.useSameDay() {
+		if start, ok := p.sameDayStart(ctx); ok {
+			processID, machineName, newestAt, err := p.readNewest(ctx, start)
+			if err == nil && processID != "" {
+				return processID, machineName, newestAt, nil
+			}
+		}
+		p.day.setSameDay(false)
+	}
+	processID, machineName, newestAt, err := p.readNewest(ctx, time.Time{})
+	if !isLogSizeRefusal(err) {
+		return processID, machineName, newestAt, err
+	}
+	start, ok := p.sameDayStart(ctx)
+	if !ok {
+		return processID, machineName, newestAt, err
+	}
+	sameID, sameMachine, sameAt, sameErr := p.readNewest(ctx, start)
+	if sameErr != nil || sameID == "" {
+		return processID, machineName, newestAt, err
+	}
+	p.day.setSameDay(true)
+	return sameID, sameMachine, sameAt, nil
+}
+
+func (p *watchProbes) sameDayStart(ctx context.Context) (time.Time, bool) {
 	requestCtx, cancel := context.WithTimeout(ctx, p.timeout)
 	defer cancel()
-	result, err := p.client.Get(requestCtx, cmdkit.LogViewerLogPath, api.RequestOptions{Params: map[string]any{
-		"take": 1, "skip": 0, "orderDirection": "Descending",
-	}})
+	offset, ok := p.day.serverOffset(requestCtx, p.client)
+	if !ok {
+		return time.Time{}, false
+	}
+	return serverDayStart(time.Now(), offset), true
+}
+
+// readNewest reads the single newest log entry, from the daily files from
+// start on when start is set.
+func (p *watchProbes) readNewest(ctx context.Context, start time.Time) (string, string, time.Time, error) {
+	requestCtx, cancel := context.WithTimeout(ctx, p.timeout)
+	defer cancel()
+	params := map[string]any{"take": 1, "skip": 0, "orderDirection": "Descending"}
+	if !start.IsZero() {
+		params["startDate"] = start.UTC().Format(time.RFC3339)
+	}
+	result, err := p.client.Get(requestCtx, cmdkit.LogViewerLogPath, api.RequestOptions{Params: params})
 	if err != nil {
 		return "", "", time.Time{}, err
 	}
