@@ -332,7 +332,7 @@ func TestRequestAllowsArbitraryContentInBodies(t *testing.T) {
 			map[string]any{"alias": "bodyText", "value": "line1\nline2\tindented"},
 			map[string]any{"alias": "video", "value": "https://youtube.com/watch?v=abc#t=10"},
 			map[string]any{"alias": "width", "value": "50% off %20"},
-			map[string]any{"alias": "skills", "value": []any{map[string]any{"type": "document", "unique": "62689bb1-3a4d-478f-a7b1-1c0e560d4748"}}},
+			map[string]any{"alias": "skills", "value": []any{map[string]any{"type": "document", "unique": "00000000-0000-4000-8000-0000000000aa"}}},
 		},
 	}
 
