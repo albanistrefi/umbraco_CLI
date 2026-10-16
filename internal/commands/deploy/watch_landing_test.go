@@ -541,44 +541,6 @@ func TestWatchMachineRestartMinDownIsProvenBetweenFailedProbes(t *testing.T) {
 		t.Fatalf("a 47s outage at 5s polls should land: %s", got)
 	}
 }
-
-func TestWatchMachineOneStaleBaselineReadDoesNotDisproveTheCycle(t *testing.T) {
-	base := watchBaseline()
-	tick := func(s int) time.Time { return base.At.Add(time.Duration(s) * time.Second) }
-	healthy := map[string]bool{"/": true}
-	outage := []watchObservation{}
-	for s := 5; s <= 45; s += 5 {
-		outage = append(outage, watchObservation{At: tick(s), MgmtAlive: false, MgmtStatus: 503})
-	}
-	stale := watchObservation{At: tick(50), MgmtAlive: true, MgmtStatus: 401, ProcessID: base.ProcessID, MachineName: base.MachineName, NewestLogAt: tick(2), Health: healthy}
-	refusedRead := watchObservation{At: tick(55), MgmtAlive: true, MgmtStatus: 401, LogErr: sizeRefusal(), Health: healthy}
-
-	m, _ := newWatchMachine(base, time.Hour, 0, true)
-	m.restartMinDown = 20 * time.Second
-	var all []watchEvent
-	for _, obs := range append(append(outage, stale), refusedRead) {
-		events, _ := m.observe(obs)
-		all = append(all, events...)
-	}
-	if !strings.Contains(strings.Join(phases(all), ","), "landed") {
-		t.Fatalf("the old process's last entry, written before the outage ended, must not disprove it: %v", phases(all))
-	}
-
-	// The same stale entry newest on two polls in a row does.
-	m, _ = newWatchMachine(base, time.Hour, 0, true)
-	m.restartMinDown = 20 * time.Second
-	all = nil
-	again := stale
-	again.At = tick(52)
-	for _, obs := range append(append(outage, stale, again), refusedRead) {
-		events, _ := m.observe(obs)
-		all = append(all, events...)
-	}
-	if strings.Contains(strings.Join(phases(all), ","), "landed") {
-		t.Fatalf("the baseline process newest on two polls in a row disproves the outage: %v", phases(all))
-	}
-}
-
 func TestWatchRestartMinDownDefaultsAndLimits(t *testing.T) {
 	for _, tc := range []struct {
 		value      time.Duration
@@ -627,66 +589,80 @@ func TestWatchMachineRestartMinDownZeroCountsOneFailedProbe(t *testing.T) {
 	}
 }
 
-// After an outage the baseline process stays newest: a stale read, an
-// unreadable read (500), the same stale read again. Two baseline reads are
-// a survivor; the 500 in between must not reset the count.
-func TestWatchMachineAnUnreadablePollDoesNotResetTheBaselineReads(t *testing.T) {
+// Fail safe: one read of the baseline process after a qualifying outage
+// means it was no restart, whether its entry is older than the outage (a
+// real restart's old process still newest) or newer (it survived).
+func TestWatchMachineOneBaselineReadAfterAnOutageDisprovesIt(t *testing.T) {
 	base := watchBaseline()
 	tick := func(s int) time.Time { return base.At.Add(time.Duration(s) * time.Second) }
 	healthy := map[string]bool{"/": true}
-	m, _ := newWatchMachine(base, time.Hour, 0, true)
-	m.restartMinDown = 20 * time.Second
-	var all []watchEvent
-	observations := []watchObservation{}
-	for s := 5; s <= 45; s += 5 {
-		observations = append(observations, watchObservation{At: tick(s), MgmtAlive: false, MgmtStatus: 503})
-	}
-	survivor := watchObservation{MgmtAlive: true, MgmtStatus: 401, ProcessID: base.ProcessID, MachineName: base.MachineName, NewestLogAt: tick(2), Health: healthy}
-	first, second := survivor, survivor
-	first.At, second.At = tick(50), tick(60)
-	observations = append(observations,
-		first,
-		watchObservation{At: tick(55), MgmtAlive: true, MgmtStatus: 401, LogErr: &api.APIError{StatusCode: http.StatusInternalServerError}, Health: healthy},
-		second,
-		watchObservation{At: tick(65), MgmtAlive: true, MgmtStatus: 401, LogErr: sizeRefusal(), Health: healthy},
-	)
-	for _, obs := range observations {
-		events, _ := m.observe(obs)
-		all = append(all, events...)
-	}
-	if strings.Contains(strings.Join(phases(all), ","), "landed") {
-		t.Fatalf("the baseline process read twice around a 500 must disprove the outage: %v", phases(all))
+	for _, tc := range []struct {
+		name      string
+		downUntil int
+		newestAt  int
+	}{
+		{"a 47s outage, then the old process's entry from before it", 45, 2},
+		{"a 25s outage the process survived, then its entry from after it", 30, 33},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m, _ := newWatchMachine(base, time.Hour, 0, true)
+			m.restartMinDown = 20 * time.Second
+			observations := []watchObservation{}
+			for s := 5; s <= tc.downUntil; s += 5 {
+				observations = append(observations, watchObservation{At: tick(s), MgmtAlive: false, MgmtStatus: 503})
+			}
+			observations = append(observations,
+				watchObservation{At: tick(tc.downUntil + 5), MgmtAlive: true, MgmtStatus: 401, ProcessID: base.ProcessID, MachineName: base.MachineName, NewestLogAt: tick(tc.newestAt), Health: healthy})
+			for s := tc.downUntil + 10; s <= tc.downUntil+60; s += 5 {
+				observations = append(observations, watchObservation{At: tick(s), MgmtAlive: true, MgmtStatus: 401, LogErr: sizeRefusal(), Health: healthy})
+			}
+			var all []watchEvent
+			for _, obs := range observations {
+				events, _ := m.observe(obs)
+				all = append(all, events...)
+			}
+			if strings.Contains(strings.Join(phases(all), ","), "landed") {
+				t.Fatalf("a baseline read after the outage must keep the watch from landing: %v", phases(all))
+			}
+		})
 	}
 }
 
-// A disproved cycle's baseline reads must not count against the next one:
-// one stale read after the first outage, then a second real outage with one
-// stale read of its own, then refusals, lands.
-func TestWatchMachineANewCycleStartsItsOwnBaselineReadCount(t *testing.T) {
+// An unreadable poll (a 500) after a qualifying outage neither disproves the
+// cycle nor lands it; the next size refusal does. Around a baseline read it
+// changes nothing: the baseline read alone disproves.
+func TestWatchMachineAnUnreadablePollNeitherDisprovesNorLands(t *testing.T) {
 	base := watchBaseline()
 	tick := func(s int) time.Time { return base.At.Add(time.Duration(s) * time.Second) }
 	healthy := map[string]bool{"/": true}
-	m, _ := newWatchMachine(base, time.Hour, 0, true)
-	m.restartMinDown = 20 * time.Second
-	stale := func(at int) watchObservation {
-		return watchObservation{At: tick(at), MgmtAlive: true, MgmtStatus: 401, ProcessID: base.ProcessID, MachineName: base.MachineName, NewestLogAt: tick(1), Health: healthy}
+	outage := func() []watchObservation {
+		observations := []watchObservation{}
+		for s := 5; s <= 45; s += 5 {
+			observations = append(observations, watchObservation{At: tick(s), MgmtAlive: false, MgmtStatus: 503})
+		}
+		return observations
 	}
-	observations := []watchObservation{}
-	for s := 5; s <= 45; s += 5 {
-		observations = append(observations, watchObservation{At: tick(s), MgmtAlive: false, MgmtStatus: 503})
+	unreadable := func(at int) watchObservation {
+		return watchObservation{At: tick(at), MgmtAlive: true, MgmtStatus: 401, LogErr: &api.APIError{StatusCode: http.StatusInternalServerError}, Health: healthy}
 	}
-	observations = append(observations, stale(50))
-	for s := 100; s <= 140; s += 5 {
-		observations = append(observations, watchObservation{At: tick(s), MgmtAlive: false, MgmtStatus: 503})
+	survivor := func(at int) watchObservation {
+		return watchObservation{At: tick(at), MgmtAlive: true, MgmtStatus: 401, ProcessID: base.ProcessID, MachineName: base.MachineName, NewestLogAt: tick(2), Health: healthy}
 	}
-	observations = append(observations, stale(145),
-		watchObservation{At: tick(150), MgmtAlive: true, MgmtStatus: 401, LogErr: sizeRefusal(), Health: healthy})
-	var all []watchEvent
-	for _, obs := range observations {
-		events, _ := m.observe(obs)
-		all = append(all, events...)
+	refusal := watchObservation{At: tick(70), MgmtAlive: true, MgmtStatus: 401, LogErr: sizeRefusal(), Health: healthy}
+	run := func(observations []watchObservation) string {
+		m, _ := newWatchMachine(base, time.Hour, 0, true)
+		m.restartMinDown = 20 * time.Second
+		var all []watchEvent
+		for _, obs := range observations {
+			events, _ := m.observe(obs)
+			all = append(all, events...)
+		}
+		return strings.Join(phases(all), ",")
 	}
-	if !strings.Contains(strings.Join(phases(all), ","), "landed") {
-		t.Fatalf("the second outage's single stale read must not add to the first one's: %v", phases(all))
+	if got := run(append(outage(), unreadable(50), refusal)); !strings.Contains(got, "landed") {
+		t.Fatalf("an unreadable poll must not disprove the outage: %s", got)
+	}
+	if got := run(append(outage(), survivor(50), unreadable(55), survivor(60), refusal)); strings.Contains(got, "landed") {
+		t.Fatalf("survivor, 500, survivor, refusal must not land: %s", got)
 	}
 }

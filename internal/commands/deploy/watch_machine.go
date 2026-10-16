@@ -68,16 +68,12 @@ type watchMachine struct {
 	lastDownAt time.Time
 	downPolls  int
 	// cycleArmed is set by an outage of at least restartMinDown and cleared
-	// when the baseline process is shown to have outlived it; cycleDownSince
-	// and cycleDownFor describe that outage, cycleLastDownAt is its last
-	// failed probe, and cycleBaselineReads counts consecutive baseline reads
-	// since.
-	cycleArmed         bool
-	cycleDownSince     time.Time
-	cycleDownFor       time.Duration
-	cycleLastDownAt    time.Time
-	cycleDownPolls     int
-	cycleBaselineReads int
+	// when a later poll reads the baseline process; cycleDownSince,
+	// cycleDownFor and cycleDownPolls describe that outage.
+	cycleArmed     bool
+	cycleDownSince time.Time
+	cycleDownFor   time.Duration
+	cycleDownPolls int
 }
 
 func newWatchMachine(baseline watchObservation, escalation time.Duration, settle time.Duration, skipIndexVerify bool) (*watchMachine, error) {
@@ -170,30 +166,18 @@ func (m *watchMachine) observe(obs watchObservation) ([]watchEvent, watchOutcome
 			m.cycleArmed = true
 			m.cycleDownSince = m.downSince
 			m.cycleDownFor = provenDown
-			m.cycleLastDownAt = m.lastDownAt
 			m.cycleDownPolls = m.downPolls
-			m.cycleBaselineReads = 0
 		}
 	}
 	m.downSince = time.Time{}
 	m.prevAlive = true
-	// The baseline process writing an entry after the outage's last failed
-	// probe, or being newest on two reads in a row, disproves the outage as
-	// a restart. One stale read (the old process's last lines) does not:
-	// that tolerance keeps a real restart whose old process stays newest for
-	// a poll, at the cost of landing an outage the process survived if it is
-	// read once before the log viewer refuses. Only a different process
-	// breaks the run of reads; an unreadable one (a 500, a refusal) does not.
-	if m.cycleArmed && m.baselineProcessID != "" {
-		switch {
-		case obs.ProcessID == m.baselineProcessID && obs.MachineName == m.baselineMachineName:
-			m.cycleBaselineReads++
-			if obs.NewestLogAt.After(m.cycleLastDownAt) || m.cycleBaselineReads >= 2 {
-				m.cycleArmed = false
-			}
-		case obs.ProcessID != "":
-			m.cycleBaselineReads = 0
-		}
+	// Fail safe: any read of the baseline process after the outage means it
+	// was no restart, even an entry older than the outage. A real restart
+	// whose old process stays newest for one poll then never lands on this
+	// basis (timeout, exit 6), which is better than verifying an outage the
+	// process survived. An unreadable poll neither disproves nor confirms.
+	if m.cycleArmed && m.baselineProcessID != "" && obs.ProcessID == m.baselineProcessID && obs.MachineName == m.baselineMachineName {
+		m.cycleArmed = false
 	}
 
 	processKnown := m.baselineProcessID != "" && obs.ProcessID != ""
