@@ -35,6 +35,11 @@ type watchRun struct {
 	lastPoll    time.Time
 	// ended is set with the terminal phase; no heartbeat follows it.
 	ended bool
+	// logRefusedRetry spaces the log follower's reads while the log viewer
+	// refuses them for size; logWake cuts that wait short when a poll reads
+	// the newest entry again.
+	logRefusedRetry time.Duration
+	logWake         chan struct{}
 }
 
 // emit writes values to the stream as one uninterrupted sequence.
@@ -93,8 +98,16 @@ func (r *watchRun) heartbeat(now time.Time) {
 	}
 	logStatus := ""
 	if r.logs != nil {
-		logStatus = fmt.Sprintf(", logs: %d read, %d emitted", r.feed.read, r.logs.total())
-		event.Logs = map[string]any{"read": r.feed.read, "emitted": r.logs.total()}
+		state := r.feed.state()
+		condition := ""
+		switch state {
+		case "refused":
+			condition = "unavailable (size), "
+		case "unavailable":
+			condition = "unavailable, "
+		}
+		logStatus = fmt.Sprintf(", logs: %s%d read, %d emitted", condition, r.feed.read, r.logs.total())
+		event.Logs = map[string]any{"read": r.feed.read, "emitted": r.logs.total(), "status": state}
 	}
 	fmt.Fprintf(r.errOut, "%s still watching — phase %s, elapsed %s%s\n", event.Timestamp, event.CurrentPhase, elapsed, logStatus)
 	if r.jsonOut {
@@ -107,10 +120,17 @@ func (r *watchRun) heartbeat(now time.Time) {
 // or a log viewer that does not answer, delays only the log lines.
 func (r *watchRun) followLogs(ctx context.Context, every time.Duration) {
 	for {
+		wait := every
+		r.mu.Lock()
+		if r.feed.refused && r.logRefusedRetry > wait {
+			wait = r.logRefusedRetry
+		}
+		r.mu.Unlock()
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(every):
+		case <-time.After(wait):
+		case <-r.logWake:
 		}
 		r.readLogs(ctx)
 	}
@@ -205,8 +225,13 @@ func (r *watchRun) poll(ctx context.Context, probes *watchProbes) watchOutcome {
 	for _, event := range events {
 		r.write(event)
 	}
-	if r.machine.sawLanded || (observation.ProcessID != "" &&
-		(observation.ProcessID != r.baseline.ProcessID || observation.MachineName != r.baseline.MachineName)) {
+	if r.feed != nil && r.feed.refused && observation.MgmtAlive && observation.LogErr == nil && r.logWake != nil {
+		select {
+		case r.logWake <- struct{}{}:
+		default:
+		}
+	}
+	if r.machine.sawLanded || r.machine.processChanged(observation) {
 		r.landed = true
 	}
 	if r.schema != nil && terminal == watchOutcomeNone && r.machine.sawLanded && r.machine.sawServing {
@@ -226,7 +251,7 @@ func (r *watchRun) timedOut(timeout time.Duration) string {
 	defer r.mu.Unlock()
 	reason := fmt.Sprintf("no verification within %s (last phase: %s) — deployment status unknown", timeout, r.machine.phase)
 	if r.schema != nil && r.schema.pending() {
-		reason += fmt.Sprintf("; schema: %d tracked artifacts unconfirmed, Umbraco Deploy's schema pass end not observed", len(r.schema.pendingFiles()))
+		reason += "; " + r.schema.pendingReason()
 	}
 	r.ended = true
 	r.write(watchEvent{Timestamp: time.Now().UTC().Format(time.RFC3339), Phase: "timeout", Detail: map[string]any{"reason": reason}})

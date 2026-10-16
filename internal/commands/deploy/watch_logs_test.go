@@ -25,8 +25,22 @@ type fakeDeployEnv struct {
 	// tailBroken makes every tail read fail, as if the log viewer were
 	// unusable, while the single-entry landing probe keeps working.
 	tailBroken bool
-	entries    []fakeLogEntry
-	tailReads  int
+	// refuseLogs makes every log-viewer read from refuseLogsFrom on answer
+	// the size refusal live gave on 15-10, the landing probe included.
+	refuseLogs     bool
+	refuseLogsFrom int
+	// refuseLogsUntil, when above refuseLogsFrom, ends the refusal there.
+	refuseLogsUntil int
+	// blipTicks answer 502 to the liveness probe only, as one failed probe
+	// would, while everything else keeps working.
+	blipTicks map[int]bool
+	// newestFails answers the landing probe 500 at these ticks.
+	newestFails map[int]bool
+	// firstTailOK is the tick of the first tail read that succeeded after a
+	// refusal (0 = none yet).
+	firstTailOK int
+	entries     []fakeLogEntry
+	tailReads   int
 	// routes answers any other request for the current tick (nil = 404).
 	routes func(tick int, req *http.Request) *http.Response
 }
@@ -37,6 +51,9 @@ type fakeLogEntry struct {
 }
 
 const fakeBaselineAt = "2026-10-01T10:00:00Z"
+
+// logSizeRefusalBody is the body live's log viewer answered on 15-10.
+const logSizeRefusalBody = `{"detail":"The log file size for the requested date range prevented the operation.","operationStatus":"CancelledByLogsSizeValidation","status":400,"title":"Cancelled due to log file size","type":"Error"}`
 
 func logJSON(second int, level string, source string, message string, extra string) string {
 	body := fmt.Sprintf(`"timestamp":"2026-10-01T10:00:%02dZ","level":%q,"renderedMessage":%q,"properties":[{"name":"SourceContext","value":%q},{"name":"ProcessId","value":"222"},{"name":"MachineName","value":"m1"}]`, second, level, message, source)
@@ -65,6 +82,9 @@ func (e *fakeDeployEnv) handler() cmdtest.RoundTripper {
 			}
 			if body == "" { // the watch's unauthenticated liveness probe
 				e.tick++
+				if e.blipTicks[e.tick-1] {
+					return cmdtest.JSONResponse(http.StatusBadGateway, `{}`), nil
+				}
 				if e.downTicks[e.tick-1] {
 					return cmdtest.JSONResponse(http.StatusServiceUnavailable, `{}`), nil
 				}
@@ -80,10 +100,22 @@ func (e *fakeDeployEnv) handler() cmdtest.RoundTripper {
 		case "/":
 			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("home"))}, nil
 		case "/umbraco/management/api/v1/log-viewer/log":
+			if e.refuseLogs && tick >= e.refuseLogsFrom && (e.refuseLogsUntil <= e.refuseLogsFrom || tick < e.refuseLogsUntil) {
+				if req.URL.Query().Get("take") != "1" {
+					e.tailReads++
+				}
+				return cmdtest.JSONResponse(http.StatusBadRequest, logSizeRefusalBody), nil
+			}
 			if req.URL.Query().Get("take") == "1" {
+				if e.newestFails[tick] {
+					return cmdtest.JSONResponse(http.StatusInternalServerError, `{"title":"log viewer broke"}`), nil
+				}
 				return cmdtest.JSONResponse(http.StatusOK, `{"total":1,"items":[`+e.newest(tick)+`]}`), nil
 			}
 			e.tailReads++
+			if e.refuseLogs && e.firstTailOK == 0 {
+				e.firstTailOK = tick
+			}
 			if e.tailBroken {
 				return cmdtest.JSONResponse(http.StatusInternalServerError, `{"title":"log viewer broke"}`), nil
 			}
@@ -263,7 +295,7 @@ func TestWatchLogsNeverChangePhasesOrExitCode(t *testing.T) {
 				down[i] = true
 			}
 			return &fakeDeployEnv{downTicks: down, landTick: 1 << 30, entries: deployLogs(1)}
-		}, args: []string{"--escalation", "1ms"}, exit: 5},
+		}, args: []string{"--escalation", "1ms", "--restart-min-down", "0"}, exit: 5},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			without, errWithout := runWatch(t, tc.env(), tc.args...)
