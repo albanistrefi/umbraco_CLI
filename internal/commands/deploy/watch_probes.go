@@ -29,6 +29,12 @@ type watchProbes struct {
 	publicURL   string
 	healthPaths []string
 	skipIndexes bool
+	// day is shared by the baseline's copy and the poll loop's probes.
+	day *watchProbeDay
+	// baseline makes any same-day failure after a size refusal report the
+	// refusal, so the watch arms on the restart-cycle basis instead of
+	// refusing to arm over a transient error.
+	baseline bool
 }
 
 func watchHTTPClient(deps cmdkit.Dependencies) *http.Client {
@@ -151,12 +157,99 @@ func (p *watchProbes) healthClient(secretHeader string, secretSent bool) *http.C
 	return &client
 }
 
+// newestProcess reads the newest log entry's process. When the default read
+// is refused for size it reads from the start of the server's day instead,
+// and keeps doing so while that works (see watch_probe_day.go). The whole
+// chain, offset lookup included, runs within one request timeout, so a poll
+// still takes about two request timeouts at most.
+//
+// The size refusal is returned only when the same-day read cannot stand in
+// for it: the server reports no usable offset, the same-day read is refused
+// for size too, or nothing is logged yet today. Any other failure on the
+// way (a 500, a timeout, the offset request failing) is returned as itself,
+// so it is never mistaken for the refusal that lets a restart cycle land
+// the watch.
 func (p *watchProbes) newestProcess(ctx context.Context) (string, string, time.Time, error) {
+	ctx, cancel := context.WithTimeout(ctx, p.timeout)
+	defer cancel()
+	if p.day == nil {
+		return p.readNewest(ctx, time.Time{})
+	}
+	if p.day.useSameDay() {
+		start, ok, offsetErr := p.sameDayStart(ctx)
+		if offsetErr != nil {
+			if !p.day.failed() {
+				return "", "", time.Time{}, offsetErr
+			}
+			return p.readNewest(ctx, time.Time{})
+		}
+		if ok {
+			processID, machineName, newestAt, err := p.readNewest(ctx, start)
+			switch {
+			case err == nil && processID != "":
+				p.day.succeeded()
+				return processID, machineName, newestAt, nil
+			case err != nil && !isLogSizeRefusal(err):
+				// Transient: keep the mode and report this failure, until
+				// too many in a row make the process id unavailable for
+				// size after all: then the default read's answer stands.
+				if !p.day.failed() {
+					return "", "", time.Time{}, err
+				}
+				return p.readNewest(ctx, time.Time{})
+			}
+		}
+		// Refused for size, or nothing logged yet today: back to the
+		// default read.
+		p.day.setSameDay(false)
+	}
+	processID, machineName, newestAt, err := p.readNewest(ctx, time.Time{})
+	if !isLogSizeRefusal(err) {
+		return processID, machineName, newestAt, err
+	}
+	start, ok, offsetErr := p.sameDayStart(ctx)
+	if offsetErr != nil {
+		if p.baseline || p.day.failed() {
+			return processID, machineName, newestAt, err
+		}
+		return "", "", time.Time{}, offsetErr
+	}
+	if !ok {
+		return processID, machineName, newestAt, err
+	}
+	sameID, sameMachine, sameAt, sameErr := p.readNewest(ctx, start)
+	switch {
+	case sameErr == nil && sameID != "":
+		p.day.succeeded()
+		p.day.setSameDay(true)
+		return sameID, sameMachine, sameAt, nil
+	case sameErr != nil && !isLogSizeRefusal(sameErr):
+		if p.baseline || p.day.failed() {
+			return processID, machineName, newestAt, err
+		}
+		return "", "", time.Time{}, sameErr
+	}
+	return processID, machineName, newestAt, err
+}
+
+func (p *watchProbes) sameDayStart(ctx context.Context) (time.Time, bool, error) {
+	offset, ok, err := p.day.serverOffset(ctx, p.client)
+	if err != nil || !ok {
+		return time.Time{}, false, err
+	}
+	return serverDayStart(watchNow(), offset), true, nil
+}
+
+// readNewest reads the single newest log entry, from the daily files from
+// start on when start is set.
+func (p *watchProbes) readNewest(ctx context.Context, start time.Time) (string, string, time.Time, error) {
 	requestCtx, cancel := context.WithTimeout(ctx, p.timeout)
 	defer cancel()
-	result, err := p.client.Get(requestCtx, cmdkit.LogViewerLogPath, api.RequestOptions{Params: map[string]any{
-		"take": 1, "skip": 0, "orderDirection": "Descending",
-	}})
+	params := map[string]any{"take": 1, "skip": 0, "orderDirection": "Descending"}
+	if !start.IsZero() {
+		params["startDate"] = start.UTC().Format(time.RFC3339)
+	}
+	result, err := p.client.Get(requestCtx, cmdkit.LogViewerLogPath, api.RequestOptions{Params: params})
 	if err != nil {
 		return "", "", time.Time{}, err
 	}

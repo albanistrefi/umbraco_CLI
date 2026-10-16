@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"umbraco-cli/internal/commands/cmdtest"
 )
@@ -25,6 +26,23 @@ type fakeDeployEnv struct {
 	// tailBroken makes every tail read fail, as if the log viewer were
 	// unusable, while the single-entry landing probe keeps working.
 	tailBroken bool
+	// yesterdayOversized refuses, for size, every log-viewer read whose
+	// startDate is missing (Umbraco then reads from a day ago) or falls
+	// before the server's midnight, the server's day being UTC shifted by
+	// serverOffset (a .NET TimeSpan, answered on /server/information when
+	// set). newestStarts records the landing probe's startDate params.
+	yesterdayOversized bool
+	// todayEmpty answers a same-day read with no entries, as just after the
+	// server's midnight. sameDayFails answers the same-day read 500 at
+	// these ticks.
+	todayEmpty   bool
+	sameDayFails map[int]bool
+	// sameDayFailsFrom fails every same-day read from this tick on (0 = no).
+	sameDayFailsFrom int
+	// serverInfoFails answers /server/information 500.
+	serverInfoFails bool
+	serverOffset    string
+	newestStarts    []string
 	// refuseLogs makes every log-viewer read from refuseLogsFrom on answer
 	// the size refusal live gave on 15-10, the landing probe included.
 	refuseLogs     bool
@@ -70,6 +88,25 @@ func (e *fakeDeployEnv) newest(tick int) string {
 	return `{"timestamp":"` + fakeBaselineAt + `","level":"Information","renderedMessage":"baseline","properties":[{"name":"ProcessId","value":"111"},{"name":"MachineName","value":"m1"}]}`
 }
 
+// readsOnlyTheServerDay reports whether a log-viewer read starts at or
+// after the server's midnight, computed here without the code under test.
+func (e *fakeDeployEnv) readsOnlyTheServerDay(req *http.Request) bool {
+	start, err := time.Parse(time.RFC3339, req.URL.Query().Get("startDate"))
+	if err != nil {
+		return false
+	}
+	sign, value := time.Duration(1), e.serverOffset
+	if strings.HasPrefix(value, "-") {
+		sign, value = -1, value[1:]
+	}
+	var hours, minutes, seconds int
+	_, _ = fmt.Sscanf(value, "%d:%d:%d", &hours, &minutes, &seconds)
+	offset := sign * (time.Duration(hours)*time.Hour + time.Duration(minutes)*time.Minute + time.Duration(seconds)*time.Second)
+	serverNow := watchNow().UTC().Add(offset)
+	serverMidnight := time.Date(serverNow.Year(), serverNow.Month(), serverNow.Day(), 0, 0, 0, 0, time.UTC).Add(-offset)
+	return !start.Before(serverMidnight)
+}
+
 func (e *fakeDeployEnv) handler() cmdtest.RoundTripper {
 	return func(req *http.Request) (*http.Response, error) {
 		e.mu.Lock()
@@ -99,7 +136,29 @@ func (e *fakeDeployEnv) handler() cmdtest.RoundTripper {
 		switch req.URL.Path {
 		case "/":
 			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("home"))}, nil
+		case "/umbraco/management/api/v1/server/information":
+			if e.serverInfoFails {
+				return cmdtest.JSONResponse(http.StatusInternalServerError, `{"title":"boom"}`), nil
+			}
+			if e.serverOffset != "" {
+				return cmdtest.JSONResponse(http.StatusOK, `{"version":"18.2.0","baseUtcOffset":"`+e.serverOffset+`"}`), nil
+			}
 		case "/umbraco/management/api/v1/log-viewer/log":
+			if req.URL.Query().Get("take") == "1" {
+				e.newestStarts = append(e.newestStarts, req.URL.Query().Get("startDate"))
+			}
+			if e.yesterdayOversized && !e.readsOnlyTheServerDay(req) {
+				if req.URL.Query().Get("take") != "1" {
+					e.tailReads++
+				}
+				return cmdtest.JSONResponse(http.StatusBadRequest, logSizeRefusalBody), nil
+			}
+			if (e.sameDayFails[tick] || e.sameDayFailsFrom > 0 && tick >= e.sameDayFailsFrom) && req.URL.Query().Get("startDate") != "" && req.URL.Query().Get("take") == "1" {
+				return cmdtest.JSONResponse(http.StatusInternalServerError, `{"title":"log viewer broke"}`), nil
+			}
+			if e.todayEmpty && req.URL.Query().Get("startDate") != "" && req.URL.Query().Get("take") == "1" {
+				return cmdtest.JSONResponse(http.StatusOK, `{"total":0,"items":[]}`), nil
+			}
 			if e.refuseLogs && tick >= e.refuseLogsFrom && (e.refuseLogsUntil <= e.refuseLogsFrom || tick < e.refuseLogsUntil) {
 				if req.URL.Query().Get("take") != "1" {
 					e.tailReads++

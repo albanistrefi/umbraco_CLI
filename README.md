@@ -331,8 +331,8 @@ Safe read:
 umbraco document get <id> --fields "id,name,updateDate"
 umbraco document get <id> --with-urls --fields "id,name,urls"
 umbraco document urls <id> --absolute --output plain
-umbraco document search --query "Toxic" --skip 0 --take 25 --output json
-umbraco document search --query "Toxic" --under <parent-id> --skip 0 --take 25 --output json
+umbraco document search --query "Pricing" --skip 0 --take 25 --output json
+umbraco document search --query "Pricing" --under <parent-id> --skip 0 --take 25 --output json
 umbraco media search --query "Hero" --skip 0 --take 25 --output json
 umbraco doctype root --summarize --first-n 10 --output json
 umbraco doctype list --recursive --types-only --fields id,name,alias

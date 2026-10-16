@@ -22,11 +22,15 @@ const LogViewerLegacyListPath = "/log-viewer"
 // LogTailPageSize bounds each request; LogTailMaxPagesPerPoll bounds how far
 // one poll pages back through a burst before giving up on draining it.
 //
-// Field report (0.4.17): tail printed nothing, forever, on a busy site. The
-// log-viewer's startDate/endDate select which daily log *files* are read;
-// they do not filter entries by timestamp (verified on 18.1: startDate one
-// hour in the future still returns today's entries, and an ascending query
-// with startDate=now returns the day's oldest entries). So an ascending page
+// Field report (0.4.17): tail printed nothing, forever, on a busy site. On
+// 18.1 the log-viewer's startDate/endDate only select which daily log
+// *files* are read and do not filter entries by timestamp (verified on
+// 18.1: startDate one hour in the future still returns today's entries, and
+// an ascending query with startDate=now returns the day's oldest entries).
+// 18.2 also filters entries to the startDate..endDate range
+// (LogViewerRepository.ReadLogFile), which deploy watch's same-day
+// newest-entry read relies on; the descending, client-side approach below
+// works on both. So an ascending page
 // was always the first 500 entries of the day, every one older than the
 // cursor, and a full page triggered an immediate re-poll of the same page:
 // zero output and a tight request loop. Polls therefore descend from the
