@@ -155,44 +155,65 @@ func (p *watchProbes) healthClient(secretHeader string, secretSent bool) *http.C
 
 // newestProcess reads the newest log entry's process. When the default read
 // is refused for size it reads from the start of the server's day instead,
-// and keeps doing so while that works (see watch_probe_day.go).
+// and keeps doing so while that works (see watch_probe_day.go). The whole
+// chain, offset lookup included, runs within one request timeout, so a poll
+// still takes about two request timeouts at most.
+//
+// The size refusal is returned only when the same-day read cannot stand in
+// for it: the server reports no usable offset, the same-day read is refused
+// for size too, or nothing is logged yet today. Any other failure on the
+// way (a 500, a timeout, the offset request failing) is returned as itself,
+// so it is never mistaken for the refusal that lets a restart cycle land
+// the watch.
 func (p *watchProbes) newestProcess(ctx context.Context) (string, string, time.Time, error) {
+	ctx, cancel := context.WithTimeout(ctx, p.timeout)
+	defer cancel()
 	if p.day == nil {
 		return p.readNewest(ctx, time.Time{})
 	}
 	if p.day.useSameDay() {
-		if start, ok := p.sameDayStart(ctx); ok {
+		if start, ok, _ := p.sameDayStart(ctx); ok {
 			processID, machineName, newestAt, err := p.readNewest(ctx, start)
-			if err == nil && processID != "" {
+			switch {
+			case err == nil && processID != "":
 				return processID, machineName, newestAt, nil
+			case err != nil && !isLogSizeRefusal(err):
+				// Transient: keep the mode, report this failure.
+				return "", "", time.Time{}, err
 			}
 		}
+		// Refused for size, or nothing logged yet today: back to the
+		// default read.
 		p.day.setSameDay(false)
 	}
 	processID, machineName, newestAt, err := p.readNewest(ctx, time.Time{})
 	if !isLogSizeRefusal(err) {
 		return processID, machineName, newestAt, err
 	}
-	start, ok := p.sameDayStart(ctx)
+	start, ok, offsetErr := p.sameDayStart(ctx)
+	if offsetErr != nil {
+		return "", "", time.Time{}, offsetErr
+	}
 	if !ok {
 		return processID, machineName, newestAt, err
 	}
 	sameID, sameMachine, sameAt, sameErr := p.readNewest(ctx, start)
-	if sameErr != nil || sameID == "" {
-		return processID, machineName, newestAt, err
+	switch {
+	case sameErr == nil && sameID != "":
+		p.day.setSameDay(true)
+		return sameID, sameMachine, sameAt, nil
+	case sameErr != nil && !isLogSizeRefusal(sameErr):
+		return "", "", time.Time{}, sameErr
 	}
-	p.day.setSameDay(true)
-	return sameID, sameMachine, sameAt, nil
+	return processID, machineName, newestAt, err
 }
 
-func (p *watchProbes) sameDayStart(ctx context.Context) (time.Time, bool) {
-	requestCtx, cancel := context.WithTimeout(ctx, p.timeout)
-	defer cancel()
-	offset, ok := p.day.serverOffset(requestCtx, p.client)
-	if !ok {
-		return time.Time{}, false
+func (p *watchProbes) sameDayStart(ctx context.Context) (time.Time, bool, error) {
+	offset, ok, err := p.day.serverOffset(ctx, p.client)
+	if err != nil || !ok {
+		return time.Time{}, false, err
 	}
-	return serverDayStart(time.Now(), offset), true
+	return serverDayStart(watchNow(), offset), true, nil
 }
 
 // readNewest reads the single newest log entry, from the daily files from

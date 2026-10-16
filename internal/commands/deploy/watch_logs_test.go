@@ -33,8 +33,10 @@ type fakeDeployEnv struct {
 	// set). newestStarts records the landing probe's startDate params.
 	yesterdayOversized bool
 	// todayEmpty answers a same-day read with no entries, as just after the
-	// server's midnight.
+	// server's midnight. sameDayFails answers the same-day read 500 at
+	// these ticks.
 	todayEmpty   bool
+	sameDayFails map[int]bool
 	serverOffset string
 	newestStarts []string
 	// refuseLogs makes every log-viewer read from refuseLogsFrom on answer
@@ -96,7 +98,7 @@ func (e *fakeDeployEnv) readsOnlyTheServerDay(req *http.Request) bool {
 	var hours, minutes, seconds int
 	_, _ = fmt.Sscanf(value, "%d:%d:%d", &hours, &minutes, &seconds)
 	offset := sign * (time.Duration(hours)*time.Hour + time.Duration(minutes)*time.Minute + time.Duration(seconds)*time.Second)
-	serverNow := time.Now().UTC().Add(offset)
+	serverNow := watchNow().UTC().Add(offset)
 	serverMidnight := time.Date(serverNow.Year(), serverNow.Month(), serverNow.Day(), 0, 0, 0, 0, time.UTC).Add(-offset)
 	return !start.Before(serverMidnight)
 }
@@ -143,6 +145,9 @@ func (e *fakeDeployEnv) handler() cmdtest.RoundTripper {
 					e.tailReads++
 				}
 				return cmdtest.JSONResponse(http.StatusBadRequest, logSizeRefusalBody), nil
+			}
+			if e.sameDayFails[tick] && req.URL.Query().Get("startDate") != "" && req.URL.Query().Get("take") == "1" {
+				return cmdtest.JSONResponse(http.StatusInternalServerError, `{"title":"log viewer broke"}`), nil
 			}
 			if e.todayEmpty && req.URL.Query().Get("startDate") != "" && req.URL.Query().Get("take") == "1" {
 				return cmdtest.JSONResponse(http.StatusOK, `{"total":0,"items":[]}`), nil

@@ -2,7 +2,9 @@ package deploy
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"strconv"
 	"strings"
 	"sync"
@@ -14,7 +16,8 @@ import (
 
 // Umbraco 18.2's log viewer sizes a read by the daily log files of every
 // server-local day from startDate to now, and an unset startDate means a day
-// ago. So the day after a busy log day, the default newest-entry read is
+// ago. 18.2 also filters the entries by timestamp from startDate on, so a
+// same-day read returns the newest entry since the server's midnight. So the day after a busy log day, the default newest-entry read is
 // refused while one starting at today's server midnight is not. The probe
 // keeps the default read and, only when that is refused for size, reads
 // from the start of the server's day.
@@ -26,12 +29,17 @@ import (
 // In the hour after a DST midnight the computed day is the previous one, the
 // read is refused again, and the probe falls back as before.
 
+// watchNow is the clock of the server-day computation; tests fix it.
+var watchNow = time.Now
+
 // watchProbeDay is the state the probes share across the baseline and the
-// poll loop: the server's offset, read once, and whether the same-day read
-// is the one that works.
+// poll loop: the server's offset, and whether the same-day read is the one
+// that works.
 type watchProbeDay struct {
-	mu      sync.Mutex
-	fetched bool
+	mu sync.Mutex
+	// settled is set once the offset is known or unreadable for good; a
+	// failed request leaves it unset, so the next refusal asks again.
+	settled bool
 	offset  time.Duration
 	known   bool
 	sameDay bool
@@ -49,30 +57,40 @@ func (d *watchProbeDay) setSameDay(on bool) {
 	d.sameDay = on
 }
 
-// serverOffset reads /server/information once per watch. A failure or an
-// unreadable value leaves the offset unknown, and the probe keeps the
-// default read.
-func (d *watchProbeDay) serverOffset(ctx context.Context, client *api.Client) (time.Duration, bool) {
+// serverOffset reads /server/information's baseUtcOffset. A value that
+// reads, or one that never will (a 4xx answer, a missing or malformed
+// field), settles it for the watch; a failed request (5xx, unreachable,
+// timed out) does not, so the next refusal asks again.
+// Unknown for good, the probe keeps the default read; a failed request is
+// returned as an error.
+func (d *watchProbeDay) serverOffset(ctx context.Context, client *api.Client) (time.Duration, bool, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	if d.fetched {
-		return d.offset, d.known
+	if d.settled {
+		return d.offset, d.known, nil
 	}
-	d.fetched = true
 	result, err := client.Get(ctx, "/server/information", api.RequestOptions{})
-	if err != nil {
-		return 0, false
+	var apiErr *api.APIError
+	if errors.As(err, &apiErr) && apiErr.StatusCode < http.StatusInternalServerError {
+		// The server answered and has no offset for us (no such route, no
+		// permission): that will not change during the watch.
+		d.settled = true
+		return 0, false, nil
 	}
+	if err != nil {
+		return 0, false, err
+	}
+	d.settled = true
 	info, ok := result.(map[string]any)
 	if !ok {
-		return 0, false
+		return 0, false, nil
 	}
 	offset, err := parseUtcOffset(jsonvalue.String(info["baseUtcOffset"]))
 	if err != nil {
-		return 0, false
+		return 0, false, nil
 	}
 	d.offset, d.known = offset, true
-	return offset, true
+	return offset, true, nil
 }
 
 // parseUtcOffset reads a .NET TimeSpan as /server/information prints it:

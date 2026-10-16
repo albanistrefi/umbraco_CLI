@@ -6,10 +6,21 @@ import (
 	"time"
 )
 
+// fixClock pins the server-day clock for the test, away from any test
+// offset's midnight.
+func fixClock(t *testing.T) {
+	t.Helper()
+	fixed := time.Date(2026, 10, 16, 13, 17, 0, 0, time.UTC)
+	previous := watchNow
+	watchNow = func() time.Time { return fixed }
+	t.Cleanup(func() { watchNow = previous })
+}
+
 // The day after a busy log day: the default newest-entry read covers
 // yesterday's oversized files and is refused, a read from the server's
 // midnight is not. The watch arms on the process id as usual.
 func TestWatchProbeReadsTheServerDayWhenYesterdayIsOversized(t *testing.T) {
+	fixClock(t)
 	for _, offset := range []string{"00:00:00", "-05:00:00", "05:30:00", "14:00:00", "-12:00:00"} {
 		t.Run(offset, func(t *testing.T) {
 			env := &fakeDeployEnv{downTicks: map[int]bool{}, landTick: 1 << 30, yesterdayOversized: true, serverOffset: offset}
@@ -37,6 +48,7 @@ func TestWatchProbeReadsTheServerDayWhenYesterdayIsOversized(t *testing.T) {
 }
 
 func TestWatchLandsOnTheProcessIDWhenYesterdayIsOversized(t *testing.T) {
+	fixClock(t)
 	env := &fakeDeployEnv{downTicks: map[int]bool{2: true, 3: true}, landTick: 4, yesterdayOversized: true, serverOffset: "-05:00:00"}
 	lines, err := runWatch(t, env)
 	if err != nil {
@@ -52,6 +64,7 @@ func TestWatchLandsOnTheProcessIDWhenYesterdayIsOversized(t *testing.T) {
 // tell the server's day, so it keeps the refused read and falls back to the
 // restart-cycle basis as before.
 func TestWatchProbeWithoutTheServerOffsetFallsBackAsBefore(t *testing.T) {
+	fixClock(t)
 	env := &fakeDeployEnv{downTicks: map[int]bool{}, landTick: 1 << 30, yesterdayOversized: true}
 	lines, err := runWatch(t, env, "--timeout", "100ms")
 	if exitCode(err) != 6 {
@@ -65,6 +78,7 @@ func TestWatchProbeWithoutTheServerOffsetFallsBackAsBefore(t *testing.T) {
 // A same-day read that is refused too (today's files are oversized) also
 // falls back as before.
 func TestWatchProbeFallsBackWhenTheServerDayIsRefusedToo(t *testing.T) {
+	fixClock(t)
 	env := &fakeDeployEnv{downTicks: map[int]bool{}, landTick: 1 << 30, refuseLogs: true, serverOffset: "00:00:00"}
 	lines, err := runWatch(t, env, "--timeout", "100ms")
 	if exitCode(err) != 6 {
@@ -130,6 +144,7 @@ func TestParseUtcOffsetReadsTimeSpans(t *testing.T) {
 // the probe keeps the refusal, so the watch still arms on the restart-cycle
 // basis instead of refusing to arm for a missing ProcessId.
 func TestWatchProbeWithNoEntriesYetTodayFallsBack(t *testing.T) {
+	fixClock(t)
 	env := &fakeDeployEnv{downTicks: map[int]bool{}, landTick: 1 << 30, yesterdayOversized: true, todayEmpty: true, serverOffset: "00:00:00"}
 	lines, err := runWatch(t, env, "--timeout", "100ms")
 	if exitCode(err) != 6 {
