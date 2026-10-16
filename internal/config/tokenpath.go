@@ -1,6 +1,8 @@
 package config
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,12 +11,17 @@ import (
 // TokenCacheSelection names where the credentials of opts come from, for
 // the access-token cache, and the token file that goes with them:
 //
-//   - --config <file>: selection "config:<file>", token "<file>.token.json"
 //   - --profile <name>, or the active profile: selection "profile:<name>",
 //     token ~/.umbraco/<name>.token.json
+//   - --config <file>: selection "config:<file>", token
+//     ~/.umbraco/tokens/config-<sha256 of the path>.token.json, never next to
+//     the config file, so a token cannot end up in a project repository
 //   - neither (environment variables, project files, ~/.umbraco/config.json):
 //     selection "" and path "" — the caller keys the file by a hash under
 //     ~/.umbraco/tokens/ (see TokenCacheDir).
+//
+// Profile and --config paths depend on the selection only, so the file can
+// be found without a readable config.
 func TokenCacheSelection(opts LoadOptions) (string, string, error) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
@@ -29,7 +36,8 @@ func TokenCacheSelection(opts LoadOptions) (string, string, error) {
 		return "", "", err
 	}
 	if selection.CustomPath {
-		return "config:" + selection.Path, selection.Path + ".token.json", nil
+		sum := sha256.Sum256([]byte(selection.Path))
+		return "config:" + selection.Path, filepath.Join(homeDir, ".umbraco", "tokens", "config-"+hex.EncodeToString(sum[:])+".token.json"), nil
 	}
 	name := strings.TrimSpace(selection.Profile)
 	if name == "" {

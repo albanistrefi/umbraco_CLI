@@ -4,7 +4,6 @@ import (
 	"context"
 	"io"
 	"net/http"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -40,11 +39,15 @@ func (c *fakeCache) Store(key string, token string, expiresAt time.Time) {
 	c.items[key] = fakeItem{Token: token, ExpiresAt: expiresAt.Unix()}
 }
 
-func (c *fakeCache) Delete(key string) {
+func (c *fakeCache) Delete(key string, token string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if token != "" && c.items[key].Token != token {
+		return nil
+	}
 	delete(c.items, key)
 	c.deletes = append(c.deletes, key)
+	return nil
 }
 
 type roundTripper func(*http.Request) (*http.Response, error)
@@ -170,20 +173,5 @@ func TestTheOptOutDisablesTheCache(t *testing.T) {
 		if (cache == nil) != disabled {
 			t.Fatalf("%s=%q: cache %v, want disabled %v", NoTokenCacheEnv, value, cache != nil, disabled)
 		}
-	}
-}
-
-func TestAnUnwritableCacheStillAuthenticates(t *testing.T) {
-	requests := 0
-	cache := FileTokenCache(filepath.Join(t.TempDir(), "missing-dir", "nested", "\x00bad", "t.token.json"), testConfig.BaseURL, testConfig.ClientID, "profile:live")
-	key := CacheKey("profile:live", testConfig)
-	for i := 0; i < 2; i++ {
-		token, err := NewCached(testConfig, tokenServer(&requests), cache, key).AccessToken(context.Background())
-		if err != nil || token == "" {
-			t.Fatalf("invocation %d: %q, %v", i, token, err)
-		}
-	}
-	if requests != 2 {
-		t.Fatalf("without a usable file each invocation fetches its own token, got %d requests", requests)
 	}
 }

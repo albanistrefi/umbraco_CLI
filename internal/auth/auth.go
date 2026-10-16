@@ -53,6 +53,11 @@ type Provider struct {
 	cached    string
 	expiresAt time.Time
 	inflight  *tokenFetch
+	// rejected is the last token the server refused; the cache handing it
+	// back is a miss. bypassCache is set when a refused token could not be
+	// deleted from the cache, and skips it until the next fetch.
+	rejected    string
+	bypassCache bool
 }
 
 // tokenFetch is one token request in flight. Callers that need a token
@@ -80,13 +85,29 @@ func NewCached(cfg config.Config, client *http.Client, cache TokenCache, key str
 
 func (p *Provider) Invalidate() {
 	p.mu.Lock()
-	dropped := p.cached != ""
+	token := p.cached
 	p.cached = ""
 	p.expiresAt = time.Time{}
 	p.mu.Unlock()
-	if dropped && p.cache != nil {
-		p.cache.Delete(p.cacheKey)
+	if token != "" {
+		p.forget(token)
 	}
+}
+
+// forget drops a refused token from the cross-invocation cache. A cache
+// that cannot delete it (a read-only directory) is bypassed until the next
+// fetch, and the token is remembered so the cache handing it back is a miss.
+func (p *Provider) forget(token string) {
+	if p.cache == nil {
+		return
+	}
+	err := p.cache.Delete(p.cacheKey, token)
+	p.mu.Lock()
+	p.rejected = token
+	if err != nil {
+		p.bypassCache = true
+	}
+	p.mu.Unlock()
 }
 
 // InvalidateIfCurrent drops the cached token only while it is still token,
@@ -101,10 +122,11 @@ func (p *Provider) InvalidateIfCurrent(token string) {
 		p.expiresAt = time.Time{}
 	}
 	p.mu.Unlock()
-	// The rejected token may be the cached one: drop it there too, so the
-	// next invocation does not start with it.
-	if dropped && p.cache != nil {
-		p.cache.Delete(p.cacheKey)
+	// The rejected token may be the cached one: drop it there too (only
+	// while the file still holds it), so the next invocation does not start
+	// with it.
+	if dropped {
+		p.forget(token)
 	}
 }
 
@@ -125,8 +147,8 @@ func (p *Provider) AccessToken(ctx context.Context) (string, error) {
 		p.mu.Unlock()
 		return "", authErr(err)
 	}
-	if p.cache != nil && p.inflight == nil {
-		if token, expiresAt, ok := p.cache.Load(p.cacheKey); ok && time.Now().Before(expiresAt) {
+	if p.cache != nil && p.inflight == nil && !p.bypassCache {
+		if token, expiresAt, ok := p.cache.Load(p.cacheKey); ok && token != p.rejected && time.Now().Before(expiresAt) {
 			p.cached, p.expiresAt = token, expiresAt
 			p.mu.Unlock()
 			return token, nil
@@ -162,6 +184,7 @@ func (p *Provider) fetch(ctx context.Context, fetch *tokenFetch) {
 	if err == nil {
 		p.cached = token
 		p.expiresAt = expiresAt
+		p.bypassCache = false
 	}
 	p.inflight = nil
 	p.mu.Unlock()

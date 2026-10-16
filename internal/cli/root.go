@@ -28,6 +28,9 @@ func NewRootCommand() *cobra.Command {
 				if config.IsConfigFileNotFound(err) && allowsMissingSelectedConfig(cmd) {
 					return nil
 				}
+				if allowsUnreadableSelectedConfig(cmd) {
+					return nil
+				}
 				return err
 			}
 			return nil
@@ -68,4 +71,15 @@ func NewRootCommand() *cobra.Command {
 
 func allowsMissingSelectedConfig(cmd *cobra.Command) bool {
 	return cmd.CommandPath() == "umbraco auth login"
+}
+
+// allowsUnreadableSelectedConfig lets 'auth logout --token-only' delete a
+// profile's or config file's token even when that config is missing or does
+// not parse: the token file's path depends on the selection only.
+func allowsUnreadableSelectedConfig(cmd *cobra.Command) bool {
+	if cmd.CommandPath() != "umbraco auth logout" {
+		return false
+	}
+	tokenOnly, err := cmd.Flags().GetBool("token-only")
+	return err == nil && tokenOnly
 }

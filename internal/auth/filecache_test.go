@@ -179,17 +179,23 @@ func TestTokenFilesFollowTheSelectedConfig(t *testing.T) {
 	work := t.TempDir()
 	t.Chdir(work)
 	custom := filepath.Join(work, "dev.json")
-	for name, tc := range map[string]struct {
-		opts config.LoadOptions
-		want string
-	}{
-		"profile": {config.LoadOptions{Profile: "live"}, filepath.Join(home, ".umbraco", "live.token.json")},
-		"config":  {config.LoadOptions{ConfigPath: custom}, custom + ".token.json"},
-	} {
-		path, _, err := TokenCacheFile(tc.opts, testConfig)
-		if err != nil || path != tc.want {
-			t.Fatalf("%s: got %s (%v), want %s", name, path, err, tc.want)
-		}
+	if path, _, err := TokenCacheFile(config.LoadOptions{Profile: "live"}, testConfig); err != nil || path != filepath.Join(home, ".umbraco", "live.token.json") {
+		t.Fatalf("profile: got %s (%v)", path, err)
+	}
+	// A --config token stays under ~/.umbraco/tokens, never next to the
+	// config file, so it cannot land in a project repository.
+	configPath, _, err := TokenCacheFile(config.LoadOptions{ConfigPath: custom}, testConfig)
+	if err != nil || filepath.Dir(configPath) != filepath.Join(home, ".umbraco", "tokens") || !strings.HasPrefix(filepath.Base(configPath), "config-") || strings.Contains(configPath, work) {
+		t.Fatalf("config: got %s (%v)", configPath, err)
+	}
+	other, _, _ := TokenCacheFile(config.LoadOptions{ConfigPath: filepath.Join(work, "live.json")}, testConfig)
+	if other == configPath {
+		t.Fatalf("two config files must not share a token file")
+	}
+	// Profile and --config paths do not depend on the config's contents.
+	broken := config.Config{}
+	if again, _, _ := TokenCacheFile(config.LoadOptions{ConfigPath: custom}, broken); again != configPath {
+		t.Fatalf("a --config token path must not need the config: %s vs %s", again, configPath)
 	}
 	path, key, err := TokenCacheFile(config.LoadOptions{}, testConfig)
 	if err != nil || path != filepath.Join(home, ".umbraco", "tokens", key+".token.json") {
@@ -218,5 +224,155 @@ func TestRemoveTokenFileReportsWhetherOneWasThere(t *testing.T) {
 	}
 	if removed, err := RemoveTokenFile(path); removed || err != nil {
 		t.Fatalf("second remove: %v %v", removed, err)
+	}
+}
+
+func TestDeleteOnlyRemovesTheTokenItWasGiven(t *testing.T) {
+	cache, path := fileCacheAt(t)
+	key := CacheKey("profile:live", testConfig)
+	cache.Store(key, "newer", time.Now().Add(time.Minute))
+	if err := cache.Delete(key, "older"); err != nil {
+		t.Fatal(err)
+	}
+	if token, _, ok := cache.Load(key); !ok || token != "newer" {
+		t.Fatalf("a 401 for an older token must not delete a newer one: %q %v", token, ok)
+	}
+	if err := cache.Delete(key, "newer"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("deleting the held token removes the file: %v", err)
+	}
+	if err := cache.Delete(key, ""); err != nil {
+		t.Fatalf("deleting a missing file is not an error: %v", err)
+	}
+}
+
+func TestAFIFOAtTheTokenPathIsAMissNotAHang(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("no FIFOs on Windows")
+	}
+	cache, path := fileCacheAt(t)
+	_ = os.MkdirAll(filepath.Dir(path), 0o700)
+	if err := syscallMkfifo(path); err != nil {
+		t.Skipf("mkfifo: %v", err)
+	}
+	done := make(chan bool, 1)
+	go func() {
+		_, _, ok := cache.Load(CacheKey("profile:live", testConfig))
+		done <- ok
+	}()
+	select {
+	case ok := <-done:
+		if ok {
+			t.Fatalf("a FIFO must be a miss")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatalf("reading a FIFO at the token path hung")
+	}
+}
+
+type foreignInfo struct{ os.FileInfo }
+
+func (foreignInfo) Sys() any { return nil }
+
+func TestAFileOwnedByAnotherUserIsAMiss(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("owner ids do not apply on Windows")
+	}
+	cache, path := fileCacheAt(t)
+	cache.Store("k", "t", time.Now().Add(time.Minute))
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ownedByCurrentUser(info) {
+		t.Fatalf("a file this test wrote is owned by the current user")
+	}
+	if ownedByCurrentUser(foreignInfo{info}) {
+		t.Fatalf("file info without the owner's id must not count as owned")
+	}
+	if ownedByCurrentUser(withOwner(info, os.Getuid()+1)) {
+		t.Fatalf("another user's file must not count as owned")
+	}
+}
+
+func TestADirectoryWritableByOthersDisablesTheCache(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("permission bits do not apply on Windows")
+	}
+	cache, path := fileCacheAt(t)
+	key := CacheKey("profile:live", testConfig)
+	cache.Store(key, "stored-before", time.Now().Add(time.Minute))
+	dir := filepath.Dir(path)
+	if err := os.Chmod(dir, 0o777); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	if _, _, ok := cache.Load(key); ok {
+		t.Fatalf("a token in a group- or world-writable directory must not be trusted")
+	}
+	cache.Store(key, "stored-after", time.Now().Add(time.Minute))
+	_ = os.Chmod(dir, 0o700)
+	if token, _, _ := cache.Load(key); token != "stored-before" {
+		t.Fatalf("no write may happen in a loose directory, got %q", token)
+	}
+	if info, _ := os.Stat(dir); info.Mode().Perm() != 0o700 {
+		t.Fatalf("the cache must not change the directory's permissions")
+	}
+}
+
+func TestAFailedWriteLeavesNoTemporaryFile(t *testing.T) {
+	cache, path := fileCacheAt(t)
+	// A directory at the token path makes the final rename fail.
+	if err := os.MkdirAll(path, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cache.Store("k", "t", time.Now().Add(time.Minute))
+	entries, _ := os.ReadDir(filepath.Dir(path))
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), ".token-") {
+			t.Fatalf("a failed write left %s behind", entry.Name())
+		}
+	}
+}
+
+func TestAReadOnlyDirectoryStillAuthenticates(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("permission bits do not apply on Windows")
+	}
+	requests := 0
+	dir := filepath.Join(t.TempDir(), "ro")
+	if err := os.MkdirAll(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	cache := FileTokenCache(filepath.Join(dir, "live.token.json"), testConfig.BaseURL, testConfig.ClientID, "profile:live")
+	key := CacheKey("profile:live", testConfig)
+	for i := 0; i < 2; i++ {
+		token, err := NewCached(testConfig, tokenServer(&requests), cache, key).AccessToken(context.Background())
+		if err != nil || token == "" {
+			t.Fatalf("invocation %d: %q, %v", i, token, err)
+		}
+	}
+	if requests != 2 {
+		t.Fatalf("with an unwritable directory each invocation fetches its own token, got %d requests", requests)
+	}
+}
+
+func TestInvalidateDeletesTheCachedFile(t *testing.T) {
+	cache, path := fileCacheAt(t)
+	key := CacheKey("profile:live", testConfig)
+	requests := 0
+	provider := NewCached(testConfig, tokenServer(&requests), cache, key)
+	if _, err := provider.AccessToken(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("the fetched token is cached: %v", err)
+	}
+	provider.Invalidate()
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("Invalidate must delete the file: %v", err)
 	}
 }

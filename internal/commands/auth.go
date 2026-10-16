@@ -276,8 +276,8 @@ func authLogout(deps cmdkit.Dependencies) *cobra.Command {
 		Use:   "logout",
 		Short: "Remove stored credentials from the user config and delete the cached access token",
 		Long: "Removes the client id and secret from the selected user config, and deletes the access-token file cached for it " +
-			"(~/.umbraco/<profile>.token.json, <file>.token.json next to a --config file, or ~/.umbraco/tokens/<hash>.token.json). " +
-			"--token-only deletes just the token file and leaves the config untouched. " +
+			"(~/.umbraco/<profile>.token.json for a profile, ~/.umbraco/tokens/ for --config and environment credentials). " +
+			"--token-only deletes just the token file and leaves the config untouched, even a config that does not parse. " +
 			"The token cache reuses one access token across invocations until shortly before it expires; set " + auth.NoTokenCacheEnv + "=1 to turn it off.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {

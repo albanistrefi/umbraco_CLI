@@ -197,29 +197,41 @@ Example user config:
 
 Each invocation needs an access token, and fetching one costs the site a
 token request (four OpenIddict log lines on Umbraco 18.2). The CLI keeps the
-access token in a file next to the profile's config and reuses it across
-invocations until a minute before it expires. Only the short-lived access
-token is cached: the config files and the client secret stay as they are.
+access token in a file and reuses it across invocations until a minute
+before the server's `expires_in`. Only the access token is cached: the
+config files and the client secret stay as they are.
 
 | Credentials from | Token file |
 |---|---|
 | `--profile <name>` or the active profile | `~/.umbraco/<name>.token.json` |
-| `--config <file>` | `<file>.token.json` |
+| `--config <file>` | `~/.umbraco/tokens/config-<hash of the path>.token.json` |
 | environment variables, project files, `~/.umbraco/config.json` | `~/.umbraco/tokens/<hash>.token.json` |
+
+A `--config` token never sits next to the config file, so it cannot end up
+in a project repository.
 
 - The file holds the access token, its expiry, and the key it belongs to
   (a hash of the profile or config file, the base URL and the client id,
   plus those values in plain text). A different key is a miss. The client
   secret is never written.
 - It is created with mode 0600 (and a new directory with 0700) and written
-  atomically, so parallel invocations never read a partial file. A file
-  readable by group or others is ignored and replaced on the next write.
-  On Windows the permission bits do not apply; the file inherits the
-  folder's access control.
-- A token the server rejects (401) is deleted and fetched again once.
+  atomically, so parallel invocations never read a partial file. Parallel
+  invocations that start with no cached token may each fetch one.
+- A token file is only trusted if it is a regular file owned by you and
+  readable by no one else; it is opened without following a symlink.
+  Otherwise it is ignored and replaced on the next write. If its directory
+  is writable by group or others, the cache is not used at all (one
+  warning on stderr); the CLI does not change the directory's permissions.
+  On Windows the permission bits and owner do not apply; the file inherits
+  the folder's access control.
+- A token the server rejects (401) is dropped from the file (only while the
+  file still holds it) and a new one is fetched; a request retries within
+  its attempt budget, so a token the server keeps refusing costs up to three
+  refetches before the 401 is returned.
 - `umbraco auth logout --token-only` deletes the token file and leaves the
-  config untouched; `umbraco auth logout` deletes it along with the stored
-  credentials. `UMBRACO_NO_TOKEN_CACHE=1` turns the cache off.
+  config untouched, even if that config does not parse; `umbraco auth
+  logout` deletes it along with the stored credentials.
+  `UMBRACO_NO_TOKEN_CACHE=1` turns the cache off.
 
 For bulk work, prefer the batch flags (`--ids`, `--from-file`, `--all`, and
 `document bulk-update` / `csv-update`) or one long-running command over one

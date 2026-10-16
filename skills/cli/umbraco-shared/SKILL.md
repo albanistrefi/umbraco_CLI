@@ -46,7 +46,7 @@ export UMBRACO_CLIENT_ID="umbraco-back-office-api-user"
 export UMBRACO_CLIENT_SECRET="your-secret"
 ```
 
-The access token is cached in a 0600 file next to the profile's config (`~/.umbraco/<profile>.token.json`, `<file>.token.json` for `--config`, `~/.umbraco/tokens/<hash>.token.json` otherwise) and reused across invocations until a minute before it expires; the config and the client secret are unchanged. `umbraco auth logout --token-only` deletes it; `UMBRACO_NO_TOKEN_CACHE=1` turns the cache off. For bulk work, prefer batch flags (`--ids`, `--from-file`, `--all`, `document bulk-update` / `csv-update`) or one long-running command over one invocation per item.
+The access token is cached in a 0600 file (`~/.umbraco/<profile>.token.json` for a profile, `~/.umbraco/tokens/` for `--config` and environment credentials) and reused across invocations until a minute before the server's `expires_in`; the config and the client secret are unchanged. `umbraco auth logout --token-only` deletes it; `UMBRACO_NO_TOKEN_CACHE=1` turns the cache off. For bulk work, prefer batch flags (`--ids`, `--from-file`, `--all`, `document bulk-update` / `csv-update`) or one long-running command over one invocation per item.
 
 ## Config Precedence
 
