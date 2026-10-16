@@ -2,7 +2,7 @@
 name: recipe-bulk-update-from-csv
 description: "Use csv-update to batch-modify a property across multiple documents."
 metadata:
-  version: 0.5.2
+  version: 0.5.3
   requires:
     bins:
       - umbraco
