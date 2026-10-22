@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"umbraco-cli/internal/commands/cmdkit"
-	"umbraco-cli/internal/jsonvalue"
 )
 
 // The schema tracker is deploy watch's --uda-dir: the artifacts that are
@@ -64,21 +63,17 @@ type trackedArtifact struct {
 }
 
 type schemaTracker struct {
-	deps              cmdkit.Dependencies
-	udaDir            string
-	baselineProcessID string
-	baselineMachine   string
-	// passDetection is off without a baseline process id: the pass's entries
-	// could not be told apart from those written before the deploy.
-	passDetection bool
+	deps   cmdkit.Dependencies
+	udaDir string
+	// pass is Umbraco Deploy's schema pass as read from the log; its
+	// detection is off without a baseline process id, since the pass's
+	// entries could not be told apart from those written before the deploy.
+	pass *deployPass
 
 	tracked      []*trackedArtifact
 	unverifiable []udaStatusResult
 	inSync       int
 
-	passStarted      bool
-	passEnded        bool
-	workStatus       string
 	checkedAfterEnd  bool
 	waitingAnnounced bool
 }
@@ -86,7 +81,7 @@ type schemaTracker struct {
 // newSchemaTracker reads the artifacts and compares each against the
 // target, before the watch arms. An unreadable directory or one with no
 // artifacts is a usage error.
-func newSchemaTracker(ctx context.Context, deps cmdkit.Dependencies, udaDir string, baseline watchObservation) (*schemaTracker, error) {
+func newSchemaTracker(ctx context.Context, deps cmdkit.Dependencies, udaDir string, pass *deployPass) (*schemaTracker, error) {
 	artifacts, err := loadUdaArtifacts(udaDir, nil)
 	if err != nil {
 		return nil, err
@@ -98,7 +93,7 @@ func newSchemaTracker(ctx context.Context, deps cmdkit.Dependencies, udaDir stri
 	for _, artifact := range artifacts {
 		byFile[artifact.File] = artifact
 	}
-	tracker := &schemaTracker{deps: deps, udaDir: udaDir, baselineProcessID: baseline.ProcessID, baselineMachine: baseline.MachineName, passDetection: baseline.ProcessID != ""}
+	tracker := &schemaTracker{deps: deps, udaDir: udaDir, pass: pass}
 	for _, result := range compareArtifacts(ctx, deps, artifacts, nil, schemaRecheckConcurrency) {
 		switch result.Status {
 		case "drifted", "missing-remote":
@@ -127,7 +122,7 @@ func (s *schemaTracker) baselineDetail() map[string]any {
 		"inSync":       s.inSync,
 		"unverifiable": unverifiable,
 	}
-	if !s.passDetection {
+	if !s.pass.detection {
 		detail["passDetection"] = "off: no baseline process id to tell the schema pass's log entries from older ones; verified waits for every tracked artifact to be in sync"
 	}
 	return detail
@@ -167,48 +162,6 @@ type watchSchemaPassEvent struct {
 	Detail    map[string]any `json:"detail,omitempty"`
 }
 
-// observeLogs picks the schema pass's start and end out of a tick's log
-// entries. Only entries from the new process count, judged by the entry's
-// own ProcessId/MachineName, so a pass is attributed correctly however late
-// the watch noticed the landing.
-func (s *schemaTracker) observeLogs(entries []map[string]any) []any {
-	events := make([]any, 0)
-	if !s.passDetection {
-		return events
-	}
-	for _, entry := range entries {
-		properties := map[string]string{}
-		if list, ok := entry["properties"].([]any); ok {
-			for _, item := range list {
-				if property, ok := item.(map[string]any); ok {
-					properties[jsonvalue.String(property["name"])] = jsonvalue.String(property["value"])
-				}
-			}
-		}
-		processID, machine := properties["ProcessId"], properties["MachineName"]
-		if processID == "" || (processID == s.baselineProcessID && machine == s.baselineMachine) {
-			continue
-		}
-		source := properties["SourceContext"]
-		stamp := jsonvalue.String(entry["timestamp"])
-		switch {
-		case !s.passStarted && strings.HasSuffix(source, ".DiskReadWorkItem"):
-			s.passStarted = true
-			events = append(events, watchSchemaPassEvent{Timestamp: stamp, Type: "schema-pass", Status: "started"})
-		case !s.passEnded && strings.HasSuffix(source, ".DiskService"):
-			match := deployWorkStatusPattern.FindStringSubmatch(cmdkit.LogEntryMessage(entry))
-			if match == nil {
-				continue
-			}
-			s.passStarted = true
-			s.passEnded = true
-			s.workStatus = match[1]
-			events = append(events, watchSchemaPassEvent{Timestamp: stamp, Type: "schema-pass", Status: "ended", Detail: map[string]any{"workStatus": s.workStatus}})
-		}
-	}
-	return events
-}
-
 // A recheck compares the tracked artifacts that are not in sync yet, once
 // the deploy has landed, and books the status changes. An unknown result
 // (the API unavailable mid-restart) keeps the last definitive status. It
@@ -228,7 +181,7 @@ func (s *schemaTracker) recheckPlan(landed bool) ([]udaArtifact, bool) {
 			pending = append(pending, item.artifact)
 		}
 	}
-	return pending, s.passEnded
+	return pending, s.pass.ended
 }
 
 // recheckCompare compares the planned artifacts against the target. It
@@ -296,7 +249,7 @@ func (s *schemaTracker) pending() bool {
 	if allInSync {
 		return false
 	}
-	if !s.passEnded || !s.checkedAfterEnd {
+	if !s.pass.ended || !s.checkedAfterEnd {
 		return true
 	}
 	for _, item := range s.tracked {
@@ -318,21 +271,21 @@ func (s *schemaTracker) waiting(stamp string) []any {
 	}
 	s.waitingAnnounced = true
 	reason := "waiting for Umbraco Deploy's schema pass to start"
-	if s.passStarted {
+	if s.pass.started {
 		reason = "waiting for Umbraco Deploy's schema pass to end"
 	}
-	if s.passEnded {
+	if s.pass.ended {
 		reason = "re-checking artifacts after Umbraco Deploy's schema pass ended"
 	}
-	if !s.passDetection {
+	if !s.pass.detection {
 		reason = "waiting for the tracked artifacts to be in sync; schema pass detection is off without a baseline process id"
 	}
 	return []any{watchSchemaPassEvent{Timestamp: stamp, Type: "schema-pass", Status: "waiting", Detail: map[string]any{"reason": reason, "pending": s.pendingFiles()}}}
 }
 
 func (s *schemaTracker) deployPassDetail() map[string]any {
-	pass := map[string]any{"started": s.passStarted, "ended": s.passEnded, "workStatus": s.workStatus}
-	if !s.passDetection {
+	pass := map[string]any{"started": s.pass.started, "ended": s.pass.ended, "workStatus": s.pass.workStatus}
+	if !s.pass.detection {
 		pass["detection"] = "off"
 	}
 	return pass
@@ -340,7 +293,7 @@ func (s *schemaTracker) deployPassDetail() map[string]any {
 
 // pendingReason is the schema part of a timeout reason.
 func (s *schemaTracker) pendingReason() string {
-	if !s.passDetection {
+	if !s.pass.detection {
 		return fmt.Sprintf("schema: %d tracked artifacts unconfirmed, schema pass detection off without a baseline process id", len(s.pendingFiles()))
 	}
 	return fmt.Sprintf("schema: %d tracked artifacts unconfirmed, Umbraco Deploy's schema pass end not observed", len(s.pendingFiles()))
@@ -359,32 +312,10 @@ func (s *schemaTracker) pendingFiles() []string {
 
 // summary is the final schema event, type "schema-summary".
 func (s *schemaTracker) summary(phase string) watchSchemaPassEvent {
-	confirmed := make([]any, 0)
-	unconfirmed := make([]any, 0)
-	unknown := make([]any, 0)
 	// Until the schema settles nothing is judged: artifacts not in sync yet
 	// are pending, not unconfirmed.
 	settled := !s.pending()
-	for _, item := range s.tracked {
-		ref := schemaArtifactRef(item.current)
-		ref["baseline"] = item.baseline.Status
-		switch item.current.Status {
-		case "in-sync":
-			confirmed = append(confirmed, ref)
-		case "drifted", "missing-remote":
-			if len(item.current.Diffs) > 0 {
-				ref["diffs"] = item.current.Diffs
-			}
-			unconfirmed = append(unconfirmed, ref)
-		case "unknown", "error":
-			if !settled {
-				unconfirmed = append(unconfirmed, ref)
-				continue
-			}
-			ref["reason"] = item.current.Reason
-			unknown = append(unknown, ref)
-		}
-	}
+	confirmed, unconfirmed, unknown := s.classify(settled)
 	unconfirmedKey := "unconfirmed"
 	if !settled {
 		unconfirmedKey = "pending"
@@ -412,6 +343,34 @@ func (s *schemaTracker) summary(phase string) watchSchemaPassEvent {
 	return watchSchemaPassEvent{Timestamp: time.Now().UTC().Format(time.RFC3339), Type: "schema-summary", Status: verdict, Detail: detail}
 }
 
+// classify sorts the tracked artifacts by their current status: confirmed
+// (in sync), unconfirmed (drifted or missing) and unknown. Before the schema
+// has settled an unknown artifact counts as unconfirmed.
+func (s *schemaTracker) classify(settled bool) (confirmed []any, unconfirmed []any, unknown []any) {
+	confirmed, unconfirmed, unknown = make([]any, 0), make([]any, 0), make([]any, 0)
+	for _, item := range s.tracked {
+		ref := schemaArtifactRef(item.current)
+		ref["baseline"] = item.baseline.Status
+		switch item.current.Status {
+		case "in-sync":
+			confirmed = append(confirmed, ref)
+		case "drifted", "missing-remote":
+			if len(item.current.Diffs) > 0 {
+				ref["diffs"] = item.current.Diffs
+			}
+			unconfirmed = append(unconfirmed, ref)
+		case "unknown", "error":
+			if !settled {
+				unconfirmed = append(unconfirmed, ref)
+				continue
+			}
+			ref["reason"] = item.current.Reason
+			unknown = append(unknown, ref)
+		}
+	}
+	return confirmed, unconfirmed, unknown
+}
+
 // verdict is the summary status: confirmed (every tracked artifact in
 // sync), unconfirmed (some still drifted or missing after the pass, or the
 // pass did not complete), pending (the watch ended before the schema
@@ -423,7 +382,7 @@ func (s *schemaTracker) verdict() string {
 	if s.pending() {
 		return "pending"
 	}
-	if s.unconfirmedCount() > 0 || (s.passEnded && !strings.EqualFold(s.workStatus, "Completed")) {
+	if s.unconfirmedCount() > 0 || (s.pass.ended && !strings.EqualFold(s.pass.workStatus, "Completed")) {
 		return "unconfirmed"
 	}
 	for _, item := range s.tracked {
@@ -450,5 +409,5 @@ func (s *schemaTracker) exitError() error {
 	if s.verdict() != "unconfirmed" {
 		return nil
 	}
-	return deployWatchSchemaUnconfirmedError{unconfirmed: s.unconfirmedCount(), workStatus: s.workStatus}
+	return deployWatchSchemaUnconfirmedError{unconfirmed: s.unconfirmedCount(), workStatus: s.pass.workStatus}
 }

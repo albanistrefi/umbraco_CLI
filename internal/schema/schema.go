@@ -215,7 +215,7 @@ var deployWatchSchema = &rawSchema{
 	},
 	Response: &ObjectSchema{
 		Type:        "object",
-		Description: "CLI workflow: baselines ProcessId/MachineName, health paths, and index health, then polls for state deltas only a deployment can cause, emitting phase transitions baseline → restarting → app-alive → serving → landed → settling → verified | failed | timeout (settle-interrupted marks disturbances that restart the settle window). Read-only; no pipeline or portal API involved.",
+		Description: "CLI workflow: baselines ProcessId/MachineName, health paths, and index health, then polls for state deltas only a deployment can cause, emitting phase transitions baseline → restarting → app-alive → serving → landed → deployed → settling → verified | failed | timeout (settle-interrupted marks disturbances that restart the settle window; deployed marks Umbraco Deploy logging the deployment complete, with --logs or --uda-dir). Read-only; no pipeline or portal API involved.",
 	},
 }
 

@@ -23,6 +23,10 @@ type watchObservation struct {
 	LogErr        error           // the typed error from the log probe, surfaced at baseline
 	Health        map[string]bool // per health path; nil when the probe errored entirely
 	BadIndexes    []string        // rebuilding/unhealthy index names; nil = unknown this tick
+
+	// Deployed is the deployed phase's detail once Umbraco Deploy has logged
+	// the deployment complete (watchRun.deployedDetail); nil until then.
+	Deployed map[string]any
 }
 
 type watchOutcome int
@@ -61,6 +65,7 @@ type watchMachine struct {
 	sawAppAlive    bool
 	sawServing     bool
 	sawLanded      bool
+	sawDeployed    bool
 	settleStart    time.Time
 	settleAttempt  int
 	failureReason  string
@@ -214,6 +219,18 @@ func (m *watchMachine) observe(obs watchObservation) ([]watchEvent, watchOutcome
 			"downFor":         m.cycleDownFor.Round(time.Second).String(),
 			"failedProbes":    m.cycleDownPolls,
 		})
+	}
+
+	// Deployed is a milestone between landing and verification, never a
+	// condition of either: it is emitted once, after landed and serving, and
+	// a settle window already running carries on (the phase stays settling).
+	if !m.sawDeployed && obs.Deployed != nil && m.sawLanded && m.sawServing {
+		m.sawDeployed = true
+		phase := m.phase
+		transition("deployed", obs.Deployed)
+		if !m.settleStart.IsZero() {
+			m.phase = phase
+		}
 	}
 
 	// Post-landing health escalation: the deploy landed but the site never
