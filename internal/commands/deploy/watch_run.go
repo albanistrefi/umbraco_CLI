@@ -27,6 +27,9 @@ type watchRun struct {
 	feed     *watchLogFeed // nil without --logs and --uda-dir
 	logs     *logMonitor   // nil without --logs
 	schema   *schemaTracker
+	// pass follows Umbraco Deploy's schema pass in the log; nil without a
+	// feed.
+	pass *deployPass
 	// landed tells the schema recheck the new process has been seen.
 	landed bool
 	// recheckKick asks the schema rechecker for a recheck; it holds at most
@@ -137,7 +140,8 @@ func (r *watchRun) followLogs(ctx context.Context, every time.Duration) {
 }
 
 // readLogs reads the feed once and writes what it found: monitor events and
-// log lines with --logs, schema-pass lines with --uda-dir.
+// log lines with --logs, schema-pass lines with --uda-dir. The schema pass
+// is followed either way, for the deployed phase.
 func (r *watchRun) readLogs(ctx context.Context) {
 	stamp := time.Now().UTC().Format(time.RFC3339)
 	entries, err := r.feed.fetch(ctx)
@@ -152,8 +156,9 @@ func (r *watchRun) readLogs(ctx context.Context) {
 			r.write(event)
 		}
 	}
+	passEvents := r.pass.observe(entries)
 	if r.schema != nil {
-		for _, event := range r.schema.observeLogs(entries) {
+		for _, event := range passEvents {
 			r.write(event)
 		}
 	}
@@ -221,6 +226,7 @@ func (r *watchRun) poll(ctx context.Context, probes *watchProbes) watchOutcome {
 	if r.schema != nil {
 		observation.SchemaPending = r.schema.pending()
 	}
+	observation.Deployed = r.deployedDetail()
 	events, terminal := r.machine.observe(observation)
 	for _, event := range events {
 		r.write(event)
