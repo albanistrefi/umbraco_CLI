@@ -2,7 +2,7 @@
 name: umbraco-user-data
 description: "Key/value data stored for the authenticated user"
 metadata:
-  version: 0.5.3
+  version: 0.5.4
   requires:
     bins:
       - umbraco

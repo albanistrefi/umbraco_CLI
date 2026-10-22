@@ -2,7 +2,7 @@
 name: umbraco-static-file
 description: "Static file operations"
 metadata:
-  version: 0.5.3
+  version: 0.5.4
   requires:
     bins:
       - umbraco
