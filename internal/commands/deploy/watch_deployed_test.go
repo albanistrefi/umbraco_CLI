@@ -291,3 +291,65 @@ func TestDeployPassDeploymentID(t *testing.T) {
 		t.Fatalf("a deployment begun after the pass ended is not this one: %+v", pass)
 	}
 }
+
+func TestWatchMachineDeployedAfterASettleInterruptionKeepsThePhase(t *testing.T) {
+	machine, _ := newWatchMachine(watchBaseline(), 10*time.Minute, time.Minute, false)
+	at := watchBaseline().At
+	obs := func(offset time.Duration, bad []string, deployed map[string]any) watchObservation {
+		return watchObservation{At: at.Add(offset), MgmtAlive: true, MgmtStatus: 401, ProcessID: "2000", MachineName: "web-a", Health: map[string]bool{"/": true}, BadIndexes: bad, Deployed: deployed}
+	}
+	machine.observe(obs(10*time.Second, []string{}, nil))
+	if events, _ := machine.observe(obs(20*time.Second, []string{"ExternalIndex"}, nil)); strings.Join(phases(events), ",") != "settle-interrupted" {
+		t.Fatalf("expected the rebuild to interrupt the settle, got %v", phases(events))
+	}
+	events, _ := machine.observe(obs(30*time.Second, []string{"ExternalIndex"}, map[string]any{"workStatus": "Completed"}))
+	if strings.Join(phases(events), ",") != "deployed" || machine.phase != "settle-interrupted" {
+		t.Fatalf("deployed must not replace settle-interrupted, got %v, phase %s", phases(events), machine.phase)
+	}
+}
+
+// Deploy completes while an index rebuild holds the settle interrupted, and
+// the rebuild outlasts the watch: heartbeats and the timeout keep naming
+// settle-interrupted, not deployed.
+func TestWatchDeployedDuringASettleInterruptionKeepsHeartbeatAndTimeoutPhase(t *testing.T) {
+	env := &fakeDeployEnv{downTicks: map[int]bool{1: true, 2: true}, landTick: 3, entries: deployCompletedLogs(8, 9, "Completed")}
+	env.routes = func(tick int, req *http.Request) *http.Response {
+		if req.URL.Path != "/umbraco/management/api/v1/indexer" {
+			return nil
+		}
+		status := "Healthy"
+		if tick >= 5 {
+			status = "Rebuilding"
+		}
+		return cmdtest.JSONResponse(http.StatusOK, `{"total":1,"items":[{"name":"ExternalIndex","healthStatus":{"status":"`+status+`"}}]}`)
+	}
+	deps := cmdtest.Deps(env.handler())
+	out, err := cmdtest.Execute(cmdtest.BuildRoot(t, deps, Register), "deploy", "watch", "--json", "--logs", "--interval", "1ms", "--settle", "1h",
+		"--escalation", "1h", "--heartbeat", "50ms", "--timeout", "400ms")
+	if exitCode(err) != 6 {
+		t.Fatalf("expected a timeout (exit 6), got %v", err)
+	}
+	lines := make([]map[string]any, 0)
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		lines = append(lines, decodeEntry(t, line))
+	}
+	interrupted, deployed := indexOf(lines, isPhase("settle-interrupted")), indexOf(lines, isPhase("deployed"))
+	if interrupted < 0 || deployed < interrupted || countPhase(lines, "deployed") != 1 {
+		t.Fatalf("expected settle-interrupted then one deployed: %v", phasesOf(lines))
+	}
+	heartbeats := 0
+	for _, line := range lines[deployed:] {
+		if line["type"] == "heartbeat" {
+			heartbeats++
+			if line["currentPhase"] != "settle-interrupted" {
+				t.Fatalf("a heartbeat after deployed must name settle-interrupted: %v", line)
+			}
+		}
+	}
+	if heartbeats == 0 {
+		t.Fatalf("no heartbeat after deployed: %v", lines)
+	}
+	if reason := fmt.Sprint(detailOf(phaseLine(lines, "timeout"))["reason"]); !strings.Contains(reason, "last phase: settle-interrupted") {
+		t.Fatalf("the timeout must name settle-interrupted: %s", reason)
+	}
+}

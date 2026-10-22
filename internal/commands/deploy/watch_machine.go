@@ -223,14 +223,12 @@ func (m *watchMachine) observe(obs watchObservation) ([]watchEvent, watchOutcome
 
 	// Deployed is a milestone between landing and verification, never a
 	// condition of either: it is emitted once, after landed and serving, and
-	// a settle window already running carries on (the phase stays settling).
+	// leaves the current phase alone, so heartbeats and a timeout keep naming
+	// what the watch is waiting on (a settle window, or recovery from an
+	// interrupted one).
 	if !m.sawDeployed && obs.Deployed != nil && m.sawLanded && m.sawServing {
 		m.sawDeployed = true
-		phase := m.phase
-		transition("deployed", obs.Deployed)
-		if !m.settleStart.IsZero() {
-			m.phase = phase
-		}
+		events = append(events, watchEvent{Timestamp: stamp, Phase: "deployed", Detail: obs.Deployed})
 	}
 
 	// Post-landing health escalation: the deploy landed but the site never
