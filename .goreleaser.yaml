@@ -62,10 +62,11 @@ homebrew_casks:
     description: "Command-line client for the Umbraco Management API"
     skip_upload: auto
     caveats: |-
-      The `umbraco` binary expects these environment variables:
-        UMBRACO_BASE_URL
-        UMBRACO_CLIENT_ID
-        UMBRACO_CLIENT_SECRET
+      Connect to your Umbraco site once with:
+        umbraco auth login --base-url <site-url> --client-id <id> --client-secret <secret>
+      Then check it with `umbraco auth status`. Profiles for several environments,
+      and the UMBRACO_* environment variables, are described under "Configure access"
+      in https://github.com/albanistrefi/umbraco_CLI#configure-access
 
       The release archives are not notarized yet, so the cask clears the macOS
       quarantine attribute during installation.
