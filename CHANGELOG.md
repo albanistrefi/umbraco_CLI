@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.5.5 - 2026-10-22
+
 - The Homebrew cask's install note no longer says the binary expects `UMBRACO_BASE_URL`, `UMBRACO_CLIENT_ID` and `UMBRACO_CLIENT_SECRET`. It points at `umbraco auth login` and `umbraco auth status`, with profiles and the environment variables under "Configure access" in the README.
 
 ## v0.5.4 - 2026-10-22
