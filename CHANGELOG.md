@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- The Homebrew cask clears the macOS quarantine attribute with a `postflight_steps` block instead of `postflight`, which Homebrew deprecated: installs and upgrades no longer print "Calling `postflight` is deprecated". GoReleaser 2.19 renders it from `homebrew_casks.hooks.post.install_steps` and rejects the old `install` hook.
+
 ## v0.5.5 - 2026-10-22
 
 - The Homebrew cask's install note no longer says the binary expects `UMBRACO_BASE_URL`, `UMBRACO_CLIENT_ID` and `UMBRACO_CLIENT_SECRET`. It points at `umbraco auth login` and `umbraco auth status`, with profiles and the environment variables under "Configure access" in the README.
