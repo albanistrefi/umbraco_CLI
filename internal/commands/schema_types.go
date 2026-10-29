@@ -298,36 +298,44 @@ func schemaTypeRemoveProperty(deps cmdkit.Dependencies, use string, resource str
 }
 
 // removeSchemaTypeProperty returns the property matching alias and the
-// properties array without it. Aliases are case-sensitive on the server; a
-// case-only mismatch is pointed out rather than silently accepted.
+// properties array without it.
 func removeSchemaTypeProperty(current map[string]any, alias string) (map[string]any, []any, error) {
+	index, err := schemaTypePropertyIndex(current, alias)
+	if err != nil {
+		return nil, nil, err
+	}
 	properties, _ := current["properties"].([]any)
-	remaining := make([]any, 0, len(properties))
-	var removed map[string]any
+	removed, _ := properties[index].(map[string]any)
+	remaining := make([]any, 0, len(properties)-1)
+	remaining = append(remaining, properties[:index]...)
+	remaining = append(remaining, properties[index+1:]...)
+	return removed, remaining, nil
+}
+
+// schemaTypePropertyIndex returns the position of the first property with
+// exactly alias in the type's own properties. Aliases are case-sensitive on
+// the server; a case-only mismatch is pointed out rather than silently
+// accepted.
+func schemaTypePropertyIndex(current map[string]any, alias string) (int, error) {
+	properties, _ := current["properties"].([]any)
 	var caseHint string
-	for _, item := range properties {
+	for i, item := range properties {
 		entry, ok := item.(map[string]any)
 		if !ok {
-			remaining = append(remaining, item)
 			continue
 		}
 		got, _ := entry["alias"].(string)
-		if got == alias && removed == nil {
-			removed = entry
-			continue
+		if got == alias {
+			return i, nil
 		}
 		if strings.EqualFold(got, alias) {
 			caseHint = got
 		}
-		remaining = append(remaining, item)
 	}
-	if removed == nil {
-		if caseHint != "" {
-			return nil, nil, fmt.Errorf("has no property with alias %q (did you mean %q? aliases are case-sensitive)", alias, caseHint)
-		}
-		return nil, nil, fmt.Errorf("has no property with alias %q; 'get <id> --fields properties' lists the aliases", alias)
+	if caseHint != "" {
+		return -1, fmt.Errorf("has no property with alias %q (did you mean %q? aliases are case-sensitive)", alias, caseHint)
 	}
-	return removed, remaining, nil
+	return -1, fmt.Errorf("has no property with alias %q; 'get <id> --fields properties' lists the aliases", alias)
 }
 
 // emptySchemaTypeContainers names the containers that hold no property

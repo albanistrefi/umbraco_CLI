@@ -42,8 +42,8 @@ func TestCommandCountsMatchMVP(t *testing.T) {
 		total += len(found.Commands())
 	}
 
-	if total != 338 {
-		t.Fatalf("expected 338 collection commands, got %d", total)
+	if total != 339 {
+		t.Fatalf("expected 339 collection commands, got %d", total)
 	}
 }
 
@@ -149,6 +149,7 @@ func TestRegisteredAPICommandsHaveSchemas(t *testing.T) {
 		"doctype.add-container":      "payload mutation convenience command",
 		"doctype.reorder-properties": "payload mutation convenience command (read-modify-write over PUT /document-type/{id})",
 		"doctype.remove-property":    "payload mutation convenience command (read-modify-write over PUT /document-type/{id})",
+		"doctype.update-property":    "payload mutation convenience command (read-modify-write over PUT /document-type/{id})",
 		"mediatype.remove-property":  "payload mutation convenience command (read-modify-write over PUT /media-type/{id})",
 		"membertype.remove-property": "payload mutation convenience command (read-modify-write over PUT /member-type/{id})",
 		"datatype.extensions":        "payload inspection convenience command",

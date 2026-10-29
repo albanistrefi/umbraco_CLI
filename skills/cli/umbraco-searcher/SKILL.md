@@ -23,13 +23,17 @@ umbraco searcher <command> [flags]
 ```text
 Examine searcher queries.
 
+'searcher query' takes the INDEX name (ExternalIndex, InternalIndex, …) that 'indexer list' reports in its name field.
+The searcherName 'indexer list' also reports (ExternalSearcher) answers 404 on Umbraco 18.2, and 'searcher list'
+returns an empty list there: that is how the Management API behaves, not a sign that search is broken.
+
 Task → command:
-  Which searchers exist on this instance?              searcher list
-  Why is this page missing from search?                searcher query ExternalSearcher --term <text>
-  Is the index behind the searcher healthy?            indexer list
-  Rebuild the index behind a searcher                  indexer rebuild <index-name> --force --wait
-  Only show ids and scores                             searcher query ExternalSearcher --term <text> --fields id,score
-  'searcher list' came back empty                      indexer list --fields name,searcherName (try both names)
+  Which names can I query?                             indexer list --fields name
+  Why is this page missing from search?                searcher query ExternalIndex --term <text>
+  Is the index healthy?                                indexer list
+  Rebuild an index                                     indexer rebuild <index-name> --force --wait
+  Only show ids and scores                             searcher query ExternalIndex --term <text> --fields id,score
+  'searcher list' came back empty                      expected on 18.2; use indexer list --fields name for the names
 ```
 
 ## Read Commands
@@ -37,7 +41,7 @@ Task → command:
 | Command | Description |
 |---------|-------------|
 | `searcher list` | List Examine searchers (paginated; --skip/--take/--all) |
-| `searcher query <searcher-name>` | Run a term against one Examine searcher (paginated; --skip/--take/--all) |
+| `searcher query <index-name>` | Run a term against one Examine index (paginated; --skip/--take/--all) |
 
 ### list
 
@@ -45,7 +49,7 @@ Task → command:
 umbraco searcher list
 ```
 
-GET /searcher. Names listed here are the <searcher-name> argument of 'searcher query'. The list only covers searchers registered standalone, so it can be empty on instances that register indexes only: fall back to 'indexer list --fields name,searcherName' and try both names.
+GET /searcher. Lists the searchers the server registers on their own. On Umbraco 18.2 this returns an empty list: that is how the Management API behaves, not a sign that search is broken. 'searcher query' takes the index name, which 'indexer list --fields name' lists (ExternalIndex, InternalIndex).
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
@@ -61,10 +65,10 @@ GET /searcher. Names listed here are the <searcher-name> argument of 'searcher q
 ### query
 
 ```bash
-umbraco searcher query <searcher-name>
+umbraco searcher query <index-name>
 ```
 
-GET /searcher/{searcherName}/query?term=. Returns the raw Examine hits (id, score, fields) so you can tell "the document is not in the index" apart from "the index has it under different values". Searcher names come from 'searcher list' or from 'indexer list --fields name,searcherName' — the accepted name is often the index name (ExternalIndex) rather than the searcherName the index reports, so try both when the server answers 404 "Could not find a valid searcher". --query is an alias of --term.
+GET /searcher/{searcherName}/query?term=. Returns the raw Examine hits (id, score, fields) so you can tell "the document is not in the index" apart from "the index has it under different values". Pass the index name from 'indexer list --fields name', e.g. ExternalIndex or InternalIndex: on Umbraco 18.2 the searcherName 'indexer list' reports (ExternalSearcher) answers 404 "Could not find a valid searcher", and 'searcher list' is empty. --query is an alias of --term.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|

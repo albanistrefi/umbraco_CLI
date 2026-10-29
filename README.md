@@ -3,7 +3,7 @@
 The agent-first command line for Umbraco — CMS, Forms, Automate, and Engage. Built on
 the Management APIs, it goes beyond them: exhaustive content search,
 cross-environment schema diff, log tailing, and safe, rehearsable bulk
-operations — 475 commands with a scriptable exit-code contract.
+operations — 476 commands with a scriptable exit-code contract.
 
 Core behavior:
 - `--json` and `--params` are primary machine inputs
@@ -360,6 +360,7 @@ umbraco document update <id> --property skills --value 'C#;Go' --save-and-publis
 umbraco document copy <id> --to <parent-id> --publish --dry-run --output json
 umbraco document bulk-update --id <id> --id <id> --merge-json '{"values":[{"alias":"title","value":"New title"}]}' --dry-run --output json
 umbraco document csv-update --file partners.csv --property skills --dry-run --output json
+umbraco doctype update-property <id> --alias title --description "Shown in listings" --dry-run --output json
 # then run without --dry-run
 ```
 
@@ -444,7 +445,7 @@ testing) are not part of this repo — get those from
 - `element` (21) — the Umbraco 18.1+ element library: CRUD with atomic `create --publish`/`update --save-and-publish`, publish lifecycle, `version` history/rollback, references, and the `bin` recycle-bin subgroup
 - `blueprint` (15) — document blueprints: the reusable content presets an editor picks when creating a document; tree browsing (`ancestors`/`siblings`), CRUD, folders, `items`, `audit-log`, `create-from-document`, and `scaffold` behind `document create --from-blueprint`
 - `media` (24) — incl. `inspect`, `download`, `upload`, `replace-file`/`restore-backup`, `references`, `restore` and the `bin` recycle-bin subgroup
-- `doctype` (19) / `mediatype` (12) / `membertype` (12) — the full schema type family, all with `--recursive --types-only` folder handling and `create-folder`/`delete-folder`
+- `doctype` (20) / `mediatype` (12) / `membertype` (12) — the full schema type family, all with `--recursive --types-only` folder handling and `create-folder`/`delete-folder`; `doctype update-property --alias <a>` changes one property's name, description, mandatory flag or data type in place (`--dry-run`, `--backup`)
 - `datatype` (17) — incl. `block` subgroup and `create-folder`/`delete-folder`
 - `dictionary` (6)
 - `template` (6)
@@ -464,7 +465,7 @@ testing) are not part of this repo — get those from
 - `deploy` (5) — effect-based deployment observation, schema application, and Umbraco Deploy content transfer (`transfer --node <id> [--descendants] --dry-run`, `queue list|add|remove|clear`; keeps GUIDs identical across environments, waits on the session with exit 5/6 on failure/timeout): `watch` polls an environment for state deltas only a deploy can cause (app recycle via ProcessId, 503→401→200 recovery, index rebuilds) and emits phase transitions (`baseline → restarting → app-alive → serving → landed → deployed → settling → verified | failed | timeout`, plus `settle-interrupted`), with `--logs` adding the deploy's own log entries (lifecycle, migrations, indexer suspend/resume/rebuild, Deploy, errors; known noise excluded) to the same stream as `type: "log"` lines that never change phases or the exit code, and `--uda-dir` turning the artifacts that are drifted or missing at baseline into tripwires re-checked after landing (verified waits for them or for Deploy's logged schema-pass end; exit 7 if any is still drifted or missing then); `deployed` is emitted once when Umbraco Deploy's schema pass ends with Work Status "Completed" in the new process's log (and, with `--uda-dir`, every tracked artifact is in sync or has been re-checked after the pass), with `deploymentId`, `loggedAt`, `workStatus` and, with `--uda-dir`, `schema` counts (`confirmed`, `remaining`, `unknown`). It needs Deploy's log, so it is only emitted with `--logs` or `--uda-dir` and a baseline process id (the baseline's `deployed` detail says whether it is enabled and why not); it never fires on a pass that ended with another work status, is never inferred from silence, and verified does not wait for it; with `--json`, `--heartbeat` also writes `type: "heartbeat"` lines (`currentPhase`, `elapsed`, `lastPoll`, log counts) to stdout as well as the text line on stderr, on their own clock, and every request gives up after `--request-timeout` (default half the poll or heartbeat interval, whichever is shorter, clamped to 250ms–15s), so a slow endpoint during the restart never silences the stream; `status` compares local Deploy `.uda` artifacts against the environment per entity as a pre-flight drift check; `apply` is its write side — Deploy's "Update schema" from the CLI: creates missing entities with their artifact GUIDs and full-replaces drifted ones in dependency order, backs up every updated entity, re-verifies each write, and refuses to run without `--dry-run` or `--force`
 - `published-cache` (3) — status / rebuild / reload, for stale-content incident response
 - `indexer` (3) — Examine index health and rebuilds, with `--wait` polling
-- `searcher` (2) — the read side of Examine: `list` the searchers, `query <searcher-name> --term <text>` for the raw hits behind a missing search result
+- `searcher` (2) — the read side of Examine: `query <index-name> --term <text>` for the raw hits behind a missing search result. It takes the index name from `indexer list --fields name` (`ExternalIndex`, `InternalIndex`); on Umbraco 18.2 the `searcherName` the indexer reports (`ExternalSearcher`) answers 404 and `searcher list` returns an empty list
 - `relation` (2) — `list --type <id>` for the relations of a relation type, plus the `type` subgroup (`list`/`get`/`items`) over the relation-type catalogue
 - `redirect` (6) — the redirect URL tracker: list/get/delete, status, enable/disable
 - `tree` (1)
@@ -474,7 +475,7 @@ testing) are not part of this repo — get those from
 - `automate` (8 subgroups) — requires [Umbraco Automate](https://docs.umbraco.com/umbraco-automate) on the target instance; see below
 - `engage` (16) — requires [Umbraco Engage](https://docs.umbraco.com/umbraco-engage) on the target instance; what it may read or change is governed by the API user's permissions; see below
 
-Total: **475 runnable commands** counting every nested subcommand. Group counts above are direct subcommands; nested subgroups like `document version`, `document bin`, and the `automate` and `engage` subgroups add the rest.
+Total: **476 runnable commands** counting every nested subcommand. Group counts above are direct subcommands; nested subgroups like `document version`, `document bin`, and the `automate` and `engage` subgroups add the rest.
 
 ## Umbraco Automate
 
