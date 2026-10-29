@@ -27,6 +27,7 @@ Task → command:
   Read a type by GUID or alias                         doctype get <id-or-alias>
   Find types by name                                   doctype search --query <text>
   Add / reorder / remove properties, add tabs/groups   doctype add-property, reorder-properties, remove-property --alias <a> --backup --force, add-container
+  Change a property's name/description/type/mandatory  doctype update-property <id> --alias <a> --name|--description|--data-type|--mandatory|--no-mandatory … --dry-run
   Create a folder, put a type in a folder              doctype create-folder --name <n> [--parent <id>]; doctype create --json '{..."parent":{"id":…}}' or doctype move <id> --to <folder>
   Allowed blocks, block order, Block Grid groups       datatype block add|reorder|groups … (blocks belong to the Block List/Grid DATA TYPE, not the document type)
   Which data type does a property use?                 doctype get <id> --fields properties
@@ -173,6 +174,7 @@ umbraco doctype search
 | `doctype reorder-properties <id>` | Change the order of properties on a document type |
 | `doctype restore-backup <file>` | Restore a document type from a --backup JSON file |
 | `doctype update <id>` | Update document type |
+| `doctype update-property <id-or-alias>` | Change one property of a document type in place (name, description, mandatory, data type) |
 
 ### add-container
 
@@ -437,6 +439,35 @@ umbraco doctype update <id> [flags] --dry-run
 
 # 2. Execute with the same flags
 umbraco doctype update <id> [flags]
+```
+
+### update-property
+
+```bash
+umbraco doctype update-property <id-or-alias>
+```
+
+GET /document-type/{id} + PUT /document-type/{id}. The Management API has no property-level endpoint, so this fetches the document type, changes only the fields you pass on the property with --alias, and writes the type back otherwise unchanged; the type is re-read afterwards and the command fails if the change did not stick. Pass at least one of --name, --description, --mandatory / --no-mandatory, --data-type. When the property already has those values nothing is written. A property that comes from a composition (or a parent type) is not part of this type's own properties and can only be edited on the type that declares it; the error names that type. Changing --data-type swaps the editor behind any stored values: 'doctype property-is-used' tells you whether there are any. Pass --backup to save the pre-change type first; 'doctype restore-backup <file>' puts it back.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--alias` | string | — | Alias of the property to change (required; exact match) |
+| `--backup` | string | — | Save the current item to a JSON file before writing; bare --backup writes ./<collection>-<id>-<timestamp>.backup.json, --backup=<path> chooses the file. Undo with '<collection> restore-backup <file>' where available |
+| `--data-type` | string | — | Data type ID (GUID) to back the property with |
+| `--description` | string | — | New property description (--description "" clears it) |
+| `--dry-run` | bool | false | Print the planned request without executing |
+| `--mandatory` | bool | false | Make the property mandatory |
+| `--name` | string | — | New display name for the property |
+| `--no-mandatory` | bool | false | Make the property optional |
+
+**Safe pattern:**
+
+```bash
+# 1. Rehearse with the exact flags you will execute with
+umbraco doctype update-property <id-or-alias> [flags] --dry-run
+
+# 2. Execute with the same flags
+umbraco doctype update-property <id-or-alias> [flags]
 ```
 
 ## Discovering Commands

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `doctype update-property <id-or-alias> --alias <propertyAlias>` changes one existing property in place: `--name`, `--description` (`--description ""` clears it), `--mandatory` / `--no-mandatory` and `--data-type <guid>`, at least one of them. The Management API has no property-level endpoint, so like `add-property`, `reorder-properties` and `remove-property` it fetches the document type and PUTs it back with only that property's changed fields different; the type is re-read afterwards and the command fails if a change did not stick. `--dry-run` prints the planned PUT and sends nothing; `--backup` saves the pre-change type first (`doctype restore-backup <file>` puts it back). When the property already has the requested values nothing is written and the result says `"changed": false` with a message. An unknown alias is an error, with a "did you mean" hint for a case-only mismatch. `GET /document-type/{id}` lists only a type's own properties, so for an alias that is not among them the command follows the type's `compositions` (and theirs) and, when one declares the property, names it (name, alias, id, and the path through nested compositions; a parent type for `Inheritance`) instead of writing: composed properties can only be changed on the type that declares them. The doctype `--help` overview lists it.
+
 ## v0.5.5 - 2026-10-22
 
 - The Homebrew cask's install note no longer says the binary expects `UMBRACO_BASE_URL`, `UMBRACO_CLIENT_ID` and `UMBRACO_CLIENT_SECRET`. It points at `umbraco auth login` and `umbraco auth status`, with profiles and the environment variables under "Configure access" in the README.

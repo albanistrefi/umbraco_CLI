@@ -3,7 +3,7 @@
 The agent-first command line for Umbraco — CMS, Forms, Automate, and Engage. Built on
 the Management APIs, it goes beyond them: exhaustive content search,
 cross-environment schema diff, log tailing, and safe, rehearsable bulk
-operations — 475 commands with a scriptable exit-code contract.
+operations — 476 commands with a scriptable exit-code contract.
 
 Core behavior:
 - `--json` and `--params` are primary machine inputs
@@ -360,6 +360,7 @@ umbraco document update <id> --property skills --value 'C#;Go' --save-and-publis
 umbraco document copy <id> --to <parent-id> --publish --dry-run --output json
 umbraco document bulk-update --id <id> --id <id> --merge-json '{"values":[{"alias":"title","value":"New title"}]}' --dry-run --output json
 umbraco document csv-update --file partners.csv --property skills --dry-run --output json
+umbraco doctype update-property <id> --alias title --description "Shown in listings" --dry-run --output json
 # then run without --dry-run
 ```
 
@@ -444,7 +445,7 @@ testing) are not part of this repo — get those from
 - `element` (21) — the Umbraco 18.1+ element library: CRUD with atomic `create --publish`/`update --save-and-publish`, publish lifecycle, `version` history/rollback, references, and the `bin` recycle-bin subgroup
 - `blueprint` (15) — document blueprints: the reusable content presets an editor picks when creating a document; tree browsing (`ancestors`/`siblings`), CRUD, folders, `items`, `audit-log`, `create-from-document`, and `scaffold` behind `document create --from-blueprint`
 - `media` (24) — incl. `inspect`, `download`, `upload`, `replace-file`/`restore-backup`, `references`, `restore` and the `bin` recycle-bin subgroup
-- `doctype` (19) / `mediatype` (12) / `membertype` (12) — the full schema type family, all with `--recursive --types-only` folder handling and `create-folder`/`delete-folder`
+- `doctype` (20) / `mediatype` (12) / `membertype` (12) — the full schema type family, all with `--recursive --types-only` folder handling and `create-folder`/`delete-folder`; `doctype update-property --alias <a>` changes one property's name, description, mandatory flag or data type in place (`--dry-run`, `--backup`)
 - `datatype` (17) — incl. `block` subgroup and `create-folder`/`delete-folder`
 - `dictionary` (6)
 - `template` (6)
@@ -474,7 +475,7 @@ testing) are not part of this repo — get those from
 - `automate` (8 subgroups) — requires [Umbraco Automate](https://docs.umbraco.com/umbraco-automate) on the target instance; see below
 - `engage` (16) — requires [Umbraco Engage](https://docs.umbraco.com/umbraco-engage) on the target instance; what it may read or change is governed by the API user's permissions; see below
 
-Total: **475 runnable commands** counting every nested subcommand. Group counts above are direct subcommands; nested subgroups like `document version`, `document bin`, and the `automate` and `engage` subgroups add the rest.
+Total: **476 runnable commands** counting every nested subcommand. Group counts above are direct subcommands; nested subgroups like `document version`, `document bin`, and the `automate` and `engage` subgroups add the rest.
 
 ## Umbraco Automate
 

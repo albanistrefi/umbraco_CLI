@@ -24,6 +24,7 @@ Task → command:
   Read a type by GUID or alias                         doctype get <id-or-alias>
   Find types by name                                   doctype search --query <text>
   Add / reorder / remove properties, add tabs/groups   doctype add-property, reorder-properties, remove-property --alias <a> --backup --force, add-container
+  Change a property's name/description/type/mandatory  doctype update-property <id> --alias <a> --name|--description|--data-type|--mandatory|--no-mandatory … --dry-run
   Create a folder, put a type in a folder              doctype create-folder --name <n> [--parent <id>]; doctype create --json '{..."parent":{"id":…}}' or doctype move <id> --to <folder>
   Allowed blocks, block order, Block Grid groups       datatype block add|reorder|groups … (blocks belong to the Block List/Grid DATA TYPE, not the document type)
   Which data type does a property use?                 doctype get <id> --fields properties
@@ -42,6 +43,7 @@ Task → command:
 	doctype.AddCommand(doctypeAddProperty(deps))
 	doctype.AddCommand(doctypeAddContainer(deps))
 	doctype.AddCommand(doctypeReorderProperties(deps))
+	doctype.AddCommand(doctypeUpdateProperty(deps))
 	doctype.AddCommand(schemaTypeRemoveProperty(deps, "doctype", "document-type", "document type", nil))
 	doctype.AddCommand(doctypeCopy(deps))
 	doctype.AddCommand(doctypeMove(deps))
