@@ -292,8 +292,8 @@ func doctypeCompositionOwner(ctx context.Context, client *api.Client, doctype ma
 	if id, _ := doctype["id"].(string); id != "" {
 		visited[strings.ToLower(id)] = struct{}{}
 	}
-	var walk func(node map[string]any, edgeType string, via []string) (*doctypePropertyOwner, error)
-	walk = func(node map[string]any, edgeType string, via []string) (*doctypePropertyOwner, error) {
+	var walk func(node map[string]any, via []string) (*doctypePropertyOwner, error)
+	walk = func(node map[string]any, via []string) (*doctypePropertyOwner, error) {
 		compositions, _ := node["compositions"].([]any)
 		for _, item := range compositions {
 			entry, ok := item.(map[string]any)
@@ -313,22 +313,19 @@ func doctypeCompositionOwner(ctx context.Context, client *api.Client, doctype ma
 			if err != nil {
 				return nil, fmt.Errorf("property %q is not on the type itself and reading its composition %s failed: %w", alias, compositionID, err)
 			}
-			relation := edgeType
-			if relation == "" {
-				relation, _ = entry["compositionType"].(string)
-			}
+			relation, _ := entry["compositionType"].(string)
 			if hasDoctypeProperty(composed, alias) {
 				name, _ := composed["name"].(string)
 				composedAlias, _ := composed["alias"].(string)
 				return &doctypePropertyOwner{ID: compositionID, Name: name, Alias: composedAlias, CompositionType: relation, Via: via}, nil
 			}
 			name, _ := composed["name"].(string)
-			owner, err := walk(composed, relation, append(append([]string{}, via...), fmt.Sprintf("%q", name)))
+			owner, err := walk(composed, append(append([]string{}, via...), fmt.Sprintf("%q", name)))
 			if err != nil || owner != nil {
 				return owner, err
 			}
 		}
 		return nil, nil
 	}
-	return walk(doctype, "", nil)
+	return walk(doctype, nil)
 }

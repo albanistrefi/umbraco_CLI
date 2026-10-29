@@ -183,6 +183,11 @@ func TestDoctypeUpdatePropertyNamesTheParentForAnInheritedProperty(t *testing.T)
 	if err == nil || !strings.Contains(err.Error(), `inherited from parent document type "SEO Settings"`) || len(server.puts) != 0 {
 		t.Fatalf("expected the parent type named and no write, got err=%v puts=%d", err, len(server.puts))
 	}
+
+	_, err = cmdtest.Execute(buildRootWithCollections(t, server.deps()), "doctype", "update-property", updatePropertyTypeID, "--alias", "metaKeywords", "--no-mandatory")
+	if err == nil || !strings.Contains(err.Error(), `comes from composition "Meta Base"`) || strings.Contains(err.Error(), "parent document type") || len(server.puts) != 0 {
+		t.Fatalf("expected the parent's composition named as a composition, not as the parent, got err=%v puts=%d", err, len(server.puts))
+	}
 }
 
 func TestDoctypeUpdatePropertyIsANoOpWhenNothingChanges(t *testing.T) {
