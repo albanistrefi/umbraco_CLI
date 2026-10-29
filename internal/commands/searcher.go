@@ -1,8 +1,10 @@
 package commands
 
 import (
+	"errors"
 	"fmt"
 	"maps"
+	"net/http"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -20,13 +22,17 @@ func RegisterSearcher(root *cobra.Command, deps cmdkit.Dependencies) {
 		Short: "Examine searcher queries",
 		Long: `Examine searcher queries.
 
+'searcher query' takes the INDEX name (ExternalIndex, InternalIndex, …) that 'indexer list' reports in its name field.
+The searcherName 'indexer list' also reports (ExternalSearcher) answers 404 on Umbraco 18.2, and 'searcher list'
+returns an empty list there: that is how the Management API behaves, not a sign that search is broken.
+
 Task → command:
-  Which searchers exist on this instance?              searcher list
-  Why is this page missing from search?                searcher query ExternalSearcher --term <text>
-  Is the index behind the searcher healthy?            indexer list
-  Rebuild the index behind a searcher                  indexer rebuild <index-name> --force --wait
-  Only show ids and scores                             searcher query ExternalSearcher --term <text> --fields id,score
-  'searcher list' came back empty                      indexer list --fields name,searcherName (try both names)`,
+  Which names can I query?                             indexer list --fields name
+  Why is this page missing from search?                searcher query ExternalIndex --term <text>
+  Is the index healthy?                                indexer list
+  Rebuild an index                                     indexer rebuild <index-name> --force --wait
+  Only show ids and scores                             searcher query ExternalIndex --term <text> --fields id,score
+  'searcher list' came back empty                      expected on 18.2; use indexer list --fields name for the names`,
 	}
 	searcher.AddCommand(searcherList(deps))
 	searcher.AddCommand(searcherQuery(deps))
@@ -37,7 +43,7 @@ func searcherList(deps cmdkit.Dependencies) *cobra.Command {
 	return cmdkit.CollectionCommand(deps, cmdkit.CollectionSpec{
 		Use:   "list",
 		Short: "List Examine searchers (paginated; --skip/--take/--all)",
-		Long:  "GET /searcher. Names listed here are the <searcher-name> argument of 'searcher query'. The list only covers searchers registered standalone, so it can be empty on instances that register indexes only: fall back to 'indexer list --fields name,searcherName' and try both names.",
+		Long:  "GET /searcher. Lists the searchers the server registers on their own. On Umbraco 18.2 this returns an empty list: that is how the Management API behaves, not a sign that search is broken. 'searcher query' takes the index name, which 'indexer list --fields name' lists (ExternalIndex, InternalIndex).",
 		NArgs: 0,
 		Endpoints: func(args []string, params map[string]any) []cmdkit.GetRequestCandidate {
 			return []cmdkit.GetRequestCandidate{
@@ -56,9 +62,9 @@ func searcherQuery(deps cmdkit.Dependencies) *cobra.Command {
 	var term string
 	var query string
 	cmd := cmdkit.CollectionCommand(deps, cmdkit.CollectionSpec{
-		Use:   "query <searcher-name>",
-		Short: "Run a term against one Examine searcher (paginated; --skip/--take/--all)",
-		Long:  "GET /searcher/{searcherName}/query?term=. Returns the raw Examine hits (id, score, fields) so you can tell \"the document is not in the index\" apart from \"the index has it under different values\". Searcher names come from 'searcher list' or from 'indexer list --fields name,searcherName' — the accepted name is often the index name (ExternalIndex) rather than the searcherName the index reports, so try both when the server answers 404 \"Could not find a valid searcher\". --query is an alias of --term.",
+		Use:   "query <index-name>",
+		Short: "Run a term against one Examine index (paginated; --skip/--take/--all)",
+		Long:  "GET /searcher/{searcherName}/query?term=. Returns the raw Examine hits (id, score, fields) so you can tell \"the document is not in the index\" apart from \"the index has it under different values\". Pass the index name from 'indexer list --fields name', e.g. ExternalIndex or InternalIndex: on Umbraco 18.2 the searcherName 'indexer list' reports (ExternalSearcher) answers 404 \"Could not find a valid searcher\", and 'searcher list' is empty. --query is an alias of --term.",
 		NArgs: 1,
 		Endpoints: func(args []string, params map[string]any) []cmdkit.GetRequestCandidate {
 			// Raw --params wins on collisions (CONVENTIONS.md), so the flag
@@ -70,6 +76,13 @@ func searcherQuery(deps cmdkit.Dependencies) *cobra.Command {
 			}
 		},
 	})
+	cmd.Example = `  umbraco indexer list --fields name
+  umbraco searcher query ExternalIndex --term <text>
+  umbraco searcher query ExternalIndex --term <text> --fields id,score`
+	run := cmd.RunE
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		return searcherNameHint(run(cmd, args), args[0])
+	}
 	cmd.PreRunE = func(cmd *cobra.Command, args []string) error {
 		paramsTerm, err := searcherParamsTerm(cmd)
 		if err != nil {
@@ -85,6 +98,24 @@ func searcherQuery(deps cmdkit.Dependencies) *cobra.Command {
 	cmd.Flags().StringVar(&term, "term", "", "Search text sent as the term query parameter (required)")
 	cmd.Flags().StringVar(&query, "query", "", "Alias of --term, for consistency with the other search commands")
 	return cmd
+}
+
+// searcherNameHint points a 404 for a name ending in "Searcher" (the
+// searcherName 'indexer list' reports) at the matching index name, which is
+// what the endpoint accepts on Umbraco 18.2. It replaces the client's
+// generic route-not-found hint, which points the wrong way here. The
+// *api.APIError (and so exit code 4) is kept.
+func searcherNameHint(err error, name string) error {
+	var apiErr *api.APIError
+	if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusNotFound {
+		return err
+	}
+	const suffix = "searcher"
+	if len(name) <= len(suffix) || !strings.EqualFold(name[len(name)-len(suffix):], suffix) {
+		return err
+	}
+	apiErr.Hint = fmt.Sprintf("searcher query takes the index name, not the searcherName: try 'umbraco searcher query %sIndex --term <text>' ('umbraco indexer list --fields name' lists the index names)", name[:len(name)-len(suffix)])
+	return err
 }
 
 // searcherParamsTerm reads the term a caller passed through raw --params, so

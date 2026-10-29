@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"umbraco-cli/internal/api"
 	"umbraco-cli/internal/commands/cmdkit"
 	"umbraco-cli/internal/commands/cmdtest"
 )
@@ -156,5 +157,34 @@ func TestSearcherQueryRejectsConflictingTermAndQuery(t *testing.T) {
 	_, err := cmdtest.Execute(buildSearcherRoot(deps), "searcher", "query", "ExternalSearcher", "--term", "a", "--query", "b")
 	if err == nil || !strings.Contains(err.Error(), "aliases") {
 		t.Fatalf("expected alias conflict error, got %v", err)
+	}
+}
+
+func TestSearcherQueryHintsTheIndexNameOnA404ForASearcherName(t *testing.T) {
+	var requested []string
+	deps := searcherDeps(func(req *http.Request) (*http.Response, error) {
+		requested = append(requested, req.URL.Path)
+		if strings.HasSuffix(req.URL.Path, "/searcher/ExternalSearcher/query") || strings.HasSuffix(req.URL.Path, "/searcher/MissingIndex/query") {
+			return cmdtest.JSONResponse(http.StatusNotFound, `{"title":"Could not find a valid searcher"}`), nil
+		}
+		return cmdtest.JSONResponse(http.StatusInternalServerError, `{"title":"boom"}`), nil
+	})
+
+	_, err := cmdtest.Execute(buildSearcherRoot(deps), "searcher", "query", "ExternalSearcher", "--term", "home")
+	if err == nil || !strings.Contains(err.Error(), "Hint: searcher query takes the index name") || !strings.Contains(err.Error(), "'umbraco searcher query ExternalIndex --term <text>'") {
+		t.Fatalf("expected a hint naming ExternalIndex, got %v", err)
+	}
+	if !api.IsStatus(err, http.StatusNotFound) || cmdtest.ExitCode(err) != 4 {
+		t.Fatalf("expected the API error (exit code 4) kept, got exit %d: %v", cmdtest.ExitCode(err), err)
+	}
+	if len(requested) != 1 || !strings.HasSuffix(requested[0], "/searcher/ExternalSearcher/query") {
+		t.Fatalf("the hint must not add or change requests, got %v", requested)
+	}
+
+	if _, err := cmdtest.Execute(buildSearcherRoot(deps), "searcher", "query", "MissingIndex", "--term", "home"); err == nil || strings.Contains(err.Error(), "takes the index name") {
+		t.Fatalf("expected no index-name hint for a 404 on a name that is not a searcherName, got %v", err)
+	}
+	if _, err := cmdtest.Execute(buildSearcherRoot(deps), "searcher", "query", "OtherSearcher", "--term", "home"); err == nil || strings.Contains(err.Error(), "takes the index name") {
+		t.Fatalf("expected no index-name hint for a non-404 error, got %v", err)
 	}
 }
