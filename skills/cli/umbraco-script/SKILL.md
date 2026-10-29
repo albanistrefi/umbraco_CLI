@@ -2,7 +2,7 @@
 name: umbraco-script
 description: "Script operations"
 metadata:
-  version: 0.5.5
+  version: 0.5.6
   requires:
     bins:
       - umbraco

@@ -2,7 +2,7 @@
 name: umbraco-partial-view
 description: "Partial view operations"
 metadata:
-  version: 0.5.5
+  version: 0.5.6
   requires:
     bins:
       - umbraco
